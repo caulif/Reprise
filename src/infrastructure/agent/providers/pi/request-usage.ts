@@ -47,8 +47,10 @@ export function piRequestUsage(source: PiModels, input: Pick<Hooks, 'onModelUsag
     getModel: (...args) => source.getModel(...args),
     getAuth: (target, options) => typeof target === 'string' ? source.getAuth(target, options) : source.getAuth(target, options),
     completeSimple: async (...args) => {
+      args[2]?.signal?.throwIfAborted();
       const context = redactModelVisibleValue(args[1]);
       await notify(args[0], context, 'compaction');
+      args[2]?.signal?.throwIfAborted();
       const message = await source.completeSimple(args[0], context, { ...args[2], maxRetries: 0, maxRetryDelayMs: 8_000 });
       await report(message, 'compaction');
       return message;
@@ -56,8 +58,10 @@ export function piRequestUsage(source: PiModels, input: Pick<Hooks, 'onModelUsag
     streamSimple: (...args) => source.streamSimple(...args),
   };
   const stream = async (...args: Parameters<PiModels['streamSimple']>) => {
+    args[2]?.signal?.throwIfAborted();
     const context = redactModelVisibleValue(args[1]);
     await notify(args[0], context, 'generation');
+    args[2]?.signal?.throwIfAborted();
     const result = source.streamSimple(args[0], context, { ...args[2], maxRetries: 0, maxRetryDelayMs: 8_000 });
     const task = result.result().then((message) => report(message, 'generation'));
     // Lifecycle checkpoints await failures; attach a handler while the stream is still being consumed.

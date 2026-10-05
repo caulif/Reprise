@@ -414,8 +414,8 @@ test('real-terminal TUI probe is opt-in and outside engineering gates', async ()
   const awaitedAudit = /await input\.onModelRequest\?\.\(/;
   assert.match(requests, awaitedAudit);
   assert.doesNotMatch(requests.replace('await input.onModelRequest?.(', 'void input.onModelRequest?.('), awaitedAudit);
-  assert.match(requests, /await notify\(args\[0\], context, 'compaction'\);\s*const message = await source\.completeSimple/);
-  const auditedGeneration = /const context = redactModelVisibleValue\(args\[1\]\);\s*await notify\(args\[0\], context, 'generation'\);\s*const result = source\.streamSimple\(args\[0\], context,/;
+  assert.match(requests, /await notify\(args\[0\], context, 'compaction'\);\s*args\[2\]\?\.signal\?\.throwIfAborted\(\);\s*const message = await source\.completeSimple/);
+  const auditedGeneration = /const context = redactModelVisibleValue\(args\[1\]\);\s*await notify\(args\[0\], context, 'generation'\);\s*args\[2\]\?\.signal\?\.throwIfAborted\(\);\s*const result = source\.streamSimple\(args\[0\], context,/;
   assert.match(requests, auditedGeneration);
   assert.doesNotMatch(requests.replace("await notify(args[0], context, 'generation');", "await notify(args[0], args[1], 'generation');"), auditedGeneration);
 });

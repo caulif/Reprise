@@ -64,6 +64,8 @@ Agent 区的内联 `style` 属性和原生 `dialog` / popover 浮层一律拒绝
 
 核稿时若接受文件 digest 正确、但 catalog/findings 绑定过期，`inspect_comparison_draft` 返回 `stale` 的实际作者正文、检查事实与历史问题身份，供按独立证据修复；不返回有效 inspection receipt，不满足最终检查、预览、发布或恢复。文件缺失/篡改仍 unavailable。findings 更新是完整替换，历史 ID/question/decisionImpact 不可抹除；缺失或状态错误返回具体修复材料，拒绝不改变已接受记录。历史解决解释不是认证证据，不能自动沿用为独立结论。独立 source pass 拒绝 inspection、findings 更新、submit 和 preview，修复材料只在核稿时取得。
 
+findings 收尾仅允许保存已取得的观察。内置 Pi 每次收尾调用的实际模型可见工具集只包含 `update_comparison_findings`，在调用空闲并完成 usage 审计后恢复原工具集；原执行拒绝、取消及资源保护继续生效。其他 Provider 可忽略可选暴露参数，不能据传参声称已隐藏工具；实际集合以 generation 快照为准，见[收尾工具暴露 ADR](../decisions/accepted/2026-10-05-comparison-findings-tool-exposure.md)。限制工具列表不保证模型及时保存发现或判断正确。
+
 默认内置路径通过 `update_comparison_findings` 保存任务标准、双方最终来源、观察方法与支持范围、反证、重要限制和判断问题。Host 校验引用归属及结构，不证明自然语言主张正确；不可变发现 artifact 和 `comparison.findings_updated` 绑定 attempt、revision、catalog revision 与 digest，工具回执沿用模型输入审计。问题历史不得静默删除，重新打开已解决问题需新依据。问题须解决或说明证据不可得才进入创作；旧自定义 Comparison 端口保留原契约。
 
 草稿接受版本通过 `comparison.draft_accepted` 同时持久化 discovery revision、catalog revision 与 HTML digest；离线恢复核对最新发现 artifact 与接受绑定，并要求匹配预览事件发生在绑定之后。发现变化使旧草稿不可发布，必须重新提交并预览当前版本。新内置提交路径按声明的单个或多个独立决定性差异，限制标题加可见主文为250/600字符、附属解释为400/1000字符；折叠和隐藏解释也计入，已核验的固定原文组件从附属解释中排除。旧自定义端口保留原契约，篇幅和结构校验不证明声明的差异数量或判断正确；常规来源/哈希检查复用Host事实，不因未重复而增造限制。检查方法或精确推导可展开，影响取舍的未知不得藏入详情；证据注册、同公式复算或单帧截图均不证明全局行为。

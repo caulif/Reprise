@@ -605,8 +605,8 @@ export class ComparisonAgent implements ComparisonAgentPort {
         }
         if (signal?.aborted) return { status: 'cancelled' as const, sessionId: session.sessionId };
         const timeoutMs = comparisonTimeout(resources, this.#resources, this.#timeoutMs);
-        outcome = await session.work({ promptContent, timeoutMs, ...(signal ? { signal } : {}),
-          yieldAfterTurn: comparisonYieldPolicy(resources, phase, reviewPass, options) });
+        outcome = await session.work({ promptContent, timeoutMs, allowedToolNames: reviewPass === 'findings' ? ['update_comparison_findings'] : undefined,
+          ...(signal ? { signal } : {}), yieldAfterTurn: comparisonYieldPolicy(resources, phase, reviewPass, options) });
         return outcome;
       } finally {
         activePhase = undefined;

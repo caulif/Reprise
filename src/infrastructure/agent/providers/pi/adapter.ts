@@ -6,7 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { classifyAgentFailure } from "../../failure.js";
 import { contentText, isContextOverflow, type Api, type Model } from "@earendil-works/pi-ai";
 import { visibleAssistantText } from "../../assistant-visible.js";
-import type { AgentToolDefinition, ProviderAdapter, ProviderSession } from "../../types.js";
+import type { ProviderAdapter, ProviderSession } from "../../types.js";
 import {
   compactPiMessages,
   contextWindowOf,
@@ -19,6 +19,7 @@ import type { Models } from "@earendil-works/pi-ai";
 import { sha256 } from "../../../../core/identity.js";
 import type { HarnessModelConfig } from "../../../harness-model-config.js";
 import { piRequestUsage } from './request-usage.js';
+import { invocationToolExposure } from './tool-exposure.js';
 
 export type PiModels = Pick<Models, "getProviders" | "getModels" | "getModel" | "getAuth" | "completeSimple" | "streamSimple">;
 
@@ -67,6 +68,7 @@ export class PiProviderAdapter implements ProviderAdapter {
     const effort = this.#config.effort;
     let active = true;
     let toolsEnabled = true;
+    const registeredTools = input.tools.map(toPiTool);
     const turnYield: TurnYieldState = { policy: undefined, reason: undefined, failure: undefined };
     const fixedTokens = Math.ceil(Buffer.byteLength(input.systemPrompt + JSON.stringify(input.tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })))) / 3);
     const availableWindow = contextWindowOf(model) - fixedTokens - Math.max(1_024, model.maxTokens);
@@ -77,6 +79,7 @@ export class PiProviderAdapter implements ProviderAdapter {
       beforeToolCall: async ({ toolCall }) => {
         if (!active) return { block: true, reason: "Agent session is no longer active.", terminate: true };
         if (!toolsEnabled) return { block: true, reason: "Tools are disabled for this invocation.", terminate: true };
+        if (!exposure.permits(toolCall.name)) return { block: true, reason: 'Tool is unavailable in this invocation.', terminate: true };
         await usage.flush();
         await input.onBeforeToolCall?.({ tool: toolCall.name });
         return undefined;
@@ -102,25 +105,16 @@ export class PiProviderAdapter implements ProviderAdapter {
         systemPrompt: input.systemPrompt,
         model,
         thinkingLevel: this.#config.effort,
-        tools: input.tools.map((tool: AgentToolDefinition) => toPiTool(tool)),
+        tools: registeredTools,
       },
     });
-    let visibleTurn = 0;
-    agent.subscribe(async (event) => {
-      const payload = "message" in event && event.message
-        ? { type: event.type, message: event.message }
-        : { type: event.type };
-      if (!isAssistantMessageEnd(payload)) return;
-      const message = payload.message as { role?: string; content?: readonly { type?: string; text?: string }[] };
-      const text = visibleAssistantText(message.content);
-      if (!text) return;
-      visibleTurn += 1;
-      await input.onAssistantVisible?.({ text, turn: visibleTurn });
-    });
+    const exposure = invocationToolExposure(agent, registeredTools);
+    subscribeVisibleAssistant(agent, input.onAssistantVisible);
     return {
       inputCapabilities: [...model.input],
-      async append({ content, images, signal, yieldAfterTurn: policy }) {
+      async append({ content, images, signal, yieldAfterTurn: policy, allowedToolNames }) {
         if (signal.aborted) throw abortError();
+        exposure.enter(allowedToolNames);
         const abort = () => agent.abort();
         signal.addEventListener("abort", abort, { once: true });
         turnYield.policy = policy;
@@ -146,8 +140,8 @@ export class PiProviderAdapter implements ProviderAdapter {
           return contentText(message.content);
         } finally {
           signal.removeEventListener("abort", abort);
-          try { await agent.waitForIdle(); } finally { await usage.flush(); }
-          turnYield.policy = undefined;
+          try { try { await agent.waitForIdle(); } finally { await usage.flush(); } }
+          finally { turnYield.policy = undefined; exposure.restore(); }
         }
       },
       cancel(): void {
@@ -158,6 +152,17 @@ export class PiProviderAdapter implements ProviderAdapter {
       setToolsEnabled(enabled: boolean): void { toolsEnabled = enabled; },
     };
   }
+}
+
+function subscribeVisibleAssistant(agent: Agent, onVisible: Parameters<ProviderAdapter['createSession']>[0]['onAssistantVisible']): void {
+  let turn = 0;
+  agent.subscribe(async event => {
+    const payload = 'message' in event && event.message ? { type: event.type, message: event.message } : { type: event.type };
+    if (!isAssistantMessageEnd(payload)) return;
+    const message = payload.message as { role?: string; content?: readonly { type?: string; text?: string }[] };
+    const text = visibleAssistantText(message.content);
+    if (text) await onVisible?.({ text, turn: ++turn });
+  });
 }
 
 async function compactInto(

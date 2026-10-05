@@ -252,6 +252,7 @@ export class AgentSessionHost {
       if (cancelled()) return { done: true, result: { status: "cancelled", sessionId: this.#sessionId, invocationId } };
       const output = await abortable(
         this.#session!.append({ content, ...(outboundImages?.length ? { images: outboundImages } : {}), signal,
+          ...(request.kind === 'freeform' && request.allowedToolNames !== undefined ? { allowedToolNames: request.allowedToolNames } : {}),
           ...(request.kind === 'freeform' && request.yieldAfterTurn ? { yieldAfterTurn: request.yieldAfterTurn } : {}) }),
         signal,
       );

@@ -133,6 +133,8 @@ export type FreeformWorkRequest = {
   timeoutMs: number;
   requestId?: string;
   maxRepairAttempts?: number;
+  /** Optional model-visible subset of this session's registered tools; execution guards still apply. */
+  allowedToolNames?: readonly string[] | undefined;
   /** Checked at a completed provider turn; yielding preserves the live transcript and never certifies completion. */
   yieldAfterTurn?: () => string | undefined | Promise<string | undefined>;
 };
@@ -177,7 +179,7 @@ export interface AgentHost {
 
 export interface ProviderSession {
   readonly inputCapabilities?: readonly string[];
-  append(input: { content: string; images?: readonly ImageContent[]; signal: AbortSignal; yieldAfterTurn?: FreeformWorkRequest['yieldAfterTurn'] }): Promise<string | { status: "yielded"; reason: string }>;
+  append(input: { content: string; images?: readonly ImageContent[]; signal: AbortSignal; yieldAfterTurn?: FreeformWorkRequest['yieldAfterTurn']; allowedToolNames?: readonly string[] }): Promise<string | { status: "yielded"; reason: string }>;
   cancel(): void;
   waitForIdle?(): Promise<void>;
   setToolsEnabled?(enabled: boolean): void;

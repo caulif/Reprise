@@ -19,14 +19,19 @@ const context: ComparisonContext = { task: { caseId: 'case', summary: 'Compare' 
 const resultValue = { status: 'completed' as const, reportPath: 'report.html' as const, headline: 'Scoped result', evidenceRefs: [] };
 
 test('soft yield closes findings, carries incomplete source scope and waits for genuine generation-bound final readiness', async () => {
-  const events: AgentAuditEvent[] = []; const prompts: string[] = [];
+  const events: AgentAuditEvent[] = []; const prompts: string[] = [], allowedTools: (readonly string[] | undefined)[] = [];
   let findings = false, preview = false, inspected = false, inspectionInGeneration = false, reads = 0;
   let reviewTurns = 0;
-  const host = new AgentHost({ createSession: input => ({ append: async ({ content, signal, yieldAfterTurn }) => {
+  const host = new AgentHost({ createSession: input => ({ append: async ({ content, signal, yieldAfterTurn, allowedToolNames }) => {
     prompts.push(content);
+    allowedTools.push(allowedToolNames);
     if (inspected && preview) inspectionInGeneration = true;
     await input.onModelRequest?.({ model: 'fixture', scope: 'generation', digest: sha256(content), messageCount: prompts.length, images: [] });
-    if (content.includes('bounded closure turn')) await input.tools.find(tool => tool.name === 'update_comparison_findings')!.execute({}, signal);
+    if (content.includes('bounded closure turn')) {
+      const denied = await input.tools.find(tool => tool.name === 'read')!.execute({}, signal);
+      assert.match(denied.content, /closure_only/, 'legacy adapter ignoring the visible whitelist still cannot expand investigation');
+      await input.tools.find(tool => tool.name === 'update_comparison_findings')!.execute({}, signal);
+    }
     else if (content.includes('independent source pass') && !content.includes('Now inspect')) await input.tools.find(tool => tool.name === 'read')!.execute({}, signal);
     else if (content.includes('Now inspect') || content.includes('Continue the current review turn')) {
       reviewTurns++;
@@ -54,6 +59,9 @@ test('soft yield closes findings, carries incomplete source scope and waits for 
   assert.equal(reviewTurns, 2);
   assert.equal(inspectionInGeneration, true);
   assert.equal(reads, 0, 'soft model boundary denies more investigation before side effects');
+  assert.ok(prompts.some(prompt => prompt.includes('bounded closure turn')));
+  prompts.forEach((prompt, index) => assert.deepEqual(allowedTools[index], prompt.includes('bounded closure turn') ? ['update_comparison_findings'] : undefined,
+    'only findings closure restricts model-visible tools; compose/review keep their default tools'));
   assert.match(prompts.find(prompt => prompt.includes('Now inspect'))!, /pass is incomplete[\s\S]*Unchecked guarantees remain unknown/);
   const phases = events.filter(event => event.type === 'comparison.phase_completed');
   assert.equal(phases.find(event => event.payload.phase === 'investigate')!.payload.outcome, 'yielded');
@@ -112,6 +120,9 @@ for (const mode of ['late', 'retry', 'verbal', 'hard', 'cancel', 'unexhausted'] 
   const phases = events.filter(event => event.type === 'comparison.phase_completed');
   const closures = phases.filter(event => event.payload.pass === 'findings');
   const composed = phases.find(event => event.payload.phase === 'compose');
+  const visibleTools = inputs.map(input => (JSON.parse(input) as { tools: { name: string }[] }).tools.map(tool => tool.name));
+  assert.deepEqual(visibleTools[0], tools.map(tool => tool.name));
+  assert.ok(visibleTools.slice(1).some(names => names.length === 1 && names[0] === 'update_comparison_findings'), 'actual native closure input exposes only the existing findings tool');
   assert.equal(reads, 0, 'findings closure cannot expand investigation after its soft stop');
   if (mode === 'late' || mode === 'retry' || mode === 'unexhausted') {
     assert.equal(result.status, 'completed');
@@ -120,13 +131,14 @@ for (const mode of ['late', 'retry', 'verbal', 'hard', 'cancel', 'unexhausted'] 
     assert.equal(closures.at(-1)!.payload.yieldReason, 'findings_ready');
     assert.equal(closures.at(-1)!.payload.modelRequests, mode === 'retry' ? 2 : 1);
     assert.equal(updates, mode === 'retry' ? 2 : 1);
+    assert.deepEqual(visibleTools.at(-1), tools.map(tool => tool.name), 'tools are restored for the subsequent review generation');
     if (mode === 'late') {
       assert.equal(closures[0]!.payload.outcome, 'completed');
       assert.equal(closures[0]!.payload.yieldReason, undefined);
       assert.ok(inputs[2]!.includes('previous closure call did not produce an actually accepted ready findings update'));
       assert.ok(inputs[2]!.includes('do not give another verbal promise'));
     } else if (mode === 'retry') assert.ok(inputs[2]!.includes('status=invalid'), 'same invocation receives actual invalid feedback before tool retry');
-    else assert.ok(inputs[2]!.includes('closure_only'), 'closure rejects investigation even with unused soft allowance');
+    else assert.ok(inputs[2]!.includes('not found'), 'native closure rejects tools absent from its visible whitelist even with unused soft allowance');
   } else {
     assert.equal(composed, undefined);
     assert.equal(result.status, mode === 'cancel' ? 'cancelled' : 'failed');
