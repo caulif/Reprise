@@ -56,21 +56,26 @@ test('draft review uses fresh conversation and repair keeps that session with on
   assert.equal(f.sessions.length, 2);
   assert.deepEqual(started, [f.sessions[1]!.sessionId]);
   assert.equal(f.sessions[0]!.messages.length, 2);
-  assert.equal(f.sessions[1]!.messages.length, 2);
+  assert.match(f.sessions[0]!.messages[1]!, /Unverified earlier conclusion/);
+  assert.equal(f.sessions[1]!.messages.length, 3);
   const firstReview = f.sessions[1]!.messages[0]!;
+  assert.match(firstReview, /independent source pass/);
   assert.match(firstReview, /Frozen navigation/);
-  assert.match(firstReview, /Inspect the current accepted draft with inspect_comparison_draft when available/);
-  assert.match(firstReview, /read the original task.*briefing\/task\/initial-input\.txt/);
-  assert.match(firstReview, /otherwise read report\.html/);
-  assert.match(firstReview, /unverified semantic hypotheses/);
+  assert.match(firstReview, /Read the original task.*briefing\/task\/initial-input\.txt/);
+  assert.match(firstReview, /briefing\/decision-map\.md/);
+  assert.match(firstReview, /actual delivered output/);
+  assert.match(firstReview, /counterexample/);
+  assert.doesNotMatch(firstReview, /[Ii]nspect the current accepted draft/);
+  for (const prompt of f.sessions[1]!.messages) assert.doesNotMatch(prompt, /Unverified earlier conclusion/);
   assert.doesNotMatch(firstReview, /Current phase: (?:investigate|compose)/);
-  assert.match(f.sessions[1]!.messages[1]!, /Continue the current review turn/);
+  assert.match(f.sessions[1]!.messages[1]!, /Now inspect the current accepted draft/);
+  assert.match(f.sessions[1]!.messages[2]!, /Continue the current review turn/);
   assert.equal(result.sessionId, f.sessions[1]!.sessionId);
   assert.equal(f.sessions[0]!.cancelled, 1);
   assert.equal(f.sessions[1]!.cancelled, 0);
   const completion = f.events.find(event => event.type === 'comparison.resources_completed')!;
-  assert.equal(completion.payload.modelRequests, 4);
-  assert.equal(completion.payload.usageReports, 4);
+  assert.equal(completion.payload.modelRequests, 5);
+  assert.equal(completion.payload.usageReports, 5);
   assert.equal(f.events.filter(event => event.type === 'agent.session_started').length, 2);
   await agent.release(context.attemptId);
   assert.equal(f.sessions[1]!.cancelled, 1);
@@ -136,6 +141,105 @@ test('cancel targets the active fresh review session', async () => {
   assert.equal(result.status, 'cancelled');
   assert.equal(result.sessionId, f.sessions[1]!.sessionId);
   assert.equal(f.sessions[1]!.cancelled, 1);
+  assert.equal(f.sessions[1]!.messages.length, 1);
+  assert.match(f.sessions[1]!.messages[0]!, /independent source pass/);
+});
+
+test('source review reads originals before draft and rejects all three draft tools until the next pass', async () => {
+  const execution: string[] = [];
+  const denied: string[] = [];
+  const f = fixture(async (session, prompt, input, signal) => {
+    if (session === 0) return 'done';
+    if (prompt.includes('This is the independent source pass')) {
+      for (const path of ['briefing/task/initial-input.txt', 'finals/original.txt', 'candidate/original.txt']) {
+        await input.tools.find(tool => tool.name === 'read')!.execute({ path }, signal);
+      }
+      for (const name of ['inspect_comparison_draft', 'submit_comparison_draft', 'preview_report']) {
+        denied.push((await input.tools.find(tool => tool.name === name)!.execute({}, signal)).content);
+      }
+    } else {
+      for (const name of ['inspect_comparison_draft', 'submit_comparison_draft', 'preview_report']) {
+        await input.tools.find(tool => tool.name === name)!.execute({}, signal);
+      }
+    }
+    return 'done';
+  });
+  const tools = ['read', 'inspect_comparison_draft', 'submit_comparison_draft', 'preview_report'].map(name => ({
+    name, description: name, parameters: Type.Object({}), execute: async (params: unknown) => {
+      execution.push(name === 'read' ? `read:${(params as { path: string }).path}` : name);
+      return { content: name === 'submit_comparison_draft' ? 'status=accepted' : 'available' };
+    },
+  }));
+  const agent = new ComparisonAgent({ host: f.host, timeoutMs: 0, maxRepairAttempts: 0 });
+  assert.equal((await agent.compare(context, tools, f.audit, undefined, {
+    enforcePhaseBoundaries: true, getSubmittedResult: async () => value,
+  })).status, 'completed');
+  assert.deepEqual(execution, ['read:briefing/task/initial-input.txt', 'read:finals/original.txt', 'read:candidate/original.txt',
+    'inspect_comparison_draft', 'submit_comparison_draft', 'preview_report']);
+  assert.equal(denied.length, 3);
+  for (const content of denied) assert.equal((JSON.parse(content) as { code: string }).code, 'source_review_not_ready');
+  assert.equal(f.sessions.length, 2);
+  assert.equal(f.sessions[1]!.messages.length, 2);
+  const reviews = f.events.filter(event => event.type === 'comparison.phase_completed' && event.payload.phase === 'review');
+  assert.equal(reviews.length, 2);
+  assert.deepEqual(reviews.map(event => (event.payload.resources as { modelRequests: number }).modelRequests), [3, 4]);
+  await agent.release(context.attemptId);
+});
+
+test('source-pass provider failure never enters draft audit or reads a submitted result', async () => {
+  const f = fixture(async (session) => { if (session === 1) throw new Error('Source audit failed'); return 'done'; });
+  const agent = new ComparisonAgent({ host: f.host, timeoutMs: 0, maxRepairAttempts: 0 });
+  let submittedChecks = 0;
+  const result = await agent.compare(context, [], f.audit, undefined, {
+    getSubmittedResult: async () => { submittedChecks++; return value; },
+  });
+  assert.equal(result.status, 'failed');
+  assert.equal(submittedChecks, 0);
+  assert.equal(f.sessions[1]!.messages.length, 1);
+  assert.match(f.sessions[1]!.messages[0]!, /independent source pass/);
+});
+
+test('source and draft passes share the same request and tool limits', async () => {
+  const f = fixture();
+  const agent = new ComparisonAgent({ host: f.host, timeoutMs: 0, maxRepairAttempts: 0, resources: { maxModelRequests: 3 } });
+  const result = await agent.compare(context, [], f.audit, undefined, { getSubmittedResult: async () => value });
+  assert.equal(result.status, 'failed');
+  if (result.status === 'failed') assert.match(result.failure.message, /maxModelRequests/);
+  assert.equal(f.completedRequests(), 3);
+  assert.equal(f.events.find(event => event.type === 'comparison.resources_completed')!.payload.modelRequests, 3);
+  const toolFixture = fixture(async (_session, _prompt, input, signal) => { await input.tools[0]!.execute({}, signal); return 'done'; });
+  let reads = 0;
+  const toolAgent = new ComparisonAgent({ host: toolFixture.host, timeoutMs: 0, maxRepairAttempts: 0, resources: { maxToolCalls: 3 } });
+  const toolResult = await toolAgent.compare(context, [{ name: 'write', description: 'write', parameters: Type.Object({}),
+    execute: async () => { reads++; return { content: 'source' }; } }], toolFixture.audit, undefined, { getSubmittedResult: async () => value });
+  assert.equal(toolResult.status, 'failed');
+  assert.equal(reads, 3);
+  assert.equal(toolFixture.events.find(event => event.type === 'comparison.resources_completed')!.payload.toolCalls, 4);
+});
+
+test('a source-pass time limit asks for a scoped return before the Host enables draft audit', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1000 });
+  let feedback = '';
+  let reads = 0;
+  const f = fixture(async (session, prompt, input, signal) => {
+    if (session === 1 && prompt.includes('This is the independent source pass')) {
+      t.mock.timers.tick(10);
+      feedback = (await input.tools[0]!.execute({}, signal)).content;
+    }
+    return 'done';
+  });
+  const agent = new ComparisonAgent({ host: f.host, timeoutMs: 0, maxRepairAttempts: 0, resources: { investigationMs: 10 } });
+  const result = await agent.compare(context, [{ name: 'read', description: 'read', parameters: Type.Object({}),
+    execute: async () => { reads++; return { content: 'source' }; } }], f.audit, undefined, { getSubmittedResult: async () => value });
+  assert.equal(result.status, 'completed');
+  assert.equal(reads, 0);
+  const receipt = JSON.parse(feedback) as { status: string; reason: string; message: string };
+  assert.equal(receipt.status, 'source_review_limit');
+  assert.equal(receipt.reason, 'reviewMs');
+  assert.match(receipt.message, /Return your independently supported observations/);
+  assert.match(receipt.message, /Host starts draft audit next/);
+  assert.equal(f.sessions[1]!.messages.length, 2);
+  await agent.release(context.attemptId);
 });
 
 test('compose failure never creates a fresh review session and legacy remains one session', async () => {

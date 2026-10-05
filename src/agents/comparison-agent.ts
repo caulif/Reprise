@@ -161,6 +161,25 @@ function comparisonTimeout(resources: ComparisonResourceTracker, limits: Compari
   return callTimeoutMs > 0 ? Math.min(callTimeoutMs, remaining) : remaining;
 }
 
+function sourceReviewFeedback(name: string, reason?: string): { content: string } | undefined {
+  if (['inspect_comparison_draft', 'submit_comparison_draft', 'preview_report'].includes(name)) {
+    return { content: JSON.stringify({ code: 'source_review_not_ready',
+      message: 'Finish the independent source pass without opening or revising the author draft. Return your scoped observations and counterexample; the Host enables draft inspection, correction and preview next.' }) };
+  }
+  if (reason) return { content: JSON.stringify({ status: 'source_review_limit', reason,
+    message: 'Return your independently supported observations and decisive uncertainty now. The Host starts draft audit next. Do not retry blocked checks or draft inspection, submission or preview in this source pass.' }) };
+  return undefined;
+}
+
+function resourceBoundTools(tools: readonly AgentToolDefinition[], current: { sourceReview: boolean }, resources: ComparisonResourceTracker): AgentToolDefinition[] {
+  return tools.map(tool => ({ ...tool, execute: async (params: unknown, signal: AbortSignal) => {
+    const reason = resources.beforeTool(tool.name);
+    const sourceFeedback = current.sourceReview ? sourceReviewFeedback(tool.name, reason) : undefined;
+    if (sourceFeedback) return sourceFeedback;
+    return reason ? comparisonSoftLimitFeedback(reason, resources.snapshot().phase) : tool.execute(params, signal);
+  } }));
+}
+
 const COMPARISON_COMPACTION = [
   'Preserve the task success criteria, decisive findings with source references,',
   'the current catalog revision and newly registered media or evidence short refs,',
@@ -269,7 +288,7 @@ export const COMPARISON_SYSTEM_PROMPT = [
   'again, publish externally, or access credentials.',
   '',
   'The submitted-draft workflow investigates and composes in one session, then reviews in a fresh session without its earlier conversation.',
-  'Review repairs continue in that review session. The legacy direct-report workflow keeps one continuing session.',
+  'Fresh review first examines original sources independently, then audits the actual draft in that same session. Review passes and repairs share the existing attempt budget. The legacy direct-report workflow keeps one continuing session.',
   '',
   '# Workspace',
   'Entry point: INDEX.md. The catalog\'s current revision and registered references',
@@ -307,6 +326,19 @@ export const COMPARISON_SYSTEM_PROMPT = [
 export function composeComparisonSystemPrompt(locale: AgentLocale): string {
   return `${withLanguageBlock(COMPARISON_SYSTEM_PROMPT, locale, 'comparison')}\n\n${VISIBLE_PROCESS_NARRATION}`;
 }
+
+const COMPARISON_SOURCE_REVIEW_PROMPT = [
+  'This is the independent source pass of a fresh review session. Do not open the report, author work notes or saved findings yet.',
+  'Read the original task from briefing/task/initial-input.txt and observations/user-inputs/INDEX.tsv, including relevant indexed user requirements.',
+  'Use briefing/decision-map.md and the current evidence index only to locate both sealed final deliverables; navigation and self-descriptions are not findings.',
+  'Independently identify the few task-critical differences. For the strongest proposed advantage, trace the actual delivered output from its inputs through every downstream operation that changes it.',
+  'Name the observable result and its coordinate or data domain before comparing it. Local algorithm targets, matching constants, self-checks and intermediate values do not certify the final drawn, written or returned result.',
+  'Choose one plausible counterexample that could overturn that advantage or a material guarantee. Check the final output chain rather than recomputing only the intended target; use another relevant input or normalized state when needed.',
+  'Use existing source, execution or controlled rendering tools only when their outcome could change the decision. Distinguish source inference, actual execution, current Comparison checks and original runtime observations.',
+  'If a check cannot run or evidence is unavailable, narrow the supported claim and retain the unresolved question; do not turn a resource limit into proof. Prioritize the actual output chain and counterexample over CSS or metadata inventories. Reserve time and requests for draft correction, final inspection and preview.',
+  'When review time or investigation allowance is exhausted, return your independently supported assessment or uncertainty now. The Host then starts draft audit. Do not retry blocked checks or call inspect_comparison_draft, submit_comparison_draft or preview_report in this source pass.',
+  'Return a concise source-based assessment: decisive references, the attempted counterexample and its observed scope, and any remaining uncertainty. Do not compose or preview the report. The Host starts draft audit next in this same session.',
+].join('\n');
 
 export const COMPARISON_TURN_PROMPTS = {
   orientAndInvestigate: [
@@ -383,52 +415,21 @@ export const COMPARISON_TURN_PROMPTS = {
     'not only a proposed outline.',
   ].join('\n'),
   review: [
-    'Review the actual draft as a person seeing the task for the first time.',
-    'When inspect_comparison_draft is available, use it first for the current accepted Agent content and version binding; do not extract the page CSS with shell scripts.',
-    'Reconcile the report\'s stated methods with its renderCheckHistory: requested and actual capture times, source hashes and outcomes are Comparison checks, not candidate Runtime checks. A render that produced frames was performed even if motion was not proven or no images were delivered to this session. Describe unavailable visual inspection separately; do not claim no render occurred.',
-    'If recorded samples use equal timestamps but different source periods, disclose that those captures are not matched phases, even when the final conclusion relies on source analysis instead. Distinguish captured evidence from the method actually supporting the conclusion.',
-    'Audit the claims actually present against the task and decisive sources. Open additional history only for a specific claim or counterexample that could change the conclusion; do not inventory unrelated metadata.',
-    'Also check the decisive sources for a task-critical defect or counterexample the draft omitted; a short or structurally valid draft is not proof of completeness.',
-    'Check the declared decisionShape against the actual task differences. Do not split one contrast into several by counting its evidence, consequences or repeated descriptions; correct an inflated multiple_differences declaration before submitting the revision.',
-    'Reread the original task and decisive source excerpts as your audit baseline rather than trusting saved interpretations.',
-    'Check the headline, each decisive claim and remedy against them before inspecting layout. Remove unsupported causes or chronology; recorded source order does not establish unrecorded actions.',
-    'Check the headline, paired results and details against one another: a defect acknowledged in details must qualify any conflicting success guarantee in the main conclusion.',
-    'For geometry or motion, derive the actual drawn positions from the full transform chain, not an ideal target variable or an assertion comparing that target to itself.',
-    'A sealed final remains final without an edit-before snapshot. Do not manufacture an initial-file hypothesis to weaken the outcome comparison.',
-    'Audit the details with the same evidence rules as the main text; folding cannot excuse unsupported precision, aesthetics or causal claims.',
-    'After your last accepted revision, call inspect_comparison_draft again and read the actual final headline, main text, every details heading and limitations. Check that headings match their paragraphs and that limitations do not deny facts already recorded or quoted. Your intended edit is not evidence that the submitted text changed. If you correct anything, repeat inspection on the new digest; inspection does not certify semantics.',
-    'Use preview_report and, when supported, read the rendered preview. Check that the',
-    'reader can identify the task, the two models, the decisive difference, and the',
-    'reason for the recommendation or uncertainty without reading an audit trail.',
-    '',
-    'Verify that the selected evidence belongs to the correct attempts, assets load,',
-    'text is readable, Host identities and metrics are visible and unchanged, and',
-    'important caveats are not hidden. Replace implementation jargon with its user',
-    'consequence. Remove repetition and low-value process commentary. Do not mistake',
-    'the number of bullets for concision.',
-    'A simple choice normally needs 100–250 Chinese characters, with no repeated opening or closing recommendation. Use 300–600 only when more consequential differences need it.',
-    'Respect the declared 250/600 character budget, including the headline. On rejection, make one substantial shortening rather than several marginal trims; keep decision-changing uncertainty and remove repetition.',
-    'A limitation can usually be one plain sentence; put hashes, byte counts, provenance fields and',
-    'the full evidential argument in details. State each decisive result or caveat once.',
-    'Check process claims against actual before/after or execution records; a defective final file alone',
-    'does not show that no edit occurred. Remove unsupported original/unchanged implementation claims from the headline too.',
-    'Check prose about missing metrics against each Host field; do not call both sides uncollected when only one side or measure is missing.',
-    'Read the saved findings: verify the check tested the actual delivery, not a target formula or self-description.',
-    'Match every claim to its method and observed scope; compare planned sampling with actual capture times.',
-    'For derived geometry, check coordinate signs and centers against the source transform. Test another normalized phase before calling a state unique or two timelines equivalent.',
-    'When periods differ, state that equal milliseconds are different phases if this limits the comparison. A first frame or indistinguishable phase does not make all static frames indistinguishable.',
-    'For periodic output, check whole-cycle return states before claiming only the initial instant is an exception. Matched static samples can reveal changing positions or geometry; separate that observation from seeing continuous motion.',
-    'Keep the failure trigger in negative claims. A missing behavior for affected inputs does not imply failure on every input; check boundary or already-satisfied cases before saying any/all.',
-    'A blind spot in a check does not establish what the original author concluded or why an error happened. Missing check records cannot support a claim that lack of checking caused the defect.',
-    'When describing an exact text difference, compare the actual excerpts; otherwise describe the meaning change without claiming a single-character edit.',
-    'Check suggested remedies against every explicit task constraint. An inferable value or alternative feature does not replace information or behavior the user explicitly required.',
-    'Use preview layout observations to check metrics visibility and overflow; a loaded page is not a full visual review.',
-    '',
-    'Revise by calling submit_comparison_draft again, then inspect the actual revised text and preview the revised digest.',
-    'Batch supported corrections into one revision. After an accepted submission, reread that exact digest with inspect_comparison_draft, perform the text consistency check, preview and finish this turn. Do not keep resubmitting to tune an advisory character target; continue only for a material new finding or failed validation.',
-    'If rendering or image inspection is unavailable, record the specific review limitation',
-    'without inventing an observation. Your final message is not the',
-    'publication decision; the Host publishes only the validated previewed version.',
+    'Audit the report against the original requirements and actual final output chain, not the author interpretation. Inspect the accepted draft with inspect_comparison_draft when available.',
+    'Prioritize decisive claims and omitted counterexamples before layout. A local target, constant or self-check is not the delivered result; trace downstream transforms, writes or returned values in their actual domain.',
+    'Use the source pass to challenge the strongest advantage. If evidence does not support a guarantee, narrow or remove it and keep decision-changing uncertainty visible. Unknown evidence does not force a winner.',
+    'Check headline, paired results, every details heading and limitations together. A defect or unresolved question in details must qualify a conflicting success claim in the main text; headings must agree with their paragraphs.',
+    'Match each claim to its observed scope. Read actual execution payloads for process claims; missing records do not prove an action never happened, and final defects do not establish their unrecorded cause or edit history.',
+    'A sealed final remains final without an edit-before snapshot. Compare exact excerpts before describing exact edits; otherwise describe the meaning change.',
+    'Reconcile current check claims with renderCheckHistory source hashes, outcomes and actual capture times. Rendering, image delivery and seeing images are distinct; Comparison checks are not original runtime checks.',
+    'When equal timestamps sample different periods, disclose unmatched phases. Source inference and static samples have different scope; test relevant boundary and return states before claiming any, always, unique or all-cycle behavior.',
+    'Check remedies against explicit task constraints; inferred or alternative information does not replace an explicit requirement. Treat unknown usage or prices as unknown, not zero.',
+    'Keep one consequential contrast as single_difference (250 main characters); use multiple_differences (600) only for independent decision-changing contrasts. Evidence and consequences of one defect do not multiply it.',
+    'Supporting explanation is limited to 400 or 1000 characters respectively, including hidden or folded prose and excluding validated fixed quotations. Prefer no details unless they add a necessary argument, counterexample or method boundary. Omit repeated conclusions, audit inventories and Host metrics.',
+    'Batch supported changes through submit_comparison_draft. After the last accepted revision, reread the actual headline, main text and all details with inspect_comparison_draft; your intended edit is not proof the submitted text changed.',
+    'Then use preview_report to check identities, metrics visibility, readability, overflow and evidence loading. When supported and authorized, read its actual images; a loaded page alone is not a visual review.',
+    'If you correct anything, repeat final inspection and preview the revised digest. Stop after a valid inspected and previewed version; do not resubmit to tune advisory length.',
+    'If rendering or image inspection is unavailable, record the specific review limitation without inventing an observation. Structural validation, source-pass completion, inspection and preview do not certify semantic correctness.',
   ].join('\n'),
 } as const;
 
@@ -509,12 +510,9 @@ export class ComparisonAgent implements ComparisonAgentPort {
       }
       return comparisonEvidenceAllowlist(context);
     };
-    const current = { phase: 'investigate' as ComparisonPhase };
+    const current = { phase: 'investigate' as ComparisonPhase, sourceReview: false };
     const resources = new ComparisonResourceTracker(this.#resources);
-    const boundedTools = tools.map((tool) => ({ ...tool, execute: async (params: unknown, toolSignal: AbortSignal) => {
-      const reason = resources.beforeTool(tool.name);
-      return reason ? comparisonSoftLimitFeedback(reason, resources.snapshot().phase) : tool.execute(params, toolSignal);
-    } }));
+    const boundedTools = resourceBoundTools(tools, current, resources);
     const stagedTools = options?.enforcePhaseBoundaries ? phaseTools(boundedTools, current) : boundedTools;
     const phasedTools = options?.getSubmittedResult ? stagedTools.map(tool => ({ ...tool, execute: async (params: unknown, toolSignal: AbortSignal) =>
       comparisonToolFeedback(await tool.execute(params, toolSignal), resources, options.getSubmissionState?.(), tool.name) })) : stagedTools;
@@ -541,8 +539,9 @@ export class ComparisonAgent implements ComparisonAgentPort {
     };
     let session = await this.#sessionFor(attemptId, context, phasedTools, measuredAudit);
     let freshReview = false;
-    const measuredWork = async (phase: 'understand' | 'investigate' | 'compose' | 'review', promptContent: string) => {
+    const measuredWork = async (phase: 'understand' | 'investigate' | 'compose' | 'review', promptContent: string, reviewPass?: 'sources') => {
       current.phase = phase;
+      current.sourceReview = reviewPass === 'sources';
       resources.phase(phase);
       activePhase = phase;
       counts = { modelRequests: 0, toolCalls: 0, compactions: 0, previews: 0 };
@@ -557,6 +556,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
           await options.onReviewStarted?.(session.sessionId);
           freshReview = true;
         }
+        if (signal?.aborted) return { status: 'cancelled' as const, sessionId: session.sessionId };
         const timeoutMs = comparisonTimeout(resources, this.#resources, this.#timeoutMs);
         return await session.work({ promptContent, timeoutMs, ...(signal ? { signal } : {}) });
       } finally {
@@ -599,7 +599,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
   async #submittedComparison(
     context: ComparisonContext,
     options: ComparisonCompareOptions,
-    measuredWork: (phase: 'investigate' | 'compose' | 'review', prompt: string) => Promise<FreeformInvocation>,
+    measuredWork: (phase: 'investigate' | 'compose' | 'review', prompt: string, reviewPass?: 'sources') => Promise<FreeformInvocation>,
     sessionId: string,
     attemptId: string,
   ): Promise<AgentInvocation<ComparisonResult>> {
@@ -632,14 +632,18 @@ export class ComparisonAgent implements ComparisonAgentPort {
   async #reviewSubmitted(
     context: ComparisonContext,
     options: ComparisonCompareOptions,
-    work: (phase: 'review', prompt: string) => Promise<FreeformInvocation>,
+    work: (phase: 'review', prompt: string, reviewPass?: 'sources') => Promise<FreeformInvocation>,
     attemptId: string,
   ): Promise<AgentInvocation<ComparisonResult>> {
-    let prompt = [context.promptContent ?? '',
-      'This is a fresh review session. Inspect the current accepted draft with inspect_comparison_draft when available (otherwise read report.html), read the original task from briefing/task/initial-input.txt and observations/user-inputs/INDEX.tsv, then check the decisive source files for its claims.',
-      'The earlier investigation/compose conversation is not available. Do not treat work notes or saved interpretations as evidence.',
+    const sources = await work('review', [context.promptContent ?? '', COMPARISON_SOURCE_REVIEW_PROMPT].join('\n\n'), 'sources');
+    if (sources.status !== 'completed') {
+      if (sources.status === 'failed') await this.#sessions.discard(attemptId);
+      return comparisonProviderFailure(sources);
+    }
+    let prompt = [
+      'The independent source pass is complete. Continue in this same review session; its observations are still provisional and its unavailable checks do not certify success.',
+      'Now inspect the current accepted draft with inspect_comparison_draft when available (otherwise read report.html). Compare its actual claims with the original requirements and the source/output-chain observations you just made. Do not inherit author work notes or saved findings as evidence.',
       COMPARISON_TURN_PROMPTS.review,
-      ...(options.getFindingsState ? [`Saved findings are unverified semantic hypotheses and question history, not factual authority: ${options.getFindingsState()}`] : []),
     ].join('\n\n');
     const seen = new Set<string>();
     for (let repair = 0; ; repair++) {

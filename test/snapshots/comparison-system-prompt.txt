@@ -93,7 +93,7 @@ Do not modify either attempt's frozen source, perform the user's original task
 again, publish externally, or access credentials.
 
 The submitted-draft workflow investigates and composes in one session, then reviews in a fresh session without its earlier conversation.
-Review repairs continue in that review session. The legacy direct-report workflow keeps one continuing session.
+Fresh review first examines original sources independently, then audits the actual draft in that same session. Review passes and repairs share the existing attempt budget. The legacy direct-report workflow keeps one continuing session.
 
 # Workspace
 Entry point: INDEX.md. The catalog's current revision and registered references

@@ -22,13 +22,13 @@ for (const repairable of [true, false]) test(`review revision ${repairable ? 'is
       const preview = tools.find((tool) => tool.name === 'preview_report')!;
       const draft = (headline: string) => ({ status: 'completed', decisionShape: 'single_difference', category: 'Results', headline, comparisonHtml: `<p>${headline}</p>` });
       if (turns === 2) await submit.execute(draft('Draft A'), signal);
-      if (turns === 3) {
+      if (turns === 4) {
         assert.equal((JSON.parse((await preview.execute({}, signal)).content) as { status: string }).status, 'ok');
         const revised = await submit.execute(draft('Draft B'), signal);
         assert.match(revised.content, /currentPhase=review/);
         assert.doesNotMatch(revised.content, /currentPhase=compose/);
       }
-      if (turns > 3) {
+      if (turns > 4) {
         assert.match(content, /Continue the current review turn/);
         if (repairable) {
           await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
@@ -40,7 +40,7 @@ for (const repairable of [true, false]) test(`review revision ${repairable ? 'is
     }, cancel() {},
   }) }), timeoutMs: 0, maxRepairAttempts: 0 });
   const result = await startExperiment({ ...base, comparison }).result;
-  assert.equal(turns, repairable ? 4 : 5);
+  assert.equal(turns, repairable ? 5 : 6);
   assert.equal(result.comparison.result.status, repairable ? 'completed' : 'failed');
   if (repairable) assert.match(await readFile(join(result.experimentRoot, 'report.html'), 'utf8'), /Draft B/);
   else await assert.rejects(readFile(join(result.experimentRoot, 'report.html'), 'utf8'), { code: 'ENOENT' });
@@ -66,7 +66,7 @@ test('application publishes a submitted and previewed draft after an empty final
           }, signal);
           assert.match(accepted.content, /status=accepted/);
         }
-        if (turns === 3) {
+        if (turns === 4) {
           await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
           const preview = tools?.find((tool) => tool.name === 'preview_report');
           assert.ok(preview);
@@ -80,7 +80,7 @@ test('application publishes a submitted and previewed draft after an empty final
     timeoutMs: 0, maxRepairAttempts: 0,
   });
   const result = await startExperiment({ ...base, comparison }).result;
-  assert.equal(turns, 3);
+  assert.equal(turns, 4);
   assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result));
   assert.deepEqual(result.facts.comparisonActivity, { modelRequests: 0, toolCalls: 3, compactions: 0 });
   assert.match(await readFile(join(result.experimentRoot, 'report.html'), 'utf8'), /usable result/);
@@ -107,7 +107,7 @@ test('application refuses to publish an accepted draft without preview', async (
             comparisonHtml: '<p>One outcome differs from the other.</p>',
           }, signal)).content, /status=accepted/);
         }
-        if (turns === 3) await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
+        if (turns === 4) await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
         return '';
       }, cancel() {},
     }) }), timeoutMs: 0, maxRepairAttempts: 0,
@@ -137,7 +137,7 @@ test('a provider failure after preview does not publish the draft', async (t) =>
             comparisonHtml: '<p>One outcome differs from the other.</p>',
           }, signal)).content, /status=accepted/);
         }
-        if (turns === 3) {
+        if (turns === 4) {
           await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
           const preview = tools?.find((tool) => tool.name === 'preview_report');
           assert.ok(preview);
