@@ -52,7 +52,9 @@ Agent 区的内联 `style` 属性和原生 `dialog` / popover 浮层一律拒绝
 
 正式报告是 experiment 根部的 `report.html` 及其媒体。新流程用 `submit_comparison_draft` 接收 category、headline、comparisonHtml、可选 detailsHtml 和证据不足状态；Host 即时校验并生成完整页面。模型文件工具不能直接改写新流程的 `report.html`，自定义旧端口仍可按旧整页契约写 attempt 草稿并接受末尾发布校验。新流程仅在草稿完整校验通过、当前 catalog revision 与草稿 digest 均匹配成功 `preview_report`、审阅调用正常完成且未取消时发布；末尾自由文本为空不阻止有效版本发布，也不表示模型作过最终质量确认。`publishComparisonArtifacts` 先把被引用媒体拷到内容寻址路径（`media/<hash>.…`）并校验，再写审计 `report-model.json`（含 `formatVersion: 2` 与 `comparison` / `details` slots；旧四区 model 仍可读），最后原子替换根 `report.html`。失败或取消不得覆盖旧成功报告仍引用的资产。
 
-`inspect_comparison_draft` 为审阅返回当前已接受报告的实际 Agent 内容和版本绑定，省去整页 CSS；文件 digest、catalog 或 findings 绑定变化时不可用，无已接受草稿的旧端口也明确不可用。该读取走现有工具审计，不新增第二份权威草稿，不代替实际来源核对或 `preview_report`。审阅先核实际主张，再批量修订、预览当前 digest 并结束；篇幅反馈是建议，不要求为了字数反复提交。只有改变任务判断的限制须主文可见，常规来源、缺失编辑历史和指标方法可放详情。
+`inspect_comparison_draft` 为审阅返回当前已接受报告的实际 Agent 内容和版本绑定，省去整页 CSS；文件 digest、catalog 或 findings 绑定变化时不可用，无已接受草稿的旧端口也明确不可用。该读取走现有工具审计，不新增第二份权威草稿，不代替实际来源核对或 `preview_report`。审阅先核实际主张，再批量修订、预览当前 digest 并结束；预算以内的篇幅优化反馈是建议，不要求为了字数反复提交。只有改变任务判断的限制须主文可见，常规来源、缺失编辑历史和指标方法可放详情。
+
+新模型工具提交须声明 `decisionShape`：一个独立决定性差异为 `single_difference`（标题与主文最多 250 字符），多个独立差异为 `multiple_differences`（最多 600）；同一缺陷的证据、后果与重复描述不算多个差异。超限拒绝保留旧已接受版本和预览绑定，不发布新稿。详情不计主文字数，但不能隐藏改变判断的反证。声明是模型的分类，Host 仅验证字数，分类正确性与决定性完整性仍须语义审阅。旧直接端口及无声明草稿继续按原契约读取。
 
 默认内置路径通过 `update_comparison_findings` 保存任务标准、双方最终来源、观察方法与支持范围、反证、重要限制和判断问题。Host 校验引用归属及结构，不证明自然语言主张正确；不可变发现 artifact 和 `comparison.findings_updated` 绑定 attempt、revision、catalog revision 与 digest，工具回执沿用模型输入审计。问题历史不得静默删除，重新打开已解决问题需新依据。问题须解决或说明证据不可得才进入创作；旧自定义 Comparison 端口保留原契约。
 

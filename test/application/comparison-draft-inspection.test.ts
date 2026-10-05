@@ -44,6 +44,7 @@ test("inspection reads the latest accepted actual content without CSS and does n
   assert.equal(first.headline, submission.headline);
   assert.equal(first.category, submission.category);
   assert.equal(first.reportStatus, submission.status);
+  assert.equal(first.decisionShape, "unknown");
   assert.equal(first.comparisonHtml, submission.comparisonHtml);
   assert.equal(first.detailsHtml, submission.detailsHtml);
   assert.equal(first.draftDigest, sha256(await readFile(join(f.root, "report.html"), "utf8")));

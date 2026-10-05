@@ -140,6 +140,9 @@ export const ComparisonDraftSubmissionSchema = Type.Object({
   headline: Type.String({ minLength: 1, maxLength: 280 }),
   comparisonHtml: Type.String({ minLength: 1, maxLength: 262_144 }),
   detailsHtml: Type.Optional(Type.String({ maxLength: 262_144 })),
+  decisionShape: Type.Optional(Type.Union([Type.Literal("single_difference"), Type.Literal("multiple_differences")], {
+    description: "Declare single_difference for one decision-changing difference; multiple_differences only for independent differences changing the choice, not separate evidence, consequences or caveats of one difference. This is a model declaration, not Host semantic validation.",
+  })),
 });
 export type ComparisonDraftSubmission = Static<typeof ComparisonDraftSubmissionSchema>;
 const ComparisonOutputSchema = Type.Object({

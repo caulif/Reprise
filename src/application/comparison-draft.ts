@@ -18,6 +18,10 @@ import type { ComparisonDiscovery } from "./comparison-discovery.js";
 import type { ComparisonDraftBinding } from "../core/comparison-discovery-schema.js";
 
 type HtmlNode = { nodeName?: string; value?: string; attrs?: { name: string; value: string }[]; childNodes?: HtmlNode[]; content?: HtmlNode };
+const DraftToolSchema = Type.Object({
+  ...ComparisonDraftSubmissionSchema.properties,
+  decisionShape: Type.Required(Type.Pick(ComparisonDraftSubmissionSchema, ["decisionShape"])).properties.decisionShape,
+});
 
 function citedEvidence(html: string): string[] {
   const refs = new Set<string>();
@@ -39,7 +43,7 @@ export class ComparisonDraft {
   readonly #deliveredImages: ReadonlySet<string>;
   readonly #discovery: ComparisonDiscovery | undefined;
   readonly #persistAccepted: ((binding: ComparisonDraftBinding) => Promise<void>) | undefined;
-  #accepted: { digest: string; revision: number; discoveryRevision?: number; result: ComparisonResult } | undefined;
+  #accepted: { digest: string; revision: number; discoveryRevision?: number; result: ComparisonResult; decisionShape?: ComparisonDraftSubmission["decisionShape"] } | undefined;
   #previewed: { digest: string; revision: number } | undefined;
   #previewFailure: { digest: string; revision: number; status: string; message?: string } | undefined;
   #lastRejection: string | undefined;
@@ -67,10 +71,10 @@ export class ComparisonDraft {
   tool(): AgentToolDefinition {
     return {
       name: "submit_comparison_draft",
-      description: "Submit only the report's category, headline, comparison HTML and optional details. Host validates evidence and builds the complete page. Call again to revise a rejected draft.",
-      parameters: ComparisonDraftSubmissionSchema,
+      description: "Submit the report content and declare its decision shape. Main headline plus visible comparison is limited to 250 characters for one decision-changing difference or 600 for multiple independent differences. Evidence, consequences and caveats of one difference do not make it multiple. Keep decisive counterevidence visible; move routine methods to details. Host checks references, structure and length, not semantic classification.",
+      parameters: DraftToolSchema,
       execute: async (params, signal) => {
-        if (!Value.Check(ComparisonDraftSubmissionSchema, params)) {
+        if (!Value.Check(DraftToolSchema, params)) {
           this.#lastRejection = 'Draft fields failed schema validation.';
           return { content: "status=rejected\ncode=invalid_submission\nmessage=Draft fields failed schema validation." };
         }
@@ -104,6 +108,7 @@ export class ComparisonDraft {
         return { content: JSON.stringify({ status: "available", draftDigest: accepted.digest,
           catalogRevision: accepted.revision, ...(accepted.discoveryRevision === undefined ? {} : { findingsRevision: accepted.discoveryRevision }),
           reportStatus: accepted.result.status, category: extractInner(html, "data-agent-slot", "category"),
+          decisionShape: accepted.decisionShape ?? "unknown", decisionShapeValidation: "model_declaration_only",
           headline: model.headline, comparisonHtml: model.slots.comparison, detailsHtml: model.slots.details,
           mainTextCharacters: comparisonMainTextCharacters(html), semanticValidation: "not_performed" }) };
       },
@@ -146,21 +151,26 @@ export class ComparisonDraft {
       this.#lastRejection = `${verified.code}: ${verified.message}`;
       return `status=rejected\ncode=${verified.code}\nmessage=${verified.message}`;
     }
+    const length = comparisonMainTextCharacters(verified.html);
+    const target = draft.decisionShape === "single_difference" ? 250 : draft.decisionShape === "multiple_differences" ? 600 : undefined;
+    if (target !== undefined && length > target) {
+      this.#lastRejection = `draft_too_long: declared ${draft.decisionShape} has ${length} main characters; maximum=${target}.`;
+      return `status=rejected\ncode=draft_too_long\ndecisionShape=${draft.decisionShape}\nmainTextCharacters=${length}\nmaximum=${target}\nmessage=Shorten repeated conclusions and move routine methods to details in one batch revision. Preserve decisive evidence, counterevidence and limitations that change the choice. Do not relabel one difference as multiple to bypass the limit; then submit and preview.`;
+    }
     await writeAtomic(join(this.#attemptRoot, "report.html"), verified.html);
     const digest = sha256(verified.html);
-    const changed = this.#accepted?.digest !== digest || this.#accepted.revision !== catalog.revision || this.#accepted.discoveryRevision !== discovery?.revision;
+    const changed = this.#accepted?.digest !== digest || this.#accepted.revision !== catalog.revision || this.#accepted.discoveryRevision !== discovery?.revision || this.#accepted.decisionShape !== draft.decisionShape;
     if (changed && discovery && this.#persistAccepted) await this.#persistAccepted({ draftDigest: digest, catalogRevision: catalog.revision, findingsRevision: discovery.revision });
     if (changed) {
       this.#previewed = undefined;
       this.#previewFailure = undefined;
     }
-    this.#accepted = { digest, revision: catalog.revision, ...(discovery ? { discoveryRevision: discovery.revision } : {}), result };
+    this.#accepted = { digest, revision: catalog.revision, ...(discovery ? { discoveryRevision: discovery.revision } : {}), result, ...(draft.decisionShape ? { decisionShape: draft.decisionShape } : {}) };
     this.#lastRejection = undefined;
-    const length = comparisonMainTextCharacters(verified.html);
     const feedback = length > 600
       ? "Shorten repeated conclusions and move methods to details in one batch revision; preserve decisive evidence and limitations, then preview. This is advisory, not a word-limit gate."
       : "Length below 600 (advisory). Preview the accepted draft rather than tuning its length repeatedly.";
-    return `status=accepted\ndraftDigest=${digest}\nrevision=${catalog.revision}\nmainTextCharacters=${length}\nreadabilityFeedback=${feedback}\nimportantLimitations=${JSON.stringify(discovery?.submission.importantLimitations ?? [])}\nSaved limitations are unverified semantic hypotheses: keep only those changing the task decision in the main comparison; routine provenance, missing edit history, metrics and synthetic methodology may go in details.\nOnce accepted, preview this current digest and finish; reopen only for material evidence or failed validation, not repeated length tuning.`;
+    return `status=accepted\ndraftDigest=${digest}\nrevision=${catalog.revision}\ndecisionShape=${draft.decisionShape ?? "unknown"}\nmainTextMaximum=${target ?? "legacy_unbounded"}\ndecisionShapeValidation=model_declaration_only\nmainTextCharacters=${length}\nreadabilityFeedback=${feedback}\nimportantLimitations=${JSON.stringify(discovery?.submission.importantLimitations ?? [])}\nSaved limitations are unverified semantic hypotheses: keep only those changing the task decision in the main comparison; routine provenance, missing edit history, metrics and synthetic methodology may go in details.\nOnce accepted, preview this current digest and finish; reopen only for material evidence or failed validation, not repeated length tuning.`;
   }
 
   submissionState(): string {

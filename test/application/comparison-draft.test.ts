@@ -63,7 +63,7 @@ test("Host draft submission validates content and publishes only the previewed d
   const draft = new ComparisonDraft({ attemptRoot: root, task: "Compare outputs.", facts, locale: "en", catalog, deliveredImages: new Set() });
   const tool = draft.tool();
   const signal = new AbortController().signal;
-  const base = { status: "completed", category: "Results", headline: "The candidate differs.", comparisonHtml: "<p>A concrete difference.</p>" };
+  const base = { status: "completed", decisionShape: "single_difference", category: "Results", headline: "The candidate differs.", comparisonHtml: "<p>A concrete difference.</p>" };
 
   const unsafe = await tool.execute({ ...base, comparisonHtml: "<script>alert(1)</script>" }, signal);
   assert.match(unsafe.content, /status=rejected/);
