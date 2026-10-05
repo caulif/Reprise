@@ -44,7 +44,8 @@ for (const repairable of [true, false]) test(`review revision ${repairable ? 'is
       await request(content, allowedToolNames);
       const submit = tools.find((tool) => tool.name === 'submit_comparison_draft')!;
       const preview = tools.find((tool) => tool.name === 'preview_report')!;
-      const draft = (headline: string) => ({ status: 'completed', decisionShape: 'single_difference', category: 'Results', headline, comparisonHtml: `<p>${headline}</p>` });
+      const draft = (headline: string) => ({ status: 'completed', decisionShape: 'single_difference', category: 'Results', headline,
+        decisionSummary: 'The result is useful for the requested task.', decisionBoundary: '', comparisonHtml: `<p>${headline}</p>` });
       if (turns === 2) await submit.execute(draft('Draft A'), signal);
       if (content.includes('This is the actual draft inspection checkpoint')) {
         checkpointVisits++;
@@ -97,6 +98,7 @@ for (const recordActual of [true, false]) test(`application ${recordActual ? 'pu
           assert.ok(submit);
           const accepted = await submit.execute({
             status: 'completed', decisionShape: 'single_difference', category: 'Results', headline: 'The candidate produced a usable result.',
+            decisionSummary: 'The result is useful for the requested task.', decisionBoundary: '',
             comparisonHtml: '<p>The candidate produced a usable result from the same starting task.</p>',
           }, signal);
           assert.match(accepted.content, /status=accepted/);
@@ -170,6 +172,7 @@ test('application refuses to publish an accepted draft without preview', async (
           assert.ok(submit);
           assert.match((await submit.execute({
             status: 'completed', decisionShape: 'single_difference', category: 'Results', headline: 'A difference.',
+            decisionSummary: 'One outcome better meets the requested task.', decisionBoundary: '',
             comparisonHtml: '<p>One outcome differs from the other.</p>',
           }, signal)).content, /status=accepted/);
         }
@@ -208,6 +211,7 @@ test('a provider failure after preview does not publish the draft', async (t) =>
           assert.ok(submit);
           assert.match((await submit.execute({
             status: 'completed', decisionShape: 'single_difference', category: 'Results', headline: 'A difference.',
+            decisionSummary: 'One outcome better meets the requested task.', decisionBoundary: '',
             comparisonHtml: '<p>One outcome differs from the other.</p>',
           }, signal)).content, /status=accepted/);
         }

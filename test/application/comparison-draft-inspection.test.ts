@@ -60,6 +60,23 @@ async function preview(f: Awaited<ReturnType<typeof fixture>>) {
     catalogRevision: f.catalog.snapshot().revision, outputRoot: f.root });
 }
 
+test("saved important limitations require a visible decision boundary only for the new submission contract", async t => {
+  const f = await fixture(t, true);
+  await f.discovery!.update(findings);
+  assert.match(await f.draft.submit(submission), /status=accepted/);
+  const current = await readFile(join(f.root, 'report.html'), 'utf8');
+  for (const decisionBoundary of ['', ' \n\t']) {
+    const rejected = await f.draft.submit({ ...submission, decisionSummary: 'Cannot establish final usability.', decisionBoundary });
+    assert.match(rejected, /code=decision_boundary_missing/);
+    assert.match(rejected, /Missing final source/);
+    assert.match(rejected, /unverified model-authored repair material/);
+    assert.equal(await readFile(join(f.root, 'report.html'), 'utf8'), current);
+  }
+  assert.match(await f.draft.submit({ ...submission, decisionSummary: 'Cannot establish final usability.',
+    decisionBoundary: 'Final delivery remains unverified.' }), /status=accepted/);
+  assert.match(String((await f.inspect()).comparisonHtml), /Final delivery remains unverified/);
+});
+
 test("fresh review clears compose inspection and requires actual final text delivery after every correction", async t => {
   const f = await fixture(t);
   await f.draft.submit(submission);

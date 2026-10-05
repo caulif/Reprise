@@ -138,6 +138,8 @@ export const ComparisonDraftSubmissionSchema = Type.Object({
   status: Type.Union([Type.Literal("completed"), Type.Literal("insufficient_evidence")]),
   category: Type.String({ minLength: 1, maxLength: 200 }),
   headline: Type.String({ minLength: 1, maxLength: 280 }),
+  decisionSummary: Type.Optional(Type.String({ minLength: 1, maxLength: 1200, pattern: "\\S", description: "Plain text: this task's actual usability and user tradeoff, a conditional choice or inability to judge. Preserve task-critical branches, not only the strongest technical advantage." })),
+  decisionBoundary: Type.Optional(Type.String({ maxLength: 1200, description: "Plain text: important unknowns or counterevidence that could change this task decision, not a method inventory. Empty only when no such important boundary has been identified; that does not certify complete verification." })),
   comparisonHtml: Type.String({ minLength: 1, maxLength: 262_144 }),
   detailsHtml: Type.Optional(Type.String({ maxLength: 262_144 })),
   decisionShape: Type.Optional(Type.Union([Type.Literal("single_difference"), Type.Literal("multiple_differences")], {

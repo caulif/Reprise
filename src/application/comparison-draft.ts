@@ -50,7 +50,14 @@ function completeInspectionMaterial(result: AgentToolResult, expected: Inspectio
 const DraftToolSchema = Type.Object({
   ...ComparisonDraftSubmissionSchema.properties,
   decisionShape: Type.Required(Type.Pick(ComparisonDraftSubmissionSchema, ["decisionShape"])).properties.decisionShape,
+  ...Type.Required(Type.Pick(ComparisonDraftSubmissionSchema, ["decisionSummary", "decisionBoundary"])).properties,
 });
+
+function decisionTextHtml(draft: ComparisonDraftSubmission): string {
+  const paragraph = (text: string | undefined): string => text?.trim()
+    ? `<p>${text.trim().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;")}</p>` : "";
+  return `${paragraph(draft.decisionSummary)}${paragraph(draft.decisionBoundary)}${draft.comparisonHtml}`;
+}
 const RepairReadSchema = Type.Object({ path: Type.String(), offset: Type.Optional(Type.Integer({ minimum: 0 })),
   maxBytes: Type.Integer({ minimum: 1, maximum: 4096 }), format: Type.Optional(Type.Literal('text')),
 }, { additionalProperties: false });
@@ -118,7 +125,7 @@ export class ComparisonDraft {
   tool(): AgentToolDefinition {
     return {
       name: "submit_comparison_draft",
-      description: "Submit the report content and declare its decision shape. Main headline plus visible comparison is limited to 250 characters for one decision-changing difference or 600 for multiple independent differences. Supporting details are limited to 400 or 1000 characters respectively, including folded and hidden explanations; verified fixed evidence quotes are excluded. Evidence, consequences and caveats of one difference do not make it multiple. Keep decisive counterevidence visible. Host checks references, structure and length, not semantic classification.",
+      description: "Submit the report with plain-text decisionSummary describing this task's actual usability and user tradeoff, conditional choice or inability to judge. Preserve task-critical branches, not only the strongest technical advantage. Required decisionBoundary contains important unknowns or counterevidence that change the decision, not a method inventory; empty only when none identified and no saved important limitations exist. Host renders both visibly before comparisonHtml. Main headline plus all visible comparison, including these fields, is limited to 250 characters for one decision-changing difference or 600 for multiple independent differences. Supporting details are limited to 400 or 1000 characters respectively, including folded and hidden explanations; verified fixed evidence quotes are excluded. Evidence, consequences and caveats of one difference do not make it multiple. Host checks references, structure and length, not semantic correctness or coverage.",
       parameters: DraftToolSchema,
       execute: async (params, signal) => {
         if (!Value.Check(DraftToolSchema, params)) {
@@ -313,6 +320,10 @@ export class ComparisonDraft {
       return `status=rejected\ncode=findings_not_ready\nmessage=${this.#lastRejection}`;
     }
     const discovery = this.#discovery?.snapshot();
+    if (draft.decisionSummary !== undefined && discovery?.submission.importantLimitations.length && !draft.decisionBoundary?.trim()) {
+      this.#lastRejection = "decision_boundary_missing: Saved important limitations require a visible decision boundary.";
+      return `status=rejected\ncode=decision_boundary_missing\nimportantLimitations=${JSON.stringify(discovery.submission.importantLimitations)}\nmessage=These saved limitations are unverified model-authored repair material, not certified facts. Preserve those that change the task decision in decisionBoundary; do not mechanically copy the inventory or hide them only in details.`;
+    }
     const catalog = this.#catalog.snapshot();
     const result: ComparisonResult = {
       status: draft.status,
@@ -329,7 +340,7 @@ export class ComparisonDraft {
       slots: {
         category: draft.category,
         headline: draft.headline,
-        comparison: draft.comparisonHtml,
+        comparison: decisionTextHtml(draft),
         ...(draft.detailsHtml ? { details: draft.detailsHtml } : {}),
       },
       locale: this.#locale,

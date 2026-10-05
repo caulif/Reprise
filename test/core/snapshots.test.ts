@@ -38,6 +38,7 @@ test('agent system prompts match committed snapshots', async () => {
   await assertSnapshot('controller-system-prompt', `${composeControllerSystemPrompt('zh')}\n`);
   await assertSnapshot('comparison-system-prompt', `${composeComparisonSystemPrompt('zh')}\n`);
   await assertSnapshot('comparison-investigation-prompt', `${COMPARISON_TURN_PROMPTS.orientAndInvestigate}\n`);
+  await assertSnapshot('comparison-compose-prompt', `${COMPARISON_TURN_PROMPTS.compose}\n`);
   await assertSnapshot('comparison-source-review-prompt', `${COMPARISON_SOURCE_REVIEW_PROMPT}\n`);
   await assertSnapshot('comparison-draft-inspection-prompt', `${COMPARISON_DRAFT_INSPECTION_PROMPT}\n`);
   await assertSnapshot('comparison-review-prompt', `${COMPARISON_TURN_PROMPTS.review}\n`);

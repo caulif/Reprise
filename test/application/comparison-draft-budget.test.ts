@@ -18,6 +18,7 @@ const facts = {
   replay: { conditions: [], baselineEvidence: "available", candidateEvidence: "available" },
 };
 const base = { status: "completed" as const, category: "Result", headline: "判", comparisonHtml: "<p>不同</p>" };
+const liveBase = { ...base, decisionSummary: "用", decisionBoundary: "" };
 async function fixture(t: { after: (fn: () => Promise<void>) => void }) {
   const root = await mkdtemp(join(tmpdir(), "reprise-draft-budget-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -37,10 +38,35 @@ test("live tool requires decision shape while legacy direct schema remains compa
   assert.equal(inspected.decisionShapeValidation, "model_declaration_only");
 });
 
+test("live decision fields reject missing or blank summary and overlong plain text", async t => {
+  const f = await fixture(t);
+  const valid = { ...liveBase, decisionShape: "single_difference" };
+  for (const patch of [{ decisionSummary: undefined }, { decisionBoundary: undefined }, { decisionSummary: " \n\t" },
+    { decisionSummary: "x".repeat(1201) }, { decisionBoundary: "x".repeat(1201) }]) {
+    assert.match((await f.tool.execute({ ...valid, ...patch }, f.signal)).content, /invalid_submission/);
+  }
+  assert.match((await f.tool.execute(valid, f.signal)).content, /status=accepted/);
+});
+
+test("Host renders decision fields as visible escaped text counted and delivered in actual inspection", async t => {
+  const f = await fixture(t);
+  const summary = '<details><summary>Choice & usability</summary>Visible</details>';
+  const boundary = '<p hidden>Important counterexample</p>';
+  assert.match((await f.tool.execute({ ...liveBase, decisionShape: "single_difference", decisionSummary: summary, decisionBoundary: boundary }, f.signal)).content, /status=accepted/);
+  const inspected = JSON.parse((await f.draft.inspectTool().execute({}, f.signal)).content) as Record<string, unknown>;
+  assert.equal(inspected.comparisonHtml, `<p>&lt;details&gt;&lt;summary&gt;Choice &amp; usability&lt;/summary&gt;Visible&lt;/details&gt;</p><p>&lt;p hidden&gt;Important counterexample&lt;/p&gt;</p>${base.comparisonHtml}`);
+  const html = await readFile(join(f.root, "report.html"), "utf8");
+  assert.ok(comparisonVisibleMainText(html).includes(summary));
+  assert.ok(comparisonVisibleMainText(html).includes(boundary));
+  assert.equal(inspected.mainTextCharacters, comparisonMainTextCharacters(html));
+  assert.match((await f.tool.execute({ ...liveBase, decisionShape: "single_difference", decisionSummary: "用".repeat(130), decisionBoundary: "界".repeat(130) }, f.signal)).content, /draft_too_long/);
+  assert.equal(await readFile(join(f.root, "report.html"), "utf8"), html);
+});
+
 test("single and multiple declarations enforce exact visible character budgets with reverse cases", async t => {
   const f = await fixture(t);
   for (const [decisionShape, maximum] of [["single_difference", 250], ["multiple_differences", 600]] as const) {
-    const submission = { ...base, decisionShape, comparisonHtml: `<p>${"字".repeat(maximum - 2)}</p>`, detailsHtml: '<p>Supporting method.</p>' };
+    const submission = { ...liveBase, decisionShape, comparisonHtml: `<p>${"字".repeat(maximum - 4)}</p>`, detailsHtml: '<p>Supporting method.</p>' };
     const accepted = (await f.tool.execute(submission, f.signal)).content;
     assert.match(accepted, /status=accepted/);
     assert.match(accepted, new RegExp(`mainTextCharacters=${maximum}(?:\\n|$)`));
@@ -48,7 +74,7 @@ test("single and multiple declarations enforce exact visible character budgets w
     const inspected = JSON.parse((await f.draft.inspectTool().execute({}, f.signal)).content) as Record<string, unknown>;
     assert.equal(inspected.decisionShape, decisionShape);
     assert.equal(inspected.mainTextCharacters, maximum);
-    const rejected = (await f.tool.execute({ ...submission, comparisonHtml: `<p>${"字".repeat(maximum - 1)}</p>` }, f.signal)).content;
+    const rejected = (await f.tool.execute({ ...submission, comparisonHtml: `<p>${"字".repeat(maximum - 3)}</p>` }, f.signal)).content;
     assert.match(rejected, /code=draft_too_long/);
     assert.match(rejected, new RegExp(`maximum=${maximum}`));
     assert.match(rejected, /Do not relabel one difference as multiple/);
@@ -57,26 +83,26 @@ test("single and multiple declarations enforce exact visible character budgets w
 
 test("over-budget revision preserves accepted bytes and preview; changing declaration requires a new preview", async t => {
   const f = await fixture(t);
-  await f.tool.execute({ ...base, decisionShape: "single_difference" }, f.signal);
+  await f.tool.execute({ ...liveBase, decisionShape: "single_difference" }, f.signal);
   const html = await readFile(join(f.root, "report.html"), "utf8");
   const digest = sha256(html);
   const preview = { htmlPath: "preview.html", html, draftDigest: digest, preparedDigest: digest, dependencyDigest: digest, catalogRevision: f.catalog.snapshot().revision, outputRoot: f.root };
   f.draft.recordPreview(preview);
   assert.ok(await f.draft.completedResult());
-  assert.match((await f.tool.execute({ ...base, decisionShape: "single_difference", comparisonHtml: `<p>${"字".repeat(249)}</p>` }, f.signal)).content, /draft_too_long/);
+  assert.match((await f.tool.execute({ ...liveBase, decisionShape: "single_difference", comparisonHtml: `<p>${"字".repeat(249)}</p>` }, f.signal)).content, /draft_too_long/);
   assert.equal(await readFile(join(f.root, "report.html"), "utf8"), html);
   assert.ok(await f.draft.completedResult());
   const inspected = JSON.parse((await f.draft.inspectTool().execute({}, f.signal)).content) as Record<string, unknown>;
   assert.equal(inspected.draftDigest, digest);
   assert.equal(inspected.decisionShape, "single_difference");
-  await f.tool.execute({ ...base, decisionShape: "multiple_differences" }, f.signal);
+  await f.tool.execute({ ...liveBase, decisionShape: "multiple_differences" }, f.signal);
   assert.equal(await f.draft.completedResult(), undefined);
 });
 
 test("details budgets count folded explanations and reject without replacing inspected accepted bindings", async t => {
   const f = await fixture(t);
   for (const [decisionShape, maximum] of [["single_difference", 400], ["multiple_differences", 1000]] as const) {
-    const submission = { ...base, decisionShape, detailsHtml: `<p hidden>${"字".repeat(maximum)}</p>` };
+    const submission = { ...liveBase, decisionShape, detailsHtml: `<p hidden>${"字".repeat(maximum)}</p>` };
     assert.match(await f.draft.submit(submission), /status=accepted/);
     f.draft.beginReview();
     const inspectTool = f.draft.inspectTool();
@@ -97,11 +123,11 @@ test("details budgets count folded explanations and reject without replacing ins
 
 test("length rejection provides the same Unicode-visible text as the DOM counter without changing the accepted preview", async t => {
   const f = await fixture(t);
-  await f.tool.execute({ ...base, decisionShape: "single_difference" }, f.signal);
+  await f.tool.execute({ ...liveBase, decisionShape: "single_difference" }, f.signal);
   const html = await readFile(join(f.root, "report.html"), "utf8");
   const digest = sha256(html);
   f.draft.recordPreview({ htmlPath: "preview.html", html, draftDigest: digest, preparedDigest: digest, dependencyDigest: digest, catalogRevision: f.catalog.snapshot().revision, outputRoot: f.root });
-  const rejected = (await f.tool.execute({ ...base, decisionShape: "single_difference", comparisonHtml: `<p>${"🛞字".repeat(125)}</p><details><summary>方法</summary>折叠正文不计数</details>` }, f.signal)).content;
+  const rejected = (await f.tool.execute({ ...liveBase, decisionShape: "single_difference", comparisonHtml: `<p>${"🛞字".repeat(125)}</p><details><summary>方法</summary>折叠正文不计数</details>` }, f.signal)).content;
   const line = rejected.split("\n").find(line => line.startsWith("visibleMainText="));
   assert.ok(line);
   const text = JSON.parse(line.slice("visibleMainText=".length)) as string;

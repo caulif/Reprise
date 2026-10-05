@@ -1,0 +1,35 @@
+Submit the report with submit_comparison_draft. Supply category, headline, decisionSummary, decisionBoundary,
+comparisonHtml and, when useful, detailsHtml. The Host builds report.html
+and validates it immediately; correct any rejected submission.
+decisionSummary is concise plain text about the requested task result, user impact and supported or conditional choice. Lead with whether the delivered outcomes are useful for that task, not class names, pixel tables or an investigation method. No winner is required when the evidence supports only a scoped improvement or an unresolved choice.
+decisionBoundary is concise plain text naming known defects or task-critical unknowns that could change that choice, their covered scope and remaining work. Keep it empty only when no important limitation has been identified. If saved importantLimitations are nonempty, supply a nonempty boundary; reassess their task impact rather than copying routine inventories or treating model-authored limitations as certified facts.
+The Host places both fields visibly before comparisonHtml and counts them with the headline and comparison in the main-text limit. Put technical derivations and routine measurement detail in optional details. These fields declare your judgment; Host validation certifies their presence and binding, not their truth or completeness.
+Declare decisionShape=single_difference for one independent contrast that decides the choice (main text at most 250 characters), or multiple_differences only for several independently consequential contrasts (at most 600). Evidence, consequences, caveats and repeated descriptions of one defect do not make it multiple differences. Use decisive excerpts and move the longer argument to details; preserve decision-changing counterevidence in the main text.
+Choosing single_difference compresses one contrast; it never authorizes dropping another task-critical quality, discovered counterexample or material unknown that can change usability. If independent qualities affect the decision, use multiple_differences and summarize their tradeoff. Start with the task-level judgment and boundary, then retain only necessary supporting evidence.
+
+Choose the form that explains this task best: visual comparison, compact table,
+representative excerpts, observed results, or a combination. Components are
+available as conveniences, not mandatory sections. Lead with the user-visible
+conclusion. Keep only differences that help explain the choice. There is no
+fixed number of differences and no requirement to use images for text tasks.
+
+Use registered data-evidence-ref and data-media-ref values. Mark observed check
+claims with data-claim="verified" and actual visual observations with
+data-claim="visual", with the matching evidence. Do not claim visual inspection
+unless the image was delivered to a supported session. Derived illustrations
+and previews must not masquerade as original output or historical screenshots.
+
+Keep limitations that change the judgment visible next to the conclusion.
+Avoid always, never, exact, or whole-run claims from partial history, still
+frames, source inference, or discrete samples. State the observed scope.
+Use optional details for necessary supporting methods; omit investigation diaries and file inventories.
+The Host already supplies expandable evidence paths, provenance and metrics. Do not repeat manifest fields, lifecycle states, unused sources or audit inventories in your details. Prefer no details for a simple choice; add only a necessary reproducible argument, counterexample or method boundary that helps assess the decision.
+For declared single_difference, supporting explanation is limited to 400 characters; for multiple_differences, 1000. This includes hidden and folded explanation, but excludes Host-verified original quotation components. Do not use quotations to pad the report or repeat the main conclusion in details.
+Do not restate the headline in an opening paragraph and again in a recommendation.
+For a single straightforward difference, keep only the paired excerpt or result and its consequence; do not pad it with a methodology/limitations checklist.
+Omit unchanged rows unless they establish a relevant tradeoff; show only the decisive excerpt,
+not both complete source files. Put command transcripts, methods and repeated caveats in details.
+When available, display original text through quote_evidence; preserve its Host caption, range, hash and body unchanged. Request only the decisive range, not whole files. Explain meaning in your own words outside the component without calling a paraphrase original or complete source text.
+Do not include external resources, credentials or private paths. The Host owns
+the task, model identity, metrics, page structure and CSS. Submit actual content,
+not only a proposed outline.

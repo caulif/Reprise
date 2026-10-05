@@ -60,6 +60,8 @@ Agent 区的内联 `style` 属性和原生 `dialog` / popover 浮层一律拒绝
 
 新模型工具提交须声明 `decisionShape`：一个独立决定性差异为 `single_difference`（标题与主文最多 250 字符），多个独立差异为 `multiple_differences`（最多 600）；同一缺陷的证据、后果与重复描述不算多个差异。超限拒绝保留旧已接受版本和预览绑定，不发布新稿。详情不计主文字数，但不能隐藏改变判断的反证。声明是模型的分类，Host 仅验证字数，分类正确性与决定性完整性仍须语义审阅。旧直接端口及无声明草稿继续按原契约读取。
 
+生产提交工具还要求纯文本 `decisionSummary` 与 `decisionBoundary`：前者表达本次任务的实际可用性及用户取舍，后者表达改变判断的重要未知或反例。已有 findings 重要限制时不能交空边界；没有已识别重要限制时允许为空，不自动生成结论。Host 转义后将两者前置到普通比较主文，复用总篇幅、真实 inspection、digest 与 preview 约束，不另存新的报告字段。字段与可见性检查不能认证判断、覆盖完整性或自然语言真实；技术测量不替代任务级结论，压缩不得删去另一个改变可用性的关键维度。见[决策摘要契约](../decisions/accepted/2026-10-06-comparison-decision-summary.md)。
+
 `render_artifact` 的实际返回附 `renderedCheck`：来源/hash、结果、请求采样时间、实际帧时间/hash 与 viewport；同 PNG、登记失败也保留已发生的渲染事实，不含物理 PNG 路径，不证明视觉查看。该摘要进入原有工具结果审计，可从日志复原。生产 attempt 保留最近 24 条结果及遗漏数供 `inspect_comparison_draft` 在新 Session 读取；同进程历史不是第二份持久化权威，恢复后不可由空列表推断没有检查。摘要明确属于 Comparison 的检查，不能冒作候选 Runtime 检查；当前 Session 图片交付单独从实际交付集合投影，换 Session 不能继承权限。
 
 可选 `geometryQueries` 在每个采样中观测最多 8 个唯一 selector 查询的 SVG line/path 起终点、circle/ellipse 中心/半径点或 DOM bounds。Host 固定采集器在独立 execution world 中运行，局部 SVG 点经实际 `getScreenCTM` 转为 `viewport_css_pixels`；缺失、歧义、无效 selector、不支持及不可测量均明确返回。外部结果经 core schema、16 KiB UTF-8 上限、身份/顺序/时间与点位映射检查。`geometrySample` 随工具正文与 `renderedCheck` 进入原审计，包含独立观测窗口，随后才采 PNG，不能宣称严格同瞬间。数值不证明元素语义、无遮挡、美观或整个动画正确，也不授予图片查看权限；旧调用不带查询保持原行为。见[渲染几何观测 ADR](../decisions/accepted/2026-10-05-comparison-rendered-geometry.md)。
