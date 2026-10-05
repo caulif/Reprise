@@ -64,3 +64,5 @@ Pinned Pi SDK 的流缺少 finish_reason、stop reason、finish reason 或 termi
 事实归宿：[证据与 Comparison](../../architecture/evidence-and-comparison.md)、[使用指南](../../usage.md)、[开发与验证](../../development.md)。沿用[草稿发布](2026-09-26-comparison-draft-publication.md)、[原生图片与续审](2026-09-30-comparison-native-image-pipeline.md)及[Host 重建](2026-09-23-host-rebuilt-comparison-report.md)的安全与失败保留边界；资源保护补充而非替代调查的语义停止条件。
 
 独立审阅的取消signal属于整个attempt，不能依赖当前Session缓存是否存在；cancel和进行中的release在旧Session关闭空档中仍阻止新review，初始化失败也清理活动标记。同一attempt不得并发混用Session/资源状态。新的agent.session_started清理实时图片delivery及manifest状态，新Session须重新收到generation实际图片；compaction不授予视觉权限。沿用单Session旧custom port无manifest的tool/message fallback，同Session已交付图片可累计。
+
+真实校准暴露共享 shell 保护把未装配挂载解析为空字符串、从而拒绝任何 scratch 写入的问题。禁止名单仍保护虚拟前缀，物理路径仅对实际存在的挂载匹配；不能以缺失路径匹配所有命令。工具说明直接告知当前平台的 Shell 语法与环境变量写法，并区分文件工具虚拟路径和 Shell 的物理路径。回归用例实际写入 scratch，反向验证现有挂载的虚拟/绝对路径及未装配的禁止前缀仍被拒绝。

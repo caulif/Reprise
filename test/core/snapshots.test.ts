@@ -79,5 +79,12 @@ test('comparison report shells match committed snapshots', async () => {
 });
 
 test('runtime-facing tool schemas match committed snapshots', async () => {
-  await assertSnapshot('recovery-tools', toolCatalog(workspaceTools('TMP', { allowShell: true })));
+  const tools = workspaceTools('TMP', { allowShell: true });
+  const syntax = process.platform === 'win32'
+    ? 'Commands use PowerShell syntax ($env:NAME for environment variables), not Bash.'
+    : 'Commands use POSIX shell syntax ($NAME for environment variables).';
+  assert.ok(tools.find((tool) => tool.name === 'shell_exec')?.description.includes(syntax));
+  await assertSnapshot('recovery-tools', toolCatalog(tools.map((tool) => ({
+    ...tool, description: tool.description.replace(syntax, '<host shell syntax>'),
+  }))));
 });

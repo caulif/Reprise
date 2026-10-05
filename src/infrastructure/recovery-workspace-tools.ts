@@ -659,7 +659,8 @@ function assertShellDoesNotMutateReadonlyMount(ctx: RecoveryToolContext, command
     return;
   }
   for (const prefix of prefixes) {
-    if (command.includes(prefix) || command.includes(ctx.mounts[prefix] ?? "")) {
+    const mount = ctx.mounts[prefix];
+    if (command.includes(prefix) || (mount && command.includes(mount))) {
       throw new Error(
         "write_denied: shell_exec must not mutate a read-only mount. Keep source inspection and work-copy mutation in separate shell calls; use REPRISE_SOURCE_MOUNT for read-only source access, not a source/ directory under the work copy.",
       );
@@ -711,10 +712,13 @@ type ResolvedWorkspacePath = {
 };
 
 function shellExecDescription(unrestrictedRead: boolean | undefined): string {
+  const syntax = process.platform === "win32"
+    ? "Commands use PowerShell syntax ($env:NAME for environment variables), not Bash."
+    : "Commands use POSIX shell syntax ($NAME for environment variables).";
   if (unrestrictedRead) {
-    return "Run one shell command with cwd already set to the isolated replica; use ./<path> for replica files, not project/<path>. Briefing and notes paths belong to the file-tool workspace, not shell cwd. The Host selects PowerShell or a POSIX shell. Reads may use any host-readable path; writes outside the replica are external, unobserved, and not Host-controlled. Network is open; credentials and global configuration are not provided. The command text is checked for sensitive file names.";
+    return `Run one shell command with cwd already set to the isolated replica; use ./<path> for replica files, not project/<path>. Briefing and notes paths belong to the file-tool workspace, not shell cwd. ${syntax} Reads may use any host-readable path; writes outside the replica are external, unobserved, and not Host-controlled. Network is open; credentials and global configuration are not provided. The command text is checked for sensitive file names.`;
   }
-  return "Run one shell command with cwd fixed to the writable copy; the Host selects PowerShell or a POSIX shell. For read-only source access use the REPRISE_SOURCE_MOUNT environment variable; source/ is a file-tool virtual prefix, not a directory under the work copy. Keep source inspection and work-copy mutation in separate shell calls. Network is open; credentials and global configuration are not provided. The command text is checked for sensitive file names. Read-only mounts cannot be written.";
+  return `Run one shell command with cwd fixed to the writable copy. ${syntax} For read-only source access use the documented REPRISE_* environment variables; source/ and other mount prefixes are file-tool virtual paths, not directories under shell cwd. Keep source inspection and work-copy mutation in separate shell calls. Network is open; credentials and global configuration are not provided. The command text is checked for sensitive file names. Read-only mounts cannot be written.`;
 }
 
 function workspaceRelative(input: string): string | { root: true } | undefined {
