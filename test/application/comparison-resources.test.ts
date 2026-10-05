@@ -151,8 +151,10 @@ test('review reserves remaining hard resources for explicit finishing without re
   assert.equal(tools.snapshot().remainingTools, 20);
   const elapsed = new ComparisonResourceTracker({ maxElapsedMs: 90_001 });
   elapsed.phase('review');
+  assert.equal(elapsed.sourceRemainingMs(), 1);
   assert.equal(elapsed.beforeTool('shell_exec'), undefined);
   t.mock.timers.tick(1);
+  assert.equal(elapsed.sourceRemainingMs(), 0);
   assert.equal(elapsed.beforeTool('shell_exec'), 'reserve_finish');
   assert.equal(elapsed.snapshot().remainingMs, 90_000);
   t.mock.timers.tick(90_000);
@@ -176,4 +178,42 @@ test('empty resource override keeps all review investigation and finishing tools
   assert.equal(tracker.snapshot().remainingRequests, null);
   assert.equal(tracker.snapshot().remainingTools, null);
   assert.equal(tracker.snapshot().remainingMs, null);
+  assert.equal(tracker.sourceRemainingMs(), undefined);
+});
+
+test('source deadline uses accumulated review time and the existing global finishing reserve', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const tracker = new ComparisonResourceTracker({ investigationMs: 120_000, maxElapsedMs: 600_000 });
+  t.mock.timers.tick(100_000);
+  assert.equal(tracker.sourceRemainingMs(), 120_000, 'investigation time does not spend the independent review allowance');
+  tracker.phase('review');
+  assert.equal(tracker.sourceRemainingMs(), 120_000);
+  t.mock.timers.tick(30_000);
+  assert.equal(tracker.sourceRemainingMs(), 90_000);
+  tracker.phase('compose');
+  t.mock.timers.tick(330_000);
+  tracker.phase('review');
+  assert.equal(tracker.sourceRemainingMs(), 50_000, 'global 90s finishing reserve is stricter than 90s local review remainder');
+  t.mock.timers.tick(50_000);
+  assert.equal(tracker.sourceRemainingMs(), 0);
+  assert.equal(tracker.beforeTool('read'), 'reserve_finish');
+  assert.equal(tracker.beforeTool('preview_report'), undefined);
+  t.mock.timers.tick(90_000);
+  assert.throws(() => tracker.checkHard('after local yield'), /maxElapsedMs/);
+});
+
+test('source local allowance does not reset after returning to review and clamps exhausted time', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const tracker = new ComparisonResourceTracker({ investigationMs: 10 });
+  tracker.phase('review');
+  t.mock.timers.tick(6);
+  tracker.phase('compose');
+  t.mock.timers.tick(1_000);
+  tracker.phase('review');
+  assert.equal(tracker.sourceRemainingMs(), 4);
+  t.mock.timers.tick(4);
+  assert.equal(tracker.sourceRemainingMs(), 0);
+  t.mock.timers.tick(4);
+  assert.equal(tracker.sourceRemainingMs(), 0);
+  assert.equal(tracker.beforeTool('read'), 'reviewMs');
 });

@@ -165,6 +165,19 @@ function comparisonTimeout(resources: ComparisonResourceTracker, limits: Compari
   return callTimeoutMs > 0 ? Math.min(callTimeoutMs, remaining) : remaining;
 }
 
+function comparisonSourceDeadline(resources: ComparisonResourceTracker, pass?: ComparisonWorkPass): { yieldDeadline?: { at: number; reason: string } } {
+  const remaining = pass === 'sources' ? resources.sourceRemainingMs() : undefined;
+  return remaining === undefined ? {} : { yieldDeadline: { at: Date.now() + remaining, reason: 'bounded_source_timeout' } };
+}
+
+function comparisonYieldBoundary(outcome: FreeformInvocation, resources: ComparisonResourceTracker, signal?: AbortSignal): FreeformInvocation {
+  if (outcome.status === 'yielded') {
+    resources.checkHard('after source or turn yield');
+    if (signal?.aborted) return { status: 'cancelled', sessionId: outcome.sessionId };
+  }
+  return outcome;
+}
+
 function sourceReviewFeedback(name: string, reason?: string): { content: string } | undefined {
   if (['inspect_comparison_draft', 'update_comparison_findings', 'submit_comparison_draft', 'preview_report'].includes(name)) {
     return { content: JSON.stringify({ code: 'source_review_not_ready',
@@ -349,7 +362,7 @@ export function composeComparisonSystemPrompt(locale: AgentLocale): string {
   return `${withLanguageBlock(COMPARISON_SYSTEM_PROMPT, locale, 'comparison')}\n\n${VISIBLE_PROCESS_NARRATION}`;
 }
 
-const COMPARISON_SOURCE_REVIEW_PROMPT = [
+export const COMPARISON_SOURCE_REVIEW_PROMPT = [
   'This is the independent source pass of a fresh review session. Do not open the report, author work notes or saved findings yet.',
   'Read the original task from briefing/task/initial-input.txt and observations/user-inputs/INDEX.tsv, including relevant indexed user requirements.',
   'Use briefing/decision-map.md and the current evidence index only to locate both sealed final deliverables; navigation and self-descriptions are not findings.',
@@ -362,6 +375,7 @@ const COMPARISON_SOURCE_REVIEW_PROMPT = [
   'Use existing source, execution or controlled rendering tools only when their outcome could change the decision. Distinguish source inference, actual execution, current Comparison checks and original runtime observations.',
   'If a check cannot run or evidence is unavailable, narrow the supported claim and retain the unresolved question; do not turn a resource limit into proof. Prioritize the actual output chain and counterexample over CSS or metadata inventories. Reserve time and requests for draft correction, final inspection and preview.',
   'When review time or investigation allowance is exhausted, return your independently supported assessment or uncertainty now. The Host then starts draft audit. Do not retry blocked checks or call inspect_comparison_draft, submit_comparison_draft or preview_report in this source pass.',
+  'This source pass may be interrupted at its local budget deadline, including during an unfinished generation. Such an interruption is not a completed turn or assessment and certifies no guarantee. The next draft audit uses only actual retained observations, keeping every unchecked guarantee unknown.',
   'Return a concise source-based assessment: decisive references, the attempted counterexample and its observed scope, and any remaining uncertainty. Do not compose or preview the report. The Host starts draft audit next in this same session.',
 ].join('\n');
 
@@ -615,8 +629,8 @@ export class ComparisonAgent implements ComparisonAgentPort {
         if (signal?.aborted) return { status: 'cancelled' as const, sessionId: session.sessionId };
         const timeoutMs = comparisonTimeout(resources, this.#resources, this.#timeoutMs);
         outcome = await session.work({ promptContent, timeoutMs, allowedToolNames: reviewPass === 'findings' ? ['update_comparison_findings'] : undefined,
-          ...(signal ? { signal } : {}), yieldAfterTurn: comparisonYieldPolicy(resources, phase, reviewPass, options) });
-        return outcome;
+          ...comparisonSourceDeadline(resources, reviewPass), ...(signal ? { signal } : {}), yieldAfterTurn: comparisonYieldPolicy(resources, phase, reviewPass, options) });
+        return outcome = comparisonYieldBoundary(outcome, resources, signal);
       } finally {
         activePhase = undefined;
         await appendComparisonPhaseOutcome(audit, { sessionId: session.sessionId, phase, pass: reviewPass, startedAt, counts, resources, outcome });
@@ -696,7 +710,9 @@ export class ComparisonAgent implements ComparisonAgentPort {
       return comparisonProviderFailure(sources);
     }
     let prompt = [
-      sources.status === 'yielded'
+      sources.status === 'yielded' && sources.reason === 'bounded_source_timeout'
+        ? 'The Provider interrupted the independent source pass at its local budget deadline, possibly during an unfinished generation; this is not a completed-turn boundary or a completed assessment. Continue in this same review session using only actual retained source observations. No visible assessment may have been produced. Unchecked guarantees remain unknown and must qualify conflicting headline/main claims. This interruption certifies no guarantee.'
+        : sources.status === 'yielded'
         ? `The Host stopped the independent source pass at a completed-turn boundary (${sources.reason}); that pass is incomplete. Continue in the same review session using its actual observations. Unchecked guarantees remain unknown, must qualify conflicting headline/main claims, and cannot be certified by this resource stop.`
         : 'The independent source pass is complete. Continue in this same review session; its observations are still provisional and its unavailable checks do not certify success.',
       'Now inspect the current accepted draft with inspect_comparison_draft when available (otherwise read report.html). Compare its actual claims with the original requirements and the source/output-chain observations you just made. Do not inherit author work notes or saved findings as evidence.',

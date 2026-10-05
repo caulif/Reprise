@@ -18,6 +18,70 @@ const context: ComparisonContext = { task: { caseId: 'case', summary: 'Compare' 
   replayScope: { historical: 'original', candidate: 'original' }, reportFacts: { run: { runId: 'run', outcome: 'completed', terminationCode: 'completed', initiatedBy: 'controller' }, models: { candidate: 'fixture' }, activity: {}, limits: { triggered: [] }, runtime: { productId: 'codex' }, delivery: { changedPaths: [], targetArtifactStatus: 'unavailable', verificationStatus: 'unavailable' }, replay: { conditions: [], baselineEvidence: 'available', candidateEvidence: 'available' } } };
 const resultValue = { status: 'completed' as const, reportPath: 'report.html' as const, headline: 'Scoped result', evidenceRefs: [] };
 
+for (const mode of ['yielded', 'unlimited', 'legacy_timeout', 'cancel', 'hard', 'provider_error'] as const) test(`source local deadline preserves real publication and failure boundaries: ${mode}`, async t => {
+  if (mode === 'hard') t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const events: AgentAuditEvent[] = [], sessions: string[] = [];
+  const deadlines: { source: boolean; value: { at: number; reason: string } | undefined }[] = [];
+  const controller = new AbortController();
+  let inspected = false, previewed = false, inspectionInGeneration = false, draftCalls = 0, sourceRead = false;
+  const host = new AgentHost({ createSession: input => {
+    sessions.push(input.sessionId);
+    return { append: async ({ content, signal, yieldDeadline }) => {
+      const source = content.includes('This is the independent source pass');
+      deadlines.push({ source, value: yieldDeadline });
+      await input.onModelRequest?.({ model: 'fixture', scope: 'generation', digest: sha256(content), messageCount: deadlines.length, images: [] });
+      if (source) {
+        if (mode === 'unlimited') assert.equal(yieldDeadline, undefined);
+        else { assert.equal(yieldDeadline?.reason, 'bounded_source_timeout'); assert.ok(yieldDeadline.at >= Date.now()); }
+        if (mode === 'legacy_timeout') return await new Promise<string>(() => {});
+        if (mode === 'provider_error') throw new Error('Actual provider error');
+        await input.tools.find(tool => tool.name === 'read')!.execute({}, signal);
+        if (mode === 'cancel') controller.abort();
+        if (mode === 'hard') t.mock.timers.tick(600_000);
+        return { status: 'yielded' as const, reason: 'bounded_source_timeout' };
+      }
+      if (content.includes('Now inspect') || content.includes('Continue the current review turn')) {
+        draftCalls++;
+        assert.equal(input.sessionId, sessions[1], 'draft audit retains the source session');
+        assert.equal(sourceRead, true);
+        if (draftCalls === 1) {
+          assert.match(content, /not a completed-turn boundary or a completed assessment/);
+          assert.match(content, /No visible assessment may have been produced[\s\S]*Unchecked guarantees remain unknown/);
+          await input.tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
+          await input.tools.find(tool => tool.name === 'preview_report')!.execute({}, signal);
+        } else inspectionInGeneration = inspected && previewed;
+      }
+      return 'done';
+    }, cancel() {} };
+  } });
+  const tools = [
+    { name: 'read', execute: async () => { sourceRead = true; return { content: 'Actual retained counterexample from delivered output' }; } },
+    { name: 'inspect_comparison_draft', execute: async () => { inspected = true; return { content: 'Actual latest draft body' }; } },
+    { name: 'preview_report', execute: async () => { previewed = true; return { content: 'Current accepted digest preview' }; } },
+  ].map(tool => ({ ...tool, description: tool.name, parameters: Type.Object({}) }));
+  const agent = new ComparisonAgent({ host, timeoutMs: mode === 'legacy_timeout' ? 5 : 1_000, maxRepairAttempts: 0,
+    resources: mode === 'unlimited' ? {} : { investigationMs: 120_000, maxElapsedMs: 600_000 } });
+  const comparison = agent.compare(context, tools, { append: async event => { events.push(event); } }, controller.signal, {
+    getSubmittedResult: async () => inspectionInGeneration ? resultValue : undefined,
+  });
+  if (mode === 'hard') {
+    await assert.rejects(comparison, /maxElapsedMs/);
+    assert.equal(draftCalls, 0, 'whole hard limit after local yield prevents draft audit');
+    return;
+  }
+  const result = await comparison;
+  assert.ok(deadlines.some(call => call.source));
+  assert.ok(deadlines.filter(call => !call.source).every(call => call.value === undefined), 'only independent sources receive the local deadline');
+  if (mode === 'yielded' || mode === 'unlimited') {
+    assert.equal(result.status, 'completed'); assert.equal(draftCalls, 2); assert.equal(sessions.length, 2);
+    assert.equal(events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'sources')!.payload.yieldReason, 'bounded_source_timeout');
+  } else {
+    assert.equal(result.status, mode === 'cancel' ? 'cancelled' : 'failed');
+    assert.equal(draftCalls, 0, 'ordinary failure, hard limit and external cancel never become a draft audit');
+    if (mode === 'legacy_timeout' && result.status === 'failed') assert.equal(result.failure.code, 'agent_timeout');
+  }
+});
+
 for (const mode of ['saved', 'legacy', 'hard', 'cancel', 'error'] as const) test(`first findings checkpoint preserves execution boundaries: ${mode}`, async t => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-first-findings-'));
   t.after(() => rm(root, { recursive: true, force: true }));

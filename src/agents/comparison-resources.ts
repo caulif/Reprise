@@ -107,6 +107,15 @@ export class ComparisonResourceTracker {
     return undefined;
   }
 
+  sourceRemainingMs(): number | undefined {
+    const now = Date.now();
+    const remaining: number[] = [];
+    if (this.#limits.investigationMs !== undefined) remaining.push(this.#limits.investigationMs
+      - this.#reviewElapsed - (this.#phase === 'review' ? now - this.#phaseStarted : 0));
+    if (this.#limits.maxElapsedMs !== undefined) remaining.push(this.#limits.maxElapsedMs - (now - this.#started) - 90_000);
+    return remaining.length ? Math.max(0, Math.min(...remaining)) : undefined;
+  }
+
   snapshot(): Record<string, unknown> {
     return { schemaVersion: 1, modelRequests: this.#requests, toolCalls: this.#tools, elapsedMs: Date.now() - this.#started,
       estimatedCostUsd: this.#priceUnknown || this.#usageReports === 0 || this.#usageReports < this.#requests ? null : this.#estimatedCost,

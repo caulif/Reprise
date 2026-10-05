@@ -73,6 +73,8 @@ Remove-Item Env:REPRISE_REAL_MODEL
 
 runner 只读取现有 Harness 配置，不复制凭据；逐项记录实际模型、输入能力、report hash、耗时、请求、工具、压缩、重试、预览、usage 覆盖及估算费用。缺失 usage/价格保持未知；连续三次失败或取消停止，`Ctrl+C` 取消。生产工厂默认调查 12 次模型请求 / 30 次工具 / 120 秒，整体 40 次模型请求 / 120 次工具 / 600 秒；金额上限不默认设置。`AgentBudget.comparisonResources` 完整替换默认值（包括 `{}` 关闭），复杂任务应显式调高，运行前仍须限定总评估范围。异常来源或终稿材料造成的持续调查只能作为资源风险证据，修正输入身份之前不能形成质量基线。单例 `--case` 使用单独 ledger，不自动成为完整矩阵验收。
 
+来源复审的局部截止与完整 turn 软让出分别审计：检查调用开始事件的绝对 deadline/reason、真实生成/工具与 usage、idle 后的 yielded 原因及下一次核稿输入。局部中止可能没有可见 assessment，不能把它统计为完成验证；不把普通 Provider timeout、用户取消或整体硬限映射成局部让出。逆例需验证真实 idle/usage 前不开始下一阶段、同 Session 后续调用可用，以及取消与真实错误优先。
+
 生成成功只表示报告发布链路通过。人工检查对应报告后，在 ledger 的 review 字段按当前 schema 记录决定性事实、限制、错误、过程误归属、反证处理、30 秒可读性与规范化到原始双方的取舍；review 必须绑定报告 hash。随后对完整 ledger 执行：
 
 ```powershell

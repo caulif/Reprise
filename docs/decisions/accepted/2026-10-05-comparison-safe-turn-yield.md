@@ -10,7 +10,7 @@
 
 - Freeform 调用可提供 Host 的 `yieldAfterTurn` 控制函数。Pi 使用现有 `shouldStopAfterTurn`：当前 assistant 与整批工具实际结束、usage 汇报后，在下一次生成前判断；不添加模型工具或任意 JavaScript 控制入口。
 - 返回显式 `yielded`，记录 `agent.invocation_yielded`，不写 `agent.invocation_completed` 或伪造最终文本。Provider 必须真正 idle；Host 等待受原 invocation 信号和超时限制。外部取消、Provider 错误、持久化错误和共享硬额度失败优先，不能转成 yield。
-- 调查与独立 source pass 的软限制在安全 turn 边界机械让出，允许正在运行的请求/工具完成；它不是精确抢占计时器。原硬时限仍约束当前调用，不增加额度。阶段统计记录实际 outcome、pass 与 yieldReason。
+- 调查与独立 source pass 的软限制在安全 turn 边界机械让出，允许正在运行的请求/工具完成；它不是精确抢占计时器。独立 source pass 另按[局部 deadline 契约](2026-10-05-comparison-source-yield-deadline.md)允许已知本地中止，真实 idle/usage 后以独立 bounded_source_timeout 标记未完成，不称完整 turn 让出。原硬时限仍约束当前调用，不增加额度。阶段统计记录实际 outcome、pass 与 yieldReason。
 - 调查让出后，最多执行两次实际 findings closure 调用；次数按已启动调用计数，不因首次口头返回与保存状态重复而提前失败。closure 内部工具修复可以继续，只有已有 `findingsReady` 检查确认真实保存、当前 catalog 与问题收尾就绪才在完整 turn 边界返回 `findings_ready`。口头承诺不会生成 findings，也不会触发 compose；第二次仍未就绪即失败。不能重新调查，未知问题必须保持可见并正确说明不可用。历史问题、共享硬额度、取消优先与所有发布门禁保留。
 - 独立 source pass 让出后可进入同一 fresh Session 的 draft 审查，但明确 source pass 不完整，未检查的成功保证不能因此认证。
 - findings closure 的工具边界先运行原共享硬限制，再只允许 `update_comparison_findings`；其他工具返回 `closure_only`，即使软额度尚未耗尽也不能重新调查、创作或预览。这一限制来自 Host 阶段状态，不依赖模型遵循收尾提示。
@@ -22,7 +22,7 @@
 
 **继续只靠工具反馈和 Prompt。** 能提醒模型收尾，却不能阻止 Provider 在拒绝结果后继续请求，因而仍可能耗尽共享预算。改为在 SDK 已有完整 turn 边界执行 Host 决策，保留模型实际观察与工具配对。
 
-**软额度到时立即 abort 或把最后一条 assistant 当成 completed。** 前者可能截断副作用或未收齐的工具结果，并产生下一阶段与旧调用并发的风险；后者会把带 tool calls 的 assistant 误作阶段完成。选择显式 yielded、等待 idle，并保留原硬截止作为在途请求的失败保护。软额度允许当前 turn 超出软时间，但不能借此绕过整体硬额度。
+**软额度到时 abort 后立即进入下一阶段，或把最后一条 assistant 当成 completed。** 前者可能截断副作用或未收齐的工具结果，并产生下一阶段与旧调用并发的风险；后者会把带 tool calls 的 assistant 误作阶段完成。选择显式 yielded、等待 idle，并保留原硬截止作为在途请求的失败保护。完整 turn 软让出允许当前 turn 超出软时间；source 的新增局部 deadline 必须真实中止、idle/usage 后以独立未完成诊断返回，两种机制均不能绕过整体硬额度。
 
 **新增调度服务、独立完成状态或扩大预算。** 当前 Session、资源 tracker、Pi stop hook 和恢复输入认证已能承担职责；新的独立状态容易与真实事件和绑定分叉。复用原发布 getter 与恢复检查，不新增评分、完成凭证、费用额度或第二份事实源。
 

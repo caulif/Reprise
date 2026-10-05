@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { composeControllerSystemPrompt } from '../../src/agents/controller-agent.js';
-import { composeComparisonSystemPrompt, COMPARISON_TURN_PROMPTS } from '../../src/agents/comparison-agent.js';
+import { composeComparisonSystemPrompt, COMPARISON_SOURCE_REVIEW_PROMPT, COMPARISON_TURN_PROMPTS } from '../../src/agents/comparison-agent.js';
 import { composeRecoverySystemPrompt } from '../../src/agents/recovery-agent.js';
 import { workspaceTools } from '../../src/infrastructure/recovery-tools.js';
 import { buildComparisonContext, type RunInspection } from '../../src/application/comparison.js';
@@ -38,6 +38,7 @@ test('agent system prompts match committed snapshots', async () => {
   await assertSnapshot('controller-system-prompt', `${composeControllerSystemPrompt('zh')}\n`);
   await assertSnapshot('comparison-system-prompt', `${composeComparisonSystemPrompt('zh')}\n`);
   await assertSnapshot('comparison-investigation-prompt', `${COMPARISON_TURN_PROMPTS.orientAndInvestigate}\n`);
+  await assertSnapshot('comparison-source-review-prompt', `${COMPARISON_SOURCE_REVIEW_PROMPT}\n`);
   await assertSnapshot('recovery-system-prompt', `${composeRecoverySystemPrompt('zh')}\n`);
 });
 

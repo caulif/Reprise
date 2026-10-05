@@ -85,6 +85,8 @@ node dist/src/cli/main.js compare --experiment <experimentId> --json
 
 默认 Comparison 调查软预算为 12 次模型请求、30 次工具、120 秒；整体硬上限为 40 次模型请求、120 次工具、10 分钟，金额上限默认不启用。集成调用方通过 `AgentBudget.comparisonResources` 完整替换默认值，传 `{}` 可关闭；长复杂任务须显式调高。普通 CLI/TUI 尚无独立预算设置入口。达到调查软预算时保留重要未知并继续创作审阅；硬保护或取消保留旧报告。启用金额保护而 usage/价格不可用时停止继续调用；在途计费不能精确封顶。真实评估入口与授权见[开发与验证](./development.md#comparison-产品质量评估)。
 
+内置 Pi 的独立来源复审可在本阶段时间用尽时局部中止，等待实际空闲并记录用量后，以“来源复审未完成”继续核稿；这不代表检查通过，也不扩大已观察范围。用户取消、整体硬上限和真实执行错误仍停止流程。旧 Provider 忽略可选局部截止配置时，普通超时保持失败，不伪装成完成或正常让出。
+
 `recover-comparison` 对旧失败 attempt 默认只读：核对冻结事实、catalog 修订、草稿 digest、成功预览事件和当前发布校验，返回可恢复状态，不调用模型。只有显式加 `--publish --status ...` 才尝试发布，状态必须由操作者依据旧草稿判断；已有根报告时拒绝覆盖。恢复会追加 `comparison.recovered` 事件并更新根 `comparison.json`，原 attempt 日志和草稿不改写。新流程不需要这个命令来处理末尾空文本。
 
 ## Reprise 模型设置

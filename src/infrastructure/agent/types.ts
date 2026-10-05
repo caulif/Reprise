@@ -135,6 +135,8 @@ export type FreeformWorkRequest = {
   maxRepairAttempts?: number;
   /** Optional model-visible subset of this session's registered tools; execution guards still apply. */
   allowedToolNames?: readonly string[] | undefined;
+  /** Optional invocation-local interrupt; Provider must settle idle and usage before yielding. */
+  yieldDeadline?: { at: number; reason: string };
   /** Checked at a completed provider turn; yielding preserves the live transcript and never certifies completion. */
   yieldAfterTurn?: () => string | undefined | Promise<string | undefined>;
 };
@@ -166,8 +168,8 @@ export type StructuredAgentRequest<T> = StructuredWorkRequest<T> & {
 
 export interface AgentSession {
   readonly sessionId: string;
-  work(input: FreeformWorkRequest & { yieldAfterTurn: NonNullable<FreeformWorkRequest['yieldAfterTurn']> }): Promise<FreeformInvocation>;
-  work(input: Omit<FreeformWorkRequest, 'yieldAfterTurn'>): Promise<AgentInvocation<{ text?: string }>>;
+  work(input: FreeformWorkRequest & ({ yieldAfterTurn: NonNullable<FreeformWorkRequest['yieldAfterTurn']> } | { yieldDeadline: NonNullable<FreeformWorkRequest['yieldDeadline']> })): Promise<FreeformInvocation>;
+  work(input: Omit<FreeformWorkRequest, 'yieldAfterTurn' | 'yieldDeadline'>): Promise<AgentInvocation<{ text?: string }>>;
   request<T>(input: StructuredWorkRequest<T>): Promise<AgentInvocation<T>>;
   cancel(reason?: string, requestId?: string): Promise<void>;
   close(): Promise<void>;
@@ -179,7 +181,7 @@ export interface AgentHost {
 
 export interface ProviderSession {
   readonly inputCapabilities?: readonly string[];
-  append(input: { content: string; images?: readonly ImageContent[]; signal: AbortSignal; yieldAfterTurn?: FreeformWorkRequest['yieldAfterTurn']; allowedToolNames?: readonly string[] }): Promise<string | { status: "yielded"; reason: string }>;
+  append(input: { content: string; images?: readonly ImageContent[]; signal: AbortSignal; yieldAfterTurn?: FreeformWorkRequest['yieldAfterTurn']; allowedToolNames?: readonly string[]; yieldDeadline?: FreeformWorkRequest['yieldDeadline'] }): Promise<string | { status: "yielded"; reason: string }>;
   cancel(): void;
   waitForIdle?(): Promise<void>;
   setToolsEnabled?(enabled: boolean): void;
