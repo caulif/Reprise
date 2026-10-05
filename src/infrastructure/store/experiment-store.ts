@@ -3,7 +3,7 @@ import { mkdir, readFile, readdir, rm, stat, truncate, unlink, writeFile } from 
 import { join, relative, resolve } from 'node:path';
 import { hostname } from 'node:os';
 import { Value } from '@sinclair/typebox/value';
-import { ComparisonFindingsUpdatedSchema, ComparisonDraftAcceptedSchema } from '../../core/comparison-discovery-schema.js';
+import { ComparisonFindingsUpdatedSchema, ComparisonDraftAcceptedSchema, ComparisonInvestigationClosedSchema } from '../../core/comparison-discovery-schema.js';
 import { AgentUsageFactsSchema } from '../../core/schema.js';
 import { ComparisonResourceSummarySchema } from '../../core/comparison-resources-schema.js';
 import { SAFE_ID, sha256, eventEnvelopeChecksum, runOperationId, writeAtomic } from '../../core/identity.js';
@@ -365,6 +365,7 @@ export class ExperimentStore {
     if (event.type === 'comparison.requested' && !Value.Check(ComparisonRequestedPayloadSchema, event.payload)) throw new Error('comparison.requested payload does not satisfy its schema.');
     if (event.type === 'comparison.evidence_registered' && !Value.Check(ComparisonEvidenceRegisteredPayloadSchema, event.payload)) throw new Error('comparison.evidence_registered payload does not satisfy its schema.');
     if (event.type === 'comparison.findings_updated' && !Value.Check(ComparisonFindingsUpdatedSchema, event.payload)) throw new Error('comparison.findings_updated payload does not satisfy its schema.');
+    if (event.type === 'comparison.investigation_closed' && !Value.Check(ComparisonInvestigationClosedSchema, event.payload)) throw new Error('comparison.investigation_closed payload does not satisfy its schema.');
     if (event.type === 'comparison.draft_accepted' && !Value.Check(ComparisonDraftAcceptedSchema, event.payload)) throw new Error('comparison.draft_accepted payload does not satisfy its schema.');
     if (event.type === 'agent.usage_reported' && !Value.Check(AgentUsageFactsSchema, event.payload)) throw new Error('agent.usage_reported payload does not satisfy its schema.');
     if (event.type === 'comparison.resources_completed' && !Value.Check(ComparisonResourceSummarySchema, event.payload)) throw new Error('comparison.resources_completed payload does not satisfy its schema.');

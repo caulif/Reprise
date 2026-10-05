@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decisionTextHtml, decisionSupportDetailsHtml } from '../../src/application/comparison-decision-contract.js';
+import { decisionTextHtml, decisionSupportDetailsHtml, decisionContractError } from '../../src/application/comparison-decision-contract.js';
 import type { ComparisonDraftSubmission, ComparisonFindingsSubmission, ComparisonSupportBoundary } from '../../src/core/schema.js';
 
 type Finding = ComparisonFindingsSubmission['findings'][number];
@@ -76,4 +76,26 @@ test('legacy typed draft and absent findings produce no invented support declara
   const { findingDispositions: _dispositions, ...withoutDispositions } = draft;
   assert.equal(decisionSupportDetailsHtml(withoutDispositions, current), '');
   assert.equal(decisionTextHtml(withoutDispositions, current), decisionTextHtml(draft));
+});
+
+test('unavailable decision questions prevent unconditional scope and require a visible boundary even without saved limitations', () => {
+  const complete: ComparisonSupportBoundary = { ...partial, uncheckedInstances: [] };
+  const current = findings([finding('wheel', 'Wheel containment', complete, complete)]);
+  current.decisionQuestions = [{ id: 'remaining-relation', question: 'Does the other requested relationship hold?', decisionImpact: 'An incorrect relationship would prevent use.',
+    status: 'unavailable', evidenceRefs: [], nextCheck: 'Inspect the actual output.', resolution: 'No recorded resolution before the investigation deadline.' }];
+  assert.deepEqual(current.importantLimitations, []);
+  const before = structuredClone(current);
+  for (const invalid of [{ ...draft, conclusionScope: 'supported_in_scope' as const }, { ...draft, decisionBoundary: '  ' }]) {
+    const error = decisionContractError(invalid, current);
+    assert.match(error!, /^code=decision_questions_unavailable\n/);
+    assert.ok(error!.includes(current.decisionQuestions[0]!.decisionImpact));
+    assert.ok(error!.includes('not certified facts'));
+  }
+  assert.equal(decisionContractError(draft, current), undefined);
+  assert.ok(decisionTextHtml(draft, current).includes(draft.decisionBoundary!));
+  assert.deepEqual(current, before, 'draft validation cannot resolve, delete or rewrite the question');
+  current.decisionQuestions[0]!.status = 'resolved';
+  assert.equal(decisionContractError({ ...draft, conclusionScope: 'supported_in_scope' }, current), undefined);
+  const legacy: ComparisonDraftSubmission = { status: 'completed', category: 'Result', headline: 'Legacy', comparisonHtml: '<p>Legacy.</p>' };
+  assert.equal(decisionContractError(legacy, before), undefined, 'legacy drafts retain their existing boundary');
 });

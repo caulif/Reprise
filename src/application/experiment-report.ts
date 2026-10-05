@@ -44,7 +44,7 @@ import { ComparisonDraft } from "./comparison-draft.js";
 import { completedReviewedComparison } from './comparison-live-review.js';
 import { persistComparisonDraftAcceptance } from './comparison-recovery-discovery.js';
 import { ComparisonDiscovery } from './comparison-discovery.js';
-import { AgentUsageFactsSchema } from '../core/schema.js';
+import { AgentUsageFactsSchema, ComparisonInvestigationClosedSchema } from '../core/schema.js';
 import { usagePricing } from './session-usage.js';
 import { loadOperatorPricingOverride } from './model-pricing.js';
 import {
@@ -620,7 +620,14 @@ async function invokeCompare(
       preflightDraft: () => preflightComparisonDraft(attemptRoot),
       enforcePhaseBoundaries: true,
       estimateUsageCost,
-      ...(requireFindings ? { reviewFindings: true, findingsReady: () => discovery.readyToCompose(), hasSavedFindings: () => discovery.snapshot() !== undefined, getFindingsState: () => discovery.state() } : {}),
+      ...(requireFindings ? { reviewFindings: true, findingsReady: () => discovery.readyToCompose(), hasSavedFindings: () => discovery.snapshot() !== undefined, getFindingsState: () => discovery.state(),
+        closeBoundedInvestigation: async (boundary, signal) => {
+          const closure = await discovery.closeAtInvestigationDeadline(signal);
+          signal.throwIfAborted();
+          const payload = { schemaVersion: 1 as const, attemptId, ...boundary, ...closure, semanticAssessment: 'not_certified' as const };
+          if (!Value.Check(ComparisonInvestigationClosedSchema, payload)) throw new Error('Invalid Host investigation closure audit.');
+          await input.store.append({ type: 'comparison.investigation_closed', runId: input.input.runId, payload });
+        } } : {}),
     },
   );
   return { result, deliveredImageContentHashes };

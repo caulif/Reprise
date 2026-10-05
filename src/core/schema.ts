@@ -2,6 +2,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import { EvidenceRefSchema, Hash, Id } from "./schemas/ids.js";
 export { AgentUsageFactsSchema, type ComparisonResources, type AgentUsageFacts } from './comparison-resources-schema.js';
 export { ComparisonFindingsSubmissionSchema, ComparisonFindingsToolSubmissionSchema, ComparisonDiscoveryRecordSchema, type ComparisonSupportBoundary, type ComparisonFindingsSubmission, type ComparisonDiscoveryRecord } from './comparison-discovery-schema.js';
+export { ComparisonInvestigationClosedSchema, type ComparisonInvestigationClosure } from './comparison-discovery-schema.js';
 import {
   ComparisonBriefingContextSchema,
   ComparisonDraftSubmissionSchema,

@@ -8,6 +8,7 @@ import { withLanguageBlock, type AgentLocale } from './language.js';
 import { STRUCTURED_FINAL_RULE } from './structured-final-rule.js';
 import type { ComparisonResources } from '../core/schema.js';
 import { ComparisonResourceTracker } from './comparison-resources.js';
+import { closeBoundedInvestigation } from './comparison-investigation-closure.js';
 import { comparisonToolFeedback, comparisonSoftLimitFeedback } from './comparison-tool-feedback.js';
 import { comparisonDecisionMetrics, comparisonOutputContinuation, comparisonTimeout, comparisonWorkDeadline, comparisonYieldBoundary, type ComparisonWorkPass } from './comparison-invocation-boundaries.js';
 import { ComparisonReviewFindingsClosure, reviewDraftInspectionCheckpoint } from './comparison-review-findings.js';
@@ -95,6 +96,7 @@ export type ComparisonCompareOptions = {
   reviewFindings?: boolean;
   getFindingsState?: () => string;
   findingsReady?: () => boolean;
+  closeBoundedInvestigation?: (boundary: { sessionId: string; reason: 'bounded_investigation_timeout' }, signal: AbortSignal) => Promise<void>;
   /** Accepted discovery snapshot exists; does not certify readiness or semantic correctness. */
   hasSavedFindings?: () => boolean;
   /** Actual full current/stale accepted draft delivered in this review; not final publication certification. */
@@ -695,7 +697,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
       }
     };
     try {
-      if (options?.getSubmittedResult) return await this.#submittedComparison(context, options, measuredWork, session.sessionId, attemptId, tools, reviewFindings);
+      if (options?.getSubmittedResult) return await this.#submittedComparison(context, options, measuredWork, session.sessionId, attemptId, tools, reviewFindings, resources, signal);
 
       for (const step of ['understand', 'investigate', 'compose'] as const) {
         current.phase = step;
@@ -727,11 +729,12 @@ export class ComparisonAgent implements ComparisonAgentPort {
     measuredWork: (phase: 'investigate' | 'compose' | 'review', prompt: string, reviewPass?: ComparisonWorkPass) => Promise<FreeformInvocation>,
     sessionId: string,
     attemptId: string,
-    tools: readonly AgentToolDefinition[], reviewFindings: ComparisonReviewFindingsClosure,
+    tools: readonly AgentToolDefinition[], reviewFindings: ComparisonReviewFindingsClosure, resources: ComparisonResourceTracker, signal: AbortSignal,
   ): Promise<AgentInvocation<ComparisonResult>> {
     let investigated = await measuredWork('investigate', context.promptContent
       ? `${context.promptContent}\n\n${COMPARISON_TURN_PROMPTS.orientAndInvestigate}`
       : COMPARISON_TURN_PROMPTS.orientAndInvestigate);
+    investigated = await closeBoundedInvestigation(options, investigated, resources, signal);
     let closureCalls = 0;
     const investigationBoundary = investigated.status === 'yielded' && investigated.reason === 'bounded_investigation_timeout'
       ? 'The Provider interrupted investigation at its absolute local deadline, possibly during an unfinished generation. This is not a completed-turn boundary or completed investigation and certifies no guarantee. No visible assessment may have been produced.'
@@ -748,7 +751,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
     }
     const findings = options.getFindingsState?.();
     const prefix = investigated.status === 'completed' || investigated.status === 'yielded'
-      ? await measuredWork('compose', `${COMPARISON_TURN_PROMPTS.compose}\n\n${investigationBoundary} Use only actually received observations; unchecked task relationships remain unknown and must qualify conflicting quality claims or recommendation premises.${findings ? `\n\nSaved findings (provenance checked, semantics still require review): ${findings}` : ''}`)
+      ? await measuredWork('compose', `${COMPARISON_TURN_PROMPTS.compose}\n\n${investigationBoundary} Use only actually received observations; unchecked task relationships remain unknown and must qualify conflicting quality claims or recommendation premises.${options.closeBoundedInvestigation && investigated.status === 'yielded' && investigated.reason === 'bounded_investigation_timeout' ? ' The Host may have marked saved pending questions unavailable only because the actual investigation deadline ended. This process closure is not a semantic answer: preserve their original decisionImpact in conditional conclusions and visible decision boundaries; it does not establish that evidence is absent.' : ''}${findings ? `\n\nSaved findings (provenance checked, semantics still require review): ${findings}` : ''}`)
       : investigated;
     if (prefix.status !== 'completed' && !(prefix.status === 'yielded' && prefix.reason === 'author_draft_ready' && options.hasAcceptedDraft?.())) {
       if (prefix.status === 'failed') await this.#sessions.discard(attemptId);

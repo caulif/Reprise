@@ -76,6 +76,37 @@ test("findings preserve scoped evidence and question transitions, with immutable
   assert.equal(discovery.readyToCompose(), true);
 });
 
+test('Host deadline closure preserves every saved observation and question identity without semantic answers', async t => {
+  const { discovery, submission, saved } = await fixture(t);
+  submission.decisionQuestions.push({ id: 'settled', question: 'Was the source located?', decisionImpact: 'Restricts scope', status: 'resolved', evidenceRefs: [], resolution: 'Previously checked, provisional finding' });
+  await discovery.tool().execute(submission, new AbortController().signal);
+  const before = discovery.snapshot()!;
+  const closure = await discovery.closeAtInvestigationDeadline(new AbortController().signal);
+  const after = discovery.snapshot()!;
+  assert.equal(after.revision, 2); assert.equal(saved.length, 2); assert.equal(discovery.readyToCompose(), true);
+  assert.deepEqual(closure.questionIds, ['qualifier']); assert.equal(closure.previous.digest, before.digest); assert.equal(closure.current.digest, after.digest);
+  assert.deepEqual(after.submission.findings, before.submission.findings); assert.deepEqual(after.submission.finals, before.submission.finals);
+  assert.deepEqual(after.submission.criteria, before.submission.criteria); assert.deepEqual(after.submission.importantLimitations, before.submission.importantLimitations);
+  assert.deepEqual(after.submission.decisionQuestions[1], before.submission.decisionQuestions[1]);
+  const { status, resolution, ...identity } = after.submission.decisionQuestions[0]!;
+  const { status: previousStatus, resolution: previousResolution, ...previousIdentity } = before.submission.decisionQuestions[0]!;
+  assert.equal(status, 'unavailable'); assert.equal(previousStatus, 'pending'); assert.equal(previousResolution, undefined);
+  assert.deepEqual(identity, previousIdentity); assert.match(resolution!, /actual investigation deadline[\s\S]*not a semantic answer/);
+  await discovery.closeAtInvestigationDeadline(new AbortController().signal); assert.equal(saved.length, 2, 'same current snapshot is idempotent');
+});
+
+for (const mode of ['missing', 'invalid_refs', 'persist', 'cancel'] as const) test(`Host deadline closure preserves the accepted record on ${mode} failure`, async t => {
+  let failPersistence = false;
+  const { discovery, submission, catalog } = await fixture(t, async () => { if (failPersistence) throw new Error('Actual persistence failure'); });
+  if (mode !== 'missing') await discovery.update(submission);
+  const before = discovery.snapshot();
+  if (mode === 'invalid_refs') { const original = catalog.snapshot.bind(catalog); catalog.snapshot = () => ({ ...original(), links: [] }); }
+  failPersistence = mode === 'persist';
+  const controller = new AbortController(); if (mode === 'cancel') controller.abort();
+  await assert.rejects(discovery.closeAtInvestigationDeadline(controller.signal));
+  assert.deepEqual(discovery.snapshot(), before); assert.equal(discovery.readyToCompose(), false);
+});
+
 for (const repeatedSide of ['baseline', 'candidate'] as const) test(`same-side observations supply bounded shape repair without changing accepted history: ${repeatedSide}`, async t => {
   const { discovery, submission, saved } = await fixture(t);
   const signal = new AbortController().signal;

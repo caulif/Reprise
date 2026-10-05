@@ -29,6 +29,10 @@ export function decisionContractError(draft: ComparisonDraftSubmission, findings
   if (draft.status === 'insufficient_evidence' && draft.conclusionScope !== 'undetermined') {
     return 'code=decision_scope_invalid\nmessage=insufficient_evidence requires conclusionScope=undetermined.';
   }
+  const unavailable = findings?.decisionQuestions.filter(question => question.status === 'unavailable') ?? [];
+  if (unavailable.length && (draft.conclusionScope === 'supported_in_scope' || !draft.decisionBoundary?.trim())) {
+    return `code=decision_questions_unavailable\nquestions=${JSON.stringify(unavailable.map(({ id, question, decisionImpact, resolution }) => ({ id, question, decisionImpact, resolution })))}\nmessage=Decision-changing questions remain unavailable. Use conditional or undetermined and a nonempty visible decisionBoundary explaining their effect on this choice. A deadline closes investigation, not the task relationship; saved question text and resolutions are repair hypotheses, not certified facts.`;
+  }
   const relevant = new Set(dispositions.filter(item => item.disposition !== 'not_decisive').map(item => item.findingId));
   if (draft.conclusionScope === 'supported_in_scope' && findings?.findings.some(finding => relevant.has(finding.id)
     && finding.observations.some(observation => incomplete(observation.supportBoundary)))) {

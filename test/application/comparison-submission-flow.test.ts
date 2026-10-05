@@ -8,6 +8,8 @@ import { startExperiment } from '../../src/application/experiment.js';
 import { AgentHost, type ProviderAdapter } from '../../src/infrastructure/agent/host.js';
 import { input, VerifiedRuntime } from '../codex-experiment-support.js';
 import { sha256 } from '../../src/core/identity.js';
+import { Value } from '@sinclair/typebox/value';
+import { ComparisonDiscoveryRecordSchema, type ComparisonDiscoveryRecord, type ComparisonFindingsSubmission } from '../../src/core/schema.js';
 
 function fixtureContext(input: Parameters<ProviderAdapter['createSession']>[0], recordActual = true) {
   const messages: unknown[] = [];
@@ -167,30 +169,44 @@ for (const recordActual of [true, false]) test(`application ${recordActual ? 'pu
     'actual inspection must enter a later generation snapshot in the same review session before the unchanged draft is previewed');
 });
 
-test('production requireFindings uses an actual accepted review update before the full publication chain', async (t) => {
+for (const bounded of [false, true]) test(`production requireFindings ${bounded ? 'Host deadline closure preserves pending identities and independent review' : 'uses an actual accepted review update'} before the full publication chain`, async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-review-findings-publication-'));
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true }); await writeFile(join(base.sourceRoot, 'README.md'), '# source\n');
-  const findings = { criteria: ['Task usefulness'], finals: (['baseline', 'candidate'] as const).map(side => ({ side, status: 'unavailable', sourceRefs: [], description: 'Final not independently located by this fixture' })),
-    findings: [], importantLimitations: ['Final sources remain unverified'], decisionQuestions: [] };
+  const findings: ComparisonFindingsSubmission = { criteria: ['Task usefulness'], finals: (['baseline', 'candidate'] as const).map(side => ({ side, status: 'unavailable', sourceRefs: [], description: 'Final not independently located by this fixture' })),
+    findings: [], importantLimitations: ['Final sources remain unverified'], decisionQuestions: bounded ? [{ id: 'quality', question: 'Is the final useful?', decisionImpact: 'Could change model preference', status: 'pending', nextCheck: 'Inspect both actual final outputs', evidenceRefs: [] }] : [] };
+  let reviewFindings = findings;
   let turns = 0, reviewUpdates = 0;
-  const comparison = new ComparisonAgent({ requireFindings: true, timeoutMs: 0, maxRepairAttempts: 0,
+  const comparison = new ComparisonAgent({ requireFindings: true, timeoutMs: 0, maxRepairAttempts: 0, resources: { investigationMs: 120_000 },
     host: new AgentHost({ createSession: sessionInput => {
       const { tools, request } = fixtureContext(sessionInput);
       const call = (name: string, params: unknown, signal: AbortSignal) => tools.find(tool => tool.name === name)!.execute(params, signal);
-      return { append: async ({ content, signal, allowedToolNames, yieldAfterTurn }) => {
+      return { append: async ({ content, signal, allowedToolNames, yieldAfterTurn, yieldDeadline }) => {
         turns++; await request(content, allowedToolNames);
-        if (turns === 1) assert.match((await call('update_comparison_findings', findings, signal)).content, /^status=accepted/);
-        else if (turns === 2) assert.match((await call('submit_comparison_draft', {
+        if (turns === 1) {
+          assert.match((await call('update_comparison_findings', findings, signal)).content, /^status=accepted/);
+          if (bounded) { assert.equal(yieldDeadline?.reason, 'bounded_investigation_timeout'); return { status: 'yielded' as const, reason: 'bounded_investigation_timeout' }; }
+        }
+        else if (turns === 2) {
+          if (bounded) {
+            assert.match(content, /Host may have marked saved pending questions unavailable only because the actual investigation deadline ended/);
+            const state = JSON.parse(content.split('Saved findings (provenance checked, semantics still require review): ')[1]!.split('\n\nCurrent Host-owned metric pair:')[0]!) as { record: ComparisonDiscoveryRecord };
+            assert.ok(Value.Check(ComparisonDiscoveryRecordSchema, state.record)); reviewFindings = state.record.submission;
+            assert.equal(reviewFindings.decisionQuestions[0]!.status, 'unavailable');
+            assert.equal(reviewFindings.decisionQuestions[0]!.decisionImpact, findings.decisionQuestions[0]!.decisionImpact);
+            assert.match(reviewFindings.decisionQuestions[0]!.resolution!, /not a semantic answer/);
+          }
+          assert.match((await call('submit_comparison_draft', {
           status: 'insufficient_evidence', decisionShape: 'single_difference', category: 'Results', headline: 'Outputs remain unverified.',
           decisionSummary: 'Both outcomes still need task-quality assessment.', decisionBoundary: 'Final source checks are unavailable.',
           decisionBasis: [], conclusionScope: 'undetermined', findingDispositions: [], comparisonHtml: '<p>No supported replacement choice.</p>',
         }, signal)).content, /status=accepted/);
+        }
         else if (content.includes('This is the actual draft inspection checkpoint') || content.includes('The initial checkpoint is not formal certification: after this full audit')) await call('inspect_comparison_draft', {}, signal);
         else if (content.includes('This is the independent review findings closure')) {
           reviewUpdates++; assert.deepEqual(allowedToolNames, ['read', 'update_comparison_findings']);
-          assert.match((await call('update_comparison_findings', findings, signal)).content, /^status=accepted/);
+          assert.match((await call('update_comparison_findings', reviewFindings, signal)).content, /^status=accepted/);
         } else if (content.includes('This is the preview-only closure')) {
           assert.deepEqual(allowedToolNames, ['preview_report']);
           const receipt = JSON.parse((await call('preview_report', {}, signal)).content) as { status: string }; assert.equal(receipt.status, 'ok');
@@ -205,7 +221,15 @@ test('production requireFindings uses an actual accepted review update before th
   const closure = events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'review-findings');
   assert.equal(closure?.payload.yieldReason, 'review_findings_ready');
   const acceptedUpdates = events.filter(event => event.type === 'comparison.findings_updated');
-  assert.equal(acceptedUpdates.length, 1, 'review accepts an unchanged legal snapshot without forcing a new persisted revision');
+  assert.equal(acceptedUpdates.length, bounded ? 2 : 1, 'Host closure gets a revision; unchanged independent review does not force another');
+  const hostClosure = events.filter(event => event.type === 'comparison.investigation_closed');
+  assert.equal(hostClosure.length, bounded ? 1 : 0);
+  if (bounded) {
+    assert.deepEqual(hostClosure[0]!.payload.questionIds, ['quality']);
+    assert.equal(hostClosure[0]!.payload.semanticAssessment, 'not_certified');
+    assert.ok(acceptedUpdates[1]!.sequence < hostClosure[0]!.sequence);
+    assert.equal(events.filter(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'findings').length, 0, 'Host deadline closure does not create paid snapshot calls');
+  }
   const actualUpdates = events.filter(event => event.type === 'agent.tool_completed' && event.payload.tool === 'update_comparison_findings');
   assert.equal(actualUpdates.length, 2, 'author and independent review both actually execute the update tool');
   assert.ok(actualUpdates[1]!.sequence < closure.sequence);

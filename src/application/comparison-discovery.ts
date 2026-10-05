@@ -1,7 +1,7 @@
 import { Value } from "@sinclair/typebox/value";
 import {
   ComparisonDiscoveryRecordSchema, ComparisonFindingsToolSubmissionSchema,
-  type ComparisonDiscoveryRecord, type ComparisonFindingsSubmission,
+  type ComparisonDiscoveryRecord, type ComparisonFindingsSubmission, type ComparisonInvestigationClosure,
 } from "../core/schema.js";
 import { sha256 } from "../core/identity.js";
 import type { AgentToolDefinition } from "../infrastructure/agent/host.js";
@@ -131,6 +131,28 @@ export class ComparisonDiscovery {
     await this.#persist(structuredClone(record));
     this.#accepted = record;
     return this.#receipt(record);
+  }
+
+  closeAtInvestigationDeadline(signal: AbortSignal): Promise<ComparisonInvestigationClosure> {
+    const operation = this.#queue.then(async () => {
+      signal.throwIfAborted();
+      const previous = this.snapshot();
+      if (!previous) throw new Error('Investigation deadline closure requires an actually accepted findings snapshot.');
+      const submission = structuredClone(previous.submission);
+      const questionIds = submission.decisionQuestions.filter(question => question.status === 'pending').map(question => question.id);
+      for (const question of submission.decisionQuestions) if (question.status === 'pending') {
+        question.status = 'unavailable';
+        question.resolution = 'Host process boundary: the actual investigation deadline ended before this pending question was checked. This is not a semantic answer, does not establish that evidence is absent, and leaves the original decisionImpact unverified.';
+      }
+      const receipt = await this.update(submission, signal);
+      if (!receipt.startsWith('status=accepted\n') || !this.readyToCompose()) throw new Error('Investigation deadline closure failed the current findings/catalog validation.');
+      const current = this.snapshot()!;
+      const binding = (record: ComparisonDiscoveryRecord) => ({ revision: record.revision, catalogRevision: record.catalogRevision, digest: record.digest });
+      return { previous: binding(previous), current: binding(current), questionIds };
+    });
+    // A rejected operation must not poison scheduling; its original promise still rejects to the caller.
+    this.#queue = operation.catch(() => undefined);
+    return operation;
   }
 
   #receipt(record: ComparisonDiscoveryRecord): string {

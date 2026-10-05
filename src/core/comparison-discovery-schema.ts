@@ -77,6 +77,16 @@ export const ComparisonDiscoveryRecordSchema = Type.Object({
 }, { additionalProperties: false });
 export type ComparisonDiscoveryRecord = Static<typeof ComparisonDiscoveryRecordSchema>;
 
+const discoveryBinding = Type.Object({ revision: Type.Integer({ minimum: 1 }), catalogRevision: Type.Integer({ minimum: 0 }),
+  digest: Type.String({ pattern: '^[a-f0-9]{64}$' }) }, { additionalProperties: false });
+export const ComparisonInvestigationClosedSchema = Type.Object({
+  schemaVersion: Type.Literal(1), attemptId: Type.String({ minLength: 1, maxLength: 128 }),
+  sessionId: Type.String({ minLength: 1, maxLength: 128 }), reason: Type.Literal('bounded_investigation_timeout'),
+  previous: discoveryBinding, current: discoveryBinding,
+  questionIds: Type.Array(id, { maxItems: 16, uniqueItems: true }), semanticAssessment: Type.Literal('not_certified'),
+}, { additionalProperties: false });
+export type ComparisonInvestigationClosure = Pick<Static<typeof ComparisonInvestigationClosedSchema>, 'previous' | 'current' | 'questionIds'>;
+
 export const ComparisonFindingsUpdatedSchema = Type.Object({
   schemaVersion: Type.Literal(1),
   attemptId: Type.String({ minLength: 1, maxLength: 128 }),
