@@ -7,6 +7,7 @@ import { ComparisonAgent } from '../../src/agents/comparison-agent.js';
 import { startExperiment } from '../../src/application/experiment.js';
 import { AgentHost } from '../../src/infrastructure/agent/host.js';
 import { input, VerifiedRuntime } from '../codex-experiment-support.js';
+import { sha256 } from '../../src/core/identity.js';
 
 for (const repairable of [true, false]) test(`review revision ${repairable ? 'is previewed by a continuation' : 'cannot extend review indefinitely'}`, async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-review-revision-'));
@@ -15,9 +16,10 @@ for (const repairable of [true, false]) test(`review revision ${repairable ? 'is
   await mkdir(base.sourceRoot, { recursive: true });
   await writeFile(join(base.sourceRoot, 'README.md'), '# source\n');
   let turns = 0;
-  const comparison = new ComparisonAgent({ host: new AgentHost({ createSession: ({ tools }) => ({
+  const comparison = new ComparisonAgent({ host: new AgentHost({ createSession: ({ tools, onModelRequest }) => ({
     append: async ({ content, signal }) => {
       turns++;
+      await onModelRequest?.({ model: 'fixture', scope: 'generation', digest: sha256(content), messageCount: turns, images: [] });
       const submit = tools.find((tool) => tool.name === 'submit_comparison_draft')!;
       const preview = tools.find((tool) => tool.name === 'preview_report')!;
       const draft = (headline: string) => ({ status: 'completed', decisionShape: 'single_difference', category: 'Results', headline, comparisonHtml: `<p>${headline}</p>` });
@@ -30,17 +32,17 @@ for (const repairable of [true, false]) test(`review revision ${repairable ? 'is
       }
       if (turns > 4) {
         assert.match(content, /Continue the current review turn/);
-        if (repairable) {
+        if (repairable && turns === 5) {
           await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
           await preview.execute({}, signal);
         }
-        else await submit.execute(draft(`Draft ${turns}`), signal);
+        else if (!repairable) await submit.execute(draft(`Draft ${turns}`), signal);
       }
       return '';
     }, cancel() {},
   }) }), timeoutMs: 0, maxRepairAttempts: 0 });
   const result = await startExperiment({ ...base, comparison }).result;
-  assert.equal(turns, repairable ? 5 : 6);
+  assert.equal(turns, 6);
   assert.equal(result.comparison.result.status, repairable ? 'completed' : 'failed');
   if (repairable) assert.match(await readFile(join(result.experimentRoot, 'report.html'), 'utf8'), /Draft B/);
   else await assert.rejects(readFile(join(result.experimentRoot, 'report.html'), 'utf8'), { code: 'ENOENT' });
@@ -54,9 +56,10 @@ test('application publishes a submitted and previewed draft after an empty final
   await writeFile(join(base.sourceRoot, 'README.md'), '# source\n');
   let turns = 0;
   const comparison = new ComparisonAgent({
-    host: new AgentHost({ createSession: ({ tools }) => ({
-      append: async ({ signal }) => {
+    host: new AgentHost({ createSession: ({ tools, onModelRequest }) => ({
+      append: async ({ content, signal }) => {
         turns++;
+        await onModelRequest?.({ model: 'fixture', scope: 'generation', digest: sha256(content), messageCount: turns, images: [] });
         if (turns === 2) {
           const submit = tools?.find((tool) => tool.name === 'submit_comparison_draft');
           assert.ok(submit);
@@ -80,9 +83,9 @@ test('application publishes a submitted and previewed draft after an empty final
     timeoutMs: 0, maxRepairAttempts: 0,
   });
   const result = await startExperiment({ ...base, comparison }).result;
-  assert.equal(turns, 4);
+  assert.equal(turns, 5);
   assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result));
-  assert.deepEqual(result.facts.comparisonActivity, { modelRequests: 0, toolCalls: 3, compactions: 0 });
+  assert.deepEqual(result.facts.comparisonActivity, { modelRequests: 5, toolCalls: 3, compactions: 0 });
   assert.match(await readFile(join(result.experimentRoot, 'report.html'), 'utf8'), /usable result/);
   const events = await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8');
   assert.match(events, /comparison.phase_completed/);

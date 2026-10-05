@@ -7,7 +7,7 @@ import { comparisonDetailsTextCharacters, comparisonDetailsText, comparisonMainT
 import type { ComparisonReportFacts, ComparisonResult } from "../agents/comparison-agent.js";
 import { sha256, writeAtomic } from "../core/identity.js";
 import { extractInner } from "../core/comparison-html.js";
-import { ComparisonDraftSubmissionSchema, ComparisonReportModelSchema, type ComparisonDraftSubmission } from "../core/schema.js";
+import { ComparisonDraftSubmissionSchema, ComparisonReportModelSchema, ComparisonFindingsSubmissionSchema, type ComparisonDraftSubmission } from "../core/schema.js";
 import type { AgentToolDefinition } from "../infrastructure/agent/host.js";
 import type { AgentLocale } from "../agents/language.js";
 import type { ComparisonEvidenceCatalog } from "./comparison-evidence.js";
@@ -18,6 +18,7 @@ import type { ComparisonDiscovery } from "./comparison-discovery.js";
 import type { ComparisonDraftBinding } from "../core/comparison-discovery-schema.js";
 import type { ComparisonQuoteSourcePort } from "./comparison-source.js";
 import { ComparisonDraftAcceptanceReceiptSchema, ComparisonDraftInspectionSchema } from "../core/comparison-review-schema.js";
+import { comparisonToolTextBytes, serializeComparisonPagedJson } from './comparison-render-output.js';
 
 type HtmlNode = { nodeName?: string; value?: string; attrs?: { name: string; value: string }[]; childNodes?: HtmlNode[]; content?: HtmlNode };
 type AcceptedDraft = { digest: string; revision: number; discoveryRevision?: number; result: ComparisonResult; decisionShape?: ComparisonDraftSubmission["decisionShape"] };
@@ -117,7 +118,7 @@ export class ComparisonDraft {
         const accepted = this.#accepted;
         const catalog = this.#catalog.snapshot();
         const findingsRevision = this.#discovery?.snapshot()?.revision;
-        if (!accepted) return { content: JSON.stringify({ status: "unavailable", reason: "No accepted draft exists.", repairContext: this.#repairContext() }) };
+        if (!accepted) return { content: JSON.stringify(await this.#boundedInspection({ status: "unavailable", reason: "No accepted draft exists.", repairContext: this.#repairContext() })) };
         const html = await this.#readAcceptedHtml(accepted.digest);
         if (html === undefined) return { content: JSON.stringify({ status: "unavailable", reason: "Accepted draft file is missing or changed." }) };
         if (this.#accepted !== accepted || this.#catalog.snapshot().revision !== catalog.revision || this.#discovery?.snapshot()?.revision !== findingsRevision) {
@@ -127,14 +128,14 @@ export class ComparisonDraft {
         if (!Value.Check(ComparisonReportModelSchema, model)) throw new Error("Invalid persisted comparison report content.");
         if (accepted.revision !== catalog.revision || accepted.discoveryRevision !== findingsRevision) {
           signal.throwIfAborted();
-          return { content: JSON.stringify({ status: "stale", draftDigest: accepted.digest,
+          return { content: JSON.stringify(await this.#boundedInspection({ status: "stale", draftDigest: accepted.digest,
             acceptedCatalogRevision: accepted.revision, acceptedFindingsRevision: accepted.discoveryRevision,
             headline: model.headline, comparisonHtml: model.slots.comparison, detailsHtml: model.slots.details,
             semanticValidation: "not_performed", certification: "none",
             meaning: "Actual unverified author draft with stale bindings. Historical questions are hypotheses, not certified observations. Revise from independent source evidence, preserve question identities, resubmit current findings and draft, then inspect and preview. This result cannot satisfy final inspection or publication.",
             repairContext: this.#repairContext(),
             renderCheckHistory: this.#inspectionRenderHistory(),
-          }) };
+          })) };
         }
         const receipt = { schemaVersion: 1 as const, status: "available" as const, draftDigest: accepted.digest,
           bindingRevision: this.#bindingRevision,
@@ -143,14 +144,16 @@ export class ComparisonDraft {
           semanticValidation: "not_performed" as const };
         if (!Value.Check(ComparisonDraftInspectionSchema, receipt)) throw new Error("Invalid comparison inspection receipt.");
         signal.throwIfAborted();
-        this.#pendingInspections.set(receipt, { accepted, reviewEpoch: this.#reviewEpoch });
-        return { details: receipt, content: JSON.stringify({ ...receipt,
+        const content = await this.#boundedInspection({ ...receipt,
           reportStatus: accepted.result.status, category: extractInner(html, "data-agent-slot", "category"),
           decisionShapeValidation: "model_declaration_only",
           headline: model.headline, comparisonHtml: model.slots.comparison, detailsHtml: model.slots.details,
           mainTextCharacters: comparisonMainTextCharacters(html),
           renderCheckHistory: this.#inspectionRenderHistory(),
-        }) };
+        });
+        if (content.status !== 'available') return { content: JSON.stringify(content) };
+        this.#pendingInspections.set(receipt, { accepted, reviewEpoch: this.#reviewEpoch });
+        return { details: receipt, content: JSON.stringify(content) };
       },
       onCompleted: async result => {
         if (!result.details || typeof result.details !== "object") return;
@@ -167,13 +170,37 @@ export class ComparisonDraft {
       coverage: checks ? "recorded_outcomes_in_this_process" : "unavailable",
       origin: "this_comparison_attempt_not_candidate_runtime",
       omitted: checks?.omitted ?? 0,
-      records: (checks?.records ?? []).map(check => ({ ...check,
-        frames: check.frames.map(frame => ({ ...frame,
+      records: (checks?.records ?? []).map(check => ({ sourceRef: check.sourceRef, side: check.side,
+        sourceHash: check.sourceHash, status: check.status, viewport: check.viewport,
+        frames: check.frames.map(frame => ({ sampleTimeMs: frame.sampleTimeMs, actualTimeMs: frame.actualTimeMs,
+          contentHash: frame.contentHash, geometryUnavailable: frame.geometryUnavailable,
+          geometryWindow: frame.geometrySample && { coordinateDomain: frame.geometrySample.coordinateDomain,
+            startedAtMs: frame.geometrySample.startedAtMs, finishedAtMs: frame.geometrySample.finishedAtMs },
           nativeImageDeliveredToCurrentSession: this.#deliveredImages.has(frame.contentHash),
         })),
       })),
-      limitation: "Rendering and image delivery are distinct; this tool does not deliver images or establish visual inspection. Empty history does not prove no checks occurred.",
+      limitation: "Inventory only: geometry values, selectors and transforms are not repeated here. Use original render_artifact measurements or their fullMeasurement paged JSON. Rendering and image delivery are distinct; this tool does not deliver images or establish visual inspection. Empty history does not prove no checks occurred.",
     };
+  }
+
+  async #boundedInspection(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const history = payload.renderCheckHistory as { records: unknown[]; omitted: number } | undefined;
+    while (history?.records.length && comparisonToolTextBytes(payload) > 12_288) {
+      history.records.shift();
+      history.omitted++;
+    }
+    const repair = payload.repairContext as { decisionQuestions: unknown[] } | undefined;
+    if (repair?.decisionQuestions.length && comparisonToolTextBytes(payload) > 12_288) {
+      const data = { decisionQuestions: repair.decisionQuestions };
+      if (!Value.Check(Type.Pick(ComparisonFindingsSubmissionSchema, ['decisionQuestions']), data)) throw new Error('Invalid persisted question repair history.');
+      const bytes = serializeComparisonPagedJson(data);
+      const relativePath = `scratch/question-history-${sha256(bytes).slice(0, 24)}.json`;
+      await writeAtomic(join(this.#attemptRoot, relativePath), bytes);
+      payload.repairContext = { ...repair, decisionQuestions: data.decisionQuestions.map(question => ({ id: question.id, status: question.status })),
+        fullHistory: { path: relativePath, contentHash: sha256(bytes), read: 'Read with byte offset and maxBytes=4096, continuing at nextCursor. Preserve the exact historical IDs, questions and decisionImpact from these pages before updating findings. Prior resolutions are unverified hypotheses.' } };
+    }
+    if (comparisonToolTextBytes(payload) <= 12_288) return payload;
+    return { status: 'unavailable', reason: 'Complete inspection text exceeds the bounded tool-result budget. Reduce excessive report markup or quoted source before resubmitting; no partial text can certify inspection.', certification: 'none' };
   }
 
   #repairContext() {

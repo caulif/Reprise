@@ -47,6 +47,7 @@ const VISIBLE_ACTIVITY_TYPES = new Set([
   'agent.invocation_completed',
   'agent.invocation_failed',
   'agent.invocation_cancelled',
+  'agent.invocation_yielded',
   'agent.tool_called',
   'agent.tool_completed',
   'agent.tool_failed',

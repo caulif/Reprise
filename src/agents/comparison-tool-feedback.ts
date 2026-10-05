@@ -8,7 +8,7 @@ export function comparisonToolFeedback(result: AgentToolResult, resources: Compa
     remainingTools: snapshot.remainingTools, remainingMs: snapshot.remainingMs,
     reviewLimit: snapshot.reviewLimit,
     ...(toolName === 'read' ? { readCoverage: readCoverage(result.details) } : {}),
-    ...(submissionState ? { submissionState } : {}),
+    ...(submissionState ? boundedSubmissionState(submissionState) : {}),
     meaning: 'Resource and draft binding facts only; not semantic approval. Reserve requests for one batch correction and preview of its exact digest. Do not repeat settled checks or register duplicate analysis. If a decisive claim remains unverified, remove its guarantee and explicitly state the unresolved decision; never reuse a stale preview.',
   };
   let content: string;
@@ -28,6 +28,14 @@ export function comparisonToolFeedback(result: AgentToolResult, resources: Compa
     block.type === 'text' && block.text === result.content ? { ...block, text: content } : block) };
   const progressText = `Host progress feedback: ${JSON.stringify(feedback)}`;
   return { ...result, content: `${result.content}\n\n${progressText}`, contentBlocks: [...result.contentBlocks, { type: 'text', text: progressText }] };
+}
+
+function boundedSubmissionState(state: string): { submissionState: string; submissionStateTruncated?: true } {
+  const bytes = (text: string) => Buffer.byteLength(JSON.stringify([{ type: 'text', text }]));
+  if (bytes(state) <= 1_024) return { submissionState: state };
+  const prefix = Array.from(state).slice(0, 512);
+  while (bytes(prefix.join('')) > 1_024) prefix.pop();
+  return { submissionState: prefix.join(''), submissionStateTruncated: true };
 }
 
 function readCoverage(details: unknown): Record<string, number | boolean> {

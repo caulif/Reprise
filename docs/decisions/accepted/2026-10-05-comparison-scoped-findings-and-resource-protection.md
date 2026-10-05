@@ -103,11 +103,15 @@ HTML 元数据和既有工具审计足以复原，不新增 quote registry、on-
 
 新契约的离线恢复还须从标准输入重建核对后续 generation 请求携带完整 inspection 工具正文；请求前取消或压缩只保留总结不能满足。请求审计保存待发送输入，不能据此宣称供应商远端实际阅读或语义检查通过。
 
+生产完成查询与离线恢复共用这个实际输入校验。工具回合已结束、receipt 和 preview 已齐备，但尚没有后续 generation 携带完整正文时，查询仍返回未就绪；不能以安全让出控制权绕过全文条件。普通返回与 `report_ready` 出口使用同一查询，不把取消或真实失败转换成完成。旧未声明独立核稿契约的路径保留兼容。
+
 ### 先核原件，再核作者解释
 
 当前原例在最终正文绑定门禁正常通过后仍产生错误保证。独立 reviewer 收到了完整源码，却继承注入的作者 findings，把算法目标点与实际最终输出等同；所写验证脚本也只检查目标公式，执行被 review 软时限拒绝后仍保留保证。增加正文读取次数或本例专用词表不能解决验证对象错误。
 
 新生成的 fresh review 使用同一 Session 的两个调用：先从原任务和双侧决定性原件形成自己的审查基线，追踪实际输出链并优先尝试决定性反例；正常返回后再读取作者接受稿，核对并批量修订。两次调用不注入作者 findings，沿原事件审计保留真实输入和输出，仍共享整个 attempt 的预算和累计 review 软限。第一调用失败或取消不进入核稿，不能借新增调用重置额度。
+
+实际复审还表明，检查最强优势不能替另一条独立成功保证背书。来源审查须为准备进入标题或主文的每条保证明确最终可观察关系、覆盖实例与不同下游分支；源码推导也须走到最终变换、写入或返回结果。工具证据被裁剪、分支未核验或仅观测运动时，应删除或缩窄正文保证，不能只在详情补限制。这是任务自适应的审查范围规则，不提供个案 selector 或预设赢家，也不要求穷查所有实例；明确局部范围和未知是有效结果。
 
 来源审查期间稿件 inspection、findings 更新、submit 和 preview 工具拒绝误用；这只是顺序保护，read 和 shell 仍可访问既有文件，不声称完全盲审。算法名称、内部目标、注释和自检都是待核线索；必须核它们是否对应最终可用输出。验证不可执行时收缩其精确或全状态保证，不把正常阶段返回认证为语义正确。之后仍要求实际终稿 inspection 和当前 digest preview；旧直接报告 workflow 保持原行为。反向用例覆盖第一调用失败、取消、稿件工具越阶段、作者假说未注入、同 Session 与额度连续性。
 
@@ -118,3 +122,13 @@ HTML 元数据和既有工具审计足以复原，不新增 quote registry、on-
 `inspect_comparison_draft` 对文件仍符合接受 digest、仅 catalog/findings 绑定过期的稿件返回 `stale`：实际作者正文、当前检查事实和历史问题身份均可读取，但没有有效 inspection receipt，不登记全文检查完成，不满足预览、发布或离线恢复。文件缺失或篡改仍 unavailable。历史材料标为未认证假设，只用于修复；不注入作者 observations，独立 source pass 仍拒绝该工具与 findings 更新。
 
 更新 findings 仍是完整快照，必须保留每个旧问题的 ID、question 与 decisionImpact；缺失时返回 required/missing IDs 和完整既有问题对象，身份或状态字段错时返回对应问题与明确要求。拒绝不持久化、不修改现有状态；旧已解决问题返回 pending 仍须新 grounds。核稿按独立观察修订、重提当前 findings 与稿件，最终再正式 inspection 和 preview。反向用例证明 stale 可读却不可认证、历史遗漏仍拒绝且可按反馈修复、source 阶段不能提前取得修复历史。
+
+### 工具正文在通用压缩阈值内保真
+
+Pi 的通用 prune 会将超过 16 KiB 的工具正文替换为前缀 stub；实际几何输出与终稿 inspection 曾分别超过 20 KiB 和 52 KiB，导致决定性数值和终稿正文在 generation 前丢失。保留通用预算保护，不按本例提高阈值，也不在 infrastructure 解读应用私有 JSON。
+
+应用工具按 JSON 文本块的序列化字节计预算，为 Host progress 与图片引用预留空间。`render_artifact` 小结果保持完整；大结果先将完整测量、原始诊断和来源身份经 core schema 校验落盘并注册 derived evidence，再返回不超过 10 KiB 的紧凑屏幕点、selector/status/domain/window。局部点、矩阵和 bounds 仍在完整 JSON；若紧凑版本仍超限，明确计数省略的 frame，使用现有 `read` 的 byte offset、maxBytes 与 nextCursor 读取原文件。注册失败明确报告，未读取的省略状态不能支持保证；不存在把未知测量变成成功的默认值。
+
+`inspect_comparison_draft` 的检查历史只提供来源、状态、frame hash、时间窗和图片交付库存，不重复完整几何。正文与 receipt 优先保留在 12 KiB 内；超量库存逐记录显式计入 omitted，超量历史问题独立保存为经 schema 校验的可分页 JSON。纯完整终稿仍超限时返回 unavailable，要求减少过量 markup/引用，绝不发送可认证的部分正文或 details receipt。原测量保留在证据文件与事件审计中；这些投影不授予视觉权限，不证明整段动画，也不增加模型请求或时间预算。
+
+现有 `read` 独立解码每个 byte range，分页切断 UTF-8 中文或 emoji 时会产生替换字符。上述两类可分页 JSON 以 ASCII Unicode escapes 保存：逐 UTF-16 code unit 编码，包含 surrogate pairs；拼接页面再 JSON.parse 与原值等价。contentHash 与 byteLength 按实际 ASCII 字节计算，不改变共享 read 的范围或解码契约。真实 read 的 4096 字节多页逆例验证中文/emoji 的完整测量与历史问题均可无损重建。

@@ -16,6 +16,7 @@ export { EvidenceRefSchema, type EvidenceRef } from "./schemas/ids.js";
 export { SceneDescriptorSchema, type SceneDescriptor } from "./schemas/scene.js";
 export { RecoveryMarkerSchema } from "./schemas/recovery-marker.js";
 export { EventEnvelopeSchema, type EventEnvelope } from "./schemas/event.js";
+export { AgentInvocationYieldedSchema } from "./schemas/agent-invocation-yielded.js";
 export { ControllerDecisionSchema, type ControllerDecision, ComparisonResultSchema, type ComparisonAgentEnvelope } from "./schemas/agent-output.js";
 export { ArtifactManifestSchema, type ArtifactManifest } from "./schemas/artifact.js";
 export {
@@ -279,6 +280,7 @@ export { ComparisonEvidenceQuoteParamsSchema, ComparisonEvidenceQuoteSpecSchema 
 export type { ComparisonEvidenceQuoteParams, ComparisonEvidenceQuoteSpec } from "./schemas/comparison-evidence-quote.js";
 export { RenderGeometryQueriesSchema, RenderGeometrySampleSchema, RENDER_GEOMETRY_MAX_SAMPLE_BYTES } from "./schemas/render-geometry.js";
 export type { RenderGeometryQuery, RenderGeometrySample } from "./schemas/render-geometry.js";
+export { ComparisonRenderMeasurementDocumentSchema } from './comparison-render-check-schema.js';
 
 
 

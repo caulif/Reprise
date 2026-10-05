@@ -4,6 +4,8 @@ import { ComparisonResourceTracker } from '../../src/agents/comparison-resources
 import { comparisonToolFeedback, comparisonSoftLimitFeedback } from '../../src/agents/comparison-tool-feedback.js';
 import { toPiTool } from '../../src/infrastructure/agent/providers/pi/tool-adapter.js';
 import { Type } from '@sinclair/typebox';
+import { prunePiMessagesForBudget } from '../../src/infrastructure/agent/compaction.js';
+import type { AgentMessage } from '@earendil-works/pi-agent-core';
 
 test('progress feedback preserves JSON outcomes and binary delivery metadata without approving semantics', () => {
   const tracker = new ComparisonResourceTracker({ maxModelRequests: 40 });
@@ -18,6 +20,20 @@ test('progress feedback preserves JSON outcomes and binary delivery metadata wit
   assert.equal(payload.hostProgress.remainingRequests, 39);
   assert.match(payload.hostProgress.submissionState, /new.*old/);
   assert.match(payload.hostProgress.meaning, /not semantic approval/);
+});
+
+test('oversized rejection feedback cannot stub a bounded full inspection after final wrapping', () => {
+  const content = JSON.stringify({ status: 'available', headline: 'Decision', comparisonHtml: '<p>Main</p>', detailsHtml: 'x'.repeat(11_000) });
+  for (const state of ['unknown reference '.repeat(20_000), '问题😀\\"\u0000'.repeat(20_000)]) {
+    const updated = comparisonToolFeedback({ content, contentBlocks: [{ type: 'text', text: content }] }, new ComparisonResourceTracker({}), state);
+    const payload = JSON.parse(updated.content) as { detailsHtml: string; hostProgress: { submissionState: string; submissionStateTruncated: boolean } };
+    assert.equal(payload.detailsHtml, 'x'.repeat(11_000));
+    assert.equal(payload.hostProgress.submissionStateTruncated, true);
+    assert.ok(Buffer.byteLength(JSON.stringify(updated.contentBlocks)) < 16_384);
+    const messages: AgentMessage[] = [{ role: 'toolResult', toolCallId: 'inspection', toolName: 'inspect_comparison_draft',
+      content: [{ type: 'text', text: updated.content }], isError: false, timestamp: 0 }];
+    assert.equal(prunePiMessagesForBudget(messages).changed, false);
+  }
 });
 
 test('native-image tools deliver progress through the actual Pi content blocks without changing images', async () => {

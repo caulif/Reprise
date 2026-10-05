@@ -11,6 +11,7 @@ import { sha256 } from "../core/identity.js";
 import { pathContainedBy } from "../core/paths.js";
 import type { AgentToolDefinition, AgentToolResult } from "../infrastructure/agent/host.js";
 import { attachComparisonImages } from './comparison-image-delivery.js';
+import { boundedRenderOutput } from './comparison-render-output.js';
 
 /** Narrow port owned by B3 catalog; B4 tools only call these methods. */
 export type ComparisonRenderCatalogPort = {
@@ -22,6 +23,7 @@ export type ComparisonRenderCatalogPort = {
    */
   registerDerivedMedia(input: RegisterDerivedMediaInput): Promise<RegisterDerivedMediaResult>;
   registerDerivedMediaBatch(inputs: readonly RegisterDerivedMediaInput[]): Promise<RegisterDerivedMediaBatchResult>;
+  registerAnalysisEvidence?(input: { relativePath: string; sourceRef: string }, signal: AbortSignal): Promise<{ shortRef?: string; code?: string; message?: string }>;
 };
 
 export type RegisterDerivedMediaBatchResult =
@@ -175,7 +177,8 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
       const finish = async (status: ComparisonRenderedCheck["status"], payload: Record<string, unknown>): Promise<AgentToolResult> => {
         const renderedCheck = artifactRenderedCheck(source, rendered, status, sampleTimesMs, viewport, params.geometryQueries);
         await deps.onRenderedCheck?.(structuredClone(renderedCheck));
-        return textResult({ ...payload, renderedCheck });
+        const output = await boundedRenderOutput({ payload, check: renderedCheck, attemptRoot: deps.attemptRoot, catalog: deps.catalog, signal });
+        return { content: JSON.stringify(output), details: output };
       };
       if (!rendered.ok) {
         return finish(rendered.failure.kind, {

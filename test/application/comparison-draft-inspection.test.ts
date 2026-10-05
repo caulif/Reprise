@@ -11,8 +11,14 @@ import { instrumentTools } from "../../src/infrastructure/agent/tools.js";
 import type { RenderGeometrySample } from "../../src/core/schema.js";
 import type { EventEnvelope } from "../../src/core/schema.js";
 import { Value } from "@sinclair/typebox/value";
+import { Type } from '@sinclair/typebox';
+import { ComparisonFindingsSubmissionSchema } from '../../src/core/schema.js';
 import { ComparisonDraftInspectionSchema } from "../../src/core/comparison-review-schema.js";
 import { recoveryReviewBinding } from "../../src/application/comparison-recovery-review.js";
+import { prunePiMessagesForBudget } from '../../src/infrastructure/agent/compaction.js';
+import type { AgentMessage } from '@earendil-works/pi-agent-core';
+import { comparisonToolTextBytes } from '../../src/application/comparison-render-output.js';
+import { readComparisonJsonPages } from './comparison-paged-json-reader.js';
 
 const facts = {
   run: { runId: "run-1", outcome: "completed", terminationCode: "completed", initiatedBy: "controller" },
@@ -266,21 +272,22 @@ test("inspection preserves actual render outcomes separately from current-sessio
   });
   await draft.submit(submission);
   const inspect = async () => JSON.parse((await draft.inspectTool().execute({}, new AbortController().signal)).content) as {
-    renderCheckHistory: { origin: string; omitted: number; records: { status: string; frames: { actualTimeMs: number; geometrySample?: RenderGeometrySample; nativeImageDeliveredToCurrentSession: boolean }[] }[] };
+    renderCheckHistory: { origin: string; omitted: number; records: { status: string; frames: { actualTimeMs: number; geometrySample?: RenderGeometrySample; geometryWindow?: { startedAtMs: number; finishedAtMs: number }; nativeImageDeliveredToCurrentSession: boolean }[] }[] };
   };
   let history = (await inspect()).renderCheckHistory;
   assert.equal(history.origin, "this_comparison_attempt_not_candidate_runtime");
   assert.equal(history.omitted, 2);
   assert.equal(history.records[0]?.status, "motion_not_proven");
   assert.equal(history.records[0]?.frames[0]?.actualTimeMs, 537);
-  assert.deepEqual(history.records[0]?.frames[0]?.geometrySample, geometrySample);
+  assert.equal(history.records[0]?.frames[0]?.geometrySample, undefined);
+  assert.equal(history.records[0]?.frames[0]?.geometryWindow?.startedAtMs, geometrySample.startedAtMs);
   assert.equal(history.records[0]?.frames[0]?.nativeImageDeliveredToCurrentSession, false);
   assert.equal(delivered.size, 0);
   delivered.add(hash);
   assert.equal((await inspect()).renderCheckHistory.records[0]?.frames[0]?.nativeImageDeliveredToCurrentSession, true);
   delivered.clear();
   history = (await inspect()).renderCheckHistory;
-  assert.deepEqual(history.records[0]?.frames[0]?.geometrySample, geometrySample);
+  assert.equal(history.records[0]?.frames[0]?.geometryWindow?.finishedAtMs, geometrySample.finishedAtMs);
   assert.equal(history.records[0]?.frames[0]?.actualTimeMs, 537);
   assert.equal(history.records[0]?.frames[0]?.nativeImageDeliveredToCurrentSession, false);
   await mkdir(join(f.root, "scratch"));
@@ -290,6 +297,56 @@ test("inspection preserves actual render outcomes separately from current-sessio
   const stale = JSON.parse(staleResult.content) as { status: string; renderCheckHistory: typeof history };
   assert.equal(stale.status, "stale");
   assert.equal(staleResult.details, undefined);
-  assert.deepEqual(stale.renderCheckHistory.records[0]?.frames[0]?.geometrySample, geometrySample);
+  assert.equal(stale.renderCheckHistory.records[0]?.frames[0]?.geometryWindow?.startedAtMs, geometrySample.startedAtMs);
   assert.equal(stale.renderCheckHistory.records[0]?.frames[0]?.nativeImageDeliveredToCurrentSession, false);
+});
+
+test('large render inventories cannot stub the complete final inspection or turn it into a false receipt', async t => {
+  const f = await fixture(t);
+  const draft = new ComparisonDraft({ attemptRoot: f.root, task: 'Compare outputs', facts, locale: 'en', catalog: f.catalog,
+    deliveredImages: new Set(), renderCheckHistory: () => ({ omitted: 0, records: Array.from({ length: 12 }, () => ({
+      sourceRef: 'ev-01', side: 'baseline' as const, sourceHash: 'a'.repeat(64), status: 'ok' as const,
+      requestedSampleTimesMs: [0], viewport: { width: 1000, height: 700, scale: 1 },
+      frames: Array.from({ length: 8 }, (_, i) => ({ sampleTimeMs: i * 500, actualTimeMs: i * 500 + 7, contentHash: 'b'.repeat(64) })),
+    })) }) });
+  await draft.submit(submission);
+  const result = await draft.inspectTool().execute({}, new AbortController().signal);
+  const content: unknown = JSON.parse(result.content);
+  assert.ok(Value.Check(Type.Object({ status: Type.String(), headline: Type.String(), comparisonHtml: Type.String(), detailsHtml: Type.String(),
+    renderCheckHistory: Type.Object({ omitted: Type.Number() }) }), content));
+  assert.equal(content.status, 'available');
+  assert.equal(content.headline, submission.headline);
+  assert.equal(content.comparisonHtml, submission.comparisonHtml);
+  assert.equal(content.detailsHtml, submission.detailsHtml);
+  assert.ok(content.renderCheckHistory.omitted > 0);
+  assert.ok(comparisonToolTextBytes(content) <= 12_288);
+  const messages: AgentMessage[] = [{ role: 'toolResult', toolName: 'inspect_comparison_draft', toolCallId: 'call', timestamp: 0, isError: false,
+    content: [{ type: 'text', text: result.content }] }];
+  assert.equal(prunePiMessagesForBudget(messages).changed, false);
+  await draft.submit({ ...submission, comparisonHtml: `<p>Meaning.</p>${'<span></span>'.repeat(2000)}` });
+  const large = await draft.inspectTool().execute({}, new AbortController().signal);
+  const unavailable: unknown = JSON.parse(large.content);
+  assert.ok(Value.Check(Type.Object({ status: Type.Literal('unavailable') }), unavailable));
+  assert.equal(large.details, undefined);
+  assert.match(large.content, /no partial text/);
+});
+
+test('oversized historical repair questions are readable in bounded pages without injecting author findings', async t => {
+  const f = await fixture(t, true);
+  const record = { ...findings, decisionQuestions: Array.from({ length: 16 }, (_, i) => ({ id: `q${i}`, question: '问题🚲'.repeat(300),
+    decisionImpact: '结论🌍'.repeat(300), status: 'unavailable' as const, resolution: '观察🔍'.repeat(300), evidenceRefs: [] })) };
+  await f.discovery!.update(record);
+  await f.draft.submit(submission);
+  await f.discovery!.update({ ...record, importantLimitations: ['Updated scope'] });
+  const result = await f.draft.inspectTool().execute({}, new AbortController().signal);
+  const content: unknown = JSON.parse(result.content);
+  assert.ok(Value.Check(Type.Object({ status: Type.String(), repairContext: Type.Object({ fullHistory: Type.Object({ path: Type.String() }) }) }), content));
+  assert.equal(content.status, 'stale');
+  assert.ok(comparisonToolTextBytes(content) <= 12_288);
+  const pages = await readComparisonJsonPages(f.root, content.repairContext.fullHistory.path);
+  const full: unknown = JSON.parse(pages);
+  assert.ok(Value.Check(Type.Pick(ComparisonFindingsSubmissionSchema, ['decisionQuestions']), full));
+  assert.deepEqual(full.decisionQuestions, record.decisionQuestions);
+  assert.equal('findings' in full, false);
+  assert.equal(result.details, undefined);
 });

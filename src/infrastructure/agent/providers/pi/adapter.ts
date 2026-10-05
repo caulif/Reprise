@@ -22,6 +22,29 @@ import { piRequestUsage } from './request-usage.js';
 
 export type PiModels = Pick<Models, "getProviders" | "getModels" | "getModel" | "getAuth" | "completeSimple" | "streamSimple">;
 
+type TurnYieldState = { policy: Parameters<ProviderSession['append']>[0]['yieldAfterTurn']; reason: string | undefined; failure: Error | undefined };
+function turnYieldPolicy(usage: { flush(): Promise<void> }, state: TurnYieldState): NonNullable<ConstructorParameters<typeof Agent>[0]['shouldStopAfterTurn']> {
+  return async ({ message }) => {
+    // Pi requires this hook not to throw. Surface audit/policy failures after its normal agent_end.
+    try {
+      await usage.flush();
+      if (message.stopReason === 'error' || message.stopReason === 'aborted') return false;
+      state.reason = await state.policy?.();
+      return state.reason !== undefined;
+    } catch (error) {
+      state.failure = error instanceof Error ? error : new Error('Provider turn yield policy failed.');
+      return true;
+    }
+  };
+}
+
+function yieldReasonAfterPrompt(agent: Agent, state: TurnYieldState, signal: AbortSignal): string | undefined {
+  if (state.failure) throw state.failure;
+  if (signal.aborted) throw abortError();
+  const ended = lastAssistant(agent.state.messages);
+  return ended?.stopReason === 'error' || ended?.stopReason === 'aborted' ? undefined : state.reason;
+}
+
 export class PiProviderAdapter implements ProviderAdapter {
   readonly #models: PiModels;
   readonly #config: HarnessModelConfig;
@@ -44,6 +67,7 @@ export class PiProviderAdapter implements ProviderAdapter {
     const effort = this.#config.effort;
     let active = true;
     let toolsEnabled = true;
+    const turnYield: TurnYieldState = { policy: undefined, reason: undefined, failure: undefined };
     const fixedTokens = Math.ceil(Buffer.byteLength(input.systemPrompt + JSON.stringify(input.tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })))) / 3);
     const availableWindow = contextWindowOf(model) - fixedTokens - Math.max(1_024, model.maxTokens);
     const agent = createPiAgent({
@@ -69,6 +93,7 @@ export class PiProviderAdapter implements ProviderAdapter {
         return undefined;
       },
       maxRetryDelayMs: 8_000,
+      shouldStopAfterTurn: turnYieldPolicy(usage, turnYield),
       transformContext: async (messages, signal) => {
         await compactInto(messages, agent, model, models, effort, signal, input.compactionInstructions, input.onContextCompact, availableWindow);
         return messages;
@@ -94,14 +119,23 @@ export class PiProviderAdapter implements ProviderAdapter {
     });
     return {
       inputCapabilities: [...model.input],
-      async append({ content, images, signal }): Promise<string> {
+      async append({ content, images, signal, yieldAfterTurn: policy }) {
         if (signal.aborted) throw abortError();
         const abort = () => agent.abort();
         signal.addEventListener("abort", abort, { once: true });
+        turnYield.policy = policy;
+        turnYield.reason = undefined;
+        turnYield.failure = undefined;
         try {
           const allowed = model.input.includes("image") ? images : undefined;
           const prompt = toPiUserPrompt(content, allowed);
           await agent.prompt(prompt.content, prompt.images);
+          const yieldedReason = yieldReasonAfterPrompt(agent, turnYield, signal);
+          if (yieldedReason !== undefined) {
+            await agent.waitForIdle();
+            await usage.flush();
+            return { status: 'yielded' as const, reason: yieldedReason };
+          }
           await recoverAgentResponse(agent, model, models, effort, signal, input.compactionInstructions, input.onContextCompact, input.onRetry);
           await usage.flush();
           const message = lastAssistant(agent.state.messages);
@@ -113,6 +147,7 @@ export class PiProviderAdapter implements ProviderAdapter {
         } finally {
           signal.removeEventListener("abort", abort);
           try { await agent.waitForIdle(); } finally { await usage.flush(); }
+          turnYield.policy = undefined;
         }
       },
       cancel(): void {

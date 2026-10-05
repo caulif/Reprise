@@ -333,6 +333,7 @@ export function ingestActivityEvent(index: ActivityIndexState, event: EventEnvel
       clearActiveForRole(index, activityRoleFromPayload(payload), ref, event.occurredAt, 'failed');
       return undefined;
     case 'agent.invocation_cancelled':
+    case 'agent.invocation_yielded':
       clearActiveForRole(index, activityRoleFromPayload(payload), ref, event.occurredAt, 'cancelled');
       return undefined;
     case 'candidate.session_bound': {

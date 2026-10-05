@@ -41,6 +41,7 @@ import { createComparisonRenderCatalogPort } from "./comparison-render-catalog.j
 import { createPreviewReportTool, createRenderArtifactTool, type ComparisonRenderedCheck } from "./comparison-render-tools.js";
 import { materializeComparisonReportPreview } from "./comparison-report-preview.js";
 import { ComparisonDraft } from "./comparison-draft.js";
+import { completedReviewedComparison } from './comparison-live-review.js';
 import { persistComparisonDraftAcceptance } from './comparison-recovery-discovery.js';
 import { ComparisonDiscovery } from './comparison-discovery.js';
 import { AgentUsageFactsSchema } from '../core/schema.js';
@@ -596,7 +597,7 @@ async function invokeCompare(
     input.signal,
     {
       getEvidenceCatalog: () => catalog.snapshot(),
-      getSubmittedResult: () => draft.completedResult(),
+      getSubmittedResult: () => completedReviewedComparison({ draft, store: input.store, attemptId, attemptRoot, context, catalog }),
       onReviewStarted: async sessionId => {
         draft.beginReview();
         const payload = { schemaVersion: 1 as const, attemptId, sessionId, inspectionRequired: true as const };

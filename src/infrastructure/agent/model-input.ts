@@ -171,7 +171,7 @@ export async function reconstructModelRequests(
       }
       const session = sessions.get(sessionId);
       if (!session) continue;
-      if (event.type === "agent.invocation_completed" || event.type === "agent.invocation_failed" || event.type === "agent.invocation_cancelled") {
+      if (event.type === "agent.invocation_completed" || event.type === "agent.invocation_failed" || event.type === "agent.invocation_cancelled" || event.type === "agent.invocation_yielded") {
         session.invocationTerminal = true;
         continue;
       }

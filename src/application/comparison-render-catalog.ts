@@ -35,6 +35,11 @@ export function createComparisonRenderCatalogPort(input: {
   return {
     revision: () => input.catalog.snapshot().revision,
     resolveSource: (sourceRef) => resolveRenderSource(input, sourceRef),
+    async registerAnalysisEvidence(entry, signal) {
+      const registered = await input.catalog.registerEvidence({ relativePath: entry.relativePath,
+        sourceRefs: [entry.sourceRef], label: 'Complete Comparison render measurements' }, signal);
+      return registered.status === 'registered' ? { shortRef: registered.shortRef } : { code: registered.code, message: registered.message };
+    },
     async registerDerivedMedia(entry) {
       if (entry.kind === "report_review") {
         return registerReviewMedia(

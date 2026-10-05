@@ -336,6 +336,7 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
     case 'agent.invocation_completed':
     case 'agent.invocation_failed':
     case 'agent.invocation_cancelled':
+    case 'agent.invocation_yielded':
     case 'agent.tool_called':
     case 'agent.tool_completed':
     case 'agent.tool_failed':
@@ -534,7 +535,7 @@ function agentLaneOf(payload: JsonRecord): AgentLane {
 function projectInternalNow(type: string, payload: JsonRecord, entry: MakeEntry): readonly TimelineEntry[] {
   if (type === 'agent.context_compacted') return [];
   const lane = agentLaneOf(payload);
-  if (type === 'agent.invocation_completed' || type === 'agent.invocation_failed' || type === 'agent.invocation_cancelled') {
+  if (type === 'agent.invocation_completed' || type === 'agent.invocation_failed' || type === 'agent.invocation_cancelled' || type === 'agent.invocation_yielded') {
     return [clearNow(entry, lane)];
   }
   if (type === 'agent.invocation_started') {

@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { Value } from '@sinclair/typebox/value';
+import { AgentInvocationYieldedSchema } from '../../core/schema.js';
 import { classifyAgentFailure, toAgentFailure, type AgentFailureKind } from "./failure.js";
 import { inlineBody, redactModelVisibleText } from "./model-input.js";
 import { recordedImageRefs } from "./artifacts.js";
@@ -106,6 +108,8 @@ export class AgentSessionHost {
     });
   }
 
+  work(request: FreeformWorkRequest & { yieldAfterTurn: NonNullable<FreeformWorkRequest['yieldAfterTurn']> }): Promise<FreeformInvocation>;
+  work(request: Omit<FreeformWorkRequest, 'yieldAfterTurn'>): Promise<AgentInvocation<{ text?: string }>>;
   async work(request: FreeformWorkRequest): Promise<FreeformInvocation> {
     return this.#dispatch({ kind: "freeform", ...request });
   }
@@ -118,11 +122,11 @@ export class AgentSessionHost {
    * Run freeform steps in order. Returns the first incomplete invocation, or the
    * last completed one. An empty `steps` list completes without calling the model.
    */
-  async runTurns(steps: readonly FreeformWorkRequest[]): Promise<FreeformInvocation> {
+  async runTurns(steps: readonly (FreeformWorkRequest & { yieldAfterTurn?: never })[]): Promise<AgentInvocation<{ text?: string }>> {
     if (steps.length === 0) {
       return { status: "completed", sessionId: this.#sessionId, value: {} };
     }
-    let last!: FreeformInvocation;
+    let last!: AgentInvocation<{ text?: string }>;
     for (const step of steps) {
       last = await this.work(step);
       if (last.status !== "completed") return last;
@@ -246,12 +250,26 @@ export class AgentSessionHost {
         timer = setTimeout(() => controller.abort(), remaining);
       }
       if (cancelled()) return { done: true, result: { status: "cancelled", sessionId: this.#sessionId, invocationId } };
-      const text = await abortable(
-        this.#session!.append({ content, ...(outboundImages?.length ? { images: outboundImages } : {}), signal }),
+      const output = await abortable(
+        this.#session!.append({ content, ...(outboundImages?.length ? { images: outboundImages } : {}), signal,
+          ...(request.kind === 'freeform' && request.yieldAfterTurn ? { yieldAfterTurn: request.yieldAfterTurn } : {}) }),
         signal,
       );
       if (controller.signal.aborted) throw timeoutError();
       if (cancelled()) return { done: true, result: { status: "cancelled", sessionId: this.#sessionId, invocationId } };
+      if (typeof output !== 'string') {
+        if (request.kind !== 'freeform' || !request.yieldAfterTurn || !output.reason.trim()) throw new Error('Unexpected provider yield result.');
+        if (this.#session!.waitForIdle) await abortable(this.#session!.waitForIdle(), signal);
+        if (controller.signal.aborted) throw timeoutError();
+        if (cancelled()) return { done: true, result: { status: 'cancelled', sessionId: this.#sessionId, invocationId } };
+        const payload = { schemaVersion: 1, invocationId, reason: output.reason };
+        if (!Value.Check(AgentInvocationYieldedSchema, payload)) throw new Error('Invalid invocation yield audit payload.');
+        await this.#audit?.append({ type: 'agent.invocation_yielded', sessionId: this.#sessionId, role: this.#role, payload });
+        if (controller.signal.aborted) throw timeoutError();
+        if (cancelled()) return { done: true, result: { status: 'cancelled', sessionId: this.#sessionId, invocationId } };
+        return { done: true, result: { status: 'yielded', reason: output.reason, sessionId: this.#sessionId, invocationId } };
+      }
+      const text = output;
       await this.#audit?.append({
         type: "agent.model_output",
         sessionId: this.#sessionId,

@@ -46,7 +46,7 @@ export type AgentInvocation<T> =
 
 export type StructuredAgentResult<T> = AgentInvocation<T>;
 /** Optional visible diagnostic for audit; business agents must not depend on `text`. */
-export type FreeformInvocation = AgentInvocation<{ text?: string }>;
+export type FreeformInvocation = AgentInvocation<{ text?: string }> | { status: "yielded"; reason: string; sessionId: string; invocationId?: string };
 
 export type AgentToolDefinition = {
   name: string;
@@ -68,6 +68,7 @@ export type AgentAuditEventType =
   | "agent.invocation_completed"
   | "agent.invocation_failed"
   | "agent.invocation_cancelled"
+  | "agent.invocation_yielded"
   | "agent.message_appended"
   | "agent.tool_called"
   | "agent.tool_completed"
@@ -132,6 +133,8 @@ export type FreeformWorkRequest = {
   timeoutMs: number;
   requestId?: string;
   maxRepairAttempts?: number;
+  /** Checked at a completed provider turn; yielding preserves the live transcript and never certifies completion. */
+  yieldAfterTurn?: () => string | undefined | Promise<string | undefined>;
 };
 
 export type StructuredWorkRequest<T> = {
@@ -161,7 +164,8 @@ export type StructuredAgentRequest<T> = StructuredWorkRequest<T> & {
 
 export interface AgentSession {
   readonly sessionId: string;
-  work(input: FreeformWorkRequest): Promise<FreeformInvocation>;
+  work(input: FreeformWorkRequest & { yieldAfterTurn: NonNullable<FreeformWorkRequest['yieldAfterTurn']> }): Promise<FreeformInvocation>;
+  work(input: Omit<FreeformWorkRequest, 'yieldAfterTurn'>): Promise<AgentInvocation<{ text?: string }>>;
   request<T>(input: StructuredWorkRequest<T>): Promise<AgentInvocation<T>>;
   cancel(reason?: string, requestId?: string): Promise<void>;
   close(): Promise<void>;
@@ -173,7 +177,7 @@ export interface AgentHost {
 
 export interface ProviderSession {
   readonly inputCapabilities?: readonly string[];
-  append(input: { content: string; images?: readonly ImageContent[]; signal: AbortSignal }): Promise<string>;
+  append(input: { content: string; images?: readonly ImageContent[]; signal: AbortSignal; yieldAfterTurn?: FreeformWorkRequest['yieldAfterTurn'] }): Promise<string | { status: "yielded"; reason: string }>;
   cancel(): void;
   waitForIdle?(): Promise<void>;
   setToolsEnabled?(enabled: boolean): void;

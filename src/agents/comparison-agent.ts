@@ -84,6 +84,7 @@ export interface ComparisonAgentPort {
 export type ComparisonCompareOptions = {
   /** Same-process getter; must not be persisted into comparison.requested JSON. */
   getEvidenceCatalog?: () => Pick<ComparisonEvidenceCatalogSnapshot, "links" | "media">;
+  /** Returns only a fully publishable result, including actual current inspection delivery to a subsequent generation request. */
   getSubmittedResult?: () => Promise<ComparisonResult | undefined>;
   onReviewStarted?: (sessionId: string) => void | Promise<void>;
   getSubmissionFailure?: () => { code: 'draft_invalid' | 'preview_failed'; message: string; kind?: 'protocol' | 'timeout' | 'tool' };
@@ -334,11 +335,12 @@ const COMPARISON_SOURCE_REVIEW_PROMPT = [
   'This is the independent source pass of a fresh review session. Do not open the report, author work notes or saved findings yet.',
   'Read the original task from briefing/task/initial-input.txt and observations/user-inputs/INDEX.tsv, including relevant indexed user requirements.',
   'Use briefing/decision-map.md and the current evidence index only to locate both sealed final deliverables; navigation and self-descriptions are not findings.',
-  'Independently identify the few task-critical differences. For the strongest proposed advantage, trace the actual delivered output from its inputs through every downstream operation that changes it.',
+  'Independently identify the few task-critical differences. For each independent success guarantee you would put in the headline or main comparison, trace the actual delivered output from its inputs through every downstream operation that changes it. Evidence for one advantage does not certify another.',
   'Name the observable result and its coordinate or data domain before comparing it. Local algorithm targets, matching constants, self-checks and intermediate values do not certify the final drawn, written or returned result.',
   'Choose one plausible counterexample that could overturn that advantage or a material guarantee. Check the final output chain rather than recomputing only the intended target; use another relevant input or normalized state when needed.',
   'If final geometry is decisive, prefer render_artifact geometryQueries for actual transformed points over a script that reconstructs intended coordinates. Read the returned statuses and coordinate domain, compare relevant elements within the same sampling window, and keep claims within the measured states.',
   'For claims covering several instances, locate each materially different downstream branch and test a corresponding output relationship. If you check only one instance or its bounding-box movement, the others remain unknown and no collective contact/alignment guarantee is supported.',
+  'For each such guarantee, state its observable relationship, covered instances and checked branches. Source inference must also include the final transforms, writes or returned values. If decisive results were stubbed, a branch remains unchecked or only motion was observed, remove or narrow the guarantee in the headline and main text; a limitation in details cannot repair a broader assertion.',
   'Use existing source, execution or controlled rendering tools only when their outcome could change the decision. Distinguish source inference, actual execution, current Comparison checks and original runtime observations.',
   'If a check cannot run or evidence is unavailable, narrow the supported claim and retain the unresolved question; do not turn a resource limit into proof. Prioritize the actual output chain and counterexample over CSS or metadata inventories. Reserve time and requests for draft correction, final inspection and preview.',
   'When review time or investigation allowance is exhausted, return your independently supported assessment or uncertainty now. The Host then starts draft audit. Do not retry blocked checks or call inspect_comparison_draft, submit_comparison_draft or preview_report in this source pass.',
@@ -452,11 +454,37 @@ const JSON_ONLY_REPAIR_PROMPT = [
 
 const COMPARISON_REPAIR_INSTRUCTION = 'Return only the JSON object; do not rewrite report.html. Use short refs from the current catalog for evidenceRefs, or [].';
 
-function comparisonProviderFailure<T>(result: AgentInvocation<T>): AgentInvocation<T> {
+function comparisonProviderFailure<T>(result: AgentInvocation<T> | Extract<FreeformInvocation, { status: 'yielded' }>): AgentInvocation<T> {
+  if (result.status === 'yielded') return { status: 'failed', sessionId: result.sessionId, failure: { code: 'draft_invalid', kind: 'protocol', message: `Comparison phase yielded without a publishable checkpoint: ${result.reason}.`, attempts: 0 } };
   if (result.status !== 'failed') return result;
   const kind = result.failure.kind;
   if (kind !== 'authentication' && kind !== 'rate_limited' && kind !== 'transient_network' && kind !== 'transient_upstream') return result;
   return { ...result, failure: { ...result.failure, code: 'provider_failure' } };
+}
+
+type ComparisonWorkPass = 'sources' | 'findings';
+
+function comparisonYieldPolicy(resources: ComparisonResourceTracker, phase: string, pass: ComparisonWorkPass | undefined, options: ComparisonCompareOptions | undefined): () => Promise<string | undefined> {
+  return async () => {
+    resources.checkHard('completed provider turn');
+    if (pass === 'findings') return 'findings_turn_boundary';
+    if (phase === 'investigate') return resources.softReason();
+    if (phase !== 'review') return undefined;
+    if (pass !== 'sources' && await options?.getSubmittedResult?.()) return 'report_ready';
+    return resources.reviewReason();
+  };
+}
+
+async function appendComparisonPhaseOutcome(audit: AgentAuditSink | undefined, input: {
+  sessionId: string; phase: string; pass: ComparisonWorkPass | undefined; startedAt: number;
+  counts: { modelRequests: number; toolCalls: number; compactions: number; previews: number };
+  resources: ComparisonResourceTracker; outcome: FreeformInvocation | undefined;
+}): Promise<void> {
+  await audit?.append({ type: 'comparison.phase_completed', sessionId: input.sessionId, role: 'comparison', payload: {
+    phase: input.phase, ...(input.pass ? { pass: input.pass } : {}), outcome: input.outcome?.status ?? 'not_returned',
+    ...(input.outcome?.status === 'yielded' ? { yieldReason: input.outcome.reason } : {}),
+    elapsedMs: Date.now() - input.startedAt, ...input.counts, resources: input.resources.snapshot(),
+  } });
 }
 
 export class ComparisonAgent implements ComparisonAgentPort {
@@ -496,7 +524,8 @@ export class ComparisonAgent implements ComparisonAgentPort {
     this.#activeAttempts.set(attemptId, cancellation);
     signal = signal ? AbortSignal.any([signal, cancellation.signal]) : cancellation.signal;
     try {
-      return await this.#compareAttempt(context, tools, audit, signal, options);
+      const result = await this.#compareAttempt(context, tools, audit, signal, options);
+      return result.status === 'completed' && signal.aborted ? { status: 'cancelled', sessionId: result.sessionId } : result;
     } finally {
       this.#activeAttempts.delete(attemptId);
     }
@@ -545,13 +574,14 @@ export class ComparisonAgent implements ComparisonAgentPort {
     };
     let session = await this.#sessionFor(attemptId, context, phasedTools, measuredAudit);
     let freshReview = false;
-    const measuredWork = async (phase: 'understand' | 'investigate' | 'compose' | 'review', promptContent: string, reviewPass?: 'sources') => {
+    const measuredWork = async (phase: 'understand' | 'investigate' | 'compose' | 'review', promptContent: string, reviewPass?: ComparisonWorkPass) => {
       current.phase = phase;
       current.sourceReview = reviewPass === 'sources';
       resources.phase(phase);
       activePhase = phase;
       counts = { modelRequests: 0, toolCalls: 0, compactions: 0, previews: 0 };
       const startedAt = Date.now();
+      let outcome: FreeformInvocation | undefined;
       try {
         if (phase === 'review' && options?.getSubmittedResult && !freshReview) {
           resources.checkHard('fresh review session');
@@ -564,13 +594,12 @@ export class ComparisonAgent implements ComparisonAgentPort {
         }
         if (signal?.aborted) return { status: 'cancelled' as const, sessionId: session.sessionId };
         const timeoutMs = comparisonTimeout(resources, this.#resources, this.#timeoutMs);
-        return await session.work({ promptContent, timeoutMs, ...(signal ? { signal } : {}) });
+        outcome = await session.work({ promptContent, timeoutMs, ...(signal ? { signal } : {}),
+          yieldAfterTurn: comparisonYieldPolicy(resources, phase, reviewPass, options) });
+        return outcome;
       } finally {
         activePhase = undefined;
-        await audit?.append({
-          type: 'comparison.phase_completed', sessionId: session.sessionId, role: 'comparison',
-          payload: { phase, elapsedMs: Date.now() - startedAt, ...counts, resources: resources.snapshot() },
-        });
+        await appendComparisonPhaseOutcome(audit, { sessionId: session.sessionId, phase, pass: reviewPass, startedAt, counts, resources, outcome });
       }
     };
     try {
@@ -593,7 +622,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
         ? ensureDraftStructure({ session, preflight: options.preflightDraft, work: prompt => measuredWork(review ? 'review' : 'compose', prompt), seen: seenDraftErrors, review })
         : undefined;
       const ready = await ensureDraft(false);
-      if (ready && ready.status !== 'completed') return ready;
+      if (ready && ready.status !== 'completed') return comparisonProviderFailure(ready);
       current.phase = 'review';
       resources.phase('review');
       return await this.#legacyEnvelope(session, tools, signal, currentAllowlist, attemptId, () => comparisonTimeout(resources, this.#resources, this.#timeoutMs), options?.preflightDraft, ensureDraft);
@@ -605,7 +634,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
   async #submittedComparison(
     context: ComparisonContext,
     options: ComparisonCompareOptions,
-    measuredWork: (phase: 'investigate' | 'compose' | 'review', prompt: string, reviewPass?: 'sources') => Promise<FreeformInvocation>,
+    measuredWork: (phase: 'investigate' | 'compose' | 'review', prompt: string, reviewPass?: ComparisonWorkPass) => Promise<FreeformInvocation>,
     sessionId: string,
     attemptId: string,
   ): Promise<AgentInvocation<ComparisonResult>> {
@@ -613,7 +642,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
       ? `${context.promptContent}\n\n${COMPARISON_TURN_PROMPTS.orientAndInvestigate}`
       : COMPARISON_TURN_PROMPTS.orientAndInvestigate);
     const seenFindings = new Set<string>();
-    while (investigated.status === 'completed' && options.findingsReady && !options.findingsReady()) {
+    while ((investigated.status === 'completed' || investigated.status === 'yielded') && options.findingsReady && !options.findingsReady()) {
       const state = options.getFindingsState?.() ?? 'missing findings';
       if (seenFindings.has(state) || seenFindings.size >= 2) {
         await this.#sessions.discard(attemptId);
@@ -621,10 +650,10 @@ export class ComparisonAgent implements ComparisonAgentPort {
           failure: { code: 'draft_invalid', message: 'Comparison findings are missing or decision questions remain pending without progress.', attempts: seenFindings.size, kind: 'protocol' } };
       }
       seenFindings.add(state);
-      investigated = await measuredWork('investigate', `Finish the current investigation using update_comparison_findings. Resolve decision questions or explain unavailable evidence. Do not repeat settled checks. Current findings: ${state}`);
+      investigated = await measuredWork('investigate', `The Host stopped investigation at a completed-turn boundary; it did not certify completion. Use this bounded closure turn only to submit update_comparison_findings from already observed evidence. Do not run more investigation or repeat settled checks. Resolve questions only with existing supporting evidence; otherwise mark unavailable with the decisive uncertainty and limitation. Preserve the complete question history. Current findings: ${state}`, 'findings');
     }
     const findings = options.getFindingsState?.();
-    const prefix = investigated.status === 'completed'
+    const prefix = investigated.status === 'completed' || investigated.status === 'yielded'
       ? await measuredWork('compose', `${COMPARISON_TURN_PROMPTS.compose}${findings ? `\n\nSaved findings (provenance checked, semantics still require review): ${findings}` : ''}`)
       : investigated;
     if (prefix.status !== 'completed') {
@@ -642,19 +671,21 @@ export class ComparisonAgent implements ComparisonAgentPort {
     attemptId: string,
   ): Promise<AgentInvocation<ComparisonResult>> {
     const sources = await work('review', [context.promptContent ?? '', COMPARISON_SOURCE_REVIEW_PROMPT].join('\n\n'), 'sources');
-    if (sources.status !== 'completed') {
+    if (sources.status !== 'completed' && sources.status !== 'yielded') {
       if (sources.status === 'failed') await this.#sessions.discard(attemptId);
       return comparisonProviderFailure(sources);
     }
     let prompt = [
-      'The independent source pass is complete. Continue in this same review session; its observations are still provisional and its unavailable checks do not certify success.',
+      sources.status === 'yielded'
+        ? `The Host stopped the independent source pass at a completed-turn boundary (${sources.reason}); that pass is incomplete. Continue in the same review session using its actual observations. Unchecked guarantees remain unknown, must qualify conflicting headline/main claims, and cannot be certified by this resource stop.`
+        : 'The independent source pass is complete. Continue in this same review session; its observations are still provisional and its unavailable checks do not certify success.',
       'Now inspect the current accepted draft with inspect_comparison_draft when available (otherwise read report.html). Compare its actual claims with the original requirements and the source/output-chain observations you just made. Do not inherit author work notes or saved findings as evidence.',
       COMPARISON_TURN_PROMPTS.review,
     ].join('\n\n');
     const seen = new Set<string>();
     for (let repair = 0; ; repair++) {
       const reviewed = await work('review', prompt);
-      if (reviewed.status !== 'completed') {
+      if (reviewed.status !== 'completed' && reviewed.status !== 'yielded') {
         if (reviewed.status === 'failed') await this.#sessions.discard(attemptId);
         return comparisonProviderFailure(reviewed);
       }
@@ -680,7 +711,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
     attemptId: string,
     timeout: () => number,
     preflightDraft?: () => Promise<{ digest: string; error?: string }>,
-    ensureDraft?: (review: boolean) => Promise<AgentInvocation<unknown> | undefined> | undefined,
+    ensureDraft?: (review: boolean) => Promise<FreeformInvocation | undefined> | undefined,
   ): Promise<AgentInvocation<ComparisonResult>> {
     const envelopeRequest = {
       ...(signal ? { signal } : {}),
@@ -714,7 +745,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
       const finalDraft = await preflightDraft();
       if (!finalDraft.error) break;
       const repaired = await ensureDraft?.(true);
-      if (repaired && repaired.status !== 'completed') return repaired;
+      if (repaired && repaired.status !== 'completed') return comparisonProviderFailure(repaired);
       result = await reviewEnvelope();
     }
     if (result.status === 'failed') await this.#sessions.discard(attemptId);
