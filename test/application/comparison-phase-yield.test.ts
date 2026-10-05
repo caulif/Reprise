@@ -136,13 +136,71 @@ for (const mode of ['yielded', 'unlimited', 'legacy_timeout', 'cancel', 'hard', 
   }
   const result = await comparison;
   assert.ok(deadlines.some(call => call.source));
-  assert.ok(deadlines.filter(call => !call.source).every(call => call.value === undefined), 'only independent sources receive the local deadline');
+  assert.ok(deadlines.filter(call => !call.source).every(call => call.value === undefined || call.value.reason === 'bounded_investigation_timeout'), 'other local deadlines are only the initial investigation');
+  assert.equal(deadlines.filter(call => call.value?.reason === 'bounded_investigation_timeout').length, mode === 'unlimited' ? 0 : 1);
   if (mode === 'yielded' || mode === 'unlimited') {
     assert.equal(result.status, 'completed'); assert.equal(draftCalls, 2); assert.equal(sessions.length, 2);
     assert.equal(events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'sources')!.payload.yieldReason, 'bounded_source_timeout');
   } else {
     assert.equal(result.status, mode === 'cancel' ? 'cancelled' : 'failed');
     assert.equal(draftCalls, 0, 'ordinary failure, hard limit and external cancel never become a draft audit');
+    if (mode === 'legacy_timeout' && result.status === 'failed') assert.equal(result.failure.code, 'agent_timeout');
+  }
+});
+
+for (const mode of ['yielded', 'saved', 'unlimited', 'legacy_timeout', 'cancel', 'hard', 'provider_error'] as const) test(`investigation absolute deadline preserves saved findings and failure boundaries: ${mode}`, async t => {
+  if (mode === 'hard') t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const events: AgentAuditEvent[] = [], sessions: string[] = [];
+  const controller = new AbortController();
+  let requests = 0, saves = 0, ready = false, previewed = false, closureCalls = 0, composeCalls = 0;
+  const host = new AgentHost({ createSession: input => {
+    sessions.push(input.sessionId);
+    return { append: async ({ content, signal, yieldDeadline, allowedToolNames, yieldAfterTurn }) => {
+      requests++;
+      await input.onModelRequest?.({ model: 'fixture', scope: 'generation', digest: sha256(content), messageCount: requests, images: [] });
+      const call = (name: string) => input.tools.find(tool => tool.name === name)!.execute({}, signal);
+      if (requests === 1) {
+        if (mode === 'unlimited') assert.equal(yieldDeadline, undefined);
+        else { assert.equal(yieldDeadline?.reason, 'bounded_investigation_timeout'); assert.ok(yieldDeadline.at >= Date.now()); }
+        await call('update_comparison_findings');
+        if (mode === 'legacy_timeout') return await new Promise<string>(() => {});
+        if (mode === 'provider_error') throw new Error('Actual investigation provider failure');
+        if (mode === 'cancel') controller.abort();
+        if (mode === 'hard') t.mock.timers.tick(600_000);
+        return mode === 'unlimited' ? 'done' : { status: 'yielded' as const, reason: 'bounded_investigation_timeout' };
+      }
+      if (content.includes('Use this bounded closure turn')) {
+        closureCalls++; assert.equal(input.sessionId, sessions[0]); assert.equal(yieldDeadline, undefined, 'findings-only closure must not inherit the exhausted investigation deadline');
+        assert.deepEqual(allowedToolNames, ['update_comparison_findings']);
+        assert.match(content, /already received observations[\s\S]*mark unavailable[\s\S]*Preserve actual saved findings/);
+        if (mode === 'yielded') assert.match(content, /not a completed-turn boundary or completed investigation/);
+        await call('update_comparison_findings');
+      } else if (content.includes('Submit the report with submit_comparison_draft. Supply category,')) {
+        composeCalls++; assert.equal(yieldDeadline, undefined); assert.match(content, /Saved findings[\s\S]*actual saved observation/);
+        if (mode === 'yielded' || mode === 'saved') assert.match(content, /not a completed-turn boundary or completed investigation/);
+        assert.match(content, /unchecked task relationships remain unknown/);
+      } else if (content.includes('Now inspect')) await call('preview_report');
+      const reason = await yieldAfterTurn?.(); return reason ? { status: 'yielded' as const, reason } : 'done';
+    }, cancel() {} };
+  } });
+  const tools = [
+    { name: 'update_comparison_findings', execute: async () => { saves++; ready = mode === 'saved' || saves > 1; return { content: 'Actual accepted findings' }; } },
+    { name: 'preview_report', execute: async () => { previewed = true; return { content: 'Actual matching preview' }; } },
+  ].map(tool => ({ ...tool, description: tool.name, parameters: Type.Object({}) }));
+  const comparison = new ComparisonAgent({ host, timeoutMs: mode === 'legacy_timeout' ? 5 : 1_000, maxRepairAttempts: 0,
+    resources: mode === 'unlimited' ? {} : { investigationMs: 120_000, maxElapsedMs: 600_000 } }).compare(context, tools,
+    { append: async event => { events.push(event); } }, controller.signal, {
+      findingsReady: () => ready, hasSavedFindings: () => saves > 0, getFindingsState: () => 'actual saved observation; unchecked relationship unavailable',
+      getSubmittedResult: async () => previewed ? resultValue : undefined,
+    });
+  if (mode === 'hard') { await assert.rejects(comparison, /maxElapsedMs/); assert.equal(composeCalls, 0); return; }
+  const result = await comparison;
+  if (mode === 'yielded' || mode === 'saved' || mode === 'unlimited') {
+    assert.equal(result.status, 'completed', JSON.stringify(result)); assert.equal(composeCalls, 1); assert.equal(closureCalls, mode === 'saved' ? 0 : 1);
+    assert.equal(saves, mode === 'saved' ? 1 : 2); assert.equal(sessions.length, 2);
+    if (mode !== 'unlimited') assert.equal(events.find(event => event.type === 'comparison.phase_completed' && event.payload.phase === 'investigate')!.payload.yieldReason, 'bounded_investigation_timeout');
+  } else {
+    assert.equal(result.status, mode === 'cancel' ? 'cancelled' : 'failed'); assert.equal(composeCalls, 0); assert.equal(closureCalls, 0);
     if (mode === 'legacy_timeout' && result.status === 'failed') assert.equal(result.failure.code, 'agent_timeout');
   }
 });
@@ -295,6 +353,57 @@ function nativeMessage(content: AssistantMessage['content'], stopReason: Assista
 function toolTurn(...names: string[]): AssistantMessage {
   return nativeMessage(names.map((name, index) => ({ type: 'toolCall', id: `${name}-${index}`, name, arguments: {} })));
 }
+
+test('native investigation deadline waits for actual usage drain before findings-only continuation', async () => {
+  const events: AgentAuditEvent[] = [], inputs: { tools: { name: string }[]; messages: unknown[] }[] = [];
+  let drainStarted!: () => void, releaseDrain!: () => void;
+  const draining = new Promise<void>(resolve => { drainStarted = resolve; });
+  const release = new Promise<void>(resolve => { releaseDrain = resolve; });
+  let saves = 0, ready = false, previewed = false;
+  const stop = (text: string) => nativeMessage([{ type: 'text', text }], 'stop');
+  const models = { getModel: () => nativeModel, streamSimple: (_model: unknown, actual: unknown, options: { signal: AbortSignal }) => {
+    const current = actual as typeof inputs[number];
+    inputs.push({ tools: current.tools.map(tool => ({ name: tool.name })), messages: structuredClone(current.messages) });
+    const stream = createAssistantMessageEventStream();
+    if (inputs.length === 2) {
+      options.signal.addEventListener('abort', () => stream.push({ type: 'error', reason: 'aborted', error: nativeMessage([], 'aborted') }), { once: true });
+    } else {
+      const response = inputs.length === 1 || inputs.length === 3 ? toolTurn('update_comparison_findings')
+        : inputs.length === 6 ? toolTurn('preview_report') : stop('Actual completed phase');
+      assert.ok(inputs.length <= 6, 'no extra generation after publication');
+      if (inputs.length === 3) {
+        assert.deepEqual(current.tools.map(tool => tool.name), ['update_comparison_findings']);
+        assert.match(JSON.stringify(current.messages), /not a completed-turn boundary or completed investigation/);
+        assert.match(JSON.stringify(current.messages), /Actual saved source observation/);
+      }
+      stream.push({ type: 'done', reason: response.stopReason as 'stop' | 'toolUse', message: response });
+    }
+    return stream;
+  } } as unknown as PiModels;
+  const caller = new PiModelCaller({ schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' }, providerId: 'fixture', modelId: 'fixture', effort: 'low' }, models);
+  const tools = [
+    { name: 'update_comparison_findings', execute: async () => { saves++; ready = saves > 1; return { content: 'Actual saved source observation; unchecked relationship unavailable' }; } },
+    { name: 'preview_report', execute: async () => { previewed = true; return { content: 'Actual current preview' }; } },
+  ].map(tool => ({ ...tool, description: tool.name, parameters: Type.Object({}) }));
+  const comparison = new ComparisonAgent({ host: new AgentHost(caller), timeoutMs: 2_000, maxRepairAttempts: 0,
+    resources: { investigationMs: 250, maxElapsedMs: 600_000 } }).compare(context, tools, { append: async event => {
+      events.push(event);
+      if (event.type === 'agent.usage_reported' && inputs.length === 2) { drainStarted(); await release; }
+    } }, undefined, {
+      findingsReady: () => ready, hasSavedFindings: () => saves > 0,
+      getFindingsState: () => 'Actual saved source observation; unchecked relationship unavailable',
+      getSubmittedResult: async () => previewed ? resultValue : undefined,
+    });
+  await draining;
+  assert.equal(inputs.length, 2, 'no next generation while interrupted usage is still draining'); assert.equal(saves, 1);
+  releaseDrain();
+  assert.equal((await comparison).status, 'completed'); assert.equal(inputs.length, 6); assert.equal(saves, 2);
+  const invocations = events.filter(event => event.type === 'agent.invocation_started');
+  assert.match(JSON.stringify(invocations[0]!.payload.yieldDeadline), /bounded_investigation_timeout/);
+  assert.equal(invocations[1]!.payload.yieldDeadline, undefined, 'closure does not inherit the absolute investigation deadline');
+  assert.equal(events.find(event => event.type === 'comparison.phase_completed' && event.payload.phase === 'investigate')!.payload.yieldReason, 'bounded_investigation_timeout');
+  assert.equal(events.filter(event => event.type === 'agent.session_started').length, 2, 'same author session continues before the independent review session');
+});
 
 for (const mode of ['success', 'provider', 'cancel', 'audit', 'hard'] as const) test(`native preview-only closure has no post-preview generation and preserves ${mode}`, async () => {
   const events: AgentAuditEvent[] = [], inputs: { tools: { name: string }[]; messages: unknown[] }[] = [];

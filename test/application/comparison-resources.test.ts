@@ -217,3 +217,35 @@ test('source local allowance does not reset after returning to review and clamps
   assert.equal(tracker.sourceRemainingMs(), 0);
   assert.equal(tracker.beforeTool('read'), 'reviewMs');
 });
+
+test('investigation absolute allowance accumulates across continuations and excludes later phases', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const tracker = new ComparisonResourceTracker({ investigationMs: 120_000, maxElapsedMs: 600_000 });
+  assert.equal(tracker.investigationRemainingMs(), 120_000);
+  t.mock.timers.tick(30_000);
+  assert.equal(tracker.investigationRemainingMs(), 90_000);
+  tracker.phase('compose'); t.mock.timers.tick(330_000);
+  assert.equal(tracker.investigationRemainingMs(), 90_000, 'inactive investigation time does not accumulate');
+  tracker.phase('investigate');
+  assert.equal(tracker.investigationRemainingMs(), 90_000, 'compose does not spend the local investigation allowance');
+  tracker.phase('compose'); t.mock.timers.tick(100_000); tracker.phase('investigate');
+  assert.equal(tracker.investigationRemainingMs(), 50_000, 'global 90s finishing reserve is stricter');
+  t.mock.timers.tick(50_000);
+  assert.equal(tracker.investigationRemainingMs(), 0);
+  t.mock.timers.tick(1);
+  assert.equal(tracker.investigationRemainingMs(), 0);
+});
+
+test('investigation deadline retains explicit unlimited resources and hard-only finishing reserve', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  assert.equal(new ComparisonResourceTracker({}).investigationRemainingMs(), undefined);
+  const tracker = new ComparisonResourceTracker({ maxElapsedMs: 100_000 });
+  assert.equal(tracker.investigationRemainingMs(), 10_000);
+  t.mock.timers.tick(10_000);
+  assert.equal(tracker.investigationRemainingMs(), 0);
+  t.mock.timers.tick(90_000);
+  assert.throws(() => tracker.checkHard('after local investigation yield'), /maxElapsedMs/);
+  const local = new ComparisonResourceTracker({ investigationMs: 10 });
+  t.mock.timers.tick(10);
+  assert.equal(local.investigationRemainingMs(), 0, 'local allowance alone also clamps at exhaustion');
+});

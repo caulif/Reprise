@@ -10,3 +10,4 @@ After decision-changing checks or catalog changes, promptly save a complete repl
 scoped observations, important limitations and decision questions before finishing.
 Resolve each question or explain why its evidence is unavailable. Reopen settled questions only with new grounds.
 Each next check must have a possible outcome that changes the choice or an important limitation.
+The Host may interrupt this investigation at its absolute local deadline, including during unfinished generation. This is not a completed turn or investigation and certifies no guarantee; preserve actual saved findings and keep unchecked relationships unknown. Any findings-only closure must use only observations actually received.

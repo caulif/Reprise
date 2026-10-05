@@ -9,6 +9,7 @@ import { STRUCTURED_FINAL_RULE } from './structured-final-rule.js';
 import type { ComparisonResources } from '../core/schema.js';
 import { ComparisonResourceTracker } from './comparison-resources.js';
 import { comparisonToolFeedback, comparisonSoftLimitFeedback } from './comparison-tool-feedback.js';
+import { comparisonTimeout, comparisonWorkDeadline, comparisonYieldBoundary, type ComparisonWorkPass } from './comparison-invocation-boundaries.js';
 export type { ComparisonAgentEnvelope } from '../core/schema.js';
 export type ComparisonResult = Omit<ComparisonAgentEnvelope, 'reportPath'> & { reportPath: 'report.html' };
 export type ComparisonContext = {
@@ -158,26 +159,6 @@ async function ensureDraftStructure(input: {
     draft = await input.preflight();
   }
   return { status: 'completed', sessionId: input.session.sessionId, value: {} };
-}
-
-function comparisonTimeout(resources: ComparisonResourceTracker, limits: ComparisonResources, callTimeoutMs: number): number {
-  resources.checkHard('phase invocation');
-  if (limits.maxElapsedMs === undefined) return callTimeoutMs;
-  const remaining = Math.max(1, limits.maxElapsedMs - Number(resources.snapshot().elapsedMs));
-  return callTimeoutMs > 0 ? Math.min(callTimeoutMs, remaining) : remaining;
-}
-
-function comparisonSourceDeadline(resources: ComparisonResourceTracker, pass?: ComparisonWorkPass): { yieldDeadline?: { at: number; reason: string } } {
-  const remaining = pass === 'sources' ? resources.sourceRemainingMs() : undefined;
-  return remaining === undefined ? {} : { yieldDeadline: { at: Date.now() + remaining, reason: 'bounded_source_timeout' } };
-}
-
-function comparisonYieldBoundary(outcome: FreeformInvocation, resources: ComparisonResourceTracker, signal?: AbortSignal): FreeformInvocation {
-  if (outcome.status === 'yielded') {
-    resources.checkHard('after source or turn yield');
-    if (signal?.aborted) return { status: 'cancelled', sessionId: outcome.sessionId };
-  }
-  return outcome;
 }
 
 function comparisonPassToolNames(tools: readonly AgentToolDefinition[], resources: ComparisonResourceTracker, pass?: ComparisonWorkPass): readonly string[] | undefined {
@@ -449,6 +430,7 @@ export const COMPARISON_TURN_PROMPTS = {
     'scoped observations, important limitations and decision questions before finishing.',
     'Resolve each question or explain why its evidence is unavailable. Reopen settled questions only with new grounds.',
     'Each next check must have a possible outcome that changes the choice or an important limitation.',
+    'The Host may interrupt this investigation at its absolute local deadline, including during unfinished generation. This is not a completed turn or investigation and certifies no guarantee; preserve actual saved findings and keep unchecked relationships unknown. Any findings-only closure must use only observations actually received.',
   ].join('\n'),
   understand: [
     'Understand the user\'s task and the final outcome they wanted. Read the user-input',
@@ -463,6 +445,7 @@ export const COMPARISON_TURN_PROMPTS = {
     'write or preview report.html in this turn.',
   ].join('\n'),
   investigate: [
+    'The absolute local investigation deadline can interrupt unfinished generation; interruption does not certify completion, observations or guarantees. Preserve actual saved findings and unchecked relationships as unknown.',
     'Investigate the questions that can change the task-specific conclusion. Read',
     'the actual evidence, obtain useful previews or checks, and resolve recoverable',
     'gaps. Use matched conditions when comparing outputs. Preserve new relevant',
@@ -571,8 +554,6 @@ function comparisonProviderFailure<T>(result: AgentInvocation<T> | Extract<Freef
   if (kind !== 'authentication' && kind !== 'rate_limited' && kind !== 'transient_network' && kind !== 'transient_upstream') return result;
   return { ...result, failure: { ...result.failure, code: 'provider_failure' } };
 }
-
-type ComparisonWorkPass = 'sources' | 'findings' | 'inspection' | 'audit' | 'preview';
 
 function comparisonYieldPolicy(resources: ComparisonResourceTracker, phase: string, pass: ComparisonWorkPass | undefined, options: ComparisonCompareOptions | undefined): () => Promise<string | undefined> {
   return async () => {
@@ -706,7 +687,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
         if (signal?.aborted) return { status: 'cancelled' as const, sessionId: session.sessionId };
         const timeoutMs = comparisonTimeout(resources, this.#resources, this.#timeoutMs);
         outcome = await session.work({ promptContent, timeoutMs, allowedToolNames: comparisonPassToolNames(phasedTools, resources, reviewPass),
-          ...comparisonSourceDeadline(resources, reviewPass), ...(signal ? { signal } : {}), yieldAfterTurn: comparisonYieldPolicy(resources, phase, reviewPass, options) });
+          ...comparisonWorkDeadline(resources, phase, reviewPass), ...(signal ? { signal } : {}), yieldAfterTurn: comparisonYieldPolicy(resources, phase, reviewPass, options) });
         return outcome = comparisonYieldBoundary(outcome, resources, signal);
       } finally {
         activePhase = undefined;
@@ -754,6 +735,9 @@ export class ComparisonAgent implements ComparisonAgentPort {
       ? `${context.promptContent}\n\n${COMPARISON_TURN_PROMPTS.orientAndInvestigate}`
       : COMPARISON_TURN_PROMPTS.orientAndInvestigate);
     let closureCalls = 0;
+    const investigationBoundary = investigated.status === 'yielded' && investigated.reason === 'bounded_investigation_timeout'
+      ? 'The Provider interrupted investigation at its absolute local deadline, possibly during an unfinished generation. This is not a completed-turn boundary or completed investigation and certifies no guarantee. No visible assessment may have been produced.'
+      : 'The Host stopped investigation at a completed-turn boundary; it did not certify completion.';
     while ((investigated.status === 'completed' || investigated.status === 'yielded') && options.findingsReady && !options.findingsReady()) {
       const state = options.getFindingsState?.() ?? 'missing findings';
       if (closureCalls >= 2) {
@@ -762,11 +746,11 @@ export class ComparisonAgent implements ComparisonAgentPort {
           failure: { code: 'draft_invalid', message: 'Comparison findings are missing or decision questions remain pending after two actual closure calls.', attempts: closureCalls, kind: 'protocol' } };
       }
       closureCalls++;
-      investigated = await measuredWork('investigate', `The Host stopped investigation at a completed-turn boundary; it did not certify completion. Use this bounded closure turn only to submit update_comparison_findings from already observed evidence. ${closureCalls === 2 ? 'The previous closure call did not produce an actually accepted ready findings update. Call update_comparison_findings now; do not give another verbal promise to save it. ' : ''}Do not run more investigation or repeat settled checks. Resolve questions only with existing supporting evidence; otherwise mark unavailable with the decisive uncertainty and limitation. Preserve the complete question history. Current findings: ${state}`, 'findings');
+      investigated = await measuredWork('investigate', `${investigationBoundary} Use this bounded closure turn only to submit update_comparison_findings from already received observations. ${closureCalls === 2 ? 'The previous closure call did not produce an actually accepted ready findings update. Call update_comparison_findings now; do not give another verbal promise to save it. ' : ''}Do not run more investigation or repeat settled checks. Resolve questions only with existing supporting evidence; otherwise mark unavailable with the decisive uncertainty and limitation. Preserve actual saved findings and the complete question history. Current findings: ${state}`, 'findings');
     }
     const findings = options.getFindingsState?.();
     const prefix = investigated.status === 'completed' || investigated.status === 'yielded'
-      ? await measuredWork('compose', `${COMPARISON_TURN_PROMPTS.compose}${findings ? `\n\nSaved findings (provenance checked, semantics still require review): ${findings}` : ''}`)
+      ? await measuredWork('compose', `${COMPARISON_TURN_PROMPTS.compose}\n\n${investigationBoundary} Use only actually received observations; unchecked task relationships remain unknown and must qualify conflicting quality claims or recommendation premises.${findings ? `\n\nSaved findings (provenance checked, semantics still require review): ${findings}` : ''}`)
       : investigated;
     if (prefix.status !== 'completed') {
       if (prefix.status === 'failed') await this.#sessions.discard(attemptId);

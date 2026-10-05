@@ -107,6 +107,15 @@ export class ComparisonResourceTracker {
     return undefined;
   }
 
+  investigationRemainingMs(): number | undefined {
+    const now = Date.now();
+    const remaining: number[] = [];
+    if (this.#limits.investigationMs !== undefined) remaining.push(this.#limits.investigationMs
+      - this.#investigationElapsed - (this.#phase === 'investigate' ? now - this.#phaseStarted : 0));
+    if (this.#limits.maxElapsedMs !== undefined) remaining.push(this.#limits.maxElapsedMs - (now - this.#started) - 90_000);
+    return remaining.length ? Math.max(0, Math.min(...remaining)) : undefined;
+  }
+
   sourceRemainingMs(): number | undefined {
     const now = Date.now();
     const remaining: number[] = [];
