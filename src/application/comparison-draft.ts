@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { Type } from "@sinclair/typebox";
 import { parseFragment } from "parse5";
-import { comparisonMainTextCharacters } from "./comparison-report-text.js";
+import { comparisonMainTextCharacters, comparisonVisibleMainText } from "./comparison-report-text.js";
 import type { ComparisonReportFacts, ComparisonResult } from "../agents/comparison-agent.js";
 import { sha256, writeAtomic } from "../core/identity.js";
 import { extractInner } from "../core/comparison-html.js";
@@ -13,7 +13,7 @@ import type { AgentLocale } from "../agents/language.js";
 import type { ComparisonEvidenceCatalog } from "./comparison-evidence.js";
 import { metricsFromReportFacts, renderComparisonReportShell } from "./comparison-report-shell.js";
 import { comparisonReportModelFromHtml, verifyAndRenderComparisonReport } from "./comparison-publication.js";
-import type { PreparedReportPreview } from "./comparison-render-tools.js";
+import type { ComparisonRenderedCheck, PreparedReportPreview } from "./comparison-render-tools.js";
 import type { ComparisonDiscovery } from "./comparison-discovery.js";
 import type { ComparisonDraftBinding } from "../core/comparison-discovery-schema.js";
 
@@ -43,6 +43,7 @@ export class ComparisonDraft {
   readonly #deliveredImages: ReadonlySet<string>;
   readonly #discovery: ComparisonDiscovery | undefined;
   readonly #persistAccepted: ((binding: ComparisonDraftBinding) => Promise<void>) | undefined;
+  readonly #renderCheckHistory: (() => { records: readonly ComparisonRenderedCheck[]; omitted: number }) | undefined;
   #accepted: { digest: string; revision: number; discoveryRevision?: number; result: ComparisonResult; decisionShape?: ComparisonDraftSubmission["decisionShape"] } | undefined;
   #previewed: { digest: string; revision: number } | undefined;
   #previewFailure: { digest: string; revision: number; status: string; message?: string } | undefined;
@@ -57,6 +58,7 @@ export class ComparisonDraft {
     deliveredImages: ReadonlySet<string>;
     discovery?: ComparisonDiscovery;
     persistAccepted?: (binding: ComparisonDraftBinding) => Promise<void>;
+    renderCheckHistory?: () => { records: readonly ComparisonRenderedCheck[]; omitted: number };
   }) {
     this.#attemptRoot = input.attemptRoot;
     this.#task = input.task;
@@ -66,6 +68,7 @@ export class ComparisonDraft {
     this.#deliveredImages = input.deliveredImages;
     this.#discovery = input.discovery;
     this.#persistAccepted = input.persistAccepted;
+    this.#renderCheckHistory = input.renderCheckHistory;
   }
 
   tool(): AgentToolDefinition {
@@ -105,12 +108,25 @@ export class ComparisonDraft {
         }
         const model = comparisonReportModelFromHtml(html, this.#facts, accepted.result, catalog.media, catalog.links, this.#locale);
         if (!Value.Check(ComparisonReportModelSchema, model)) throw new Error("Invalid persisted comparison report content.");
+        const checks = this.#renderCheckHistory?.();
         return { content: JSON.stringify({ status: "available", draftDigest: accepted.digest,
           catalogRevision: accepted.revision, ...(accepted.discoveryRevision === undefined ? {} : { findingsRevision: accepted.discoveryRevision }),
           reportStatus: accepted.result.status, category: extractInner(html, "data-agent-slot", "category"),
           decisionShape: accepted.decisionShape ?? "unknown", decisionShapeValidation: "model_declaration_only",
           headline: model.headline, comparisonHtml: model.slots.comparison, detailsHtml: model.slots.details,
-          mainTextCharacters: comparisonMainTextCharacters(html), semanticValidation: "not_performed" }) };
+          mainTextCharacters: comparisonMainTextCharacters(html), semanticValidation: "not_performed",
+          renderCheckHistory: {
+            coverage: checks ? "recorded_outcomes_in_this_process" : "unavailable",
+            origin: "this_comparison_attempt_not_candidate_runtime",
+            omitted: checks?.omitted ?? 0,
+            records: (checks?.records ?? []).map((check) => ({ ...check,
+              frames: check.frames.map((frame) => ({ ...frame,
+                nativeImageDeliveredToCurrentSession: this.#deliveredImages.has(frame.contentHash),
+              })),
+            })),
+            limitation: "Rendering and image delivery are distinct; this tool does not deliver images or establish visual inspection. Empty history does not prove no checks occurred.",
+          },
+        }) };
       },
     };
   }
@@ -155,7 +171,7 @@ export class ComparisonDraft {
     const target = draft.decisionShape === "single_difference" ? 250 : draft.decisionShape === "multiple_differences" ? 600 : undefined;
     if (target !== undefined && length > target) {
       this.#lastRejection = `draft_too_long: declared ${draft.decisionShape} has ${length} main characters; maximum=${target}.`;
-      return `status=rejected\ncode=draft_too_long\ndecisionShape=${draft.decisionShape}\nmainTextCharacters=${length}\nmaximum=${target}\nmessage=Shorten repeated conclusions and move routine methods to details in one batch revision. Preserve decisive evidence, counterevidence and limitations that change the choice. Do not relabel one difference as multiple to bypass the limit; then submit and preview.`;
+      return `status=rejected\ncode=draft_too_long\ndecisionShape=${draft.decisionShape}\nmainTextCharacters=${length}\nvisibleMainText=${JSON.stringify(comparisonVisibleMainText(verified.html))}\nmaximum=${target}\nmessage=Shorten this actual visible text (including the headline) in one batch revision; do not write a shell counting script. Preserve decisive evidence, counterevidence and limitations that change the choice, and move routine methods to details. Do not relabel one difference as multiple to bypass the limit; then submit and preview.`;
     }
     await writeAtomic(join(this.#attemptRoot, "report.html"), verified.html);
     const digest = sha256(verified.html);

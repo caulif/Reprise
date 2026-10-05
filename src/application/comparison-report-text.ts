@@ -1,7 +1,7 @@
 import { parseFragment, type DefaultTreeAdapterMap } from 'parse5';
 import { extractInner } from '../core/comparison-html.js';
 
-export function comparisonMainTextCharacters(html: string): number {
+export function comparisonVisibleMainText(html: string): string {
   const textContent = (node: DefaultTreeAdapterMap['node']): string => {
     if (node.nodeName === '#text' && 'value' in node) return node.value;
     if (node.nodeName === 'template' || node.nodeName === 'script' || node.nodeName === 'style') return '';
@@ -12,5 +12,9 @@ export function comparisonMainTextCharacters(html: string): number {
   };
   const main = extractInner(html, 'data-agent-zone', 'comparison');
   const headline = extractInner(html, 'data-agent-slot', 'headline');
-  return [...textContent(parseFragment(`${headline} ${main}`)).replace(/\s+/g, ' ').trim()].length;
+  return textContent(parseFragment(`${headline} ${main}`)).replace(/\s+/g, ' ').trim();
+}
+
+export function comparisonMainTextCharacters(html: string): number {
+  return [...comparisonVisibleMainText(html)].length;
 }

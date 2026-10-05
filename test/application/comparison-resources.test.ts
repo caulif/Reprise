@@ -81,3 +81,97 @@ test('compose and review time do not fabricate an investigation limit', (t) => {
   t.mock.timers.tick(6);
   assert.equal(tracker.softReason(), 'investigationMs');
 });
+
+test('review allowance is independent from investigation and persists across repair turns', () => {
+  const tracker = new ComparisonResourceTracker({ investigationModelRequests: 2 });
+  tracker.observe(event('agent.model_request'));
+  tracker.observe(event('agent.model_request'));
+  assert.equal(tracker.beforeTool('read'), 'investigationModelRequests');
+  tracker.phase('review');
+  assert.equal(tracker.beforeTool('read'), undefined);
+  tracker.observe(event('agent.model_request'));
+  tracker.phase('review');
+  tracker.observe(event('agent.model_request', { scope: 'compaction' }));
+  assert.equal(tracker.beforeTool('render_artifact'), 'reviewModelRequests');
+  tracker.phase('compose');
+  tracker.phase('review');
+  assert.equal(tracker.beforeTool('shell_exec'), 'reviewModelRequests');
+  for (const name of ['inspect_comparison_draft', 'update_comparison_findings', 'submit_comparison_draft', 'preview_report', 'write', 'edit']) {
+    assert.equal(tracker.beforeTool(name), undefined);
+  }
+  assert.equal(tracker.snapshot().reviewLimit, 'reviewModelRequests');
+});
+
+test('review tools count canonical calls once and deny broad investigation after allowance', () => {
+  const tracker = new ComparisonResourceTracker({ investigationToolCalls: 1 });
+  tracker.observe(event('agent.tool_called', { toolCallId: 'investigation' }));
+  tracker.phase('review');
+  assert.equal(tracker.beforeTool('grep'), undefined);
+  tracker.observe(event('agent.tool_called', { toolCallId: 'review' }));
+  tracker.observe(event('agent.tool_called', { toolCallId: 'review' }));
+  tracker.observe(event('agent.tool_called', { nativeHook: 'before' }));
+  assert.equal(tracker.beforeTool('register_evidence'), 'reviewToolCalls');
+  assert.equal(tracker.snapshot().toolCalls, 2);
+  assert.equal(tracker.beforeTool('submit_comparison_draft'), undefined);
+});
+
+test('review elapsed time accumulates across repairs without counting compose time', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const tracker = new ComparisonResourceTracker({ investigationMs: 10 });
+  tracker.phase('review');
+  t.mock.timers.tick(6);
+  tracker.phase('compose');
+  t.mock.timers.tick(1_000);
+  tracker.phase('review');
+  assert.equal(tracker.beforeTool('read'), undefined);
+  t.mock.timers.tick(4);
+  tracker.phase('review');
+  assert.equal(tracker.beforeTool('read'), 'reviewMs');
+  assert.equal(tracker.beforeTool('preview_report'), undefined);
+});
+
+test('review reserves remaining hard resources for explicit finishing without relaxing hard limits', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const requests = new ComparisonResourceTracker({ maxModelRequests: 8 });
+  requests.phase('review');
+  requests.observe(event('agent.model_request'));
+  assert.equal(requests.beforeTool('read'), undefined);
+  requests.observe(event('agent.model_request'));
+  assert.equal(requests.beforeTool('read'), 'reserve_finish');
+  assert.equal(requests.snapshot().remainingRequests, 6);
+  assert.equal(requests.beforeTool('preview_report'), undefined);
+  for (let i = 0; i < 6; i++) requests.observe(event('agent.model_request'));
+  assert.throws(() => requests.observe(event('agent.model_request')), /maxModelRequests/);
+  const tools = new ComparisonResourceTracker({ maxToolCalls: 21 });
+  tools.phase('review');
+  assert.equal(tools.beforeTool('ls'), undefined);
+  tools.observe(event('agent.tool_called', { toolCallId: 'one' }));
+  assert.equal(tools.beforeTool('ls'), 'reserve_finish');
+  assert.equal(tools.snapshot().remainingTools, 20);
+  const elapsed = new ComparisonResourceTracker({ maxElapsedMs: 90_001 });
+  elapsed.phase('review');
+  assert.equal(elapsed.beforeTool('shell_exec'), undefined);
+  t.mock.timers.tick(1);
+  assert.equal(elapsed.beforeTool('shell_exec'), 'reserve_finish');
+  assert.equal(elapsed.snapshot().remainingMs, 90_000);
+  t.mock.timers.tick(90_000);
+  assert.throws(() => elapsed.beforeTool('preview_report'), /maxElapsedMs/);
+});
+
+test('empty resource override keeps all review investigation and finishing tools unlimited', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const tracker = new ComparisonResourceTracker({});
+  tracker.phase('review');
+  for (let i = 0; i < 50; i++) {
+    tracker.observe(event('agent.model_request'));
+    tracker.observe(event('agent.tool_called', { toolCallId: `tool-${i}` }));
+  }
+  t.mock.timers.tick(1_000_000);
+  assert.equal(tracker.beforeTool('read'), undefined);
+  assert.equal(tracker.beforeTool('preview_report'), undefined);
+  assert.equal(tracker.snapshot().phase, 'review');
+  assert.equal(tracker.snapshot().reviewLimit, null);
+  assert.equal(tracker.snapshot().remainingRequests, null);
+  assert.equal(tracker.snapshot().remainingTools, null);
+  assert.equal(tracker.snapshot().remainingMs, null);
+});

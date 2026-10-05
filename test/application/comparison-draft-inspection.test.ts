@@ -86,3 +86,33 @@ test("inspection requires current findings and catalog bindings", async t => {
   assert.equal((await f.catalog.registerEvidence({ relativePath: "note.txt", sourceRefs: ["ev-01"], label: "Derived note" })).status, "registered");
   assert.equal((await f.inspect()).status, "unavailable");
 });
+
+test("inspection preserves actual render outcomes separately from current-session image delivery", async t => {
+  const f = await fixture(t);
+  const delivered = new Set<string>();
+  const hash = "a".repeat(64);
+  const draft = new ComparisonDraft({ attemptRoot: f.root, task: "Compare outputs", facts, locale: "en",
+    catalog: f.catalog, deliveredImages: delivered,
+    renderCheckHistory: () => ({ omitted: 2, records: [{ sourceRef: "ev-01", side: "baseline", sourceHash: hash,
+      status: "motion_not_proven", requestedSampleTimesMs: [0, 500], viewport: { width: 300, height: 100, scale: 1 },
+      frames: [{ sampleTimeMs: 500, actualTimeMs: 537, contentHash: hash }],
+    }] }),
+  });
+  await draft.submit(submission);
+  const inspect = async () => JSON.parse((await draft.inspectTool().execute({}, new AbortController().signal)).content) as {
+    renderCheckHistory: { origin: string; omitted: number; records: { status: string; frames: { actualTimeMs: number; nativeImageDeliveredToCurrentSession: boolean }[] }[] };
+  };
+  let history = (await inspect()).renderCheckHistory;
+  assert.equal(history.origin, "this_comparison_attempt_not_candidate_runtime");
+  assert.equal(history.omitted, 2);
+  assert.equal(history.records[0]?.status, "motion_not_proven");
+  assert.equal(history.records[0]?.frames[0]?.actualTimeMs, 537);
+  assert.equal(history.records[0]?.frames[0]?.nativeImageDeliveredToCurrentSession, false);
+  assert.equal(delivered.size, 0);
+  delivered.add(hash);
+  assert.equal((await inspect()).renderCheckHistory.records[0]?.frames[0]?.nativeImageDeliveredToCurrentSession, true);
+  delivered.clear();
+  history = (await inspect()).renderCheckHistory;
+  assert.equal(history.records[0]?.frames[0]?.actualTimeMs, 537);
+  assert.equal(history.records[0]?.frames[0]?.nativeImageDeliveredToCurrentSession, false);
+});

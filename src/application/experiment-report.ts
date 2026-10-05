@@ -38,7 +38,7 @@ import { Type } from "@sinclair/typebox";
 import { ComparisonEvidenceCatalog, lookupCompletedToolCall } from "./comparison-evidence.js";
 import type { ComparisonCatalogSnapshot } from "./comparison-evidence.js";
 import { createComparisonRenderCatalogPort } from "./comparison-render-catalog.js";
-import { createPreviewReportTool, createRenderArtifactTool } from "./comparison-render-tools.js";
+import { createPreviewReportTool, createRenderArtifactTool, type ComparisonRenderedCheck } from "./comparison-render-tools.js";
 import { materializeComparisonReportPreview } from "./comparison-report-preview.js";
 import { ComparisonDraft } from "./comparison-draft.js";
 import { persistComparisonDraftAcceptance } from './comparison-recovery-discovery.js';
@@ -564,15 +564,25 @@ async function invokeCompare(
       display: usage.totalTokens, inputIncludesCache: false }, payload.model, undefined,
       { ...(override ? { override } : {}) }).costUsd;
   };
+  const renderChecks: ComparisonRenderedCheck[] = [];
+  let omittedRenderChecks = 0;
+  const recordRenderCheck = (check: ComparisonRenderedCheck): void => {
+    renderChecks.push(structuredClone(check));
+    if (renderChecks.length > 24) {
+      renderChecks.shift();
+      omittedRenderChecks++;
+    }
+  };
   const draft = new ComparisonDraft({
     attemptRoot, task: context.task.summary, facts: context.reportFacts,
     locale: await readOperatorLocale(input.input.dataDir), catalog,
     deliveredImages: deliveredImageContentHashes,
+    renderCheckHistory: () => ({ records: renderChecks, omitted: omittedRenderChecks }),
     ...(requireFindings ? { discovery, persistAccepted: binding => persistComparisonDraftAcceptance(input.store, input.input.runId, attemptId, binding) } : {}),
   });
   const result = await input.input.comparison.compare(
     context,
-    [...comparisonTools(input, attemptRoot, catalog, draft), ...(requireFindings ? [discovery.tool()] : [])],
+    [...comparisonTools(input, attemptRoot, catalog, draft, recordRenderCheck), ...(requireFindings ? [discovery.tool()] : [])],
     comparisonAudit(input, attemptId, deliveredImageContentHashes),
     input.signal,
     {
@@ -600,6 +610,7 @@ function comparisonTools(
   attemptRoot: string,
   catalog: ComparisonEvidenceCatalog,
   draft: ComparisonDraft,
+  recordRenderCheck: (check: ComparisonRenderedCheck) => void,
 ): AgentToolDefinition[] {
   const controllerRoot = controllerBriefingRoot(input.experimentRoot, input.input.runId);
   const scratchRoot = join(attemptRoot, "scratch");
@@ -650,6 +661,7 @@ function comparisonTools(
       catalog: renderCatalog,
       attemptRoot,
       allowImages: input.taskCase.privacy.allowBinary,
+      onRenderedCheck: recordRenderCheck,
     }),
     createPreviewReportTool({
       catalog: renderCatalog,

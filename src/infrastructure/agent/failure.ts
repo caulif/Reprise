@@ -60,6 +60,7 @@ export function classifyAgentFailure(error: unknown): AgentFailureKind {
 }
 
 function isTransportFailure(details: string, error: unknown): boolean {
+  if (details === "unexpected eof") return true;
   if (/\b(http\/2 stream failed|und_err_|fetch failed|econnreset|econnrefused|enotfound|etimedout|timeout|network|transport|socket)\b/.test(details))
     return true;
   if (error instanceof Error && error.name === "AbortError" && !isUserCancel(error, details)) return true;

@@ -56,6 +56,8 @@ Agent 区的内联 `style` 属性和原生 `dialog` / popover 浮层一律拒绝
 
 新模型工具提交须声明 `decisionShape`：一个独立决定性差异为 `single_difference`（标题与主文最多 250 字符），多个独立差异为 `multiple_differences`（最多 600）；同一缺陷的证据、后果与重复描述不算多个差异。超限拒绝保留旧已接受版本和预览绑定，不发布新稿。详情不计主文字数，但不能隐藏改变判断的反证。声明是模型的分类，Host 仅验证字数，分类正确性与决定性完整性仍须语义审阅。旧直接端口及无声明草稿继续按原契约读取。
 
+`render_artifact` 的实际返回附 `renderedCheck`：来源/hash、结果、请求采样时间、实际帧时间/hash 与 viewport；同 PNG、登记失败也保留已发生的渲染事实，不含物理 PNG 路径，不证明视觉查看。该摘要进入原有工具结果审计，可从日志复原。生产 attempt 保留最近 24 条结果及遗漏数供 `inspect_comparison_draft` 在新 Session 读取；同进程历史不是第二份持久化权威，恢复后不可由空列表推断没有检查。摘要明确属于 Comparison 的检查，不能冒作候选 Runtime 检查；当前 Session 图片交付单独从实际交付集合投影，换 Session 不能继承权限。
+
 默认内置路径通过 `update_comparison_findings` 保存任务标准、双方最终来源、观察方法与支持范围、反证、重要限制和判断问题。Host 校验引用归属及结构，不证明自然语言主张正确；不可变发现 artifact 和 `comparison.findings_updated` 绑定 attempt、revision、catalog revision 与 digest，工具回执沿用模型输入审计。问题历史不得静默删除，重新打开已解决问题需新依据。问题须解决或说明证据不可得才进入创作；旧自定义 Comparison 端口保留原契约。
 
 草稿接受版本通过 `comparison.draft_accepted` 同时持久化 discovery revision、catalog revision 与 HTML digest；离线恢复核对最新发现 artifact 与接受绑定，并要求匹配预览事件发生在绑定之后。发现变化使旧草稿不可发布，必须重新提交并预览当前版本。主文长度和重要限制是审阅反馈，简单单差异约100–250中文字、多个决定性差异约300–600字，仅作任务自适应指导，不是硬字数门禁；常规来源/哈希检查复用Host事实，不因未重复而增造限制。检查方法或精确推导可展开，影响取舍的未知不得藏入详情；证据注册、同公式复算或单帧截图均不证明全局行为。
@@ -101,3 +103,5 @@ Comparison 合成评估的新输入由每个隔离 row 的 `evaluation-inputs.js
 | `payload` | unknown | 否 |
 | `checksum` | string | 否 |
 <!-- END GENERATED event-catalog -->
+
+Comparison复审扩展调查独立累计并复用调查软额度，repair不重置；整个attempt剩余<=6请求、<=20工具或<=90s时保留收尾资源，拒绝进一步检索/渲染/登记，允许findings闭合、修稿和精确digest预览，硬限仍生效。每个新草稿端口的工具结果附phase、剩余额度和草稿/预览绑定，经标准工具结果审计复原。额度或结构有效不认证语义，未核实决定性结论必须撤回保证或明确不可判断，不发布旧预览兜底。旧直接端口与空资源override保持兼容。

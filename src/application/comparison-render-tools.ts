@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { parse } from "parse5";
-import type { ArtifactRenderer, RenderViewport } from "../infrastructure/artifact-render-types.js";
+import type { ArtifactRenderer, RenderFailureKind, RenderViewport, RenderFrame, RenderResult } from "../infrastructure/artifact-render-types.js";
 import { ARTIFACT_RENDERER_VERSION, DEFAULT_RENDER_VIEWPORT, RENDER_LIMITS } from "../infrastructure/artifact-render-types.js";
 import { renderFrozenArtifact } from "../infrastructure/artifact-renderer.js";
 import { sha256 } from "../core/identity.js";
@@ -96,6 +96,17 @@ export type ComparisonRenderToolBaseDeps = {
   render?: ArtifactRenderer;
   now?: () => Date;
   allowImages?: boolean;
+  onRenderedCheck?: (check: ComparisonRenderedCheck) => void | Promise<void>;
+};
+
+export type ComparisonRenderedCheck = {
+  sourceRef: string;
+  side: ComparisonRenderSource["side"];
+  sourceHash: string;
+  status: "ok" | "motion_not_proven" | RenderFailureKind["kind"];
+  requestedSampleTimesMs: readonly number[];
+  frames: readonly { sampleTimeMs: number; actualTimeMs: number; contentHash: string }[];
+  viewport: RenderViewport;
 };
 
 export type PreviewReportOutcome = { status: string; message?: string };
@@ -144,6 +155,7 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
       const viewport = resolveViewport(params.viewport);
       const sampleTimesMs = params.sampleTimesMs ?? [0];
       const outputRoot = join(deps.attemptRoot, "scratch", "render", safeId(params.sourceRef));
+      if (signal.aborted) return textResult({ status: "cancelled", sourceRef: params.sourceRef });
       const rendered = await render({
         bundleRoot: source.bundleRoot,
         entryRelativePath: source.entryRelativePath,
@@ -152,8 +164,13 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
         outputRoot,
         signal,
       });
+      const finish = async (status: ComparisonRenderedCheck["status"], payload: Record<string, unknown>): Promise<AgentToolResult> => {
+        const renderedCheck = artifactRenderedCheck(source, rendered, status, sampleTimesMs, viewport);
+        await deps.onRenderedCheck?.(structuredClone(renderedCheck));
+        return textResult({ ...payload, renderedCheck });
+      };
       if (!rendered.ok) {
-        return textResult({
+        return finish(rendered.failure.kind, {
           status: rendered.failure.kind,
           sourceRef: params.sourceRef,
           revision: deps.catalog.revision(),
@@ -161,8 +178,12 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
           diagnostics: rendered.diagnostics,
         });
       }
+      if (signal.aborted) return finish("cancelled", { status: "cancelled", sourceRef: source.sourceRef, revision: deps.catalog.revision() });
+      if (!rendered.frames.length) return finish("capture_failed", {
+        status: "capture_failed", sourceRef: source.sourceRef, revision: deps.catalog.revision(), message: "Renderer returned no frames.",
+      });
       if (sampleTimesMs.length > 1 && new Set(rendered.frames.map((frame) => frame.contentHash)).size < 2) {
-        return textResult({
+        return finish("motion_not_proven", {
           status: "motion_not_proven",
           sourceRef: params.sourceRef,
           revision: deps.catalog.revision(),
@@ -172,22 +193,9 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
         });
       }
       const capturedAt = (deps.now ?? (() => new Date()))().toISOString();
-      const registrations = await deps.catalog.registerDerivedMediaBatch(rendered.frames.map((frame) => ({
-          side: source.side === "derived" ? "host" : source.side,
-          pngPath: frame.pngPath,
-          label: `${source.entryRelativePath}@${frame.sampleTimeMs}ms`,
-          sourceRef: source.sourceRef,
-          contentHash: frame.contentHash,
-          kind: "artifact_preview",
-          derivation: {
-            rendererVersion: ARTIFACT_RENDERER_VERSION,
-            viewport: rendered.measured.viewport,
-            sampleTimeMs: frame.sampleTimeMs,
-            actualTimeMs: frame.actualTimeMs,
-            capturedAt,
-          },
-        })));
-      if (!registrations.ok) return textResult({
+      const registrations = await deps.catalog.registerDerivedMediaBatch(
+        artifactFrameRegistrations(source, rendered.frames, rendered.measured.viewport, capturedAt));
+      if (!registrations.ok) return finish("capture_failed", {
         status: "capture_failed",
         sourceRef: params.sourceRef,
         revision: deps.catalog.revision(),
@@ -207,7 +215,7 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
           actualTimeMs: frame.actualTimeMs,
         });
       }
-      const result = textResult({
+      const result = await finish("ok", {
         status: "ok",
         sourceRef: params.sourceRef,
         sourceOrigin: source.origin,
@@ -225,6 +233,33 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
       return attachComparisonImages({ result, requested: params.includeImages === true, authorized: deps.allowImages === true, attemptRoot: deps.attemptRoot, signal, images: images.length === rendered.frames.length ? images : [] });
     },
   };
+}
+
+function artifactRenderedCheck(source: ComparisonRenderSource, rendered: RenderResult, status: ComparisonRenderedCheck["status"], sampleTimesMs: readonly number[], viewport: RenderViewport): ComparisonRenderedCheck {
+  return {
+    sourceRef: source.sourceRef, side: source.side, sourceHash: source.contentHash, status,
+    requestedSampleTimesMs: [...sampleTimesMs],
+    frames: rendered.ok ? rendered.frames.map(({ sampleTimeMs, actualTimeMs, contentHash }) => ({ sampleTimeMs, actualTimeMs, contentHash })) : [],
+    viewport: { ...(rendered.ok ? rendered.measured.viewport : viewport) },
+  };
+}
+
+function artifactFrameRegistrations(source: ComparisonRenderSource, frames: readonly RenderFrame[], viewport: RenderViewport, capturedAt: string): RegisterDerivedMediaInput[] {
+  return frames.map((frame) => ({
+    side: source.side === "derived" ? "host" : source.side,
+    pngPath: frame.pngPath,
+    label: `${source.entryRelativePath}@${frame.sampleTimeMs}ms`,
+    sourceRef: source.sourceRef,
+    contentHash: frame.contentHash,
+    kind: "artifact_preview",
+    derivation: {
+      rendererVersion: ARTIFACT_RENDERER_VERSION,
+      viewport,
+      sampleTimeMs: frame.sampleTimeMs,
+      actualTimeMs: frame.actualTimeMs,
+      capturedAt,
+    },
+  }));
 }
 
 export function createPreviewReportTool(deps: ComparisonPreviewReportToolDeps): AgentToolDefinition {

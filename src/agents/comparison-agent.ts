@@ -8,6 +8,7 @@ import { withLanguageBlock, type AgentLocale } from './language.js';
 import { STRUCTURED_FINAL_RULE } from './structured-final-rule.js';
 import type { ComparisonResources } from '../core/schema.js';
 import { ComparisonResourceTracker } from './comparison-resources.js';
+import { comparisonToolFeedback, comparisonSoftLimitFeedback } from './comparison-tool-feedback.js';
 
 export type { ComparisonAgentEnvelope } from '../core/schema.js';
 export type ComparisonResult = Omit<ComparisonAgentEnvelope, 'reportPath'> & { reportPath: 'report.html' };
@@ -378,6 +379,8 @@ export const COMPARISON_TURN_PROMPTS = {
   review: [
     'Review the actual draft as a person seeing the task for the first time.',
     'When inspect_comparison_draft is available, use it first for the current accepted Agent content and version binding; do not extract the page CSS with shell scripts.',
+    'Reconcile the report\'s stated methods with its renderCheckHistory: requested and actual capture times, source hashes and outcomes are Comparison checks, not candidate Runtime checks. A render that produced frames was performed even if motion was not proven or no images were delivered to this session. Describe unavailable visual inspection separately; do not claim no render occurred.',
+    'If recorded samples use equal timestamps but different source periods, disclose that those captures are not matched phases, even when the final conclusion relies on source analysis instead. Distinguish captured evidence from the method actually supporting the conclusion.',
     'Audit the claims actually present against the task and decisive sources. Open additional history only for a specific claim or counterexample that could change the conclusion; do not inventory unrelated metadata.',
     'Also check the decisive sources for a task-critical defect or counterexample the draft omitted; a short or structurally valid draft is not proof of completeness.',
     'Check the declared decisionShape against the actual task differences. Do not split one contrast into several by counting its evidence, consequences or repeated descriptions; correct an inflated multiple_differences declaration before submitting the revision.',
@@ -397,8 +400,7 @@ export const COMPARISON_TURN_PROMPTS = {
     'consequence. Remove repetition and low-value process commentary. Do not mistake',
     'the number of bullets for concision.',
     'A simple choice normally needs 100–250 Chinese characters, with no repeated opening or closing recommendation. Use 300–600 only when more consequential differences need it.',
-    'Use the submitted mainTextCharacters feedback: above 600, shorten repetition and move methods',
-    'to details before the final preview. Keep a longer main text only when a decisive uncertainty needs it.',
+    'Respect the declared 250/600 character budget, including the headline. On rejection, make one substantial shortening rather than several marginal trims; keep decision-changing uncertainty and remove repetition.',
     'A limitation can usually be one plain sentence; put hashes, byte counts, provenance fields and',
     'the full evidential argument in details. State each decisive result or caveat once.',
     'Check process claims against actual before/after or execution records; a defective final file alone',
@@ -504,10 +506,11 @@ export class ComparisonAgent implements ComparisonAgentPort {
     const resources = new ComparisonResourceTracker(this.#resources);
     const boundedTools = tools.map((tool) => ({ ...tool, execute: async (params: unknown, toolSignal: AbortSignal) => {
       const reason = resources.beforeTool(tool.name);
-      if (reason) return { content: `status=investigation_limit\nreason=${reason}\nStop investigating. Save scoped findings and mark unresolved questions unavailable with this resource limitation, then return to compose. Do not invent missing evidence.` };
-      return tool.execute(params, toolSignal);
+      return reason ? comparisonSoftLimitFeedback(reason, resources.snapshot().phase) : tool.execute(params, toolSignal);
     } }));
-    const phasedTools = options?.enforcePhaseBoundaries ? phaseTools(boundedTools, current) : boundedTools;
+    const stagedTools = options?.enforcePhaseBoundaries ? phaseTools(boundedTools, current) : boundedTools;
+    const phasedTools = options?.getSubmittedResult ? stagedTools.map(tool => ({ ...tool, execute: async (params: unknown, toolSignal: AbortSignal) =>
+      comparisonToolFeedback(await tool.execute(params, toolSignal), resources, options.getSubmissionState?.()) })) : stagedTools;
     let activePhase: 'understand' | 'investigate' | 'compose' | 'review' | undefined;
     let counts = { modelRequests: 0, toolCalls: 0, compactions: 0, previews: 0 };
     const measuredAudit: AgentAuditSink = {

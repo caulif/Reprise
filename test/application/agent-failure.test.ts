@@ -76,3 +76,11 @@ test('only known SDK missing terminal markers are classified as transient upstre
   assert.equal(classifyAgentFailure(new Error('Missing finish_reason in a malformed response')), 'protocol');
   assert.equal(classifyAgentFailure(Object.assign(new Error('Stream ended without finish_reason'), { status: 401 })), 'authentication');
 });
+
+test('exact provider EOF is transient while tool parsing and authentication retain priority', () => {
+  assert.equal(classifyAgentFailure(new Error('unexpected EOF')), 'transient_network');
+  assert.equal(classifyAgentFailure(Object.assign(new Error('unexpected EOF'), { name: 'AgentToolFailure' })), 'tool');
+  assert.equal(classifyAgentFailure(Object.assign(new Error('unexpected EOF'), { status: 401 })), 'authentication');
+  assert.equal(classifyAgentFailure(new Error('JSON schema parsing: unexpected EOF')), 'protocol');
+  assert.equal(classifyAgentFailure(new Error('Application parsing unexpected EOF')), 'unknown');
+});

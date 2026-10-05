@@ -8,6 +8,7 @@ import { ComparisonDraft } from "../../src/application/comparison-draft.js";
 import { ComparisonEvidenceCatalog } from "../../src/application/comparison-evidence.js";
 import { ComparisonDraftSubmissionSchema } from "../../src/core/schema.js";
 import { sha256 } from "../../src/core/identity.js";
+import { comparisonMainTextCharacters, comparisonVisibleMainText } from "../../src/application/comparison-report-text.js";
 
 const facts = {
   run: { runId: "run-1", outcome: "completed", terminationCode: "completed", initiatedBy: "controller" },
@@ -70,4 +71,28 @@ test("over-budget revision preserves accepted bytes and preview; changing declar
   assert.equal(inspected.decisionShape, "single_difference");
   await f.tool.execute({ ...base, decisionShape: "multiple_differences" }, f.signal);
   assert.equal(await f.draft.completedResult(), undefined);
+});
+
+test("length rejection provides the same Unicode-visible text as the DOM counter without changing the accepted preview", async t => {
+  const f = await fixture(t);
+  await f.tool.execute({ ...base, decisionShape: "single_difference" }, f.signal);
+  const html = await readFile(join(f.root, "report.html"), "utf8");
+  const digest = sha256(html);
+  f.draft.recordPreview({ htmlPath: "preview.html", html, draftDigest: digest, preparedDigest: digest, dependencyDigest: digest, catalogRevision: f.catalog.snapshot().revision, outputRoot: f.root });
+  const rejected = (await f.tool.execute({ ...base, decisionShape: "single_difference", comparisonHtml: `<p>${"🛞字".repeat(125)}</p><details><summary>方法</summary>折叠正文不计数</details>` }, f.signal)).content;
+  const line = rejected.split("\n").find(line => line.startsWith("visibleMainText="));
+  assert.ok(line);
+  const text = JSON.parse(line.slice("visibleMainText=".length)) as string;
+  const count = Number(rejected.match(/mainTextCharacters=(\d+)/)?.[1]);
+  assert.equal([...text].length, count);
+  assert.ok(text.length > count);
+  assert.ok(text.startsWith("判 "));
+  assert.ok(text.endsWith(" 方法"));
+  assert.ok(!text.includes("折叠正文不计数"));
+  assert.equal(await readFile(join(f.root, "report.html"), "utf8"), html);
+  assert.ok(await f.draft.completedResult());
+  const fixtureHtml = '<p data-agent-slot="headline">判 🛞</p><section data-agent-zone="comparison"><p>证据</p><template>模板不计</template><script>脚本不计</script><style>样式不计</style><details><summary>方法</summary>折叠不计</details><details open><summary>展开</summary>计入</details></section>';
+  const visible = comparisonVisibleMainText(fixtureHtml);
+  assert.equal(comparisonMainTextCharacters(fixtureHtml), [...visible].length);
+  assert.equal(visible, "判 🛞 证据 方法 展开 计入");
 });

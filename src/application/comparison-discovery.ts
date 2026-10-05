@@ -98,7 +98,7 @@ export class ComparisonDiscovery {
     const receipt = { revision: record.revision, catalogRevision: record.catalogRevision, digest: record.digest, readyToCompose: this.readyToCompose(),
       pendingQuestions: record.submission.decisionQuestions.filter(question => question.status === 'pending').map(question => question.id),
       importantLimitationCount: record.submission.importantLimitations.length };
-    return `status=accepted\n${JSON.stringify(receipt)}\nKeep the saved important limitations visible when composing. Registration validates references and scope fields, not the truth of natural-language claims.`;
+    return `status=accepted\n${JSON.stringify(receipt)}\nKeep decision-changing limitations visible next to the conclusion; routine provenance, missing metrics, edit-history gaps and review methods may go in details unless they change this task decision. Registration validates references and scope fields, not the truth of natural-language claims.`;
   }
 
   snapshot(): ComparisonDiscoveryRecord | undefined { return this.#accepted && structuredClone(this.#accepted); }
