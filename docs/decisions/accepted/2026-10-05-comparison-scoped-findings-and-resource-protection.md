@@ -66,3 +66,5 @@ Pinned Pi SDK 的流缺少 finish_reason、stop reason、finish reason 或 termi
 独立审阅的取消signal属于整个attempt，不能依赖当前Session缓存是否存在；cancel和进行中的release在旧Session关闭空档中仍阻止新review，初始化失败也清理活动标记。同一attempt不得并发混用Session/资源状态。新的agent.session_started清理实时图片delivery及manifest状态，新Session须重新收到generation实际图片；compaction不授予视觉权限。沿用单Session旧custom port无manifest的tool/message fallback，同Session已交付图片可累计。
 
 真实校准暴露共享 shell 保护把未装配挂载解析为空字符串、从而拒绝任何 scratch 写入的问题。禁止名单仍保护虚拟前缀，物理路径仅对实际存在的挂载匹配；不能以缺失路径匹配所有命令。工具说明直接告知当前平台的 Shell 语法与环境变量写法，并区分文件工具虚拟路径和 Shell 的物理路径。回归用例实际写入 scratch，反向验证现有挂载的虚拟/绝对路径及未装配的禁止前缀仍被拒绝。
+
+后续真实校准暴露整页 CSS 读取、无关元数据穷举与接受后反复按建议字数改稿的问题。新增只读 `inspect_comparison_draft`，从现有报告和接受绑定返回实际 Agent 内容，不新增权威持久化文件；改稿、篡改或版本失效不得返回旧内容。工具结果仍经事件审计复原。接受反馈不把保存的每条限制强制塞入主文，须核其是否改变判断；审阅批量修正后预览当前 digest 并结束，仅新决定性证据或验证失败允许继续修订。篇幅建议不成为硬门禁，也不跳过原预览、来源和语义核对。包含只读来源路径的分析脚本通过 `write scratch/<name>` 创建，再用 shell 执行，保留既有保守的混合命令保护。

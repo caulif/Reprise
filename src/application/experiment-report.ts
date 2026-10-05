@@ -645,6 +645,7 @@ function comparisonTools(
     }),
     registerEvidenceTool(catalog),
     draft.tool(),
+    draft.inspectTool(),
     createRenderArtifactTool({
       catalog: renderCatalog,
       attemptRoot,

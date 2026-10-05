@@ -53,8 +53,9 @@ test('draft review uses fresh conversation and repair keeps that session with on
   assert.equal(f.sessions[1]!.messages.length, 2);
   const firstReview = f.sessions[1]!.messages[0]!;
   assert.match(firstReview, /Frozen navigation/);
-  assert.match(firstReview, /First read the original task.*briefing\/task\/initial-input\.txt/);
-  assert.match(firstReview, /actual report\.html/);
+  assert.match(firstReview, /Inspect the current accepted draft with inspect_comparison_draft when available/);
+  assert.match(firstReview, /read the original task.*briefing\/task\/initial-input\.txt/);
+  assert.match(firstReview, /otherwise read report\.html/);
   assert.match(firstReview, /unverified semantic hypotheses/);
   assert.doesNotMatch(firstReview, /Current phase: (?:investigate|compose)/);
   assert.match(f.sessions[1]!.messages[1]!, /Continue the current review turn/);

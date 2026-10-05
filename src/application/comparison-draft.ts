@@ -1,16 +1,18 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
+import { Type } from "@sinclair/typebox";
 import { parseFragment } from "parse5";
 import { comparisonMainTextCharacters } from "./comparison-report-text.js";
 import type { ComparisonReportFacts, ComparisonResult } from "../agents/comparison-agent.js";
 import { sha256, writeAtomic } from "../core/identity.js";
-import { ComparisonDraftSubmissionSchema, type ComparisonDraftSubmission } from "../core/schema.js";
+import { extractInner } from "../core/comparison-html.js";
+import { ComparisonDraftSubmissionSchema, ComparisonReportModelSchema, type ComparisonDraftSubmission } from "../core/schema.js";
 import type { AgentToolDefinition } from "../infrastructure/agent/host.js";
 import type { AgentLocale } from "../agents/language.js";
 import type { ComparisonEvidenceCatalog } from "./comparison-evidence.js";
 import { metricsFromReportFacts, renderComparisonReportShell } from "./comparison-report-shell.js";
-import { verifyAndRenderComparisonReport } from "./comparison-publication.js";
+import { comparisonReportModelFromHtml, verifyAndRenderComparisonReport } from "./comparison-publication.js";
 import type { PreparedReportPreview } from "./comparison-render-tools.js";
 import type { ComparisonDiscovery } from "./comparison-discovery.js";
 import type { ComparisonDraftBinding } from "../core/comparison-discovery-schema.js";
@@ -79,6 +81,35 @@ export class ComparisonDraft {
     };
   }
 
+  inspectTool(): AgentToolDefinition {
+    return {
+      name: "inspect_comparison_draft",
+      description: "Read the current accepted draft's actual report content without Host CSS or private paths. Returns its digest and revisions for review; structural validation does not certify semantic correctness. Unavailable when no accepted draft exists or its file/binding changed. This does not replace preview_report.",
+      parameters: Type.Object({}, { additionalProperties: false }),
+      execute: async (params, signal) => {
+        if (!Value.Check(Type.Object({}, { additionalProperties: false }), params)) throw new Error("Invalid draft inspection parameters.");
+        signal.throwIfAborted();
+        const accepted = this.#accepted;
+        const catalog = this.#catalog.snapshot();
+        if (!accepted || accepted.revision !== catalog.revision || accepted.discoveryRevision !== this.#discovery?.snapshot()?.revision) {
+          return { content: JSON.stringify({ status: "unavailable", reason: "No accepted draft bound to the current evidence and findings." }) };
+        }
+        const html = await this.#readAcceptedHtml(accepted.digest);
+        if (html === undefined) return { content: JSON.stringify({ status: "unavailable", reason: "Accepted draft file is missing or changed." }) };
+        if (this.#accepted !== accepted || this.#catalog.snapshot().revision !== catalog.revision || this.#discovery?.snapshot()?.revision !== accepted.discoveryRevision) {
+          return { content: JSON.stringify({ status: "unavailable", reason: "Draft binding changed during inspection; inspect again." }) };
+        }
+        const model = comparisonReportModelFromHtml(html, this.#facts, accepted.result, catalog.media, catalog.links, this.#locale);
+        if (!Value.Check(ComparisonReportModelSchema, model)) throw new Error("Invalid persisted comparison report content.");
+        return { content: JSON.stringify({ status: "available", draftDigest: accepted.digest,
+          catalogRevision: accepted.revision, ...(accepted.discoveryRevision === undefined ? {} : { findingsRevision: accepted.discoveryRevision }),
+          reportStatus: accepted.result.status, category: extractInner(html, "data-agent-slot", "category"),
+          headline: model.headline, comparisonHtml: model.slots.comparison, detailsHtml: model.slots.details,
+          mainTextCharacters: comparisonMainTextCharacters(html), semanticValidation: "not_performed" }) };
+      },
+    };
+  }
+
   async submit(draft: ComparisonDraftSubmission): Promise<string> {
     if (this.#discovery && !this.#discovery.readyToCompose()) {
       this.#lastRejection = "findings_not_ready: Save findings and resolve decision questions or mark evidence unavailable before composing.";
@@ -127,9 +158,9 @@ export class ComparisonDraft {
     this.#lastRejection = undefined;
     const length = comparisonMainTextCharacters(verified.html);
     const feedback = length > 600
-      ? "Shorten repeated conclusions and move methods to details; preserve decisive evidence and limitations. This is advisory, not a word-limit gate."
-      : "Match length to the decision: a single difference usually needs only a headline, paired excerpts and its consequence (about 100–250 Chinese characters); several consequential differences may need 300–600. Do not repeat the headline or add generic provenance/checking caveats that do not change this choice.";
-    return `status=accepted\ndraftDigest=${digest}\nrevision=${catalog.revision}\nmainTextCharacters=${length}\nreadabilityFeedback=${feedback}\nimportantLimitations=${JSON.stringify(discovery?.submission.importantLimitations ?? [])}\nEnsure important limitations remain visible in the main comparison; their semantic coverage needs review.\nPreview this exact draft in the review turn before finishing.`;
+      ? "Shorten repeated conclusions and move methods to details in one batch revision; preserve decisive evidence and limitations, then preview. This is advisory, not a word-limit gate."
+      : "Length below 600 (advisory). Preview the accepted draft rather than tuning its length repeatedly.";
+    return `status=accepted\ndraftDigest=${digest}\nrevision=${catalog.revision}\nmainTextCharacters=${length}\nreadabilityFeedback=${feedback}\nimportantLimitations=${JSON.stringify(discovery?.submission.importantLimitations ?? [])}\nSaved limitations are unverified semantic hypotheses: keep only those changing the task decision in the main comparison; routine provenance, missing edit history, metrics and synthetic methodology may go in details.\nOnce accepted, preview this current digest and finish; reopen only for material evidence or failed validation, not repeated length tuning.`;
   }
 
   submissionState(): string {
@@ -163,10 +194,7 @@ export class ComparisonDraft {
     if (!accepted || !previewed || accepted.digest !== previewed.digest || accepted.revision !== previewed.revision) return undefined;
     const catalog = this.#catalog.snapshot();
     if (catalog.revision !== accepted.revision) return undefined;
-    const html = await readFile(join(this.#attemptRoot, "report.html"), "utf8").catch((error: unknown) => {
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
-      throw error;
-    });
+    const html = await this.#readAcceptedHtml(accepted.digest);
     if (html === undefined) return undefined;
     if (sha256(html) !== accepted.digest) return undefined;
     const verified = await verifyAndRenderComparisonReport({
@@ -175,6 +203,14 @@ export class ComparisonDraft {
       locale: this.#locale, deliveredImageContentHashes: this.#deliveredImages,
     });
     return "failureClass" in verified ? undefined : accepted.result;
+  }
+
+  async #readAcceptedHtml(digest: string): Promise<string | undefined> {
+    const html = await readFile(join(this.#attemptRoot, "report.html"), "utf8").catch((error: unknown) => {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
+      throw error;
+    });
+    return html !== undefined && sha256(html) === digest ? html : undefined;
   }
 
   failureReason(): { code: 'draft_invalid' | 'preview_failed'; message: string; kind?: 'protocol' | 'timeout' | 'tool' } {

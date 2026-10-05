@@ -104,6 +104,7 @@ submit_comparison_draft; the Host owns report.html and its structural markers.
 File-tool paths are virtual paths relative to this briefing. shell_exec starts
 in scratch/; use the documented REPRISE_*_ROOT variables for physical source
 paths instead of treating virtual mounts as shell cwd.
+For analysis scripts that mention read-only mounts, create the script with write at scratch/<name>, then run that existing file from shell cwd. The conservative shell guard rejects mixed source references and file-creation commands, including source paths inside script text.
 
 Need screenshots or page views only through render_artifact and preview_report.
 Do not run Chrome, Edge, or Firefox binaries; do not use --version, --dump-dom,
