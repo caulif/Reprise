@@ -12,9 +12,10 @@ import {
   type ComparisonReportModel, type EventEnvelope,
 } from '../core/schema.js';
 import { ExperimentStore } from '../infrastructure/store/experiment-store.js';
-import { persistComparisonReportModel, prepareComparisonArtifacts, verifyAndRenderComparisonReport } from './comparison-publication.js';
+import { comparisonReportModelFromHtml, persistComparisonReportModel, prepareComparisonArtifacts, verifyAndRenderComparisonReport } from './comparison-publication.js';
 import { recoveryFindingsBinding } from './comparison-recovery-discovery.js';
 import { recoveryComparisonQuoteSources } from './comparison-recovery-quotes.js';
+import { recoveryReviewBinding } from './comparison-recovery-review.js';
 import type { ComparisonQuoteSourcePort } from './comparison-source.js';
 
 const CatalogPointerSchema = Type.Object({
@@ -139,7 +140,7 @@ export async function inspectComparisonRecovery(input: {
   const events = store.events();
   const findings = await recoveryFindingsBinding({ store, events, attemptId: input.attemptId, draftDigest, catalogRevision: catalog.revision });
   if (findings.error) return { ready: false, reason: findings.error, draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html, result, media, evidence: links };
-  const previewed = events.find((event) => event.type === 'agent.tool_completed'
+  const previewed = events.filter((event) => event.type === 'agent.tool_completed'
     && event.sequence > (findings.previewAfterSequence ?? 0)
     && typeof event.payload === 'object' && event.payload !== null
     && (event.payload as Record<string, unknown>).attemptId === input.attemptId
@@ -148,9 +149,14 @@ export async function inspectComparisonRecovery(input: {
     && ((event.payload as Record<string, unknown>).sessionId as string).length > 0
     && Value.Check(PreviewDetailsSchema, (event.payload as Record<string, unknown>).details)
     && ((event.payload as Record<string, unknown>).details as { draftDigest: string; revision: number }).draftDigest === draftDigest
-    && ((event.payload as Record<string, unknown>).details as { draftDigest: string; revision: number }).revision === catalog.revision);
+    && ((event.payload as Record<string, unknown>).details as { draftDigest: string; revision: number }).revision === catalog.revision).at(-1);
   if (!previewed) return { ready: false, reason: 'No successful preview with a session ID for this draft and catalog revision.', draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html, result, media, evidence: links };
   const sessionId = (previewed.payload as { sessionId: string }).sessionId;
+  const draftModel = comparisonReportModelFromHtml(html, context.reportFacts, result, media, links);
+  const reviewError = await recoveryReviewBinding({ store, events, attemptId: input.attemptId, draftDigest, catalogRevision: catalog.revision,
+    previewSessionId: sessionId, acceptedAfterSequence: findings.previewAfterSequence ?? 0,
+    content: { headline: draftModel.headline ?? '', comparisonHtml: draftModel.slots.comparison ?? '', detailsHtml: draftModel.slots.details ?? '' } });
+  if (reviewError) return { ready: false, reason: reviewError, draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html, result, media, evidence: links };
   const deliveredImageContentHashes = await deliveredImageHashes(store, events, input.attemptId, sessionId);
   const quoteSources = recoveryComparisonQuoteSources({ experimentRoot, attemptRoot, runId: context.reportFacts.run.runId,
     evidence: links, allowModelText: context.allowModelText });

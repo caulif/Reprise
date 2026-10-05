@@ -74,6 +74,7 @@ export function instrumentTools(
             role,
             payload: {
               tool: tool.name,
+              toolCallId,
               message: error instanceof Error ? error.message : String(error),
               ...(cursor.invocationId ? { invocationId: cursor.invocationId } : {}),
             },

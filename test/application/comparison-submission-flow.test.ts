@@ -30,7 +30,10 @@ for (const repairable of [true, false]) test(`review revision ${repairable ? 'is
       }
       if (turns > 3) {
         assert.match(content, /Continue the current review turn/);
-        if (repairable) await preview.execute({}, signal);
+        if (repairable) {
+          await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
+          await preview.execute({}, signal);
+        }
         else await submit.execute(draft(`Draft ${turns}`), signal);
       }
       return '';
@@ -64,6 +67,7 @@ test('application publishes a submitted and previewed draft after an empty final
           assert.match(accepted.content, /status=accepted/);
         }
         if (turns === 3) {
+          await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
           const preview = tools?.find((tool) => tool.name === 'preview_report');
           assert.ok(preview);
           const result = await preview.execute({}, signal);
@@ -78,7 +82,7 @@ test('application publishes a submitted and previewed draft after an empty final
   const result = await startExperiment({ ...base, comparison }).result;
   assert.equal(turns, 3);
   assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result));
-  assert.deepEqual(result.facts.comparisonActivity, { modelRequests: 0, toolCalls: 2, compactions: 0 });
+  assert.deepEqual(result.facts.comparisonActivity, { modelRequests: 0, toolCalls: 3, compactions: 0 });
   assert.match(await readFile(join(result.experimentRoot, 'report.html'), 'utf8'), /usable result/);
   const events = await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8');
   assert.match(events, /comparison.phase_completed/);
@@ -103,6 +107,7 @@ test('application refuses to publish an accepted draft without preview', async (
             comparisonHtml: '<p>One outcome differs from the other.</p>',
           }, signal)).content, /status=accepted/);
         }
+        if (turns === 3) await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
         return '';
       }, cancel() {},
     }) }), timeoutMs: 0, maxRepairAttempts: 0,
@@ -133,6 +138,7 @@ test('a provider failure after preview does not publish the draft', async (t) =>
           }, signal)).content, /status=accepted/);
         }
         if (turns === 3) {
+          await tools.find(tool => tool.name === 'inspect_comparison_draft')!.execute({}, signal);
           const preview = tools?.find((tool) => tool.name === 'preview_report');
           assert.ok(preview);
           assert.equal((JSON.parse((await preview.execute({}, signal)).content) as { status: string }).status, 'ok');

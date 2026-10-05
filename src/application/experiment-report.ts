@@ -55,6 +55,7 @@ import {
 import { withComparisonShellDeny } from "./comparison-shell-deny.js";
 import { preflightComparisonDraft } from "./comparison-draft-preflight.js";
 import { createComparisonQuoteSourcePort, type ComparisonQuoteSourcePort } from "./comparison-source.js";
+import { ComparisonReviewRequestSchema, ComparisonReviewStartedSchema } from "../core/comparison-review-schema.js";
 import { createQuoteEvidenceTool, validateComparisonEvidenceQuotes } from "./comparison-evidence-quotes.js";
 
 export { comparisonCandidateMount };
@@ -301,7 +302,7 @@ async function compareExperimentOutcome(
       shortEvidenceRefs: briefing.links.flatMap((link) => link.shortRef ? [link.shortRef] : []),
       ...(hostZoneSnapshot ? { hostZoneSnapshot } : {}),
     };
-    await persistComparisonRequest(input.store, input.input.runId, attemptId, { ...briefingContext, media: briefing.media });
+    await persistComparisonRequest(input.store, input.input.runId, attemptId, { ...briefingContext, media: briefing.media }, input.input.comparison instanceof ComparisonAgent);
     comparisonResult = await runComparisonAttempt({
       host: input, attemptId, attemptRoot, briefing, compareFacts, reportShellHtml, locale,
     });
@@ -596,6 +597,13 @@ async function invokeCompare(
     {
       getEvidenceCatalog: () => catalog.snapshot(),
       getSubmittedResult: () => draft.completedResult(),
+      onReviewStarted: async sessionId => {
+        draft.beginReview();
+        const payload = { schemaVersion: 1 as const, attemptId, sessionId, inspectionRequired: true as const };
+        if (!Value.Check(ComparisonReviewStartedSchema, payload)) throw new Error('Invalid Comparison review contract.');
+        await input.store.append({ type: 'comparison.review_started', runId: input.input.runId,
+          payload });
+      },
       getSubmissionFailure: () => draft.failureReason(),
       getSubmissionState: () => draft.submissionState(),
       preflightDraft: () => preflightComparisonDraft(attemptRoot),
@@ -771,7 +779,9 @@ function comparisonAudit(
   };
 }
 
-async function persistComparisonRequest(store: ExperimentStore, runId: string, attemptId: string, context: unknown): Promise<void> {
+async function persistComparisonRequest(store: ExperimentStore, runId: string, attemptId: string, context: unknown, reviewInspectionRequired = false): Promise<void> {
+  const reviewContract = reviewInspectionRequired ? { attemptId, reviewInspectionContractVersion: 1 as const } : undefined;
+  if (reviewContract && !Value.Check(ComparisonReviewRequestSchema, reviewContract)) throw new Error('Invalid Comparison review request contract.');
   const bytes = Buffer.from(JSON.stringify(context), "utf8");
   const truncated = bytes.byteLength > MAX_COMPARISON_INPUT_BYTES;
   const stored = truncated ? bytes.subarray(0, MAX_COMPARISON_INPUT_BYTES) : bytes;
@@ -789,6 +799,7 @@ async function persistComparisonRequest(store: ExperimentStore, runId: string, a
     operationId: `comparison-requested-${attemptId}`,
     payload: {
       schemaVersion: 1,
+      ...(reviewContract ?? {}),
       requestId: "comparison-requested",
       runId,
       inputDigest: digest,

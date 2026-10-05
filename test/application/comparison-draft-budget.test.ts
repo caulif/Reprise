@@ -40,7 +40,7 @@ test("live tool requires decision shape while legacy direct schema remains compa
 test("single and multiple declarations enforce exact visible character budgets with reverse cases", async t => {
   const f = await fixture(t);
   for (const [decisionShape, maximum] of [["single_difference", 250], ["multiple_differences", 600]] as const) {
-    const submission = { ...base, decisionShape, comparisonHtml: `<p>${"字".repeat(maximum - 2)}</p>`, detailsHtml: `<p>${"方法".repeat(1000)}</p>` };
+    const submission = { ...base, decisionShape, comparisonHtml: `<p>${"字".repeat(maximum - 2)}</p>`, detailsHtml: '<p>Supporting method.</p>' };
     const accepted = (await f.tool.execute(submission, f.signal)).content;
     assert.match(accepted, /status=accepted/);
     assert.match(accepted, new RegExp(`mainTextCharacters=${maximum}(?:\\n|$)`));
@@ -71,6 +71,28 @@ test("over-budget revision preserves accepted bytes and preview; changing declar
   assert.equal(inspected.decisionShape, "single_difference");
   await f.tool.execute({ ...base, decisionShape: "multiple_differences" }, f.signal);
   assert.equal(await f.draft.completedResult(), undefined);
+});
+
+test("details budgets count folded explanations and reject without replacing inspected accepted bindings", async t => {
+  const f = await fixture(t);
+  for (const [decisionShape, maximum] of [["single_difference", 400], ["multiple_differences", 1000]] as const) {
+    const submission = { ...base, decisionShape, detailsHtml: `<p hidden>${"字".repeat(maximum)}</p>` };
+    assert.match(await f.draft.submit(submission), /status=accepted/);
+    f.draft.beginReview();
+    const inspectTool = f.draft.inspectTool();
+    await inspectTool.onCompleted!(await inspectTool.execute({}, f.signal));
+    const html = await readFile(join(f.root, "report.html"), "utf8");
+    const digest = sha256(html);
+    f.draft.recordPreview({ htmlPath: "preview.html", html, draftDigest: digest, preparedDigest: digest,
+      dependencyDigest: digest, catalogRevision: f.catalog.snapshot().revision, outputRoot: f.root });
+    assert.ok(await f.draft.completedResult());
+    const rejected = await f.draft.submit({ ...submission,
+      detailsHtml: `<details><summary>方法</summary><details><summary>范围</summary>${"字".repeat(maximum)}</details></details>` });
+    assert.match(rejected, /code=draft_details_too_long/);
+    assert.match(rejected, new RegExp(`maximum=${maximum}`));
+    assert.equal(await readFile(join(f.root, "report.html"), "utf8"), html);
+    assert.ok(await f.draft.completedResult());
+  }
 });
 
 test("length rejection provides the same Unicode-visible text as the DOM counter without changing the accepted preview", async t => {

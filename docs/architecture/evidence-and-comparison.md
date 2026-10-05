@@ -109,3 +109,5 @@ Comparison复审扩展调查独立累计并复用调查软额度，repair不重�
 Comparison的read结果现在只将实际存在的available/truncated/offset/byteLength/returnedBytes/totalBytes/nextCursor白名单投影到模型可见hostProgress.readCoverage；类型不符或缺失不补造false/0，不透出物理路径/任意details。读取覆盖描述本次返回范围，不保证原运行完整记录；模型不能因正文很长猜测截断。该反馈与原工具结果一同审计/压缩/恢复，文本和原生图片工具实际块均可见，旧直接端口不受影响。
 
 Comparison 的 `quote_evidence` 只读取当前 catalog 的已登记文本引用，并从实际 UTF-8 字节生成带 ref、完整来源 SHA-256、字节范围及全文/节选标签的固定 HTML。原文展示复用该组件；派生解释不能冒称原文。提交、预览、发布和离线恢复重读安全 mounts 并核验组件，不因先前工具成功而跳过来源变化检查；有组件却无法验证则拒绝，无组件的旧报告保持兼容。工具尊重 allowModelText，拒绝二进制、非法 UTF-8、越界或切断多字节范围以及超出 16KiB 输出的请求，不静默截断。该能力认证引文字节和范围，不认证自由文字中的事实、判断或完整性；这些仍须语义审阅。
+
+新生产独立复审须在最后一次接受修订后重新读取实际正文，绑定当前稿 digest/catalog/findings/声明；作者阶段读取不跨 Session 生效。预览仍负责布局，不返回全部解释正文，不能代替该读取。恢复对新启用契约的 attempt 校验当前 review Session 的读取记录，旧未启用报告保持兼容。主文250/600以外，单差异附属解释最多400、多差异1000字符，包括隐藏或折叠解释，排除已核验的固定原文引文。读取与篇幅门均不认证语义正确。

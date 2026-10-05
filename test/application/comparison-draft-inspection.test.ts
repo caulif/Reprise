@@ -7,6 +7,7 @@ import { ComparisonDraft } from "../../src/application/comparison-draft.js";
 import { ComparisonEvidenceCatalog } from "../../src/application/comparison-evidence.js";
 import { ComparisonDiscovery } from "../../src/application/comparison-discovery.js";
 import { sha256 } from "../../src/core/identity.js";
+import { instrumentTools } from "../../src/infrastructure/agent/tools.js";
 
 const facts = {
   run: { runId: "run-1", outcome: "completed", terminationCode: "completed", initiatedBy: "controller" },
@@ -29,9 +30,100 @@ async function fixture(t: { after: (fn: () => Promise<void>) => void }, discover
   const catalog = await ComparisonEvidenceCatalog.create({ attemptRoot: root, attemptId: "attempt-1", links: [{ side: "baseline", inspectPath: "history/final.txt" }], media: [] });
   const discovery = discoveryEnabled ? new ComparisonDiscovery({ catalog, attemptId: "attempt-1", persist: async () => undefined }) : undefined;
   const draft = new ComparisonDraft({ attemptRoot: root, task: "Compare outputs", facts, locale: "en", catalog, deliveredImages: new Set(), ...(discovery ? { discovery } : {}) });
-  const inspect = async () => JSON.parse((await draft.inspectTool().execute({}, new AbortController().signal)).content) as Record<string, unknown>;
+  const inspect = async () => {
+    const tool = instrumentTools([draft.inspectTool()], "review", "comparison", { requestIndex: 0 })[0]!;
+    const result = await tool.execute({}, new AbortController().signal);
+    return JSON.parse(result.content) as Record<string, unknown>;
+  };
   return { root, catalog, discovery, draft, inspect };
 }
+
+async function preview(f: Awaited<ReturnType<typeof fixture>>) {
+  const html = await readFile(join(f.root, "report.html"), "utf8");
+  const digest = sha256(html);
+  f.draft.recordPreview({ htmlPath: "preview.html", html, draftDigest: digest, preparedDigest: digest, dependencyDigest: digest,
+    catalogRevision: f.catalog.snapshot().revision, outputRoot: f.root });
+}
+
+test("fresh review clears compose inspection and requires actual final text delivery after every correction", async t => {
+  const f = await fixture(t);
+  await f.draft.submit(submission);
+  await f.inspect();
+  await preview(f);
+  assert.ok(await f.draft.completedResult());
+  f.draft.beginReview();
+  assert.equal(await f.draft.completedResult(), undefined);
+  assert.match(f.draft.failureReason().message, /final_inspection_required/);
+  const inspected = await f.inspect();
+  assert.equal(inspected.reviewInspectionRequired, true);
+  assert.equal(inspected.semanticValidation, "not_performed");
+  assert.ok(await f.draft.completedResult());
+  await f.draft.submit({ ...submission, detailsHtml: '<details><summary>Method</summary><p>Corrected limitation.</p></details>' });
+  await preview(f);
+  assert.equal(await f.draft.completedResult(), undefined);
+  assert.match(String((await f.inspect()).detailsHtml), /Corrected limitation/);
+  assert.ok(await f.draft.completedResult());
+  await f.draft.submit({ ...submission, detailsHtml: '<details><summary>Method</summary><p>Corrected limitation.</p></details>' });
+  assert.ok(await f.draft.completedResult());
+  f.draft.beginReview();
+  assert.equal(await f.draft.completedResult(), undefined);
+});
+
+test("failed audit and aborted tool delivery cannot satisfy the final inspection contract", async t => {
+  const f = await fixture(t);
+  await f.draft.submit(submission);
+  await preview(f);
+  f.draft.beginReview();
+  const failing = instrumentTools([f.draft.inspectTool()], "review", "comparison", { requestIndex: 0 }, {
+    append: async event => { if (event.type === "agent.tool_completed") throw new Error("Audit write failed"); },
+  })[0]!;
+  await assert.rejects(failing.execute({}, new AbortController().signal), /tool execution failed/);
+  assert.equal(await f.draft.completedResult(), undefined);
+  const controller = new AbortController();
+  const raw = f.draft.inspectTool();
+  const aborting = instrumentTools([{ ...raw, execute: async (params, signal) => {
+    const result = await raw.execute(params, signal);
+    controller.abort();
+    return result;
+  } }], "review", "comparison", { requestIndex: 0 })[0]!;
+  await assert.rejects(aborting.execute({}, controller.signal), /tool execution failed/);
+  assert.equal(await f.draft.completedResult(), undefined);
+  const pending = await raw.execute({}, new AbortController().signal);
+  f.draft.beginReview();
+  await raw.onCompleted!(pending);
+  assert.equal(await f.draft.completedResult(), undefined);
+  await f.inspect();
+  assert.ok(await f.draft.completedResult());
+});
+
+test("inspection binding invalidates on decision declaration, findings or catalog even for unchanged HTML", async t => {
+  const f = await fixture(t, true);
+  await f.discovery!.update(findings);
+  await f.draft.submit({ ...submission, decisionShape: "single_difference" });
+  f.draft.beginReview();
+  await f.inspect();
+  await preview(f);
+  assert.ok(await f.draft.completedResult());
+  const originalHash = sha256(await readFile(join(f.root, "report.html"), "utf8"));
+  await f.draft.submit({ ...submission, decisionShape: "multiple_differences" });
+  assert.equal(sha256(await readFile(join(f.root, "report.html"), "utf8")), originalHash);
+  await preview(f);
+  assert.equal(await f.draft.completedResult(), undefined);
+  await f.inspect();
+  assert.ok(await f.draft.completedResult());
+  await f.discovery!.update({ ...findings, importantLimitations: ["A corrected scope"] });
+  assert.equal(await f.draft.completedResult(), undefined);
+  await f.draft.submit({ ...submission, decisionShape: "multiple_differences" });
+  await preview(f);
+  assert.equal(await f.draft.completedResult(), undefined);
+  await f.inspect();
+  assert.ok(await f.draft.completedResult());
+  await mkdir(join(f.root, "scratch"));
+  await writeFile(join(f.root, "scratch", "note.txt"), "Derived note");
+  await f.catalog.registerEvidence({ relativePath: "note.txt", sourceRefs: ["ev-01"], label: "Derived note" });
+  assert.equal(await f.draft.completedResult(), undefined);
+  assert.equal((await f.inspect()).status, "unavailable");
+});
 
 test("inspection reads the latest accepted actual content without CSS and does not preview it", async t => {
   const f = await fixture(t);

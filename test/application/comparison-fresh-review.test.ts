@@ -43,12 +43,18 @@ test('draft review uses fresh conversation and repair keeps that session with on
   const f = fixture();
   const agent = new ComparisonAgent({ host: f.host, timeoutMs: 0, maxRepairAttempts: 0 });
   let checked = 0;
+  const started: string[] = [];
   const result = await agent.compare(context, [], f.audit, undefined, {
     getSubmittedResult: async () => ++checked === 1 ? undefined : value,
+    onReviewStarted: sessionId => {
+      assert.equal(f.sessions.at(-1)?.messages.length, 0);
+      started.push(sessionId);
+    },
     getFindingsState: () => 'Unverified earlier conclusion', getSubmissionState: () => 'Needs preview',
   });
   assert.equal(result.status, 'completed');
   assert.equal(f.sessions.length, 2);
+  assert.deepEqual(started, [f.sessions[1]!.sessionId]);
   assert.equal(f.sessions[0]!.messages.length, 2);
   assert.equal(f.sessions[1]!.messages.length, 2);
   const firstReview = f.sessions[1]!.messages[0]!;

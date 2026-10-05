@@ -47,6 +47,6 @@ function readCoverage(details: unknown): Record<string, number | boolean> {
 export function comparisonSoftLimitFeedback(reason: string, phase: unknown): AgentToolResult {
   const review = phase === 'review';
   return { content: `status=${review ? 'review_investigation_limit' : 'investigation_limit'}\nreason=${reason}\n${review
-    ? 'Stop expanding the audit. Use inspect_comparison_draft, update_comparison_findings, submit_comparison_draft and preview_report to finish supported corrections in one batch. Do not repeat denied searches. Remove unverified guarantees or report the decisive unresolved question explicitly; a resource limit is not evidence that a claim is true. Preview the exact final accepted digest before ending.'
+    ? 'Stop expanding the audit. Use inspect_comparison_draft, update_comparison_findings, submit_comparison_draft and preview_report to finish supported corrections in one batch. Do not repeat denied searches. Remove unverified guarantees or report the decisive unresolved question explicitly; a resource limit is not evidence that a claim is true. After your final revision, inspect the actual accepted headline, main text and all details for contradictory headings or invented limitations, then preview that exact digest before ending.'
     : 'Stop investigating. Save scoped findings and mark unresolved questions unavailable with this resource limitation, then return to compose. Do not invent missing evidence.'}` };
 }

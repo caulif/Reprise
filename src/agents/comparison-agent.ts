@@ -85,6 +85,7 @@ export type ComparisonCompareOptions = {
   /** Same-process getter; must not be persisted into comparison.requested JSON. */
   getEvidenceCatalog?: () => Pick<ComparisonEvidenceCatalogSnapshot, "links" | "media">;
   getSubmittedResult?: () => Promise<ComparisonResult | undefined>;
+  onReviewStarted?: (sessionId: string) => void | Promise<void>;
   getSubmissionFailure?: () => { code: 'draft_invalid' | 'preview_failed'; message: string; kind?: 'protocol' | 'timeout' | 'tool' };
   getSubmissionState?: () => string;
   preflightDraft?: () => Promise<{ digest: string; error?: string }>;
@@ -371,6 +372,7 @@ export const COMPARISON_TURN_PROMPTS = {
     'frames, source inference, or discrete samples. State the observed scope.',
     'Use optional details for necessary supporting methods; omit investigation diaries and file inventories.',
     'The Host already supplies expandable evidence paths, provenance and metrics. Do not repeat manifest fields, lifecycle states, unused sources or audit inventories in your details. Prefer no details for a simple choice; add only a necessary reproducible argument, counterexample or method boundary that helps assess the decision.',
+    'For declared single_difference, supporting explanation is limited to 400 characters; for multiple_differences, 1000. This includes hidden and folded explanation, but excludes Host-verified original quotation components. Do not use quotations to pad the report or repeat the main conclusion in details.',
     'Do not restate the headline in an opening paragraph and again in a recommendation.',
     'For a single straightforward difference, keep only the paired excerpt or result and its consequence; do not pad it with a methodology/limitations checklist.',
     'Omit unchanged rows unless they establish a relevant tradeoff; show only the decisive excerpt,',
@@ -394,6 +396,7 @@ export const COMPARISON_TURN_PROMPTS = {
     'For geometry or motion, derive the actual drawn positions from the full transform chain, not an ideal target variable or an assertion comparing that target to itself.',
     'A sealed final remains final without an edit-before snapshot. Do not manufacture an initial-file hypothesis to weaken the outcome comparison.',
     'Audit the details with the same evidence rules as the main text; folding cannot excuse unsupported precision, aesthetics or causal claims.',
+    'After your last accepted revision, call inspect_comparison_draft again and read the actual final headline, main text, every details heading and limitations. Check that headings match their paragraphs and that limitations do not deny facts already recorded or quoted. Your intended edit is not evidence that the submitted text changed. If you correct anything, repeat inspection on the new digest; inspection does not certify semantics.',
     'Use preview_report and, when supported, read the rendered preview. Check that the',
     'reader can identify the task, the two models, the decisive difference, and the',
     'reason for the recommendation or uncertainty without reading an audit trail.',
@@ -421,8 +424,8 @@ export const COMPARISON_TURN_PROMPTS = {
     'Check suggested remedies against every explicit task constraint. An inferable value or alternative feature does not replace information or behavior the user explicitly required.',
     'Use preview layout observations to check metrics visibility and overflow; a loaded page is not a full visual review.',
     '',
-    'Revise by calling submit_comparison_draft again, then preview the revised digest.',
-    'Batch supported corrections into one revision. After an accepted submission, preview that exact digest and finish this turn. Do not keep resubmitting to tune an advisory character target; continue only for a material new finding or failed validation.',
+    'Revise by calling submit_comparison_draft again, then inspect the actual revised text and preview the revised digest.',
+    'Batch supported corrections into one revision. After an accepted submission, reread that exact digest with inspect_comparison_draft, perform the text consistency check, preview and finish this turn. Do not keep resubmitting to tune an advisory character target; continue only for a material new finding or failed validation.',
     'If rendering or image inspection is unavailable, record the specific review limitation',
     'without inventing an observation. Your final message is not the',
     'publication decision; the Host publishes only the validated previewed version.',
@@ -551,6 +554,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
           await this.#sessions.release(attemptId);
           if (signal?.aborted) return { status: 'cancelled' as const, sessionId: session.sessionId };
           session = await this.#sessionFor(attemptId, context, phasedTools, measuredAudit);
+          await options.onReviewStarted?.(session.sessionId);
           freshReview = true;
         }
         const timeoutMs = comparisonTimeout(resources, this.#resources, this.#timeoutMs);
@@ -654,7 +658,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
         return { status: 'failed', sessionId: reviewed.sessionId, failure: { ...failure, attempts: repair + 1, kind } };
       }
       seen.add(state);
-      prompt = `Continue the current review turn. Publication is not ready: ${failure.message}\nCurrent submission state: ${state}\nCorrect the missing condition using the registered tools. Preview the latest accepted draft; do not restart investigation. After any revision, preview again before returning.`;
+      prompt = `Continue the current review turn. Publication is not ready: ${failure.message}\nCurrent submission state: ${state}\nCorrect the missing condition using the registered tools. After any revision, inspect the actual latest accepted text, check headline/details/limitations consistency, and preview that digest before returning. Do not restart investigation.`;
     }
   }
 
