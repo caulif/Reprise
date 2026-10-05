@@ -60,12 +60,31 @@ export type ComparisonFindingsSubmission = Static<typeof ComparisonFindingsSubmi
 
 const toolObservation = Type.Object({ ...observation.properties, supportBoundary: ComparisonSupportBoundarySchema }, { additionalProperties: false });
 const baseFinding = ComparisonFindingsSubmissionSchema.properties.findings.items;
-export const ComparisonFindingsToolSubmissionSchema = Type.Object({
+export const ComparisonFindingsCompleteToolSubmissionSchema = Type.Object({
   ...ComparisonFindingsSubmissionSchema.properties,
   findings: Type.Array(Type.Object({ ...baseFinding.properties,
     observations: Type.Array(toolObservation, { minItems: 2, maxItems: 2 }),
   }, { additionalProperties: false }), { maxItems: 12 }),
 }, { additionalProperties: false });
+
+const strictFinding = ComparisonFindingsCompleteToolSubmissionSchema.properties.findings.items;
+const question = ComparisonFindingsSubmissionSchema.properties.decisionQuestions.items;
+const decision = <T extends typeof strictFinding | typeof question>(replacement: T) => Type.Union([
+  Type.Object({ id, action: Type.Literal('retain') }, { additionalProperties: false }),
+  Type.Object({ id, action: Type.Literal('replace'), replacement }, { additionalProperties: false }),
+]);
+export const ComparisonFindingsDeltaSchema = Type.Object({
+  kind: Type.Literal('delta'),
+  binding: Type.Object({ revision: Type.Integer({ minimum: 1 }), digest: Type.String({ pattern: '^[a-f0-9]{64}$' }),
+    catalogRevision: Type.Integer({ minimum: 0 }) }, { additionalProperties: false }),
+  findingDecisions: Type.Array(decision(strictFinding), { maxItems: 12, description: 'Explicit retain or replace decision for every existing finding ID exactly once. Retain is your reviewed decision, not implicit approval; omitted or extra IDs are rejected.' }),
+  questionDecisions: Type.Array(decision(question), { maxItems: 16, description: 'Explicit retain or replace decision for every historical question ID exactly once. Replacement preserves question and decisionImpact identity; retain does not resolve unknowns.' }),
+  criteria: Type.Optional(ComparisonFindingsSubmissionSchema.properties.criteria),
+  finals: Type.Optional(ComparisonFindingsSubmissionSchema.properties.finals),
+  importantLimitations: Type.Optional(ComparisonFindingsSubmissionSchema.properties.importantLimitations),
+}, { additionalProperties: false, description: 'Bounded update against the exact saved revision/digest and current catalogRevision. Host materializes a complete record and runs all original validation. No implicit ID retention, deletion or addition; use the complete variant for new findings or questions. No semantic certification.' });
+export type ComparisonFindingsDelta = Static<typeof ComparisonFindingsDeltaSchema>;
+export const ComparisonFindingsToolSubmissionSchema = Type.Union([ComparisonFindingsCompleteToolSubmissionSchema, ComparisonFindingsDeltaSchema], { type: 'object' });
 
 export const ComparisonDiscoveryRecordSchema = Type.Object({
   schemaVersion: Type.Literal(1),

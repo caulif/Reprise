@@ -9,8 +9,10 @@ import {
   type ComparisonLinkRecord,
   type ComparisonMediaRecord,
   type ComparisonReportModel,
+  type EventEnvelope,
 } from "../core/schema.js";
 import { writeAtomic } from "../core/identity.js";
+import { record } from '../core/json.js';
 import { pathContainedBy } from "../core/paths.js";
 import { isMissing } from "./experiment-helpers.js";
 import type { AgentLocale } from "../agents/language.js";
@@ -82,19 +84,26 @@ type VerificationInput = {
 
 type VerificationFailure = { failureClass: ComparisonFailureClass; code: ComparisonPublishCode; message: string };
 
+export function comparisonRecordedFailurePhase(events: readonly EventEnvelope[], runId: string, attemptId: string): ComparisonFailurePhase | undefined {
+  const event = events.filter(item => item.runId === runId && item.type === 'comparison.phase_completed' && record(item.payload).attemptId === attemptId).at(-1);
+  const phase = record(event?.payload).phase;
+  return phase === 'understand' || phase === 'investigate' || phase === 'compose' || phase === 'review' ? phase : undefined;
+}
+
 export function classifyComparisonFailure(input: {
   result: StructuredAgentResult<unknown>;
   reportPresent: boolean;
+  recordedPhase?: ComparisonFailurePhase | undefined;
 }): { failureClass: ComparisonFailureClass; phase: ComparisonFailurePhase } {
   if (input.result.status === "cancelled") {
-    return { failureClass: "cancelled", phase: input.reportPresent ? "review" : "understand" };
+    return { failureClass: "cancelled", phase: input.recordedPhase ?? (input.reportPresent ? "review" : "understand") };
   }
   const failed = input.result.status === "failed" ? input.result.failure : undefined;
   const message = failed?.message ?? "";
   const kind = failed?.kind ?? "";
   const code = failed?.code ?? "";
   if (code === "provider_failure" || kind === "authentication" || kind === "rate_limited" || kind === "transient_network" || kind === "transient_upstream" || /\b529\b/.test(message)) {
-    return { failureClass: "provider", phase: input.reportPresent ? "review" : "compose" };
+    return { failureClass: "provider", phase: input.recordedPhase ?? (input.reportPresent ? "review" : "compose") };
   }
   if (code === "invalid_envelope" || message === "invalid JSON" || message.startsWith("schema validation failed") || message.includes("invalid JSON")) {
     return { failureClass: "protocol", phase: "review" };
@@ -112,7 +121,7 @@ export function classifyComparisonFailure(input: {
   if (code === "draft_invalid" || code === "report_incomplete" || code === "preview_failed" || code === "publication_failed" || message.includes("without writing report.html")) {
     return { failureClass: "publication", phase: code === "preview_failed" ? "review" : code === "publication_failed" ? "publication" : "compose" };
   }
-  return { failureClass: "unknown", phase: input.reportPresent ? "review" : "compose" };
+  return { failureClass: "unknown", phase: input.recordedPhase ?? (input.reportPresent ? "review" : "compose") };
 }
 
 export async function verifyAndRenderComparisonReport(input: VerificationInput): Promise<
@@ -389,6 +398,7 @@ export function comparisonFailureDiagnostic(input: {
   result: StructuredAgentResult<unknown>;
   facts: ComparisonReportFacts;
   reportPresent: boolean;
+  recordedPhase?: ComparisonFailurePhase | undefined;
   attemptId: string;
   locale?: AgentLocale;
 }): ComparisonReportDiagnostic {

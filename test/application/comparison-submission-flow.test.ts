@@ -337,4 +337,30 @@ test('a provider failure after preview does not publish the draft', async (t) =>
     assert.equal(result.comparison.result.failure.kind, 'transient_upstream');
   }
   await assert.rejects(readFile(join(result.experimentRoot, 'report.html'), 'utf8'), { code: 'ENOENT' });
+  assert.match(await readFile(join(result.experimentRoot, 'comparison-failure.html'), 'utf8'), /data-failure-phase="review"/);
+});
+
+test('production failure page reports compose when a Provider fails before submitting the preexisting Host shell', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-compose-failure-phase-'));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  const base = input(root, new VerifiedRuntime());
+  await mkdir(base.sourceRoot, { recursive: true }); await writeFile(join(base.sourceRoot, 'README.md'), '# source\n');
+  let turns = 0;
+  const comparison = new ComparisonAgent({ timeoutMs: 0, maxRepairAttempts: 0, host: new AgentHost({ createSession: sessionInput => {
+    const { request } = fixtureContext(sessionInput);
+    return { append: async ({ content, allowedToolNames }) => {
+      turns++; await request(content, allowedToolNames);
+      if (turns === 2) throw Object.assign(new Error('Stream ended without finish_reason'), { status: 503 });
+      return '';
+    }, cancel() {} };
+  } }) });
+  const result = await startExperiment({ ...base, comparison }).result;
+  assert.equal(result.comparison.result.status, 'failed'); assert.equal(turns, 2);
+  const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { type: string; payload: Record<string, unknown> });
+  const failed = events.filter(event => event.type === 'comparison.phase_completed').at(-1);
+  assert.equal(failed?.payload.phase, 'compose'); assert.equal(failed?.payload.outcome, 'failed');
+  assert.equal(events.filter(event => event.type === 'comparison.draft_accepted').length, 0);
+  const attempt = events.find(event => event.type === 'comparison.started')!.payload.attemptId as string;
+  assert.ok((await readFile(join(result.experimentRoot, 'comparison-attempts', attempt, 'report.html'), 'utf8')).includes('data-agent-zone="comparison"'));
+  assert.match(await readFile(join(result.experimentRoot, 'comparison-failure.html'), 'utf8'), /data-failure-phase="compose"/);
 });

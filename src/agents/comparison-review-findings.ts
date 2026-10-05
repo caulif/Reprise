@@ -5,7 +5,7 @@ import type { AgentToolDefinition, FreeformInvocation } from '../infrastructure/
 
 export const COMPARISON_REVIEW_FINDINGS_PROMPT = [
   'This is the independent review findings closure after source observations and actual draft delivery in this same session.',
-  'Call update_comparison_findings now with the complete corrected snapshot. Current saved findings are repair hypotheses, not evidence: use only independently received observations, retain historical question identities, and mark unverified relationships unavailable or conditional with decisive limitations. An unchanged valid snapshot may be accepted without a new revision.',
+  'Call update_comparison_findings now using kind=delta and current state.binding: list every findingIds and questionIds exactly once with action=retain or replace; supply complete replacement objects only for changes. Saved findings are hypotheses, not evidence: decide each entry from independent observations, preserve question identity and decisive uncertainty. Retain is an explicit reviewed decision, not automatic verification; unchanged valid content may be accepted without a new revision. Use the complete variant only when adding new findings or questions.',
   'Only update_comparison_findings and strictly registered repair reads are permitted. Do not investigate, submit a draft, inspect, write or preview. Ready saved state or a verbal promise does not replace an actual accepted update in this closure.',
   'The Host then starts full draft audit, new formal inspection and preview-only closure; accepted findings do not certify semantic correctness or publication.',
 ].join('\n');

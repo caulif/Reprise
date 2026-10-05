@@ -49,6 +49,8 @@ import { usagePricing } from './session-usage.js';
 import { loadOperatorPricingOverride } from './model-pricing.js';
 import {
   comparisonFailureDiagnostic,
+  comparisonRecordedFailurePhase,
+  type ComparisonFailurePhase,
   persistComparisonReportModel,
   publishComparisonArtifacts,
   verifyAndRenderComparisonReport,
@@ -456,6 +458,7 @@ async function persistComparisonInvocation(input: {
       attemptId: input.attemptId,
       attemptRoot: input.attemptRoot,
       locale: input.locale,
+      recordedPhase: comparisonRecordedFailurePhase(input.store.events(input.runId), input.runId, input.attemptId),
     });
   }
   await input.store.append({
@@ -881,6 +884,7 @@ async function writeComparisonFailurePage(input: {
   attemptId: string;
   attemptRoot: string;
   locale: AgentLocale;
+  recordedPhase?: ComparisonFailurePhase | undefined;
 }): Promise<void> {
   const reportPresent = await reportExists(input.attemptRoot, "report.html");
   const html = renderComparisonReportShell({
@@ -893,6 +897,7 @@ async function writeComparisonFailurePage(input: {
       result: input.result,
       facts: input.facts,
       reportPresent,
+      recordedPhase: input.recordedPhase,
       attemptId: input.attemptId,
       locale: input.locale,
     }),

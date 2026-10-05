@@ -1,11 +1,12 @@
 import { Value } from "@sinclair/typebox/value";
 import {
-  ComparisonDiscoveryRecordSchema, ComparisonFindingsToolSubmissionSchema,
-  type ComparisonDiscoveryRecord, type ComparisonFindingsSubmission, type ComparisonInvestigationClosure,
+  ComparisonDiscoveryRecordSchema, ComparisonFindingsToolSubmissionSchema, ComparisonFindingsCompleteToolSubmissionSchema,
+  type ComparisonDiscoveryRecord, type ComparisonFindingsSubmission, type ComparisonInvestigationClosure, type ComparisonFindingsDelta,
 } from "../core/schema.js";
 import { sha256 } from "../core/identity.js";
 import type { AgentToolDefinition } from "../infrastructure/agent/host.js";
 import type { ComparisonEvidenceCatalog } from "./comparison-evidence.js";
+import { materializeFindingsDelta } from './comparison-findings-delta.js';
 
 export class ComparisonDiscovery {
   readonly #catalog: ComparisonEvidenceCatalog;
@@ -27,22 +28,44 @@ export class ComparisonDiscovery {
   tool(): AgentToolDefinition {
     return {
       name: "update_comparison_findings",
-      description: "Replace the complete findings snapshot: concise task criteria, final-source locations, scoped observations and decision questions. Each finding has exactly two observations: one baseline and one candidate. Combine same-side measurements in its single result and scope; use method=unavailable for an unverified side, never invent its evidence. Include every previously accepted decision question ID with its unchanged question and decisionImpact; history cannot be erased, even after catalog changes. Rejection repair materials are prior model-authored claims, not certified semantics. Every finding.criterion must exactly copy one criteria string. References must be registered. Resolve questions or explain unavailable evidence before composing; reopening a settled question requires new grounds. Every observation must include supportBoundary: name the same compared relationship on both sides, the domain, coveredInstances and uncheckedInstances. Trace any downstream transformation, write, or returned value to the actual delivered output before declaring supportStage=delivered_output; intermediate targets or self-reports are intermediate_only, never output observation. delivered_output requires at least one covered instance; unavailable has no covered instances. A sample covers only the declared instances, not all outputs. Source inspection can trace delivered output; method does not determine supportStage. If an instance or side cannot be checked, mark it unchecked/unavailable with a decision-changing limitation and finish conditionally instead of exploring indefinitely. These scope declarations are model-authored and not Host semantic certification. Saved findings do not prove semantic correctness.",
+      description: "Submit a complete initial findings snapshot. With a saved binding, prefer kind=delta against current state.binding. Delta requires one explicit retain/replace decision for every state.findingIds and state.questionIds; replacement objects are complete, existing IDs cannot be omitted, added or deleted, and retained objects are not implicit semantic approval. Use the complete variant for new findings or questions. Task criteria, final-source locations, scoped observations and question history remain mandatory in the materialized record. Each finding has exactly one baseline and one candidate observation; retain historical question and decisionImpact identity. References must be registered. Every observation needs supportBoundary with the same compared relationship, domain, coveredInstances and uncheckedInstances. delivered_output requires actual downstream drawn/written/returned output support and covered instances, not reconstructed targets or self-reports. Unknown checks remain unavailable or conditional with decisive limitations; retaining a pending question does not make findings ready. New grounds and reopenReason are required to reopen settled questions. Both variants run the same full validation; acceptance validates provenance and structure, never semantic truth.",
       parameters: ComparisonFindingsToolSubmissionSchema,
       execute: async (params, signal) => {
         signal.throwIfAborted();
         if (!Value.Check(ComparisonFindingsToolSubmissionSchema, params)) {
           const errors = [...Value.Errors(ComparisonFindingsToolSubmissionSchema, params)].slice(0, 3).map(error => ({ path: error.path, message: error.message }));
-          return { content: `status=rejected\ncode=invalid_findings\nerrors=${JSON.stringify(errors)}\nCorrect these fields and resubmit the complete findings record.` };
+          return { content: `status=rejected\ncode=invalid_findings\nerrors=${JSON.stringify(errors)}\nCorrect these fields and resubmit the complete snapshot or strictly bound delta.` };
         }
-        const operation = this.#queue.then(() => this.update(params, signal));
-        this.#queue = operation.catch(() => undefined);
-        return { content: await operation };
+        const input = structuredClone(params);
+        return { content: await this.#enqueue(() => 'kind' in input ? this.#delta(input, signal) : this.#update(input, signal)) };
       },
     };
   }
 
-  async update(submission: ComparisonFindingsSubmission, signal?: AbortSignal): Promise<string> {
+  update(submission: ComparisonFindingsSubmission, signal?: AbortSignal): Promise<string> {
+    return this.#enqueue(() => this.#update(submission, signal));
+  }
+
+  #enqueue<T>(work: () => Promise<T>): Promise<T> {
+    const operation = this.#queue.then(work);
+    // Rejection must not poison scheduling; the original operation still rejects to its caller.
+    this.#queue = operation.catch(() => undefined);
+    return operation;
+  }
+
+  async #delta(delta: ComparisonFindingsDelta, signal: AbortSignal): Promise<string> {
+    signal.throwIfAborted();
+    const base = this.#accepted;
+    if (!base) return 'status=rejected\ncode=delta_snapshot_missing';
+    const currentBinding = () => this.#accepted === base && delta.binding.catalogRevision === this.#catalog.snapshot().revision;
+    if (delta.binding.revision !== base.revision || delta.binding.digest !== base.digest || !currentBinding()) return 'status=rejected\ncode=delta_binding_stale';
+    const submission = materializeFindingsDelta(base.submission, delta);
+    if (!submission) return 'status=rejected\ncode=delta_decisions_invalid';
+    if (!Value.Check(ComparisonFindingsCompleteToolSubmissionSchema, submission)) return 'status=rejected\ncode=delta_materialized_invalid';
+    return await this.#update(submission, signal, currentBinding);
+  }
+
+  async #update(submission: ComparisonFindingsSubmission, signal?: AbortSignal, currentBinding?: () => boolean): Promise<string> {
     signal?.throwIfAborted();
     const catalog = this.#catalog.snapshot();
     const entries = [...catalog.links, ...catalog.media];
@@ -128,13 +151,15 @@ export class ComparisonDiscovery {
       catalogRevision: catalog.revision, digest, submission: data,
     };
     if (!Value.Check(ComparisonDiscoveryRecordSchema, record)) throw new Error("Invalid comparison discovery persistence record.");
+    if (currentBinding && !currentBinding()) return 'status=rejected\ncode=delta_binding_stale';
     await this.#persist(structuredClone(record));
+    if (currentBinding) { signal?.throwIfAborted(); if (!currentBinding()) throw new Error('Delta findings binding changed during persistence; acceptance is forbidden.'); }
     this.#accepted = record;
     return this.#receipt(record);
   }
 
   closeAtInvestigationDeadline(signal: AbortSignal): Promise<ComparisonInvestigationClosure> {
-    const operation = this.#queue.then(async () => {
+    return this.#enqueue(async () => {
       signal.throwIfAborted();
       const previous = this.snapshot();
       if (!previous) throw new Error('Investigation deadline closure requires an actually accepted findings snapshot.');
@@ -144,19 +169,18 @@ export class ComparisonDiscovery {
         question.status = 'unavailable';
         question.resolution = 'Host process boundary: the actual investigation deadline ended before this pending question was checked. This is not a semantic answer, does not establish that evidence is absent, and leaves the original decisionImpact unverified.';
       }
-      const receipt = await this.update(submission, signal);
+      const receipt = await this.#update(submission, signal);
       if (!receipt.startsWith('status=accepted\n') || !this.readyToCompose()) throw new Error('Investigation deadline closure failed the current findings/catalog validation.');
       const current = this.snapshot()!;
       const binding = (record: ComparisonDiscoveryRecord) => ({ revision: record.revision, catalogRevision: record.catalogRevision, digest: record.digest });
       return { previous: binding(previous), current: binding(current), questionIds };
     });
-    // A rejected operation must not poison scheduling; its original promise still rejects to the caller.
-    this.#queue = operation.catch(() => undefined);
-    return operation;
   }
 
   #receipt(record: ComparisonDiscoveryRecord): string {
     const receipt = { revision: record.revision, catalogRevision: record.catalogRevision, digest: record.digest, readyToCompose: this.readyToCompose(),
+      binding: { revision: record.revision, catalogRevision: this.#catalog.snapshot().revision, digest: record.digest },
+      findingIds: record.submission.findings.map(item => item.id), questionIds: record.submission.decisionQuestions.map(item => item.id),
       pendingQuestions: record.submission.decisionQuestions.filter(question => question.status === 'pending').map(question => question.id),
       importantLimitationCount: record.submission.importantLimitations.length };
     return `status=accepted\n${JSON.stringify(receipt)}\nKeep decision-changing limitations visible next to the conclusion. Omit routine provenance, missing metrics and edit-history inventories already covered by the Host; details are optional and only needed for a substantive reproducible argument or method boundary. Registration validates references and scope fields, not the truth of natural-language claims.`;
@@ -164,5 +188,7 @@ export class ComparisonDiscovery {
 
   snapshot(): ComparisonDiscoveryRecord | undefined { return this.#accepted && structuredClone(this.#accepted); }
   readyToCompose(): boolean { return !!this.#accepted && this.#accepted.catalogRevision === this.#catalog.snapshot().revision && this.#accepted.submission.decisionQuestions.every((item) => item.status !== "pending"); }
-  state(): string { return JSON.stringify({ revision: this.#accepted?.revision ?? 0, readyToCompose: this.readyToCompose(), record: this.#accepted }); }
+  state(): string { return JSON.stringify({ revision: this.#accepted?.revision ?? 0, readyToCompose: this.readyToCompose(),
+    binding: this.#accepted && { revision: this.#accepted.revision, digest: this.#accepted.digest, catalogRevision: this.#catalog.snapshot().revision },
+    findingIds: this.#accepted?.submission.findings.map(item => item.id) ?? [], questionIds: this.#accepted?.submission.decisionQuestions.map(item => item.id) ?? [], record: this.#accepted }); }
 }
