@@ -38,7 +38,8 @@ test("inspection reads the latest accepted actual content without CSS and does n
   assert.equal((await f.inspect()).status, "unavailable");
   const receipt = await f.draft.submit(submission);
   assert.match(receipt, /Length below 600/);
-  assert.match(receipt, /routine provenance.*may go in details/);
+  assert.match(receipt, /Omit routine provenance.*already supplied by the Host/);
+  assert.match(receipt, /Details are optional/);
   const first = await f.inspect();
   assert.equal(first.status, "available");
   assert.equal(first.headline, submission.headline);

@@ -50,14 +50,14 @@ fabricate files, screenshots, process, metrics, or visual observations.
 Make the main comparison understandable without knowledge of the harness.
 Lead with the decisive result, show the evidence that makes it clear, and keep
 limitations that change the choice next to that result. Put technical detail
-and the longer audit trail in the optional details area. Do not repeat model
+and necessary supporting methods in optional details. The Host owns the audit trail. Do not repeat model
 IDs in every sentence or add remaining work that the user did not need.
 Match the main comparison to the decision: about 100–250 Chinese characters for one simple difference,
 and 300–600 for several consequential differences. A headline, paired excerpts and their consequence often suffice.
 This is a reading target, not a reason to omit decisive counterevidence or limitations.
 Show one or two process turning points only when they change the choice; otherwise omit process commentary.
 Reuse Host-validated sealed final identity and hashes. Do not spend the investigation repeating hash/metadata checks without a recorded conflict.
-Not repeating those Host checks is not a new limitation. Put routine provenance, missing edit history, synthetic-record methodology and missing metrics in details unless they change this task decision.
+Not repeating those Host checks is not a new limitation. Omit routine provenance, missing edit history and missing metrics unless they change this task decision. State any decision-changing synthetic scope once, without cataloging source metadata.
 Final files show the resulting state, not which edits happened. Without a before-state or edit record,
 say the final output has a defect; do not call it the original or unchanged implementation, or claim the model skipped the edit.
 A Host changed-path record supports which paths changed within its snapshot scope, not the exact edit sequence.

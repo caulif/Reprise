@@ -80,3 +80,5 @@ Pinned Pi SDK 的流缺少 finish_reason、stop reason、finish reason 或 termi
 提交草稿端口下，每个工具结果附Host的当前phase、剩余额度及草稿/catalog/findings/preview绑定。反馈进入相同工具结果审计及模型输入，不建立第二事实源；既有JSON结果保持JSON对象、媒体交付元数据不变，旧直接端口不加此反馈。计数及绑定只证明执行条件，不认证语义正确。空资源override维持无额度限制。精确供应商`unexpected EOF`按暂态transport处理，沿既有保留tool-result的continuation，不重播已执行工具；工具解析、认证和带应用前缀的EOF不扩大归类，缺失usage保持未知。
 
 实际评估发现read的完整性元数据仅在details审计而未交付模型。选择在Comparison专用工具外层投影白名单readCoverage（available/truncated/offset与现有字节/游标），不改共享read端口或注入任意details。不存在的字段不推断；本次读取未截断不等于原运行记录完整。反馈沿原tool_completed/body和实际模型文本块存储；模型应省略不影响判断的排除来源叙述，而不是猜测来源缺陷。逆例以实际Pi适配器证明coverage进入文本/原生图片请求，并排除私有路径和非法字段。
+
+Agent正文与可选details只补充决定性差异、必要的可复算论证/反例/方法边界；Host已经提供可展开来源路径、身份、指标与审计，不要求模型再翻译manifest/lifecycle字段或叙述未使用来源。简单任务可不写details，仍须保留改变任务判断的限制；折叠不是免除语义正确性的方式。
