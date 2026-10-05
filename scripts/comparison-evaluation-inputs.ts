@@ -11,7 +11,7 @@ import type { EventEnvelope } from '../src/core/schema.js';
 
 const IDENTITY = 'evaluation-inputs.json';
 const COMPARISON_EVENTS = new Set(['comparison.started', 'comparison.requested', 'comparison.completed', 'comparison.findings_updated',
-  'comparison.draft_accepted', 'comparison.evidence_registered', 'comparison.phase_completed', 'comparison.resources_completed']);
+  'comparison.draft_accepted', 'comparison.review_started', 'comparison.evidence_registered', 'comparison.phase_completed', 'comparison.resources_completed']);
 const AGENT_EVENTS = new Set(['agent.session_started', 'agent.session_completed', 'agent.invocation_started', 'agent.invocation_completed',
   'agent.message_appended', 'agent.model_request', 'agent.model_output', 'agent.usage_reported', 'agent.assistant_visible',
   'agent.tool_called', 'agent.tool_completed', 'agent.context_compacted', 'agent.request_retried', 'agent.tool_failed',

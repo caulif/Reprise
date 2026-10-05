@@ -49,11 +49,19 @@ test('frozen input identity rejects task changes with old contentHash and candid
 
 test('legitimate persisted comparisons can append events and artifacts without invalidating frozen inputs', async t => {
   const { root, item, prepared } = await fixture(t);
+  let turns = 0;
   for (let attempt = 0; attempt < 2; attempt++) {
     await verifyComparisonEvaluationInputs(root, item, prepared.inputIdentityHash);
     const result = await comparePersistedExperiment({ ...prepared,
       comparison: attempt === 0 ? { compare: async () => ({ status: 'cancelled' }), cancel: async () => {} }
-        : new ComparisonAgent({ host: new AgentHost({ createSession: () => ({ append: async () => { throw new Error('Offline fixture failure'); }, cancel() {} }) }), timeoutMs: 1000, maxRepairAttempts: 0 }),
+        : new ComparisonAgent({ host: new AgentHost({ createSession: ({ tools }) => ({ append: async ({ signal }) => {
+          turns++;
+          if (turns === 2) await tools.find(tool => tool.name === 'submit_comparison_draft')!.execute({
+            status: 'completed', decisionShape: 'single_difference', category: 'Results', headline: 'A difference', comparisonHtml: '<p>A supported contrast.</p>',
+          }, signal);
+          if (turns === 3) throw new Error('Offline fixture review failure');
+          return '';
+        }, cancel() {} }) }), timeoutMs: 1000, maxRepairAttempts: 0 }),
       agentConfig: { providerId: 'offline', requestedModel: 'offline', budget: { callTimeoutMs: 1000, maxStructuredRepairAttempts: 0 } },
       policy: EVALUATION_POLICY, now: new Date().toISOString() });
     assert.equal(result.comparison.result.status, attempt === 0 ? 'cancelled' : 'failed');
@@ -61,6 +69,7 @@ test('legitimate persisted comparisons can append events and artifacts without i
   }
   const eventsPath = join(prepared.dataDir, 'experiments', prepared.experimentId, 'events.jsonl');
   const events = await readFile(eventsPath);
+  assert.match(events.toString('utf8'), /comparison.review_started/);
   await writeFile(eventsPath, events.subarray(1));
   await assert.rejects(verifyComparisonEvaluationInputs(root, item, prepared.inputIdentityHash), /event prefix changed/);
 });
