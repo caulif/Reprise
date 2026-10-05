@@ -25,6 +25,12 @@
 
 ## 影响
 
+### 合并 Host 重复范围说明
+
+真实文本报告及 compose 事件显示，同一长 criterion 被 Host 再次放进主文，并在两侧详情重复 criterion、relationship 和 domain，作者为通过原字数门禁反复重写 findings。Host 的不完整支持提示改为稳定的 findings 顺序编号（依据 N），对应详情中保留一次完整 criterion；两侧相同 relationship/domain 合并，仅在不同范围时分别显示。每侧 coveredInstances 和 uncheckedInstances 仍全部显示，不截断、不删除、不自动解决。编号不是支持认证或重要性排序。
+
+原 decisionSummary/decisionBoundary、全部 finding dispositions、不完整支持限制、不可用问题限制、主文与详情原字数上限不变；关键未知仍需由模型放在可见判断旁。Host 只去除重复表达，不能替模型判断事实。旧无声明草稿继续透传。自动化逆例覆盖不同侧范围、长 criterion、全部未知保全、转义、非决策项及缺失 support；实际报告布局审查不能代替语义审查。
+
 扩展当前工具与报告内容契约，兼容既有持久化和旧提交。新字段作为普通文本显示，避免把模型 HTML 当成结构或隐藏关键边界。既有字数、预算、lane、effort、maxTokens、当前检查及预览门禁保持原值，不增加依赖或样例答案。
 
 该最小契约不能保证模型发现全部反例、正确判断每个限制的重要性或写出有用正文。非空 Boundary 也可能遗漏关键问题；真实语义复核仍需核对任务、实际输出链、完整主文与详情，不能只检查字段和字符数量。继续对同一冻结输入和合成任务分别验收稳定性与可迁移性。

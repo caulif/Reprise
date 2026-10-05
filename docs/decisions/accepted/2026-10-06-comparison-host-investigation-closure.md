@@ -32,8 +32,12 @@ compose 的下一实际模型输入携带新保存状态及明确的 Host 过程
 
 新增事件是持久化契约，记录来源并供审计复原；原 findings record 格式和历史事件不迁移。闭合审计失败可能发生在 findings artifact 已持久化之后，整个 Comparison 必须失败，不能据此 compose 或发布。
 
+冻结评估输入的追加事件白名单同步允许 `comparison.investigation_closed` 与 `comparison.draft_audit_started`；它们属于 Comparison 自身流程，不改变源输入身份和原 committed prefix。仍逐字节核对原文件与前缀，拒绝未知 Comparison 类型及新 Runtime、Controller 观察，不能以新事件为由放宽输入门禁。
+
 ## 验证
 
 真实生产入口 fixture 从实际接受 pending snapshot 到 Provider 截止、Host artifact/event、下一实际 compose 输入、实际独立更新、新 audit/inspect/generation/preview 与发布全链验证；无 paid findings pass，Host 不增加模型 tool-call 数。
 
 Discovery 逆例覆盖无保存、当前引用失效、真实持久化失败与取消，保持原 accepted；正例逐字段检查观察、限制、问题身份、nextCheck 和 settled 历史。实际 submitted 入口的 callback 失败、未 ready、取消均不能发起下一模型调用。非 deadline、legacy、整体硬限和事件 Schema 反向用例保持。机械检查不替代后续真实模型终态及语义验收。
+
+评估输入门禁正例覆盖两个合法新事件，逆例保留未知 Comparison、Runtime、Controller 和无关 artifact 的真实校验和追加日志，均不能通过冻结输入验证。

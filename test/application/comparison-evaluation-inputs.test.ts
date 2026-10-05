@@ -84,12 +84,35 @@ test('unexpected source files are rejected while separately generated report out
   await assert.rejects(verifyComparisonEvaluationInputs(root, item, prepared.inputIdentityHash), /Unexpected file added/);
 });
 
+test('frozen inputs permit persisted draft audit and Host investigation closure suffix events', async t => {
+  const { root, item, prepared } = await fixture(t);
+  const eventsPath = join(prepared.dataDir, 'experiments', prepared.experimentId, 'events.jsonl');
+  let sequence = parseCommittedEventLog(await readFile(eventsPath, 'utf8')).events.length;
+  for (const event of [
+    { type: 'comparison.draft_audit_started', payload: {
+      schemaVersion: 1, attemptId: 'attempt', sessionId: 'review-session', inspectionRequired: true,
+    } },
+    { type: 'comparison.investigation_closed', payload: {
+      schemaVersion: 1, attemptId: 'attempt', sessionId: 'investigation-session', reason: 'bounded_investigation_timeout',
+      previous: { revision: 1, catalogRevision: 0, digest: 'a'.repeat(64) },
+      current: { revision: 2, catalogRevision: 0, digest: 'b'.repeat(64) },
+      questionIds: ['question'], semanticAssessment: 'not_certified',
+    } },
+  ]) {
+    sequence++;
+    const body = { schemaVersion: 1, sequence, eventId: `comparison-${sequence}`, occurredAt: new Date().toISOString(), runId: 'fixture-run', ...event };
+    await appendFile(eventsPath, `${JSON.stringify({ ...body, checksum: sha256(JSON.stringify(body)) })}\n`);
+    await verifyComparisonEvaluationInputs(root, item, prepared.inputIdentityHash);
+  }
+});
+
 test('valid checksums cannot authorize new Runtime or Controller process observations after preparation', async t => {
   const { root, item, prepared } = await fixture(t);
   const eventsPath = join(prepared.dataDir, 'experiments', prepared.experimentId, 'events.jsonl');
   const original = await readFile(eventsPath);
   const sequence = parseCommittedEventLog(original.toString('utf8')).events.length + 1;
   for (const event of [
+    { type: 'comparison.unknown_future_event', payload: {} },
     { type: 'runtime.tool_finished', payload: { item: { type: 'commandExecution', command: 'invented check', aggregated_output: 'New process evidence' } } },
     { type: 'agent.tool_completed', payload: { role: 'controller', tool: 'new-check', result: 'New process evidence' } },
     { type: 'artifact.created', payload: { artifactId: 'new-candidate-evidence' } },

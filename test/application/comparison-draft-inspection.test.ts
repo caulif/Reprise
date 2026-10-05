@@ -109,7 +109,8 @@ test('decision dependencies cover exact current findings and reject unsupported 
     assert.match(await f.draft.submit({ ...modern, conclusionScope: 'conditional' }), /status=accepted/);
     const material = await f.inspect();
     const inspected = String(material.comparisonHtml);
-    assert.match(inspected, /Preserve meaning: Current run: (delivered-output support unverified|limited delivered-output coverage)/);
+    assert.match(inspected, /Basis 1: Current run: (delivered-output support unverified|limited delivered-output coverage)/);
+    assert.match(String(material.detailsHtml), /Basis 1: Preserve meaning/);
     if (supportBoundary?.uncheckedInstances.length) {
       assert.doesNotMatch(inspected, /Output branch/);
       assert.match(String(material.detailsHtml), /Output branch/);

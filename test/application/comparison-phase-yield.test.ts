@@ -14,6 +14,7 @@ import { ComparisonDraft } from '../../src/application/comparison-draft.js';
 import { ComparisonDiscovery } from '../../src/application/comparison-discovery.js';
 import { ComparisonEvidenceCatalog } from '../../src/application/comparison-evidence.js';
 import { comparisonDecisionMetrics, comparisonOutputContinuation } from '../../src/agents/comparison-invocation-boundaries.js';
+import { COMPARISON_COMPOSITION_BOUNDARY_PROMPT } from '../../src/agents/comparison-composition-tools.js';
 
 const context: ComparisonContext = { task: { caseId: 'case', summary: 'Compare' }, attemptId: 'attempt', baseline: { summary: 'baseline', evidenceRefs: [] }, candidates: [], telemetry: [], artifactRefs: [], allowModelText: true,
   replayScope: { historical: 'original', candidate: 'original' }, reportFacts: { run: { runId: 'run', outcome: 'completed', terminationCode: 'completed', initiatedBy: 'controller' }, models: { candidate: 'fixture' }, activity: {}, limits: { triggered: [] }, runtime: { productId: 'codex' }, delivery: { changedPaths: [], targetArtifactStatus: 'unavailable', verificationStatus: 'unavailable' }, replay: { conditions: [], baselineEvidence: 'available', candidateEvidence: 'available' } } };
@@ -153,14 +154,14 @@ test('output-limit helper does not continue failures or ordinary resource yields
 
 for (const mode of ['ready', 'late', 'verbal', 'unavailable', 'missing', 'hard', 'cancel', 'error', 'legacy'] as const) test(`actual draft inspection checkpoint protects delivery and execution: ${mode}`, async () => {
   const events: AgentAuditEvent[] = [], sessions: string[] = [];
-  const exposures: { checkpoint: boolean; names: readonly string[] | undefined }[] = [];
+  const exposures: { checkpoint: boolean; compose: boolean; names: readonly string[] | undefined }[] = [];
   const controller = new AbortController();
   let material = false, formalInspection = false, checkpointCalls = 0, inspections = 0, expansions = 0, draftCalls = 0, previewed = false, generationAfterPreview = false;
   const host = new AgentHost({ createSession: input => {
     sessions.push(input.sessionId);
     return { append: async ({ content, signal, allowedToolNames, yieldAfterTurn }) => {
       const checkpoint = content.includes('This is the actual draft inspection checkpoint');
-      exposures.push({ checkpoint, names: allowedToolNames });
+      exposures.push({ checkpoint, compose: content.includes(COMPARISON_COMPOSITION_BOUNDARY_PROMPT), names: allowedToolNames });
       await input.onModelRequest?.({ model: 'fixture', scope: 'generation', digest: sha256(content), messageCount: exposures.length, images: [] });
       const call = (name: string) => input.tools.find(tool => tool.name === name)!.execute({}, signal);
       if (checkpoint) {
@@ -201,6 +202,7 @@ for (const mode of ['ready', 'late', 'verbal', 'unavailable', 'missing', 'hard',
   const agent = new ComparisonAgent({ host, timeoutMs: 1_000, maxRepairAttempts: 0, resources: mode === 'hard' ? { maxToolCalls: 0 } : {} });
   const result = await agent.compare(context, tools, { append: async event => { events.push(event); } }, controller.signal, {
     ...(mode === 'legacy' ? {} : { hasReviewDraftMaterial: () => material }),
+    enforcePhaseBoundaries: mode !== 'legacy',
     getSubmittedResult: async () => generationAfterPreview && formalInspection ? resultValue : undefined,
   });
   if (mode === 'ready' || mode === 'late' || mode === 'legacy') {
@@ -216,7 +218,12 @@ for (const mode of ['ready', 'late', 'verbal', 'unavailable', 'missing', 'hard',
     if (mode === 'hard' || mode === 'cancel') assert.equal(inspections, 0);
     if (mode === 'error') assert.equal(inspections, 1);
   }
-  assert.ok(exposures.filter(exposure => !exposure.checkpoint).every(exposure => exposure.names === undefined), 'all other passes preserve their ordinary tool exposure');
+  for (const exposure of exposures) {
+    if (exposure.checkpoint) assert.deepEqual(exposure.names, ['inspect_comparison_draft']);
+    else if (exposure.compose) assert.deepEqual(exposure.names, ['read', 'update_comparison_findings', 'submit_comparison_draft', 'write']);
+    else assert.equal(exposure.names, undefined, 'investigation, independent source/audit and legacy compose preserve ordinary exposure');
+  }
+  assert.equal(exposures.some(exposure => exposure.compose), mode !== 'legacy', 'only strict compose receives the boundary prompt and tool allowlist');
 });
 
 for (const mode of ['yielded', 'unlimited', 'legacy_timeout', 'cancel', 'hard', 'provider_error'] as const) test(`source local deadline preserves real publication and failure boundaries: ${mode}`, async t => {
@@ -463,6 +470,7 @@ test('soft yield closes findings, carries incomplete source scope and waits for 
   const agent = new ComparisonAgent({ host, timeoutMs: 1_000, maxRepairAttempts: 0, resources: { investigationModelRequests: 1, maxModelRequests: 40 } });
   const result = await agent.compare(context, tools, { append: async event => { events.push(event); } }, undefined, {
     findingsReady: () => findings, getFindingsState: () => findings ? 'saved scoped findings' : 'missing findings',
+    enforcePhaseBoundaries: true,
     getSubmittedResult: async () => preview && inspectionInGeneration ? resultValue : undefined,
   });
   assert.equal(result.status, 'completed');
@@ -470,8 +478,10 @@ test('soft yield closes findings, carries incomplete source scope and waits for 
   assert.equal(inspectionInGeneration, true);
   assert.equal(reads, 0, 'soft model boundary denies more investigation before side effects');
   assert.ok(prompts.some(prompt => prompt.includes('bounded closure turn')));
-  prompts.forEach((prompt, index) => assert.deepEqual(allowedTools[index], prompt.includes('bounded closure turn') ? ['update_comparison_findings'] : undefined,
-    'only findings closure restricts model-visible tools; compose/review keep their default tools'));
+  prompts.forEach((prompt, index) => assert.deepEqual(allowedTools[index], prompt.includes('bounded closure turn') ? ['update_comparison_findings']
+    : prompt.includes(COMPARISON_COMPOSITION_BOUNDARY_PROMPT) ? ['read', 'update_comparison_findings'] : undefined,
+    'findings closure and strict compose have their separate allowlists; investigation and fresh review retain ordinary exposure'));
+  assert.equal(prompts.filter(prompt => prompt.includes(COMPARISON_COMPOSITION_BOUNDARY_PROMPT)).length, 1);
   assert.match(prompts.find(prompt => prompt.includes('Now inspect'))!, /pass is incomplete[\s\S]*Unchecked guarantees remain unknown/);
   const phases = events.filter(event => event.type === 'comparison.phase_completed');
   assert.equal(phases.find(event => event.payload.phase === 'investigate')!.payload.outcome, 'yielded');

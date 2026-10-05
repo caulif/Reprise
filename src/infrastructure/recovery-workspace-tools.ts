@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { Type } from "@sinclair/typebox";
 import { writeAtomic } from "../core/identity.js";
+import { ToolPreconditionRejected } from "../core/tool-precondition-rejected.js";
 import { asPosixPath, isFsAbsolute, pathContainedBy, relativeInside, stripWindowsExtendedPrefix } from "../core/paths.js";
 import {
   journalControlledRecoveryWrite,
@@ -642,13 +643,13 @@ function looksLikeNetworkCommand(command: string): boolean {
 }
 
 function assertWritablePath(ctx: RecoveryToolContext, path: { relative: string; writable: boolean }): void {
-  if (!path.writable) throw new Error("write_denied: path is a read-only mount.");
+  if (!path.writable) throw new ToolPreconditionRejected("read_only_mount", "write_denied: path is a read-only mount.");
   if (ctx.options.allowWrite && !ctx.options.allowWrite(path.relative))
-    throw new Error("write_denied: path is outside the Host write policy.");
+    throw new ToolPreconditionRejected("host_write_policy", "write_denied: path is outside the Host write policy.");
 }
 
 function writeContainmentRoot(path: ResolvedWorkspacePath): string {
-  if (!path.containmentRoot) throw new Error("write_denied: path is outside the Host write policy.");
+  if (!path.containmentRoot) throw new ToolPreconditionRejected("host_write_policy", "write_denied: path is outside the Host write policy.");
   return path.containmentRoot;
 }
 
@@ -661,7 +662,8 @@ function assertShellDoesNotMutateReadonlyMount(ctx: RecoveryToolContext, command
   for (const prefix of prefixes) {
     const mount = ctx.mounts[prefix];
     if (command.includes(prefix) || (mount && command.includes(mount))) {
-      throw new Error(
+      throw new ToolPreconditionRejected(
+        "read_only_mount",
         "write_denied: shell_exec must not mutate a read-only mount. Keep source inspection and work-copy mutation in separate shell calls; use REPRISE_SOURCE_MOUNT for read-only source access, not a source/ directory under the work copy.",
       );
     }

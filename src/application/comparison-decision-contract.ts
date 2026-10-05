@@ -43,7 +43,7 @@ export function decisionContractError(draft: ComparisonDraftSubmission, findings
 
 export function decisionTextHtml(draft: ComparisonDraftSubmission, findings?: ComparisonFindingsSubmission, locale: AgentLocale = 'zh'): string {
   const relevant = new Set(draft.findingDispositions?.filter(item => item.disposition !== 'not_decisive').map(item => item.findingId));
-  const boundaries = draft.decisionSummary === undefined ? [] : (findings?.findings ?? []).flatMap(finding => {
+  const boundaries = draft.decisionSummary === undefined ? [] : (findings?.findings ?? []).flatMap((finding, index) => {
     if (!relevant.has(finding.id)) return [];
     const observations = finding.observations.filter(observation => incomplete(observation.supportBoundary));
     const groups = [true, false].flatMap(partial => {
@@ -53,7 +53,7 @@ export function decisionTextHtml(draft: ComparisonDraftSubmission, findings?: Co
       return locale === 'en' ? [`${sides.join(' and ')}: ${partial ? 'limited delivered-output coverage' : 'delivered-output support unverified'}`]
         : [`${sides.join('、')}${partial ? '仅有局部交付支持' : '交付结果未确认'}`];
     });
-    return groups.length ? [locale === 'en' ? `${finding.criterion}: ${groups.join('; ')}.` : `${finding.criterion}：${groups.join('；')}。`] : [];
+    return groups.length ? [locale === 'en' ? `Basis ${index + 1}: ${groups.join('; ')}.` : `依据${index + 1}：${groups.join('；')}。`] : [];
   });
   return `${paragraph(draft.decisionSummary)}${paragraph(draft.decisionBoundary)}${boundaries.map(paragraph).join('')}${draft.comparisonHtml}`;
 }
@@ -65,14 +65,28 @@ function sideName(side: 'baseline' | 'candidate', locale: AgentLocale): string {
 export function decisionSupportDetailsHtml(draft: ComparisonDraftSubmission, findings?: ComparisonFindingsSubmission, locale: AgentLocale = 'zh'): string {
   if (draft.decisionSummary === undefined) return '';
   const relevant = new Set(draft.findingDispositions?.filter(item => item.disposition !== 'not_decisive').map(item => item.findingId));
-  return (findings?.findings ?? []).flatMap(finding => relevant.has(finding.id)
-    ? finding.observations.filter(observation => incomplete(observation.supportBoundary)).map(observation => {
-      const support = observation.supportBoundary;
-      const identity = `${finding.criterion} · ${sideName(observation.side, locale)}`;
+  const details = (findings?.findings ?? []).flatMap((finding, index) => {
+    if (!relevant.has(finding.id)) return [];
+    const observations = finding.observations.filter(observation => incomplete(observation.supportBoundary));
+    if (!observations.length) return [];
+    const supports = observations.map(observation => observation.supportBoundary);
+    const shared = supports.every(support => support && support.relationship === supports[0]?.relationship && support.domain === supports[0]?.domain)
+      ? supports[0] : undefined;
+    const label = locale === 'en' ? `Basis ${index + 1}` : `依据${index + 1}`;
+    const relation = shared && shared.relationship !== finding.criterion ? `${shared.relationship}；` : '';
+    const heading = shared ? (locale === 'en'
+      ? `${label}: ${finding.criterion}; ${shared.relationship === finding.criterion ? '' : `${shared.relationship}; `}scope: ${shared.domain}.`
+      : `${label}：${finding.criterion}；${relation}范围：${shared.domain}。`)
+      : locale === 'en' ? `${label}: ${finding.criterion}` : `${label}：${finding.criterion}`;
+    return [paragraph(heading), ...observations.map(observation => {
+      const support = observation.supportBoundary, identity = sideName(observation.side, locale);
       if (!support) return paragraph(locale === 'en' ? `${identity}: delivered output has not been verified.` : `${identity}：交付结果未确认。`);
       const instances = (values: string[]) => values.length ? values.join(locale === 'en' ? ', ' : '、') : (locale === 'en' ? 'none recorded' : '未记录');
+      const scope = shared ? '' : locale === 'en' ? `${support.relationship}; scope: ${support.domain}; ` : `${support.relationship}；范围：${support.domain}；`;
       return paragraph(locale === 'en'
-        ? `${identity}: ${support.relationship}; scope: ${support.domain}; checked: ${instances(support.coveredInstances)}; unchecked: ${instances(support.uncheckedInstances)}.`
-        : `${identity}：${support.relationship}；范围：${support.domain}；已检查：${instances(support.coveredInstances)}；未检查：${instances(support.uncheckedInstances)}。`);
-    }) : []).join('');
+        ? `${identity}: ${scope}checked: ${instances(support.coveredInstances)}; unchecked: ${instances(support.uncheckedInstances)}.`
+        : `${identity}：${scope}已检查：${instances(support.coveredInstances)}；未检查：${instances(support.uncheckedInstances)}。`);
+    })];
+  }).join('');
+  return details ? `${paragraph(locale === 'en' ? 'Scope recorded by the model; not certified.' : '检查范围（模型记录，非认证）')}${details}` : '';
 }

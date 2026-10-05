@@ -20,18 +20,19 @@ const draft: ComparisonDraftSubmission = { status: 'completed', category: 'Resul
 test('same finding merges both sides in ordinary main text while retaining decisive unknown and complete detailed scope', () => {
   const current = findings([finding('wheel', 'Wheel containment', partial, partial)]);
   const main = decisionTextHtml(draft, current);
-  assert.match(main, /Wheel containment：历史运行、当前运行仅有局部交付支持。/);
-  assert.equal((main.match(/Wheel containment/g) ?? []).length, 1);
+  assert.match(main, /依据1：历史运行、当前运行仅有局部交付支持。/);
+  assert.doesNotMatch(main, /Wheel containment/);
   assert.ok(main.includes(draft.decisionBoundary!));
   assert.doesNotMatch(main, /Entire animation|Frame 0|Full cycle/);
   for (const locale of ['zh', 'en'] as const) {
     const details = decisionSupportDetailsHtml(draft, current, locale);
-    for (const text of [partial.relationship, partial.domain, ...partial.coveredInstances, ...partial.uncheckedInstances]) {
+    for (const text of [partial.relationship, partial.domain]) assert.equal(details.split(text).length - 1, 1, 'shared scope appears once');
+    for (const text of [...partial.coveredInstances, ...partial.uncheckedInstances]) {
       assert.equal(details.split(text).length - 1, 2, `${text} retained separately for both sides`);
     }
     assert.doesNotMatch(details, /delivered_output|relationship=|covered=|\[&quot;/);
   }
-  assert.match(decisionTextHtml(draft, current, 'en'), /Wheel containment: Historical run and Current run: limited delivered-output coverage\./);
+  assert.match(decisionTextHtml(draft, current, 'en'), /Basis 1: Historical run and Current run: limited delivered-output coverage\./);
 });
 
 test('mixed stages and boundary findings remain side-specific; complete or nondecisive findings add no warning', () => {
@@ -47,7 +48,7 @@ test('mixed stages and boundary findings remain side-specific; complete or nonde
     const main = decisionTextHtml(selected, current, locale), details = decisionSupportDetailsHtml(selected, current, locale);
     assert.doesNotMatch(main + details, /Fully checked|Nondecisive relation/);
     assert.match(main, locale === 'zh' ? /历史运行仅有局部交付支持；当前运行交付结果未确认/ : /Historical run: limited delivered-output coverage; Current run: delivered-output support unverified/);
-    assert.match(main, locale === 'zh' ? /Other relation：历史运行、当前运行交付结果未确认/ : /Other relation: Historical run and Current run: delivered-output support unverified/);
+    assert.match(main, locale === 'zh' ? /依据2：历史运行、当前运行交付结果未确认/ : /Basis 2: Historical run and Current run: delivered-output support unverified/);
     assert.doesNotMatch(details, /intermediate_only|unavailable/);
     assert.match(details, locale === 'zh' ? /未记录/ : /none recorded/);
     assert.match(details, locale === 'zh' ? /交付结果未确认/ : /delivered output has not been verified/);
@@ -59,12 +60,25 @@ test('untrusted criterion and support directories are escaped without truncating
     coveredInstances: ["covered 'instance'"], uncheckedInstances: Array.from({ length: 12 }, (_, i) => `unknown-${i}-${'x'.repeat(60)}<img>`) };
   const current = findings([finding('wheel', '<script>criterion</script>', boundary, boundary)]);
   const main = decisionTextHtml(draft, current), details = decisionSupportDetailsHtml(draft, current);
-  assert.match(main, /&lt;script&gt;criterion&lt;\/script&gt;/);
+  assert.match(details, /&lt;script&gt;criterion&lt;\/script&gt;/);
+  assert.doesNotMatch(main, /criterion/);
   assert.doesNotMatch(main + details, /<script>|<details|<img>/);
   assert.match(details, /&lt;details open&gt;relation &amp; &quot;/);
   assert.match(details, /&#39;instance&#39;/);
   for (let i = 0; i < 12; i++) assert.equal(details.split(`unknown-${i}-`).length - 1, 2);
   assert.ok(details.length > 1000, 'full scope is returned for the existing details budget to reject, not silently cut');
+});
+
+test('compact scope rendering keeps different side scopes and every declared instance without changing findings', () => {
+  const candidate = { ...partial, relationship: 'Other delivered relation', domain: 'Candidate scope', coveredInstances: ['Frame 1'], uncheckedInstances: ['Other branch'] };
+  const current = findings([finding('wheel', partial.relationship.repeat(12), partial, candidate)]);
+  const before = structuredClone(current);
+  const main = decisionTextHtml(draft, current), details = decisionSupportDetailsHtml(draft, current);
+  assert.ok(main.length < 300, 'a long saved criterion cannot force the author to rewrite evidence to shorten Host main text');
+  for (const support of [partial, candidate]) for (const text of [support.relationship, support.domain, ...support.coveredInstances, ...support.uncheckedInstances]) assert.ok(details.includes(text));
+  assert.deepEqual(current, before);
+  const same = findings([finding('wheel', partial.relationship, partial, partial)]);
+  assert.equal(decisionSupportDetailsHtml(draft, same).split(partial.relationship).length - 1, 1, 'identical criterion and relationship are printed once');
 });
 
 test('legacy typed draft and absent findings produce no invented support declarations', () => {
