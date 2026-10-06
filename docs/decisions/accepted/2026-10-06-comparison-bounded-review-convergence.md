@@ -34,7 +34,7 @@ Pi SDK 可能把真实执行或审计异常作为错误工具结果交给模型�
 
 严格三会话的独立 reviewer 使用短专用系统提示，source pass 初始输入继续隔离作者对话，但提供 saved findings 的当前绑定、ID和完整待证假设，明确不是盲输入、来源证据或作者批准。独立来源工具和实际完整核稿继续承担查证责任。提示保留实际输出链、反证、方法/采样范围、问题历史与归属、未知、Host指标、完整稿和版本发布要求；优先绑定 delta 和紧凑 decision，仅替换变化对象，避免整份观察、HTML和过程复述。模型、effort 和 maxTokens 不变；缩短提示是可验证的输入改动，不能认证语义或保证加速。旧端口保留通用系统提示。
 
-补查或 findings 更新不能解除稿件绑定。catalog/findings/正文改变时，旧稿或 inspection/preview 不可用于发布；后续必须审核实际最新稿，核稿开始撤销旧正式认证，再完成新的正式 inspection、后续真实 generation 输入和匹配 preview。严格路径仅允许首次核稿和一次有界修复。核稿只有 completed 或明确 final_inspection_ready 才可进入预览；output_limit、bounded_audit_timeout 及其他未完成 yielded 不能凭已经读取的正文冒充完整审阅。findings closure 同样仅以 completed 或明确 ready/pending 完成边界决定后继；超时、截断不认证实际保存后的语义处理已经完成。不可得决定性问题继续要求 conditional/undetermined 和可见 decisionBoundary，已有篇幅、证据、持久化及发布检查不放宽。
+补查或 findings 更新不能解除稿件绑定。catalog/findings/正文或报告结果 status 改变时，即使渲染后的HTML digest不变，也更新接受结果并递增接受绑定，旧 inspection/preview 不可用于发布；后续必须审核实际最新稿，核稿开始撤销旧正式认证，再完成新的正式 inspection、后续真实 generation 输入和匹配 preview。严格路径仅允许首次核稿和一次有界修复。核稿只有 completed 或明确 final_inspection_ready 才可进入预览；output_limit、bounded_audit_timeout 及其他未完成 yielded 不能凭已经读取的正文冒充完整审阅。findings closure 同样仅以 completed 或明确 ready/pending 完成边界决定后继；超时、截断不认证实际保存后的语义处理已经完成。不可得决定性问题继续要求 conditional/undetermined 和可见 decisionBoundary，已有篇幅、证据、持久化及发布检查不放宽。
 
 ## 备选方案
 

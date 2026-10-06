@@ -60,6 +60,53 @@ async function preview(f: Awaited<ReturnType<typeof fixture>>) {
     catalogRevision: f.catalog.snapshot().revision, outputRoot: f.root });
 }
 
+for (const status of ['completed', 'insufficient_evidence'] as const) test(`status-only revision to ${status} invalidates prior inspection and preview`, async t => {
+  const f = await fixture(t, true);
+  await f.discovery!.update({ ...findings, findings: [{ id: 'f1', criterion: findings.criteria[0]!, difference: 'Final quality remains unknown',
+    userConsequence: 'Unknown quality prevents an unconditional choice', observations: (['baseline', 'candidate'] as const).map(side => ({ side,
+      method: 'unavailable', result: 'No final quality verification', scope: 'Final output', evidenceRefs: [], timing: 'comparison_check',
+      supportBoundary: { relationship: 'Final usability', domain: 'Final output', supportStage: 'unavailable', coveredInstances: [], uncheckedInstances: ['Actual quality'] },
+    })), limitations: ['Actual quality unverified'], counterEvidenceRefs: [] }] });
+  const submitted = { ...submission, decisionShape: 'single_difference', decisionSummary: 'Final usability remains unverified.',
+    decisionBoundary: 'Unknown quality could change the choice.', decisionBasis: ['f1'], conclusionScope: 'undetermined',
+    findingDispositions: [{ findingId: 'f1', disposition: 'basis', explanation: 'The missing quality check changes the choice' }] };
+  const previousStatus = status === 'completed' ? 'insufficient_evidence' : 'completed';
+  const signal = new AbortController().signal;
+  const submit = f.draft.tool();
+  const initial = await submit.execute({ ...submitted, status: previousStatus }, signal);
+  assert.match(initial.content, /status=accepted/);
+  const initialBinding = (initial.details as { bindingRevision: number }).bindingRevision;
+  const originalHtml = await readFile(join(f.root, 'report.html'), 'utf8');
+  f.draft.beginReview();
+  assert.equal((await f.inspect()).reportStatus, previousStatus);
+  assert.equal(f.draft.hasCurrentReviewInspection(), true);
+  await preview(f);
+  assert.equal((await f.draft.completedResult())?.status, previousStatus);
+  const staleInspect = f.draft.inspectTool();
+  const pendingInspection = await staleInspect.execute({}, signal);
+  const updated = await submit.execute({ ...submitted, status }, signal);
+  assert.match(updated.content, /status=accepted/);
+  assert.equal(await readFile(join(f.root, 'report.html'), 'utf8'), originalHtml, 'status-only change keeps the same report bytes');
+  const newBinding = (updated.details as { bindingRevision: number }).bindingRevision;
+  assert.equal(newBinding, initialBinding + 1, 'the accepted result changes even when the HTML digest does not');
+  assert.equal(f.draft.hasCurrentReviewInspection(), false);
+  assert.equal(f.draft.hasReviewDraftMaterial(), false);
+  await staleInspect.onCompleted!(pendingInspection);
+  assert.equal(f.draft.hasCurrentReviewInspection(), false, 'a late old inspection cannot certify the new result');
+  assert.equal(await f.draft.completedResult(), undefined);
+  const inspected = await f.inspect();
+  assert.equal(inspected.reportStatus, status);
+  assert.equal(inspected.bindingRevision, newBinding);
+  assert.equal(f.draft.hasCurrentReviewInspection(), true);
+  assert.equal(await f.draft.completedResult(), undefined, 'new inspection cannot reuse the old preview');
+  await preview(f);
+  assert.equal((await f.draft.completedResult())?.status, status);
+  const repeated = await submit.execute({ ...submitted, status }, signal);
+  assert.equal((repeated.details as { bindingRevision: number }).bindingRevision, newBinding);
+  assert.equal(f.draft.hasCurrentReviewInspection(), true, 'an identical status resubmission preserves valid review');
+  assert.equal((await f.draft.completedResult())?.status, status);
+});
+
 test("saved important limitations require a visible decision boundary only for the new submission contract", async t => {
   const f = await fixture(t, true);
   await f.discovery!.update(findings);
