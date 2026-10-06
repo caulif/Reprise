@@ -90,6 +90,61 @@ test('transient recovery ending in length cannot hide the latched upstream failu
   assert.equal(policies, 0); assert.equal(contexts.length, 2);
 });
 
+for (const reason of ['findings_ready', 'author_draft_ready']) test(`transient recovery completes the actual tool checkpoint and yields ${reason}`, async () => {
+  const contexts: string[] = [], events: AgentAuditEvent[] = [];
+  let effects = 0, policies = 0;
+  const session = await new AgentHost(new PiModelCaller(config, models([
+    message('error', [], 'Upstream request failed'),
+    message('toolUse', [{ type: 'toolCall', id: 'saved', name: 'save', arguments: {} }]),
+    message('stop', [{ type: 'text', text: 'Next phase completed' }]),
+  ], contexts))).createSession({ role: 'comparison', systemPrompt: 'Test', tools: [
+    { name: 'save', description: 'Save checkpoint', parameters: Type.Object({}), execute: async () => { effects++; return { content: 'status=accepted\nActual checkpoint saved' }; } },
+  ], audit: { append: async event => { events.push(event); } } });
+  const result = await session.work({ promptContent: 'Save checkpoint', timeoutMs: 3_000, yieldAfterTurn: () => {
+    policies++; assert.equal(effects, 1); return reason;
+  } });
+  assert.equal(result.status, 'yielded', JSON.stringify(result));
+  if (result.status === 'yielded') assert.equal(result.reason, reason);
+  assert.equal(contexts.length, 2); assert.equal(effects, 1); assert.equal(policies, 1);
+  assert.equal(events.filter(event => event.type === 'agent.model_request').length, 2);
+  assert.equal(events.filter(event => event.type === 'agent.request_retried').length, 1);
+  const completedTool = events.findIndex(event => event.type === 'agent.tool_completed' && event.payload.tool === 'save' && !event.payload.nativeHook);
+  const yielded = events.findIndex(event => event.type === 'agent.invocation_yielded');
+  assert.ok(completedTool >= 0 && yielded > completedTool, 'the actual accepted tool effect precedes the audited checkpoint yield');
+  assert.equal((await session.work({ promptContent: 'Next phase', timeoutMs: 3_000 })).status, 'completed');
+  assert.equal(contexts.length, 3); assert.equal(effects, 1, 'the next phase must not replay the saved effect');
+  assert.match(contexts[2]!, /Actual checkpoint saved/);
+});
+
+test('transient recovery tool checkpoint cannot clear a fatal Host tool error', async () => {
+  const contexts: string[] = [];
+  const session = await new AgentHost(new PiModelCaller(config, models([
+    message('error', [], 'Upstream request failed'),
+    message('toolUse', [{ type: 'toolCall', id: 'saved', name: 'save', arguments: {} }]),
+  ], contexts))).createSession({ role: 'comparison', systemPrompt: 'Test', tools: [
+    { name: 'save', description: 'Save checkpoint', parameters: Type.Object({}), execute: async () => { throw new Error('Actual Host checkpoint persistence failure'); } },
+  ] });
+  const result = await session.work({ promptContent: 'Save checkpoint', timeoutMs: 3_000, yieldAfterTurn: () => 'findings_ready' });
+  assert.equal(result.status, 'failed');
+  if (result.status === 'failed') {
+    assert.equal(result.failure.kind, 'tool');
+    assert.match(result.failure.message, /tool execution failed/);
+  }
+  assert.equal(contexts.length, 2);
+});
+
+test('transient recovery tool checkpoint preserves external cancellation', async () => {
+  const contexts: string[] = [], controller = new AbortController();
+  const provider = new PiProviderAdapter({ models: models([
+    message('error', [], 'Upstream request failed'),
+    message('toolUse', [{ type: 'toolCall', id: 'saved', name: 'save', arguments: {} }]),
+  ], contexts), model, config }).createSession({ sessionId: 'cancelled-recovery', systemPrompt: 'Test', tools: [
+    { name: 'save', description: 'Save checkpoint', parameters: Type.Object({}), execute: async () => { controller.abort(); return { content: 'status=accepted' }; } },
+  ] });
+  await assert.rejects(provider.append({ content: 'Save checkpoint', signal: controller.signal, yieldAfterTurn: () => 'findings_ready' }));
+  assert.equal(contexts.length, 2);
+});
+
 for (const mode of ['before_hook', 'after_hook', 'execute', 'visible'] as const) test(`native ${mode} failure cannot be hidden by a length yield without an expired deadline`, async () => {
   const contexts: string[] = [];
   const fail = () => { throw new Error(`Actual ${mode} audit or execution failure`); };

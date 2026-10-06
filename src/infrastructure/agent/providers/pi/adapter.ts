@@ -173,7 +173,8 @@ async function appendPiPrompt(args: {
     await recoverAgentResponse(agent, model, models, effort, deadline.signal, input.compactionInstructions, input.onContextCompact, input.onRetry);
     await usage.flush();
     const recoveredMessage = lastAssistant(agent.state.messages);
-    if (recoveredMessage?.stopReason === 'stop') deadline.providerRecovered();
+    if (recoveredMessage?.stopReason === 'stop' || (recoveredMessage?.stopReason === 'toolUse'
+      && turnYield.reason !== undefined && !turnYield.failure && !deadline.signal.aborted)) deadline.providerRecovered();
     const afterRecovery = localYield();
     if (afterRecovery) return afterRecovery;
     deadline.assertCanComplete();
