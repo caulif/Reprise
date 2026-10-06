@@ -1,10 +1,10 @@
+import { isFindingsUpdate, comparisonProtocol, comparisonStagePolicy, stageToolNames, bindComparisonStageTools } from './comparison-stage-policy.js';
 import type { ComparisonCompareOptions } from './comparison-agent.js';
 import type { ComparisonWorkPass } from './comparison-invocation-boundaries.js';
 import type { ComparisonResourceTracker } from './comparison-resources.js';
-import type { AgentToolDefinition, FreeformInvocation } from '../infrastructure/agent/host.js';
+import type { AgentToolDefinition, AgentToolResult, FreeformInvocation } from '../infrastructure/agent/host.js';
 import { withLanguageBlock, type AgentLocale } from './language.js';
 import { VISIBLE_PROCESS_NARRATION } from './visible-process.js';
-import { isFindingsUpdate } from './comparison-findings-checkpoints.js';
 
 export function composeComparisonReviewerSystemPrompt(locale: AgentLocale): string {
   return withLanguageBlock([
@@ -39,13 +39,12 @@ export const COMPARISON_DIRECT_SOURCE_REVIEW_PROMPT = [
 ].join('\n');
 
 export function comparisonSourceReviewPrompt(options: ComparisonCompareOptions, taskPrompt: string | undefined, legacy: string): string {
-  const direct = !!options.getSubmittedResult && options.enforcePhaseBoundaries === true && options.reviewFindings === true;
+  const direct = comparisonProtocol(options).direct;
   return [taskPrompt ?? '', direct ? COMPARISON_DIRECT_SOURCE_REVIEW_PROMPT : legacy,
     ...(direct ? [`Current saved findings (hypotheses only): ${options.getFindingsState?.() ?? 'unavailable'}`] : [])].join('\n\n');
 }
 
 type Work = (phase: 'review', prompt: string, pass?: ComparisonWorkPass) => Promise<FreeformInvocation>;
-const SUPPLEMENT_TOOLS = new Set(['read', 'ls', 'grep', 'shell_exec', 'render_artifact', 'register_evidence', 'quote_evidence']);
 
 export class ComparisonReviewFindingsClosure {
   #active = false;
@@ -56,7 +55,7 @@ export class ComparisonReviewFindingsClosure {
   #sourceState: string | undefined;
   readonly directSources: boolean;
   readonly #options: ComparisonCompareOptions | undefined;
-  constructor(options: ComparisonCompareOptions | undefined) { this.#options = options; this.directSources = !!options?.getSubmittedResult && options.enforcePhaseBoundaries === true && options.reviewFindings === true; }
+  constructor(options: ComparisonCompareOptions | undefined) { this.#options = options; this.directSources = comparisonProtocol(options).direct; }
   begin(pass?: ComparisonWorkPass): void {
     this.#active = pass === 'review-findings'; this.#supplement = pass === 'review-supplement'; this.#accepted = false;
     this.#source = this.directSources && (pass === 'sources' || pass === 'source-save');
@@ -67,42 +66,18 @@ export class ComparisonReviewFindingsClosure {
   sourcePending(): boolean { return this.sourceSaved() && this.#options?.findingsReady?.() === false; }
   ready(): boolean { return this.#active && this.#accepted && this.#options?.findingsReady?.() === true; }
   pending(): boolean { return this.#active && this.#accepted && this.#options?.enforcePhaseBoundaries === true && this.#options.findingsReady?.() === false; }
-  toolNames(tools: readonly AgentToolDefinition[]): readonly string[] {
-    if (this.#source) return tools.filter(tool => SUPPLEMENT_TOOLS.has(tool.name) || isFindingsUpdate(tool.name)).map(tool => tool.name);
-    if (this.#supplement) return tools.filter(tool => SUPPLEMENT_TOOLS.has(tool.name)).map(tool => tool.name);
-    return tools.filter(tool => isFindingsUpdate(tool.name) || (tool.name === 'read' && this.#options?.isRepairRead)).map(tool => tool.name);
+  observe(name: string, result: AgentToolResult): void {
+    if (!isFindingsUpdate(name) || !/^status=accepted(?:\r?\n|$)/.test(result.content)) return;
+    if (this.#source) { this.#sourceAccepted = true; this.#sourceState = this.#options?.getFindingsState?.(); }
+    if (this.#active) this.#accepted = true;
   }
+  #policy() { return comparisonStagePolicy(this.#source ? 'sources' : this.#supplement ? 'review-supplement' : this.#active ? 'review-findings' : 'review', {
+    strict: false, direct: this.directSources, initial: false, options: this.#options,
+    observed: (name, _params, result) => this.observe(name, result),
+  }); }
+  toolNames(tools: readonly AgentToolDefinition[]): readonly string[] { return stageToolNames(this.#policy(), tools) ?? tools.map(tool => tool.name); }
   bind(tools: readonly AgentToolDefinition[], resources: ComparisonResourceTracker): AgentToolDefinition[] {
-    return tools.map(tool => ({ ...tool, execute: async (params: unknown, signal: AbortSignal) => {
-      if (this.#source) {
-        resources.checkHard(tool.name); signal.throwIfAborted();
-        if (!SUPPLEMENT_TOOLS.has(tool.name) && !isFindingsUpdate(tool.name)) return { content: JSON.stringify({ code: 'source_review_not_ready', message: 'Check actual sources and save findings; no draft or publication tool may execute.' }) };
-        const result = await tool.execute(params, signal);
-        signal.throwIfAborted(); resources.checkHard('independent source result');
-        if (isFindingsUpdate(tool.name) && /^status=accepted(?:\r?\n|$)/.test(result.content)) { this.#sourceAccepted = true; this.#sourceState = this.#options?.getFindingsState?.(); }
-        return result;
-      }
-      if (this.#supplement) {
-        resources.checkHard(tool.name); signal.throwIfAborted();
-        if (!SUPPLEMENT_TOOLS.has(tool.name)) return { content: JSON.stringify({ code: 'review_supplement_only', message: 'Only source checks for the saved pending decision questions may execute. The Host starts actual findings closure next; no draft or publication action is permitted.' }) };
-        return tool.execute(params, signal);
-      }
-      if (!this.#active) return tool.execute(params, signal);
-      resources.checkHard(tool.name); signal.throwIfAborted();
-      if (!isFindingsUpdate(tool.name) && (tool.name !== 'read' || !await this.#options?.isRepairRead?.(params))) return {
-        content: JSON.stringify({ code: 'review_findings_only', message: 'Only an actual findings update or registered repair read may execute in this closure.' }),
-      };
-      signal.throwIfAborted(); resources.checkHard(tool.name);
-      const result = await tool.execute(params, signal);
-      signal.throwIfAborted(); resources.checkHard('review findings result');
-      if (isFindingsUpdate(tool.name) && /^status=accepted(?:\r?\n|$)/.test(result.content)) this.#accepted = true;
-      return result;
-    }, ...(tool.onCompleted ? { onCompleted: async result => {
-      if (this.#source && !SUPPLEMENT_TOOLS.has(tool.name) && !isFindingsUpdate(tool.name)) return;
-      if (this.#supplement && !SUPPLEMENT_TOOLS.has(tool.name)) return;
-      if (this.#active && !isFindingsUpdate(tool.name) && tool.name !== 'read') return;
-      await tool.onCompleted!(result);
-    } } : {}) }));
+    return bindComparisonStageTools(tools, () => this.#policy(), name => resources.checkHard(name));
   }
   async run(work: Work, sessionId: string, toolAvailable: boolean, sourceCompleted = false, sourceInterrupted = false): Promise<Extract<FreeformInvocation, { status: 'failed' | 'cancelled' }> | undefined> {
     if (!this.#options?.reviewFindings) return undefined;

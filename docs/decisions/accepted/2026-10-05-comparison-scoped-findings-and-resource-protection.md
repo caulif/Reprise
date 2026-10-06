@@ -57,6 +57,8 @@ Pinned Pi SDK 的流缺少 finish_reason、stop reason、finish reason 或 termi
 
 ## 影响
 
+独立来源复审不注入 findings 且禁止更新的决定已被[有界审阅收敛](2026-10-06-comparison-bounded-review-convergence.md)替代。严格新会话接收既有 findings 作为待核实假设并对照实际来源纠正；其余决定保留。
+
 新持久化字段和工具输入通过 core schema 检查；旧实验、旧 report model 与旧自定义端口保持读取，不修改 CandidateRun 状态或 Runtime/Pack 能力。默认生产工厂启用资源保护；直接构造和自定义旧端口仍以各自配置为准。真实调用继续显式 opt-in，凭据和本机评估输出不进入仓库。新增门禁附引用归属、版本失效、布局降级、未知成本和取消的反向测试。
 
 ## 验证

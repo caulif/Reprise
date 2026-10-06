@@ -1,10 +1,9 @@
+import { COMPARISON_SOURCE_TOOLS, isFindingsUpdate, comparisonProtocol, comparisonStagePolicy, bindComparisonStageTools } from './comparison-stage-policy.js';
 import type { ComparisonCompareOptions } from './comparison-agent.js';
 import type { ComparisonWorkPass } from './comparison-invocation-boundaries.js';
-import type { AgentToolDefinition, FreeformInvocation } from '../infrastructure/agent/host.js';
+import type { AgentToolDefinition, AgentToolResult, FreeformInvocation } from '../infrastructure/agent/host.js';
 import type { ComparisonResourceTracker } from './comparison-resources.js';
 
-export const isFindingsUpdate = (name: string): boolean => name === 'update_comparison_findings' || name === 'update_comparison_findings_delta';
-const sourceTools = new Set(['read', 'ls', 'grep', 'shell_exec', 'render_artifact', 'register_evidence', 'quote_evidence']);
 const navigationPaths = new Set([
   'INDEX.md', 'briefing/INDEX.md', 'briefing/decision-map.md', 'briefing/task/initial-input.txt',
   ...['context.json', 'comparison-links.json', 'media.json', 'evidence-index.json'].flatMap(name => [`facts/${name}`, `briefing/facts/${name}`]),
@@ -15,7 +14,7 @@ const navigationPaths = new Set([
 const navigationDirectories = new Set(['briefing', 'briefing/facts', 'briefing/task', 'briefing/candidate', 'facts']);
 
 function countsSourceObservation(name: string, params: unknown): boolean {
-  if (!sourceTools.has(name)) return false;
+  if (!COMPARISON_SOURCE_TOOLS.has(name)) return false;
   if (!['read', 'ls', 'grep'].includes(name) || !params || typeof params !== 'object' || !('path' in params) || typeof params.path !== 'string') return true;
   return !navigationPaths.has(params.path) && !(name === 'ls' && navigationDirectories.has(params.path));
 }
@@ -31,8 +30,8 @@ export class ComparisonFindingsCheckpoints {
   #acceptedState: string | undefined;
   constructor(tools: readonly AgentToolDefinition[], options?: ComparisonCompareOptions) {
     this.#options = options;
-    this.enabled = !!options?.getSubmittedResult && options.enforcePhaseBoundaries === true && options.reviewFindings === true
-      && typeof options.getFindingsState === 'function' && tools.some(tool => tool.name === 'update_comparison_findings_delta');
+    this.enabled = comparisonProtocol(options).direct
+      && typeof options?.getFindingsState === 'function' && tools.some(tool => tool.name === 'update_comparison_findings_delta');
   }
   begin(phase: string, pass?: ComparisonWorkPass): void {
     if (phase !== this.#phase) this.#checks = 0;
@@ -42,27 +41,21 @@ export class ComparisonFindingsCheckpoints {
   }
   due(): boolean { return this.#source && this.#checks >= 6; }
   saved(): boolean { return this.#saving && !!this.#acceptedState && this.#acceptedState === this.#options?.getFindingsState?.(); }
-  toolNames(): readonly string[] | undefined { return this.#saving ? ['update_comparison_findings_delta'] : undefined; }
+  toolNames(): readonly string[] | undefined { return this.#saving ? this.#policy().names : undefined; }
+  observe(name: string, params: unknown, result: AgentToolResult): void {
+    if (!this.enabled) return;
+    if (this.#source && countsSourceObservation(name, params)) this.#checks++;
+    if (isFindingsUpdate(name) && /^status=accepted(?:\r?\n|$)/.test(result.content)) {
+      this.#checks = 0;
+      if (this.#saving) this.#acceptedState = this.#options?.getFindingsState?.();
+    }
+  }
+  #policy() {
+    return comparisonStagePolicy(this.#saving ? 'source-save' : 'investigate', { strict: false, direct: false, initial: false,
+      checkpointDue: () => this.due(), observed: (name, params, result) => this.observe(name, params, result) });
+  }
   bind(tools: readonly AgentToolDefinition[], resources?: ComparisonResourceTracker): AgentToolDefinition[] {
-    if (!this.enabled) return [...tools];
-    return tools.map(tool => ({ ...tool, execute: async (params: unknown, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      resources?.checkHard(tool.name);
-      if ((this.#saving && tool.name !== 'update_comparison_findings_delta') || (this.due() && sourceTools.has(tool.name))) return {
-        content: JSON.stringify({ code: 'findings_checkpoint_required', message: 'Save this bounded source batch through the bound delta tool. No additional source or report effects may execute until an actual accepted save.' }),
-      };
-      const result = await tool.execute(params, signal); signal.throwIfAborted();
-      if (this.#source && countsSourceObservation(tool.name, params)) this.#checks++;
-      if (isFindingsUpdate(tool.name) && /^status=accepted(?:\r?\n|$)/.test(result.content)) {
-        this.#checks = 0;
-        if (this.#saving) this.#acceptedState = this.#options?.getFindingsState?.();
-      }
-      return result;
-    }, ...(tool.onCompleted ? { onCompleted: async result => {
-      if (this.#saving && tool.name !== 'update_comparison_findings_delta') return;
-      if (result.content.includes('"code":"findings_checkpoint_required"')) return;
-      await tool.onCompleted!(result);
-    } } : {}) }));
+    return this.enabled ? bindComparisonStageTools(tools, () => this.#policy(), name => resources?.checkHard(name)) : [...tools];
   }
   async run<P extends Phase>(work: (phase: P, prompt: string, pass?: ComparisonWorkPass) => Promise<FreeformInvocation>, phase: P, prompt: string, pass?: 'sources'): Promise<FreeformInvocation> {
     let outcome = await work(phase, prompt, pass);

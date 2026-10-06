@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ComparisonAgent } from '../../src/agents/comparison-agent.js';
+import { ComparisonAgent, type ComparisonAgentPort } from '../../src/agents/comparison-agent.js';
 import { COMPARISON_INITIAL_FINDINGS_PROMPT } from '../../src/agents/comparison-initial-findings.js';
 import { COMPARISON_AUTHOR_COMPOSE_PROMPT } from '../../src/agents/comparison-author-prompt.js';
 import { startExperiment } from '../../src/application/experiment.js';
@@ -218,9 +218,16 @@ for (const bounded of [false, true]) test(`production requireFindings ${bounded 
       }, cancel() {} };
     } }),
   });
-  const result = await startExperiment({ ...base, comparison }).result;
+  const port: ComparisonAgentPort = bounded ? comparison : {
+    requireFindings: true,
+    compare: (...args) => comparison.compare(...args),
+    cancel: (...args) => comparison.cancel(...args), release: attemptId => comparison.release(attemptId),
+  };
+  assert.equal(port instanceof ComparisonAgent, bounded, 'the findings protocol also supports a plain port decorator');
+  const result = await startExperiment({ ...base, comparison: port }).result;
   assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result)); assert.equal(reviewUpdates, 1); assert.equal(turns, bounded ? 7 : 8);
   const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { sequence: number; type: string; payload: Record<string, unknown> });
+  assert.equal(events.find(event => event.type === 'comparison.requested')?.payload.reviewInspectionContractVersion, 2);
   const closure = events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'review-findings');
   assert.equal(closure?.payload.yieldReason, 'review_findings_ready');
   const acceptedUpdates = events.filter(event => event.type === 'comparison.findings_updated');

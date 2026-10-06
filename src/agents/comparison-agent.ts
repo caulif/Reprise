@@ -9,13 +9,12 @@ import { STRUCTURED_FINAL_RULE } from './structured-final-rule.js';
 import type { ComparisonResources } from '../core/schema.js';
 import { ComparisonResourceTracker } from './comparison-resources.js';
 import { closeBoundedInvestigation } from './comparison-investigation-closure.js';
-import { comparisonToolFeedback } from './comparison-tool-feedback.js';
 import { comparisonDecisionMetrics, comparisonOutputContinuation, comparisonTimeout, comparisonWorkDeadline, comparisonYieldBoundary, type ComparisonWorkPass } from './comparison-invocation-boundaries.js';
 import { ComparisonReviewFindingsClosure, comparisonSourceReviewPrompt, composeComparisonReviewerSystemPrompt, reviewDraftInspectionCheckpoint } from './comparison-review-findings.js';
-import { ComparisonFindingsCheckpoints, isFindingsUpdate } from './comparison-findings-checkpoints.js';
-import { ComparisonCompositionTools } from './comparison-composition-tools.js';
+import { ComparisonFindingsCheckpoints } from './comparison-findings-checkpoints.js';
 import { composeComparisonAuthorSystemPrompt, COMPARISON_AUTHOR_COMPOSE_PROMPT } from './comparison-author-prompt.js';
-import { resourceBoundTools, setComparisonPass } from './comparison-phase-tools.js';
+import { comparisonProtocol } from './comparison-stage-policy.js';
+import { ComparisonStages } from './comparison-stages.js';
 import { ComparisonInitialFindings, COMPARISON_INITIAL_FINDINGS_PROMPT, composeComparisonInvestigatorSystemPrompt } from './comparison-initial-findings.js';
 export type { ComparisonAgentEnvelope } from '../core/schema.js';
 export type ComparisonResult = Omit<ComparisonAgentEnvelope, 'reportPath'> & { reportPath: 'report.html' };
@@ -75,6 +74,10 @@ export type ComparisonMetricSide = {
 };
 
 export interface ComparisonAgentPort {
+  /** Opts into bound findings tools, draft binding and persisted independent review. */
+  readonly requireFindings?: boolean;
+  /** Requires actual draft inspection even when using the legacy findings protocol. */
+  readonly reviewInspectionRequired?: boolean;
   compare(
     context: ComparisonContext,
     tools?: readonly AgentToolDefinition[],
@@ -113,40 +116,6 @@ export type ComparisonCompareOptions = {
   estimateUsageCost?: (payload: Record<string, unknown>) => number | undefined;
 };
 
-type ComparisonPhase = 'understand' | 'investigate' | 'compose' | 'review';
-function phaseTools(tools: readonly AgentToolDefinition[], current: { phase: ComparisonPhase }): AgentToolDefinition[] {
-  return tools.map((tool) => ({
-    ...tool,
-    execute: async (params: unknown, signal: AbortSignal) => {
-      const path = typeof params === 'object' && params !== null && 'path' in params
-        ? String(params.path).replaceAll('\\', '/').replace(/^(\.\/)+/, '')
-        : '';
-      if (current.phase === 'understand' && ['shell_exec', 'render_artifact', 'register_evidence'].includes(tool.name)) {
-        return Promise.resolve({ content: JSON.stringify({ code: 'phase_not_ready', message: `Use ${tool.name} in the investigate turn.` }) });
-      }
-      if ((tool.name === 'write' || tool.name === 'edit') && path === 'report.html'
-        && current.phase !== 'compose' && current.phase !== 'review') {
-        return Promise.resolve({ content: JSON.stringify({ code: 'phase_not_ready', message: 'Write report.html in the compose turn.' }) });
-      }
-      if (tool.name === 'submit_comparison_draft' && current.phase !== 'compose' && current.phase !== 'review') {
-        return Promise.resolve({ content: JSON.stringify({ code: 'phase_not_ready', currentPhase: current.phase, nextLegalPhase: 'compose',
-          message: 'Finish the current turn and return your findings. The Host starts compose next; do not retry this tool in the current turn.' }) });
-      }
-      if (tool.name === 'preview_report' && current.phase !== 'review') {
-        return Promise.resolve({ content: JSON.stringify({ code: 'phase_not_ready', currentPhase: current.phase, nextLegalPhase: 'review',
-          message: 'Finish the current turn and return. The Host starts the next phase; do not retry preview_report until the review turn.' }) });
-      }
-      const result = await tool.execute(params, signal);
-      if (isFindingsUpdate(tool.name) && current.phase === 'investigate' && result.content.startsWith('status=accepted')) {
-        return { ...result, content: `${result.content}\nIf readyToCompose=true, finish this turn with a brief findings summary. The Host starts compose next; do not submit or preview in this turn.` };
-      }
-      return tool.name === 'submit_comparison_draft' && result.content.startsWith('status=accepted')
-        ? { ...result, content: `${result.content}\ncurrentPhase=${current.phase}\nnextLegalPhase=review` }
-        : result;
-    },
-  }));
-}
-
 async function ensureDraftStructure(input: {
   session: AgentSessionHost;
   preflight: () => Promise<{ digest: string; error?: string }>;
@@ -169,19 +138,6 @@ async function ensureDraftStructure(input: {
     draft = await input.preflight();
   }
   return { status: 'completed', sessionId: input.session.sessionId, value: {} };
-}
-
-function comparisonFeedbackTools(tools: readonly AgentToolDefinition[], resources: ComparisonResourceTracker, options: ComparisonCompareOptions | undefined): AgentToolDefinition[] {
-  return options?.getSubmittedResult ? tools.map(tool => ({ ...tool, execute: async (params: unknown, signal: AbortSignal) =>
-    comparisonToolFeedback(await tool.execute(params, signal), resources, options.getSubmissionState?.(), tool.name) })) : [...tools];
-}
-
-function comparisonPassToolNames(tools: readonly AgentToolDefinition[], resources: ComparisonResourceTracker, pass?: ComparisonWorkPass): readonly string[] | undefined {
-  if (pass === 'audit') {
-    const exhausted = resources.reviewReason() !== undefined;
-    return tools.filter(tool => tool.name !== 'preview_report' && (!exhausted || tool.name === 'read' || !resources.beforeTool(tool.name))).map(tool => tool.name);
-  }
-  return pass === 'findings' ? tools.filter(tool => isFindingsUpdate(tool.name)).map(tool => tool.name) : pass === 'inspection' ? ['inspect_comparison_draft'] : pass === 'preview' ? ['preview_report'] : undefined;
 }
 
 export const COMPARISON_PREVIEW_CLOSURE_PROMPT = [
@@ -210,15 +166,6 @@ const COMPARISON_COMPACTION = [
   'Do not carry an earlier phase label (for example still-in-understand) into review.',
   'The summary is not the only remaining source of those facts.',
 ].join(' ');
-
-function comparisonWorkTools(tools: readonly AgentToolDefinition[], current: Parameters<typeof resourceBoundTools>[1], resources: ComparisonResourceTracker,
-  options: ComparisonCompareOptions | undefined, reviewFindings: ComparisonReviewFindingsClosure) {
-  const composition = new ComparisonCompositionTools(options, () => current.phase), initialFindings = new ComparisonInitialFindings(options);
-  const checkpoints = new ComparisonFindingsCheckpoints(tools, options);
-  const boundedTools = reviewFindings.bind(resourceBoundTools(tools, current, resources, options), resources);
-  const phasedTools = comparisonFeedbackTools(initialFindings.bind(checkpoints.bind(composition.bind(options?.enforcePhaseBoundaries ? phaseTools(boundedTools, current) : boundedTools), resources)), resources, options);
-  return { composition, initialFindings, checkpoints, phasedTools };
-}
 
 export const COMPARISON_SYSTEM_PROMPT = [
   'You compare two attempts at the same real task for a person deciding whether',
@@ -520,28 +467,6 @@ function comparisonProviderFailure<T>(result: AgentInvocation<T> | Extract<Freef
   return { ...result, failure: { ...result.failure, code: 'provider_failure' } };
 }
 
-function comparisonYieldPolicy(resources: ComparisonResourceTracker, phase: string, pass: ComparisonWorkPass | undefined, options: ComparisonCompareOptions | undefined, reviewFindings: ComparisonReviewFindingsClosure, initialFindings: ComparisonInitialFindings, checkpoints: ComparisonFindingsCheckpoints): () => Promise<string | undefined> {
-  return async () => {
-    resources.checkHard('completed provider turn');
-    if (pass === 'review-findings') return reviewFindings.ready() ? 'review_findings_ready' : reviewFindings.pending() ? 'review_findings_pending' : undefined;
-    if (pass === 'initial-findings') return initialFindings.saved() ? 'initial_findings_saved' : resources.softReason();
-    if (pass === 'source-save') return checkpoints.saved() ? 'findings_checkpoint_saved' : undefined;
-    if (checkpoints.due()) return 'findings_checkpoint_required';
-    if (pass === 'sources' && reviewFindings.directSources) {
-      if (reviewFindings.sourceReady()) return 'independent_findings_ready';
-      if (reviewFindings.sourcePending()) return 'independent_findings_pending';
-    }
-    if (pass === 'findings') return options?.findingsReady?.() ? 'findings_ready' : undefined;
-    if (pass === 'inspection') return options?.hasReviewDraftMaterial?.() ? 'review_draft_material_ready' : undefined;
-    if (pass === 'audit') return options?.hasCurrentReviewInspection?.() ? 'final_inspection_ready' : undefined;
-    if (phase === 'compose' && options?.hasAcceptedDraft?.()) return 'author_draft_ready';
-    if (phase === 'investigate') return options?.enforcePhaseBoundaries && options.reviewFindings && options.hasSavedFindings?.() && options.findingsReady?.() ? 'findings_ready' : resources.softReason();
-    if (phase !== 'review') return undefined;
-    if (pass !== 'sources' && pass !== 'review-supplement' && await options?.getSubmittedResult?.()) return 'report_ready';
-    return pass === 'sources' || pass === 'review-supplement' ? resources.reviewReason() : undefined;
-  };
-}
-
 async function appendComparisonPhaseOutcome(audit: AgentAuditSink | undefined, input: {
   sessionId: string; phase: string; pass: ComparisonWorkPass | undefined; startedAt: number;
   counts: { modelRequests: number; toolCalls: number; compactions: number; previews: number };
@@ -563,6 +488,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
   readonly #locale: AgentLocale;
   readonly #resources: ComparisonResources;
   readonly requireFindings: boolean;
+  readonly reviewInspectionRequired = true;
 
   constructor(input: { host: AgentHost; timeoutMs: number; maxRepairAttempts: number; locale?: AgentLocale; resources?: ComparisonResources; requireFindings?: boolean }) {
     this.#host = input.host;
@@ -606,10 +532,10 @@ export class ComparisonAgent implements ComparisonAgentPort {
     options: ComparisonCompareOptions | undefined,
   ): Promise<AgentInvocation<ComparisonResult>> {
     const attemptId = context.attemptId;
-    const current = { phase: 'investigate' as ComparisonPhase, sourceReview: false, findingsClosure: false, draftInspection: false, draftAudit: false, previewClosure: false };
-    const boundedStages = !!options?.getSubmittedResult && options.enforcePhaseBoundaries === true && options.reviewFindings === true;
-    const resources = new ComparisonResourceTracker(this.#resources, { boundedStages }), reviewFindings = new ComparisonReviewFindingsClosure(options);
-    const { composition, initialFindings, checkpoints, phasedTools } = comparisonWorkTools(tools, current, resources, options, reviewFindings);
+    const boundedStages = comparisonProtocol(options).direct;
+    const resources = new ComparisonResourceTracker(this.#resources, { boundedStages });
+    const stages = new ComparisonStages(tools, resources, options);
+    const { reviewFindings, initialFindings, checkpoints } = stages, phasedTools = stages.bind(tools);
     let activePhase: 'understand' | 'investigate' | 'compose' | 'review' | undefined;
     let counts = { modelRequests: 0, toolCalls: 0, compactions: 0, previews: 0 };
     const measuredAudit: AgentAuditSink = {
@@ -634,8 +560,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
     let session = await this.#sessionFor(attemptId, context, phasedTools, measuredAudit, initialFindings.enabled ? 'investigator' : undefined);
     let freshReview = false, freshAuthor = false;
     const measuredWork = async (phase: 'understand' | 'investigate' | 'compose' | 'review', promptContent: string, reviewPass?: ComparisonWorkPass) => {
-      setComparisonPass(current, phase, reviewPass);
-      reviewFindings.begin(reviewPass); initialFindings.begin(reviewPass); checkpoints.begin(phase, reviewPass);
+      stages.begin(phase, reviewPass);
       resources.phase(phase, reviewPass);
       activePhase = phase;
       counts = { modelRequests: 0, toolCalls: 0, compactions: 0, previews: 0 };
@@ -658,9 +583,9 @@ export class ComparisonAgent implements ComparisonAgentPort {
         const invoke = async (prompt: string): Promise<FreeformInvocation> => {
           if (signal.aborted) return { status: 'cancelled', sessionId: session.sessionId };
           if (boundedStages && deadline.yieldDeadline && Date.now() >= deadline.yieldDeadline.at) return { status: 'yielded', sessionId: session.sessionId, reason: deadline.yieldDeadline.reason };
-          const next = await session.work({ promptContent: [comparisonDecisionMetrics(prompt, phase, context.reportFacts.metrics), composition.prompt()].filter(Boolean).join('\n\n'), timeoutMs: comparisonTimeout(resources, this.#resources, this.#timeoutMs),
-            allowedToolNames: checkpoints.toolNames() ?? initialFindings.toolNames(phasedTools) ?? (phase === 'compose' ? composition.allowedToolNames(phasedTools) : reviewPass === 'review-findings' || reviewPass === 'review-supplement' || (reviewPass === 'sources' && reviewFindings.directSources) ? reviewFindings.toolNames(phasedTools) : comparisonPassToolNames(phasedTools, resources, reviewPass)), ...deadline,
-            signal, yieldAfterTurn: comparisonYieldPolicy(resources, phase, reviewPass, options, reviewFindings, initialFindings, checkpoints) });
+          const next = await session.work({ promptContent: [comparisonDecisionMetrics(prompt, phase, context.reportFacts.metrics), stages.prompt()].filter(Boolean).join('\n\n'), timeoutMs: comparisonTimeout(resources, this.#resources, this.#timeoutMs),
+            allowedToolNames: stages.toolNames(phasedTools), ...deadline,
+            signal, yieldAfterTurn: () => stages.exit() });
           return comparisonYieldBoundary(next, resources, signal);
         };
         return outcome = await (reviewPass === 'review-findings' ? invoke(promptContent) : comparisonOutputContinuation(invoke, promptContent, boundedStages ? deadline.yieldDeadline : undefined));
@@ -673,7 +598,6 @@ export class ComparisonAgent implements ComparisonAgentPort {
       if (options?.getSubmittedResult) return await this.#submittedComparison(context, options, measuredWork, session.sessionId, attemptId, tools, reviewFindings, resources, signal, initialFindings, checkpoints);
 
       for (const step of ['understand', 'investigate', 'compose'] as const) {
-        current.phase = step;
         const prefix = await measuredWork(step, step === 'understand' && context.promptContent
             ? `${context.promptContent}\n\n${COMPARISON_TURN_PROMPTS.understand}`
             : COMPARISON_TURN_PROMPTS[step]);
@@ -688,7 +612,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
         : undefined;
       const ready = await ensureDraft(false);
       if (ready && ready.status !== 'completed') return comparisonProviderFailure(ready);
-      current.phase = 'review';
+      stages.begin('review');
       resources.phase('review');
       const currentAllowlist = () => options?.getEvidenceCatalog
         ? new Set(shortRefsOf(options.getEvidenceCatalog().links)) : comparisonEvidenceAllowlist(context);

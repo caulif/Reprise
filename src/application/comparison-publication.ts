@@ -966,6 +966,7 @@ function escapeRegExp(value: string): string {
 }
 
 export function comparisonMediaHrefs(html: string): string[] {
+  html = evidenceQuoteMarkupOnly(html);
   const found = new Set<string>();
   type MediaNode = { tagName?: string; attrs?: { name: string; value: string }[]; childNodes?: MediaNode[]; content?: MediaNode };
   const visit = (node: MediaNode): void => {

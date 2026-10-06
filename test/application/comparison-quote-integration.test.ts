@@ -107,3 +107,26 @@ test('recovery quote roots retain source identity, privacy and run ownership lim
   assert.equal(await recoveryComparisonQuoteSources({ ...input, evidence: [{ shortRef: 'ev-01', side: 'candidate', inspectPath: 'candidate/answer.txt' }] }).resolveTextSource('ev-01'), undefined);
   assert.equal(await recoveryComparisonQuoteSources({ ...input, evidence: [{ shortRef: 'ev-01', side: 'host', inspectPath: 'unsupported/answer.txt' }] }).resolveTextSource('ev-01'), undefined);
 });
+
+for (const href of ['logo.png', 'https://example.invalid/logo.png']) test(`publication excludes quoted CSS media ${href}`, async t => {
+  const f = await fixture(t, `a{background:url(${href})}`);
+  const html = await readFile(join(f.attemptRoot, 'report.html'), 'utf8');
+  const prepared = await prepareComparisonArtifacts({ attemptRoot: f.attemptRoot, experimentRoot: f.experimentRoot, html, quoteSources: f.sources });
+  assert.ok(prepared.html.includes(f.quote.html));
+  for (const markup of [`<img src="${href}">`, `<style>a{background:url(${href})}</style>`]) {
+    await assert.rejects(prepareComparisonArtifacts({ attemptRoot: f.attemptRoot, experimentRoot: f.experimentRoot, html: html + markup, quoteSources: f.sources }),
+      href.startsWith('https:') ? /external network resources/ : /not publishable/);
+  }
+});
+
+test('publication rewrites actual registered media without changing a colliding exact quote', async t => {
+  const f = await fixture(t, 'a{background:url(logo.png)}');
+  await writeFile(join(f.attemptRoot, 'logo.png'), 'registered image bytes');
+  const html = await readFile(join(f.attemptRoot, 'report.html'), 'utf8');
+  const prepared = await prepareComparisonArtifacts({ attemptRoot: f.attemptRoot, experimentRoot: f.experimentRoot,
+    html: `${html}<img src="logo.png"><style>a{background:url(logo.png)}</style>`, quoteSources: f.sources,
+    media: [{ ref: 'media:logo', side: 'baseline', inspectPath: 'logo.png', reportHref: 'logo.png', mediaType: 'image/png', available: true }] });
+  assert.ok(prepared.html.includes(f.quote.html));
+  assert.match(prepared.html, /<img src="media\/[a-f0-9]+\.png">/);
+  assert.match(prepared.html, /<style>a\{background:url\(media\/[a-f0-9]+\.png\)\}<\/style>/);
+});

@@ -53,7 +53,7 @@ test('pending actual initial save allows investigation within the same 120ms bud
       await input.tools.find(t => t.name === 'update_comparison_findings')!.execute({}, signal); assert.equal(await yieldAfterTurn?.(), 'initial_findings_saved');
       return { status: 'yielded' as const, reason: 'initial_findings_saved' };
     }
-    assert.ok(saved); assert.equal(allowedToolNames, undefined); deadlines.push(yieldDeadline!.at);
+    assert.ok(saved); assert.deepEqual(allowedToolNames, ['read', 'update_comparison_findings']); deadlines.push(yieldDeadline!.at);
     await input.tools.find(t => t.name === 'read')!.execute({}, signal); t.mock.timers.tick(91);
     return { status: 'yielded' as const, reason: 'bounded_investigation_timeout' };
   }, cancel() {} }) });

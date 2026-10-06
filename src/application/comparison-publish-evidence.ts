@@ -1,3 +1,4 @@
+import { transformOutsideEvidenceQuotes } from './comparison-quote-protection.js';
 import { createHash } from "node:crypto";
 import { mkdir, readFile, realpath } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
@@ -112,6 +113,10 @@ export function comparisonAnchorHrefs(html: string): ReadonlySet<string> {
 }
 
 export function rewriteMediaHref(html: string, from: string, to: string): string {
+  return transformOutsideEvidenceQuotes(html, text => rewriteMarkupMediaHref(text, from, to));
+}
+
+function rewriteMarkupMediaHref(html: string, from: string, to: string): string {
   const edits: { start: number; end: number; replacement: string }[] = [];
   visitHtml(html, (node) => {
     for (const attr of node.attrs ?? []) {

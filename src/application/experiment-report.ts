@@ -29,7 +29,7 @@ import { ComparisonVisualMediaError } from "./comparison-openable-media.js";
 import { prepareHistoricalArtifacts } from "./prepare-historical-artifacts.js";
 import { buildResultPathLinks } from "./result-paths.js";
 import { controllerBriefingRoot } from "./controller-briefing.js";
-import { ComparisonAgent, assertComparisonResult, type ComparisonContext, type ComparisonResult } from "../agents/comparison-agent.js";
+import { assertComparisonResult, type ComparisonContext, type ComparisonResult } from "../agents/comparison-agent.js";
 import type { AgentAuditSink, AgentInvocation, AgentToolDefinition } from "../infrastructure/agent/host.js";
 import { extractHostZoneSnapshot, metricsFromReportFacts, renderComparisonReportShell } from "./comparison-report-shell.js";
 import { readOperatorLocale } from "./operator-locale.js";
@@ -305,7 +305,7 @@ async function compareExperimentOutcome(
       shortEvidenceRefs: briefing.links.flatMap((link) => link.shortRef ? [link.shortRef] : []),
       ...(hostZoneSnapshot ? { hostZoneSnapshot } : {}),
     };
-    await persistComparisonRequest(input.store, input.input.runId, attemptId, { ...briefingContext, media: briefing.media }, input.input.comparison instanceof ComparisonAgent);
+    await persistComparisonRequest(input.store, input.input.runId, attemptId, { ...briefingContext, media: briefing.media }, input.input.comparison.requireFindings === true || input.input.comparison.reviewInspectionRequired === true);
     comparisonResult = await runComparisonAttempt({
       host: input, attemptId, attemptRoot, briefing, compareFacts, reportShellHtml, locale,
     });
@@ -566,7 +566,7 @@ async function invokeCompare(
       payload: { schemaVersion: 1, attemptId, revision: record.revision, catalogRevision: record.catalogRevision,
         digest: record.digest, artifactId: artifact.artifactId } });
   } });
-  const requireFindings = input.input.comparison instanceof ComparisonAgent && input.input.comparison.requireFindings;
+  const requireFindings = input.input.comparison.requireFindings === true;
   const override = loadOperatorPricingOverride(input.input.dataDir);
   const estimateUsageCost = (payload: Record<string, unknown>): number | undefined => {
     if (!Value.Check(AgentUsageFactsSchema, payload)) throw new Error('Invalid Comparison usage facts.');
@@ -681,10 +681,10 @@ function comparisonTools(
       role: "comparison",
       allowBinary: input.taskCase.privacy.allowBinary,
       mounts,
-      allowWrite: input.input.comparison instanceof ComparisonAgent
+      allowWrite: (input.input.comparison.requireFindings === true || input.input.comparison.reviewInspectionRequired === true)
         ? comparisonAttemptWriteAllowed
         : (path) => path === "report.html" || comparisonAttemptWriteAllowed(path),
-      completionPaths: new Set(input.input.comparison instanceof ComparisonAgent
+      completionPaths: new Set((input.input.comparison.requireFindings === true || input.input.comparison.reviewInspectionRequired === true)
         ? ["work/comparison-plan.md"] : ["work/comparison-plan.md", "report.html"]),
       denyDestructiveOnPrefix: ["candidate", "evidence", "history", "finals", "turns", "run", "observations"],
       allowShell: true,

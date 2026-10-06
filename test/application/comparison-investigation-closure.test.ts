@@ -103,4 +103,3 @@ test('native actual deadline closes saved questions before compose and still req
   assert.equal(events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'review-findings')!.payload.yieldReason, 'review_findings_ready');
   assert.match(JSON.stringify(inputs[7]!.messages), /Actual full current draft/);
 });
-
