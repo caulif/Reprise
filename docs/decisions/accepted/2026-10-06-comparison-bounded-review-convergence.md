@@ -62,3 +62,5 @@ Host 自动渲染的 supportBoundary 范围说明只共享精确相等的字段�
 
 真实校准证明自动展开整份 supportBoundary 与短报告契约冲突：不同范围文字本身即可超出详情预算。紧凑 decision 现要求 scopeSummaries，以 findingId 映射每项 basis/boundary（含完整支持项），明确历史/当前双侧的简短范围；canonical 同字段可选以兼容旧稿，提供后必须有 decisionSummary，非空摘要须有当前 findings，双侧文本非空白，相关ID必须恰好覆盖一次。Host 按实际依据编号转义显示作者原文，全部仍计入原400/1000详情预算；无新字段的legacy稿继续原完整投影。完整原始范围不按篇幅改写，不自动截断或放宽门禁。摘要是模型声明，ID校验不认证其语义；每次独立正式audit及有界repair将当前完整getFindingsState（含原范围及revision/binding）追加到真实模型输入，message_appended与generation snapshot保留，实际最新稿仍经inspection交付。独审对照来源、完整范围和报告，纠正扩大的覆盖、改变的domain、遗漏的决定性未知与反证；修订使旧inspection/preview失效。
 固定Host briefing、索引与导航读取仍计工具/请求和真实审计，但不触发来源观察保存点；真实来源读取与验证工具仍按6次触发，同阶段最多5窗口。恢复只引用同Session已交付材料和实际保存的问题，不重发完整初始briefing；必要的当前保存state仍在保存窗口提供。闭包已经达到审阅绝对截止时立即失败并保留timeout事实，不再追加0请求的第二次闭包或声称完成了两次真实模型调用。
+
+来源窗口因 `bounded_source_timeout` 中断后，仍必须完成一次实际最终 findings closure：不进入首次普通 closure 或重新打开补查。保存的 ready 不能认证被中断的来源回合；最终 closure 须真实接受且当前 ready，随后仍审核实际稿。剩余未知由模型显式 unavailable 并保持历史身份，Host 不推断答案。原始输出完整性只能依据原事件明确记录；读取工具的完整性回执不认证生成时完整，导航库存和条目数量不进入无关任务取舍。

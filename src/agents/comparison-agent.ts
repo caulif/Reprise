@@ -392,6 +392,7 @@ const COMPARISON_REVIEW_STEPS = [
   'For compact corrections, scopeSummaries must cover each basis/boundary finding once with findingId and concise baseline/candidate scope text. Compare summaries with the complete current saved ranges supplied for this audit, including domains, checked conditions and decision-changing unknowns. Do not certify a shortened summary from its ID coverage or rewrite evidence just to fit length; repair inaccurate or incomplete presentation and obtain a new current inspection.',
   '5. Use repair tools now: preserve historical question identities when replacing findings, revise from independent observations, then batch supported changes through submit_comparison_draft against the current catalog. Stale inspected text is repair material only. Intentions do not prove actual submitted text changed; inspect the actual accepted headline, main text and all details as required below. Do not resubmit merely to tune advisory length.',
   'Structural validation, source-pass completion, inspection and preview never certify semantic correctness.',
+  'Delete navigation inventories and counts unless the original task requires them or they change this choice. A read receipt proves only which stored bytes you received; it does not establish that the original generated output was untruncated. State completeness only when the actual originating event records it. Do not infer absent event fields or repeat an unchecked author process claim.',
 ] as const;
 const COMPARISON_REVIEW_VARIANTS = {
   legacy: [
@@ -754,7 +755,8 @@ export class ComparisonAgent implements ComparisonAgentPort {
       return comparisonProviderFailure(checkpoint);
     }
     const sourceCompleted = sources.status === 'completed' || ['independent_findings_ready', 'independent_findings_pending'].includes(sources.reason);
-    const findingsClosure = await reviewFindings.run(work, sources.sessionId, tools.some(tool => tool.name === 'update_comparison_findings'), sourceCompleted);
+    const sourceInterrupted = sources.status === 'yielded' && sources.reason === 'bounded_source_timeout';
+    const findingsClosure = await reviewFindings.run(work, sources.sessionId, tools.some(tool => tool.name === 'update_comparison_findings'), sourceCompleted, sourceInterrupted);
     if (findingsClosure) {
       if (findingsClosure.status === 'failed') await this.#sessions.discard(attemptId);
       return comparisonProviderFailure(findingsClosure);

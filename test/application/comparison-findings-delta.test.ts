@@ -262,7 +262,10 @@ for (const changed of [false, true]) test(`production ${changed ? 'replacement' 
       else if (content.includes('This is the actual draft inspection checkpoint')) await call('inspect_comparison_draft', {}, signal);
       else if (content.includes('This is the independent review findings closure')) {
         const state = JSON.parse(content.split('Current saved findings (hypotheses only): ')[1]!.split('\n\nCurrent Host-owned metric pair:')[0]!) as { record: ComparisonDiscoveryRecord; binding: ComparisonFindingsDelta['binding'] };
-        assert.ok(Value.Check(ComparisonDiscoveryRecordSchema, state.record)); assert.match(content, /using kind=delta/);
+        assert.ok(Value.Check(ComparisonDiscoveryRecordSchema, state.record));
+        assert.match(content, /kind="delta"/); assert.match(content, /binding=the exact current state.binding object/);
+        assert.match(content, /findingDecisions=/); assert.match(content, /questionDecisions=/);
+        assert.match(content, /Both arrays are required even when empty; their entries are objects, never strings/);
         const delta: ComparisonFindingsDelta = { kind: 'delta', binding: state.binding, findingDecisions: state.record.submission.findings.map(item => ({ id: item.id, action: 'retain' })),
           questionDecisions: state.record.submission.decisionQuestions.map(item => changed ? { id: item.id, action: 'replace', replacement: { ...item, resolution: 'Independent review still cannot establish final quality; retain its effect on preference.' } } : { id: item.id, action: 'retain' }) };
         assert.ok(Value.Check(ComparisonFindingsDeltaSchema, delta)); assert.deepEqual(allowedToolNames, ['read', 'update_comparison_findings', 'update_comparison_findings_delta']);

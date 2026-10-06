@@ -26,6 +26,39 @@ test('expired findings closure stops once without inventing another actual model
   }
 });
 
+for (const mode of ['accepted-ready', 'old-ready', 'pending', 'fake-receipt', 'deadline', 'unfinished'] as const) test(`interrupted source requires exactly one actual final findings closure: ${mode}`, async () => {
+  let ready = true, calls = 0, updates = 0;
+  const state = JSON.stringify({ binding: { revision: 1, digest: 'a'.repeat(64), catalogRevision: 0 }, findingIds: ['finding'], questionIds: ['question'] });
+  const closure = new ComparisonReviewFindingsClosure({ reviewFindings: true, enforcePhaseBoundaries: true,
+    getSubmittedResult: async () => undefined, findingsReady: () => ready, getFindingsState: () => state, hasReviewDraftMaterial: () => true });
+  const [tool] = closure.bind([{ name: 'update_comparison_findings_delta', description: 'Save actual findings', parameters: Type.Object({}),
+    execute: async () => { updates++; return { content: updates > 1 && mode === 'fake-receipt' ? 'status=accepted_by_assumption' : 'status=accepted\nActual receipt' }; } }], new ComparisonResourceTracker({}));
+  closure.begin('sources'); await tool!.execute({}, new AbortController().signal);
+  assert.equal(closure.sourceReady(), true, 'the preexisting source marker really is accepted and ready');
+  closure.begin('inspection');
+  const result = await closure.run(async (_phase, prompt, pass) => {
+    calls++; assert.equal(pass, 'review-findings', 'source interruption must not open a supplementary source pass');
+    assert.match(prompt, /final bounded findings closure/);
+    assert.match(prompt, /kind="delta"/); assert.match(prompt, /findingDecisions/); assert.match(prompt, /questionDecisions/);
+    assert.match(prompt, /Both arrays are required even when empty/);
+    assert.match(prompt, /status="unavailable"/); assert.match(prompt, /exact id\/question\/decisionImpact and history/);
+    assert.match(prompt, /No further source pass will be opened/);
+    closure.begin(pass);
+    if (mode !== 'old-ready') await tool!.execute({}, new AbortController().signal);
+    if (mode === 'pending') ready = false;
+    if (mode === 'deadline') return { status: 'yielded', sessionId: 'review', reason: 'bounded_source_timeout' };
+    if (mode === 'unfinished') return { status: 'yielded', sessionId: 'review', reason: 'output_limit' };
+    return { status: 'completed', sessionId: 'review', value: {} };
+  }, 'review', true, true, true);
+  assert.equal(calls, 1, 'even a prior accepted-ready marker cannot skip the actual final closure or cause a second call');
+  assert.equal(updates, mode === 'old-ready' ? 1 : 2);
+  assert.equal(result?.status, mode === 'accepted-ready' ? undefined : 'failed');
+  if (result?.status === 'failed') {
+    assert.equal(result.failure.kind, mode === 'deadline' ? 'timeout' : 'protocol');
+    assert.equal(result.failure.attempts, mode === 'deadline' ? 0 : 1);
+  }
+});
+
 const model: Model<'openai-completions'> = { id: 'fixture', name: 'fixture', api: 'openai-completions', provider: 'fixture', baseUrl: 'https://example.test', reasoning: false, input: ['text'], contextWindow: 128_000, maxTokens: 16_384, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 const context: ComparisonContext = { task: { caseId: 'case', summary: 'Compare' }, attemptId: 'attempt', baseline: { summary: 'baseline', evidenceRefs: [] }, candidates: [], telemetry: [], artifactRefs: [], allowModelText: true,
   replayScope: { historical: 'original', candidate: 'original' }, reportFacts: { run: { runId: 'run', outcome: 'completed', terminationCode: 'completed', initiatedBy: 'controller' }, models: { candidate: 'fixture' }, activity: {}, limits: { triggered: [] }, runtime: { productId: 'codex' }, delivery: { changedPaths: [], targetArtifactStatus: 'unavailable', verificationStatus: 'unavailable' }, replay: { conditions: [], baselineEvidence: 'available', candidateEvidence: 'available' } } };

@@ -23,7 +23,7 @@ export function composeComparisonReviewerSystemPrompt(locale: AgentLocale): stri
 
 export const COMPARISON_REVIEW_FINDINGS_PROMPT = [
   'This is the independent review findings closure after source observations and actual draft delivery in this same session.',
-  'Call update_comparison_findings_delta when available (otherwise update_comparison_findings) now using kind=delta and current state.binding: list every findingIds and questionIds exactly once with action=retain or replace; supply complete replacement objects only for changes and new complete objects only in addedFindings/addedQuestions. Saved findings are hypotheses, not evidence: decide each entry from independent observations, preserve question identity and decisive uncertainty. Retain is an explicit reviewed decision, not automatic verification; unchanged valid content may be accepted without a new revision.',
+  'Call update_comparison_findings_delta when available (otherwise update_comparison_findings) now. The minimal delta has exactly these required fields: kind="delta", binding=the exact current state.binding object, findingDecisions=[{id,action:"retain"} for every existing findingIds], and questionDecisions=[one retain or replace object for every existing questionIds]. Both arrays are required even when empty; their entries are objects, never strings. Use only registered schema field names, not findings/questions aliases or invented fields. Retain unchanged findings explicitly; evidence-supported corrections may use action="replace" with a complete replacement. Saved findings are hypotheses, not evidence: decide each entry from independent observations, preserve question identity and decisive uncertainty. Retain is an explicit reviewed decision, not automatic verification; unchanged valid content may be accepted without a new revision.',
   'Only update_comparison_findings and strictly registered repair reads are permitted. Do not investigate, submit a draft, inspect, write or preview. Ready saved state or a verbal promise does not replace an actual accepted update in this closure.',
   'Save only necessary changes; retain unchanged entries explicitly. If an independently discovered decision-changing question requires a source check, keep its original identity and nextCheck pending in this actual update; the Host can provide one bounded supplemental source pass. Do not repeatedly rewrite the same pending snapshot.',
   'The Host then starts full draft audit, new formal inspection and preview-only closure; accepted findings do not certify semantic correctness or publication.',
@@ -104,21 +104,21 @@ export class ComparisonReviewFindingsClosure {
       await tool.onCompleted!(result);
     } } : {}) }));
   }
-  async run(work: Work, sessionId: string, toolAvailable: boolean, sourceCompleted = false): Promise<Extract<FreeformInvocation, { status: 'failed' | 'cancelled' }> | undefined> {
+  async run(work: Work, sessionId: string, toolAvailable: boolean, sourceCompleted = false, sourceInterrupted = false): Promise<Extract<FreeformInvocation, { status: 'failed' | 'cancelled' }> | undefined> {
     if (!this.#options?.reviewFindings) return undefined;
     if (!toolAvailable || !this.#options.findingsReady || !this.#options.hasReviewDraftMaterial?.()) return { status: 'failed', sessionId, failure: {
       code: 'draft_invalid', kind: 'protocol', attempts: 0, message: 'Independent findings closure requires actual delivered draft material, update_comparison_findings and findings readiness.' } };
-    if (sourceCompleted && this.sourceReady()) return undefined;
+    if (!sourceInterrupted && sourceCompleted && this.sourceReady()) return undefined;
     let supplemented = false;
-    const firstCall = sourceCompleted && this.sourcePending() ? 2 : 1;
-    if (firstCall === 2) {
+    const firstCall = sourceInterrupted || (sourceCompleted && this.sourcePending()) ? 2 : 1;
+    if (firstCall === 2 && !sourceInterrupted) {
       const supplement = await this.#checkSupplement(work);
       if (supplement.status !== 'completed' && supplement.status !== 'yielded') return supplement;
       sessionId = supplement.sessionId; supplemented = true;
     }
     for (let call = firstCall; call <= 2; call++) {
-      const final = this.#options.enforcePhaseBoundaries && call === 2
-        ? '\nThis is the final bounded findings closure. Use only actually received evidence. Any still-unchecked question must be marked unavailable with its original identity, history, decisionImpact and precise reason; it cannot support an unconditional recommendation. No further source pass will be opened. Do not restate the investigation or promise future work.' : '';
+      const final = (sourceInterrupted || this.#options.enforcePhaseBoundaries) && call === 2
+        ? '\nThis is the final bounded findings closure. Use only actually received evidence. Retain every unchanged existing finding in findingDecisions; evidence-supported corrections may replace complete objects. For each still-unchecked question, use questionDecisions action="replace" with its complete original question object, exact id/question/decisionImpact and history, status="unavailable", evidenceRefs and a precise resolution from actual retained observations. Do not retain pending questions or invent an answer; unavailable cannot support an unconditional recommendation. No further source pass will be opened, including after a source deadline interruption. Do not restate the investigation, add new field names or promise future work.' : '';
       const outcome = await work('review', `${COMPARISON_REVIEW_FINDINGS_PROMPT}${final}\n\nCurrent saved findings (hypotheses only): ${this.#options.getFindingsState?.() ?? 'unavailable'}`, 'review-findings');
       if (outcome.status !== 'completed' && outcome.status !== 'yielded') return outcome;
       if (outcome.status === 'yielded' && outcome.reason === 'bounded_source_timeout') return {
@@ -134,8 +134,8 @@ export class ComparisonReviewFindingsClosure {
         sessionId = supplement.sessionId; supplemented = true;
       }
     }
-    return { status: 'failed', sessionId, failure: { code: 'draft_invalid', kind: 'protocol', attempts: 2,
-      message: `Independent findings closure did not execute an accepted, ready update after two actual calls${supplemented ? ' and one bounded supplemental source pass' : ''}. Old readiness, rejections and promises cannot satisfy this step.` } };
+    return { status: 'failed', sessionId, failure: { code: 'draft_invalid', kind: 'protocol', attempts: sourceInterrupted ? 1 : 2,
+      message: `Independent findings closure did not execute an accepted, ready update after ${sourceInterrupted ? 'one actual final closure following source interruption' : 'two actual calls'}${supplemented ? ' and one bounded supplemental source pass' : ''}. Old readiness, rejections and promises cannot satisfy this step.` } };
   }
   #checkSupplement(work: Work): Promise<FreeformInvocation> {
     return work('review', `This is the only bounded supplemental source pass. Check only the saved pending questions that can change the recommendation, a decisive counterexample or an important limitation. Use actual source tools and registered evidence, not saved findings as proof. Do not open unrelated checks or repeat settled observations. Do not update findings, inspect, submit, edit or preview a draft here. Return scoped observations promptly; the Host then requires the final findings update, with remaining uncertainty unavailable. Current saved hypotheses and pending questions: ${this.#options?.getFindingsState?.() ?? 'unavailable'}`, 'review-supplement');
