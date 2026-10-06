@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { createAssistantMessageEventStream, type AssistantMessage, type Context, type Model } from '@earendil-works/pi-ai';
 import { Value } from '@sinclair/typebox/value';
 import { ComparisonAgent, COMPARISON_SOURCE_REVIEW_PROMPT, COMPARISON_TURN_PROMPTS } from '../../src/agents/comparison-agent.js';
+import { COMPARISON_INITIAL_FINDINGS_PROMPT } from '../../src/agents/comparison-initial-findings.js';
+import { COMPARISON_AUTHOR_COMPOSE_PROMPT } from '../../src/agents/comparison-author-prompt.js';
 import { AgentHost } from '../../src/infrastructure/agent/host.js';
 import { PiModelCaller, type PiModels } from '../../src/infrastructure/agent/model-caller.js';
 import { ComparisonFindingsDeltaSchema, type ComparisonFindingsDelta, type ComparisonFindingsSubmission } from '../../src/core/schema.js';
@@ -35,14 +37,16 @@ for (const mode of ['success', 'cancel', 'hard'] as const) test(`production nati
     const content = context.messages.filter(item => item.role === 'user').at(-1)!.content;
     const actualPrompt = typeof content === 'string' ? content : content.filter(item => item.type === 'text').map(item => item.text).join('\n');
     let response: AssistantMessage;
-    if (actualPrompt.includes(COMPARISON_TURN_PROMPTS.orientAndInvestigate)) {
+    if (actualPrompt.includes(COMPARISON_INITIAL_FINDINGS_PROMPT)) response = turn('update_comparison_findings', { ...initial,
+      decisionQuestions: initial.decisionQuestions.map(({ resolution: _resolution, ...question }) => ({ ...question, status: 'pending', nextCheck: 'Inspect final sources before any quality verdict.' })) });
+    else if (actualPrompt.includes(COMPARISON_TURN_PROMPTS.orientAndInvestigate)) {
       investigationRequests++;
       if (investigationRequests === 1) response = turn('update_comparison_findings', initial);
       else {
         assert.equal(investigationRequests, 2, 'accepted findings are followed by one real stop turn');
         response = { ...turn('unused', {}), stopReason: 'stop', content: [{ type: 'text', text: 'Final quality remains unchecked; compose a conditional report.' }] };
       }
-    } else if (actualPrompt.includes(COMPARISON_TURN_PROMPTS.compose)) response = turn('submit_comparison_draft', draft);
+    } else if (actualPrompt.includes(COMPARISON_TURN_PROMPTS.compose) || actualPrompt.includes(COMPARISON_AUTHOR_COMPOSE_PROMPT)) response = turn('submit_comparison_draft', draft);
     else if (actualPrompt.includes(COMPARISON_SOURCE_REVIEW_PROMPT)) {
       sourceRequests++;
       assert.ok(sourceRequests <= 3, 'source soft boundary requires no extra generation');
@@ -92,7 +96,7 @@ for (const mode of ['success', 'cancel', 'hard'] as const) test(`production nati
     }
     return;
   }
-  assert.equal(contexts.length, 10); assert.equal(investigationRequests, 2); assert.equal(sourceRequests, 3); assert.ok(actualDelta);
+  assert.equal(contexts.length, 11); assert.equal(investigationRequests, 2); assert.equal(sourceRequests, 3); assert.ok(actualDelta);
   const source = events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'sources')!;
   assert.equal(source.payload.outcome, 'yielded'); assert.equal(source.payload.yieldReason, 'reviewModelRequests');
   const correction = events.find(event => event.type === 'agent.tool_completed' && event.payload.tool === 'write' && !event.payload.nativeHook)!;

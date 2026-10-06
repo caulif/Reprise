@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { Type } from '@sinclair/typebox';
 import { createAssistantMessageEventStream, type AssistantMessage, type Context, type Model } from '@earendil-works/pi-ai';
 import { ComparisonAgent, COMPARISON_SOURCE_REVIEW_PROMPT, COMPARISON_TURN_PROMPTS, type ComparisonContext } from '../../src/agents/comparison-agent.js';
-import { composeComparisonAuthorSystemPrompt } from '../../src/agents/comparison-author-prompt.js';
+import { composeComparisonAuthorSystemPrompt, COMPARISON_AUTHOR_COMPOSE_PROMPT } from '../../src/agents/comparison-author-prompt.js';
+import { COMPARISON_INITIAL_FINDINGS_PROMPT } from '../../src/agents/comparison-initial-findings.js';
 import { AgentHost } from '../../src/infrastructure/agent/host.js';
 import { PiModelCaller, type PiModels } from '../../src/infrastructure/agent/model-caller.js';
 import { ExperimentStore } from '../../src/infrastructure/store/experiment-store.js';
@@ -51,13 +52,15 @@ test('production fresh author submits recorded hypotheses then independently upd
     seen.push(actualInput(actual)); const content = actual.messages.filter(m => m.role === 'user').at(-1)!.content;
     const prompt = typeof content === 'string' ? content : content.filter(c => c.type === 'text').map(c => c.text).join('\n');
     let turn: AssistantMessage;
-    if (prompt.includes(COMPARISON_TURN_PROMPTS.orientAndInvestigate)) {
+    if (prompt.includes(COMPARISON_INITIAL_FINDINGS_PROMPT)) turn = call('update_comparison_findings', { ...initial,
+      decisionQuestions: initial.decisionQuestions.map(({ resolution: _resolution, ...question }) => ({ ...question, status: 'pending', nextCheck: 'Inspect final sources before any quality verdict.' })) });
+    else if (prompt.includes(COMPARISON_TURN_PROMPTS.orientAndInvestigate)) {
       investigations++;
       if (investigations === 1) turn = call('write', { path: 'scratch/investigation.txt', content: 'RAW_INVESTIGATION_ONLY_SENTINEL ' + 'x'.repeat(12000) });
       else if (investigations === 2) turn = call('read', { path: 'scratch/investigation.txt' });
       else if (investigations === 3) { assert.match(JSON.stringify(actual.messages), /RAW_INVESTIGATION_ONLY_SENTINEL/); turn = call('update_comparison_findings', initial); }
       else { assert.equal(investigations, 4); turn = response(); }
-    } else if (prompt.includes(COMPARISON_TURN_PROMPTS.compose)) {
+    } else if (prompt.includes(COMPARISON_TURN_PROMPTS.compose) || prompt.includes(COMPARISON_AUTHOR_COMPOSE_PROMPT)) {
       assert.match(actual.systemPrompt!, /short provisional report/); assert.doesNotMatch(JSON.stringify(actual), /RAW_INVESTIGATION_ONLY_SENTINEL/);
       assert.match(prompt, /SAVED_PROVISIONAL_FINDING/); turn = call('submit_comparison_draft', draft);
     } else if (prompt.includes(COMPARISON_SOURCE_REVIEW_PROMPT)) {

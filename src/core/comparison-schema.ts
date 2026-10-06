@@ -154,6 +154,11 @@ export const ComparisonDraftSubmissionSchema = Type.Object({
   })),
 });
 export type ComparisonDraftSubmission = Static<typeof ComparisonDraftSubmissionSchema>;
+export const ComparisonDecisionDraftSubmissionSchema = Type.Object({
+  kind: Type.Literal('decision'),
+  ...Type.Required(Type.Omit(ComparisonDraftSubmissionSchema, ['comparisonHtml', 'detailsHtml', 'decisionBasis'])).properties,
+}, { additionalProperties: false, description: 'Plain decision variant. Host renders summary, boundary and existing findings scope once and derives decisionBasis from basis dispositions. Do not submit HTML or a second copy of basis IDs. All current findings and decisive unknowns remain mandatory; original report length and publication gates apply.' });
+export type ComparisonDecisionDraftSubmission = Static<typeof ComparisonDecisionDraftSubmissionSchema>;
 const ComparisonOutputSchema = Type.Object({
   status: Type.Union([Type.Literal("completed"), Type.Literal("insufficient_evidence")]),
   reportPath: Type.Literal("report.html"),

@@ -8,6 +8,8 @@ import { ComparisonDiscovery } from '../../src/application/comparison-discovery.
 import { ComparisonEvidenceCatalog } from '../../src/application/comparison-evidence.js';
 import { ComparisonFindingsDeltaSchema, ComparisonFindingsToolSubmissionSchema, ComparisonDiscoveryRecordSchema, type ComparisonDiscoveryRecord, type ComparisonFindingsDelta, type ComparisonFindingsSubmission } from '../../src/core/schema.js';
 import { ComparisonAgent } from '../../src/agents/comparison-agent.js';
+import { COMPARISON_INITIAL_FINDINGS_PROMPT } from '../../src/agents/comparison-initial-findings.js';
+import { COMPARISON_AUTHOR_COMPOSE_PROMPT } from '../../src/agents/comparison-author-prompt.js';
 import { AgentHost, type ProviderAdapter } from '../../src/infrastructure/agent/host.js';
 import { sha256 } from '../../src/core/identity.js';
 import { startExperiment } from '../../src/application/experiment.js';
@@ -174,8 +176,10 @@ for (const changed of [false, true]) test(`production ${changed ? 'replacement' 
     const call = (name: string, params: unknown, signal: AbortSignal) => tools.find(tool => tool.name === name)!.execute(params, signal);
     return { append: async ({ content, signal, allowedToolNames, yieldAfterTurn }) => {
       turns++; await request(content, allowedToolNames);
-      if (turns === 1) assert.match((await call('update_comparison_findings', initial, signal)).content, /^status=accepted\n/);
-      else if (turns === 2) assert.match((await call('submit_comparison_draft', draft, signal)).content, /^status=accepted\n/);
+      if (content.includes(COMPARISON_INITIAL_FINDINGS_PROMPT)) {
+        assert.deepEqual(allowedToolNames, ['update_comparison_findings']);
+        assert.match((await call('update_comparison_findings', initial, signal)).content, /^status=accepted\n/);
+      } else if (content.includes(COMPARISON_AUTHOR_COMPOSE_PROMPT)) assert.match((await call('submit_comparison_draft', draft, signal)).content, /^status=accepted\n/);
       else if (content.includes('This is the actual draft inspection checkpoint')) await call('inspect_comparison_draft', {}, signal);
       else if (content.includes('This is the independent review findings closure')) {
         const state = JSON.parse(content.split('Current saved findings (hypotheses only): ')[1]!.split('\n\nCurrent Host-owned metric pair:')[0]!) as { record: ComparisonDiscoveryRecord; binding: ComparisonFindingsDelta['binding'] };
@@ -195,7 +199,7 @@ for (const changed of [false, true]) test(`production ${changed ? 'replacement' 
     }, cancel() {} };
   } }) });
   const result = await startExperiment({ ...base, comparison }).result;
-  assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result)); assert.equal(turns, 7); assert.ok(actualDelta);
+  assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result)); assert.equal(turns, 8); assert.ok(actualDelta);
   const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { sequence: number; type: string; payload: Record<string, unknown> });
   assert.equal(events.filter(event => event.type === 'comparison.findings_updated').length, changed ? 2 : 1);
   const updates = events.filter(event => event.type === 'agent.tool_completed' && event.payload.tool === 'update_comparison_findings' && !event.payload.nativeHook);

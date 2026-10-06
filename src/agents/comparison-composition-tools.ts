@@ -10,31 +10,41 @@ export const COMPARISON_COMPOSITION_BOUNDARY_PROMPT = [
 ].join('\n');
 
 const authoringTools = new Set(['read', 'quote_evidence', 'write', 'edit', 'submit_comparison_draft', 'update_comparison_findings']);
+const decisionTools = new Set(['submit_comparison_draft', 'update_comparison_findings']);
+const decisionPrompt = [
+  'This is provisional decision composition from the task and saved hypotheses already supplied. Only submit_comparison_draft and necessary update_comparison_findings corrections are available.',
+  'Submit the compact kind=decision variant promptly. Do not reread sources, collect quotations, write HTML or restart investigation. Missing support remains unknown and must qualify the decision. The independent source reviewer retains reading, quoting, authoring and investigation tools, followed by actual full draft inspection and audit.',
+  'Prefer a bound delta for a substantive correction from already received observations. Preserve all findings, question history, decisive counterevidence and limitations. Do not rewrite or erase evidence merely to reduce text length. Shorten the actual headline, decisionSummary and decisionBoundary instead of repeating them in HTML.',
+  'An accepted draft ends this provisional author turn; it certifies neither semantics nor publication.',
+].join('\n');
 type Phase = 'understand' | 'investigate' | 'compose' | 'review';
 
 export class ComparisonCompositionTools {
   readonly #strict: boolean;
   readonly #phase: () => Phase;
-  constructor(options: Pick<ComparisonCompareOptions, 'getSubmittedResult' | 'enforcePhaseBoundaries'> | undefined, phase: () => Phase) {
+  readonly #decision: boolean;
+  constructor(options: Pick<ComparisonCompareOptions, 'getSubmittedResult' | 'enforcePhaseBoundaries' | 'reviewFindings'> | undefined, phase: () => Phase) {
     this.#strict = !!options?.getSubmittedResult && options.enforcePhaseBoundaries === true;
+    this.#decision = this.#strict && options?.reviewFindings === true;
     this.#phase = phase;
   }
   #active(): boolean { return this.#strict && this.#phase() === 'compose'; }
-  prompt(): string { return this.#active() ? COMPARISON_COMPOSITION_BOUNDARY_PROMPT : ''; }
+  #permitted(name: string): boolean { return (this.#decision ? decisionTools : authoringTools).has(name); }
+  prompt(): string { return this.#active() ? this.#decision ? decisionPrompt : COMPARISON_COMPOSITION_BOUNDARY_PROMPT : ''; }
   allowedToolNames(tools: readonly AgentToolDefinition[]): readonly string[] | undefined {
-    return this.#active() ? tools.filter(tool => authoringTools.has(tool.name)).map(tool => tool.name) : undefined;
+    return this.#active() ? tools.filter(tool => this.#permitted(tool.name)).map(tool => tool.name) : undefined;
   }
   bind(tools: readonly AgentToolDefinition[]): AgentToolDefinition[] {
     if (!this.#strict) return [...tools];
     return tools.map(tool => ({ ...tool,
       ...(tool.onCompleted ? { onCompleted: async result => {
-        if (!this.#active() || authoringTools.has(tool.name)) await tool.onCompleted!(result);
+        if (!this.#active() || this.#permitted(tool.name)) await tool.onCompleted!(result);
       } } : {}),
       execute: async (params: unknown, signal: AbortSignal) => {
         if (this.#active()) {
           signal.throwIfAborted();
-          if (!authoringTools.has(tool.name)) return { content: JSON.stringify({ code: 'composition_only',
-            message: 'Compose from existing material with read, quote_evidence, write/edit, findings correction and submit_comparison_draft. New investigation, registration, inspection and preview belong to the other Host phases.' }) };
+          if (!this.#permitted(tool.name)) return { content: JSON.stringify({ code: 'composition_only',
+            message: this.#decision ? 'Submit a compact provisional decision from saved observations; only submission and necessary findings correction are available. Missing support remains unknown. Independent source review and draft audit own source reading, quoting and HTML corrections.' : 'Compose from existing material with read, quote_evidence, write/edit, findings correction and submit_comparison_draft. New investigation, registration, inspection and preview belong to the other Host phases.' }) };
         }
         return tool.execute(params, signal);
       },

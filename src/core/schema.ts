@@ -275,6 +275,7 @@ export {
   ComparisonShortRefSchema,
 };
 export type { ComparisonDraftSubmission, ComparisonMediaDerivation, ComparisonMediaRecord, ComparisonMediaRef, ComparisonReportModel } from "./comparison-schema.js";
+export { ComparisonDecisionDraftSubmissionSchema, type ComparisonDecisionDraftSubmission } from './comparison-schema.js';
 export {
   type ModelInputCapabilities,
 } from "./schemas/model-input-capabilities.js";

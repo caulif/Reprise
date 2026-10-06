@@ -4,6 +4,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ComparisonAgent } from '../../src/agents/comparison-agent.js';
+import { COMPARISON_INITIAL_FINDINGS_PROMPT } from '../../src/agents/comparison-initial-findings.js';
+import { COMPARISON_AUTHOR_COMPOSE_PROMPT } from '../../src/agents/comparison-author-prompt.js';
 import { startExperiment } from '../../src/application/experiment.js';
 import { AgentHost, type ProviderAdapter } from '../../src/infrastructure/agent/host.js';
 import { input, VerifiedRuntime } from '../codex-experiment-support.js';
@@ -184,11 +186,12 @@ for (const bounded of [false, true]) test(`production requireFindings ${bounded 
       const call = (name: string, params: unknown, signal: AbortSignal) => tools.find(tool => tool.name === name)!.execute(params, signal);
       return { append: async ({ content, signal, allowedToolNames, yieldAfterTurn, yieldDeadline }) => {
         turns++; await request(content, allowedToolNames);
-        if (turns === 1) {
+        if (content.includes(COMPARISON_INITIAL_FINDINGS_PROMPT)) {
+          assert.deepEqual(allowedToolNames, ['update_comparison_findings']);
           assert.match((await call('update_comparison_findings', findings, signal)).content, /^status=accepted/);
           if (bounded) { assert.equal(yieldDeadline?.reason, 'bounded_investigation_timeout'); return { status: 'yielded' as const, reason: 'bounded_investigation_timeout' }; }
         }
-        else if (turns === 2) {
+        else if (content.includes(COMPARISON_AUTHOR_COMPOSE_PROMPT)) {
           if (bounded) {
             assert.match(content, /Host may have marked saved pending questions unavailable only because the actual investigation deadline ended/);
             const state = JSON.parse(content.split('Saved findings (provenance checked, semantics still require review): ')[1]!.split('\n\nCurrent Host-owned metric pair:')[0]!) as { record: ComparisonDiscoveryRecord };
@@ -216,7 +219,7 @@ for (const bounded of [false, true]) test(`production requireFindings ${bounded 
     } }),
   });
   const result = await startExperiment({ ...base, comparison }).result;
-  assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result)); assert.equal(reviewUpdates, 1); assert.equal(turns, 7);
+  assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result)); assert.equal(reviewUpdates, 1); assert.equal(turns, bounded ? 7 : 8);
   const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { sequence: number; type: string; payload: Record<string, unknown> });
   const closure = events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'review-findings');
   assert.equal(closure?.payload.yieldReason, 'review_findings_ready');

@@ -7,7 +7,7 @@ import { comparisonDetailsTextCharacters, comparisonDetailsText, comparisonMainT
 import type { ComparisonReportFacts, ComparisonResult } from "../agents/comparison-agent.js";
 import { sha256, writeAtomic } from "../core/identity.js";
 import { extractInner } from "../core/comparison-html.js";
-import { ComparisonDraftSubmissionSchema, ComparisonReportModelSchema, ComparisonFindingsSubmissionSchema, type ComparisonDraftSubmission } from "../core/schema.js";
+import { ComparisonDraftSubmissionSchema, ComparisonDecisionDraftSubmissionSchema, ComparisonReportModelSchema, ComparisonFindingsSubmissionSchema, type ComparisonDraftSubmission } from "../core/schema.js";
 import type { AgentToolDefinition, AgentToolResult } from "../infrastructure/agent/host.js";
 import type { AgentLocale } from "../agents/language.js";
 import type { ComparisonEvidenceCatalog } from "./comparison-evidence.js";
@@ -23,6 +23,7 @@ import { pathContainedBy } from '../core/paths.js';
 import { toolDeliveryToken, withToolDelivery } from '../infrastructure/agent/tool-delivery.js';
 import { redactModelVisibleText } from '../infrastructure/agent/model-input.js';
 import { decisionTextHtml, decisionSupportDetailsHtml, decisionContractError } from './comparison-decision-contract.js';
+import { materializeComparisonDecisionDraft } from './comparison-decision-draft.js';
 
 type HtmlNode = { nodeName?: string; value?: string; attrs?: { name: string; value: string }[]; childNodes?: HtmlNode[]; content?: HtmlNode };
 type AcceptedDraft = { digest: string; revision: number; discoveryRevision?: number; result: ComparisonResult; decisionShape?: ComparisonDraftSubmission["decisionShape"] };
@@ -48,11 +49,12 @@ function completeInspectionMaterial(result: AgentToolResult, expected: Inspectio
   });
 }
 
-const DraftToolSchema = Type.Object({
+const FullDraftToolSchema = Type.Object({
   ...ComparisonDraftSubmissionSchema.properties,
   decisionShape: Type.Required(Type.Pick(ComparisonDraftSubmissionSchema, ["decisionShape"])).properties.decisionShape,
   ...Type.Required(Type.Pick(ComparisonDraftSubmissionSchema, ["decisionSummary", "decisionBoundary", "decisionBasis", "conclusionScope", "findingDispositions"])).properties,
-});
+}, { additionalProperties: false });
+const DraftToolSchema = Type.Union([ComparisonDecisionDraftSubmissionSchema, FullDraftToolSchema], { type: 'object' });
 const RepairReadSchema = Type.Object({ path: Type.String(), offset: Type.Optional(Type.Integer({ minimum: 0 })),
   maxBytes: Type.Integer({ minimum: 1, maximum: 4096 }), format: Type.Optional(Type.Literal('text')),
 }, { additionalProperties: false });
@@ -120,15 +122,17 @@ export class ComparisonDraft {
   tool(): AgentToolDefinition {
     return {
       name: "submit_comparison_draft",
-      description: "Submit plain-text decisionSummary describing this task's actual usability and user tradeoff, conditional choice or inability to judge. Preserve task-critical branches, not only the strongest technical advantage. Required decisionBoundary contains decision-changing unknowns or counterevidence, not a method inventory; empty only when none identified and no saved important limitations exist. Cover each current finding once in findingDispositions; decisionBasis exactly matches basis IDs. completed with findings requires a basis; insufficient_evidence requires undetermined. Incomplete basis/boundary output support or unavailable decision-changing questions cannot use supported_in_scope; unavailable questions require a nonempty decisionBoundary explaining their impact. These are model declarations, not semantic certification. Host visibly renders summary, boundary and incomplete support before comparisonHtml. Main headline plus all visible comparison is limited to 250 characters for one consequential difference or 600 for multiple independent differences. Supporting details, including folded and hidden explanations, are limited to 400 or 1000 respectively; validated evidence quotes are excluded. Evidence, consequences and caveats of one difference do not make it multiple.",
+      description: "Prefer kind=decision: write decisionSummary and decisionBoundary once as plain text, with category, headline, decisionShape, conclusionScope and complete findingDispositions. Omit comparisonHtml, detailsHtml and decisionBasis; Host renders existing decision fields and findings scope and derives basis IDs. Legacy full HTML remains accepted for necessary details or validated source quotes. Submit plain-text decisionSummary describing this task's actual usability and user tradeoff, conditional choice or inability to judge. Preserve task-critical branches, not only the strongest technical advantage. Required decisionBoundary contains decision-changing unknowns or counterevidence, not a method inventory; empty only when none identified and no saved important limitations exist. Cover each current finding once in findingDispositions; completed with findings requires a basis; insufficient_evidence requires undetermined. Incomplete basis/boundary output support or unavailable decision-changing questions cannot use supported_in_scope; unavailable questions require a nonempty decisionBoundary explaining their impact. These are model declarations, not semantic certification. Main headline plus all visible comparison is limited to 250 characters for one consequential difference or 600 for multiple independent differences. Supporting details, including folded and hidden explanations, are limited to 400 or 1000 respectively; validated evidence quotes are excluded. Evidence, consequences and caveats of one difference do not make it multiple.",
       parameters: DraftToolSchema,
       execute: async (params, signal) => {
-        if (!Value.Check(DraftToolSchema, params)) {
+        const draft = Value.Check(ComparisonDecisionDraftSubmissionSchema, params) ? materializeComparisonDecisionDraft(params)
+          : Value.Check(FullDraftToolSchema, params) ? params : undefined;
+        if (!draft || !Value.Check(ComparisonDraftSubmissionSchema, draft)) {
           this.#lastRejection = 'Draft fields failed schema validation.';
           return { content: "status=rejected\ncode=invalid_submission\nmessage=Draft fields failed schema validation." };
         }
         signal.throwIfAborted();
-        const result = await this.submit(params);
+        const result = await this.submit(draft);
         if (!result.startsWith("status=accepted") || !this.#accepted) return { content: result };
         const accepted = this.#accepted;
         const receipt = { schemaVersion: 1 as const, status: "accepted" as const, draftDigest: accepted.digest,

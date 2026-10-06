@@ -75,3 +75,23 @@ test('strict composer cancellation and permitted tool failures propagate without
   const broken: AgentToolDefinition = { ...tool('write', effects), execute: async () => { throw failure; } };
   await assert.rejects(composition.bind([broken])[0]!.execute({}, signal()), error => error === failure);
 });
+
+test('fresh decision author exposes only submission/correction and denies rereading before independent review', async () => {
+  let phase: 'compose' | 'review' = 'compose';
+  const effects: string[] = [], names = ['read', 'quote_evidence', 'write', 'edit', 'submit_comparison_draft', 'update_comparison_findings'];
+  const tools = names.map(name => tool(name, effects));
+  const composition = new ComparisonCompositionTools({ ...strict, reviewFindings: true }, () => phase);
+  assert.deepEqual(composition.allowedToolNames(tools), ['submit_comparison_draft', 'update_comparison_findings']);
+  const bound = composition.bind(tools);
+  for (const item of bound.slice(0, 4)) {
+    const result = await item.execute({}, signal());
+    assert.match(result.content, /composition_only/); await item.onCompleted?.(result);
+  }
+  assert.deepEqual(effects, []);
+  for (const item of bound.slice(4)) { const result = await item.execute({}, signal()); await item.onCompleted?.(result); }
+  assert.deepEqual(effects, names.slice(4).flatMap(name => [name, `${name}:completed`]));
+  effects.length = 0; phase = 'review';
+  assert.equal(composition.allowedToolNames(tools), undefined);
+  for (const item of bound) { const result = await item.execute({}, signal()); await item.onCompleted?.(result); }
+  assert.deepEqual(effects, names.flatMap(name => [name, `${name}:completed`]));
+});

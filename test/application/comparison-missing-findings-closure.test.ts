@@ -7,6 +7,8 @@ import { createAssistantMessageEventStream, type AssistantMessage, type Context,
 import { ComparisonAgent, COMPARISON_SOURCE_REVIEW_PROMPT, COMPARISON_TURN_PROMPTS } from '../../src/agents/comparison-agent.js';
 import { closeBoundedInvestigation } from '../../src/agents/comparison-investigation-closure.js';
 import { ComparisonResourceTracker } from '../../src/agents/comparison-resources.js';
+import { COMPARISON_INITIAL_FINDINGS_PROMPT } from '../../src/agents/comparison-initial-findings.js';
+import { COMPARISON_AUTHOR_COMPOSE_PROMPT } from '../../src/agents/comparison-author-prompt.js';
 import { AgentHost } from '../../src/infrastructure/agent/host.js';
 import { PiModelCaller, type PiModels } from '../../src/infrastructure/agent/model-caller.js';
 import type { ComparisonFindingsSubmission } from '../../src/core/schema.js';
@@ -58,20 +60,24 @@ for (const mode of ['success', 'save_fail', 'verbal', 'not_ready', 'cancel', 'ha
     findings: [], importantLimitations: ['Quality remains unverified'], decisionQuestions: [{ id: 'quality', question: 'Is the final useful?', decisionImpact: 'Could change preference', status: 'unavailable', evidenceRefs: [], resolution: 'No quality check was completed' }] };
   const draft = { status: 'insufficient_evidence', decisionShape: 'single_difference', category: 'Results', headline: 'Quality remains unverified.', decisionSummary: 'The usefulness of both final outputs remains unknown.',
     decisionBoundary: 'Final quality could change model preference.', decisionBasis: [], conclusionScope: 'undetermined', findingDispositions: [], comparisonHtml: '<p>No supported replacement choice.</p>' };
-  let investigationRequests = 0, closureRequests = 0, requests = 0, sourceRequests = 0;
+  let initialRequests = 0, investigationRequests = 0, closureRequests = 0, requests = 0, sourceRequests = 0;
   const models = { getModel: () => model, streamSimple: (_: unknown, context: Context, options: { signal: AbortSignal }) => {
     requests++; const stream = createAssistantMessageEventStream();
     const content = context.messages.filter(item => item.role === 'user').at(-1)!.content;
     const prompt = typeof content === 'string' ? content : content.filter(item => item.type === 'text').map(item => item.text).join('\n');
     let message: AssistantMessage;
-    if (prompt.includes(COMPARISON_TURN_PROMPTS.orientAndInvestigate)) {
-      investigationRequests++;
-      if (investigationRequests === 1) message = turn('read', { path: 'briefing/task/initial-input.txt' });
+    if (prompt.includes(COMPARISON_INITIAL_FINDINGS_PROMPT)) {
+      initialRequests++; assert.deepEqual(context.tools?.map(tool => tool.name), ['update_comparison_findings']);
+      if (initialRequests === 1) message = turn('update_comparison_findings', {
+        ...initial, finals: initial.finals.map(final => ({ ...final, status: 'located', sourceRefs: ['ev-999999'] })),
+      });
       else {
-        assert.equal(investigationRequests, 2);
+        assert.equal(initialRequests, 2);
         options.signal.addEventListener('abort', () => stream.push({ type: 'error', reason: 'aborted', error: response([], 'aborted') }), { once: true });
         return stream;
       }
+    } else if (prompt.includes(COMPARISON_TURN_PROMPTS.orientAndInvestigate)) {
+      investigationRequests++; throw new Error('Investigation cannot run without an accepted initial record');
     } else if (prompt.includes('Use this bounded closure turn only to submit update_comparison_findings')) {
       closureRequests++; assert.deepEqual(context.tools?.map(tool => tool.name), ['update_comparison_findings']);
       assert.match(prompt, /possibly during an unfinished generation[\s\S]*not a completed-turn boundary/);
@@ -79,7 +85,7 @@ for (const mode of ['success', 'save_fail', 'verbal', 'not_ready', 'cancel', 'ha
       const submission = mode === 'save_fail' ? { invalid: true } : mode === 'not_ready'
         ? { ...initial, decisionQuestions: [{ ...initial.decisionQuestions[0], status: 'pending', nextCheck: 'Check original outputs', resolution: undefined }] } : initial;
       message = stop ? response([{ type: 'text', text: 'A verbal promise is not a saved finding.' }], 'stop') : turn('update_comparison_findings', submission);
-    } else if (prompt.includes(COMPARISON_TURN_PROMPTS.compose)) message = turn('submit_comparison_draft', draft);
+    } else if (prompt.includes(COMPARISON_TURN_PROMPTS.compose) || prompt.includes(COMPARISON_AUTHOR_COMPOSE_PROMPT)) message = turn('submit_comparison_draft', draft);
     else if (prompt.includes(COMPARISON_SOURCE_REVIEW_PROMPT)) { sourceRequests++; message = response([{ type: 'text', text: 'No final quality check is supported; preserve the limitation.' }], 'stop'); }
     else if (prompt.includes('This is the independent review findings closure')) message = turn('update_comparison_findings', initial);
     else if (prompt.includes('This is the actual draft inspection checkpoint') || prompt.includes('The initial checkpoint is not formal certification: after this full audit')) message = turn('inspect_comparison_draft', {});
@@ -98,24 +104,31 @@ for (const mode of ['success', 'save_fail', 'verbal', 'not_ready', 'cancel', 'ha
   const result = await handle.result;
   assert.equal(result.comparison.result.status, mode === 'success' ? 'completed' : mode === 'cancel' ? 'cancelled' : 'failed', JSON.stringify(result.comparison.result));
   const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as Event);
-  assert.equal(investigationRequests, 2);
+  assert.equal(initialRequests, 2); assert.equal(investigationRequests, 0);
   const boundary = events.find(event => event.type === 'agent.invocation_yielded' && event.payload.reason === 'bounded_investigation_timeout')!; assert.ok(boundary);
   assert.equal(events.some(event => event.type === 'comparison.investigation_closed'), false, 'Host cannot close or synthesize a record that never existed');
   const saves = events.filter(event => event.type === 'agent.tool_completed' && event.payload.tool === 'update_comparison_findings' && !event.payload.nativeHook);
-  assert.ok(saves.every(event => event.sequence > boundary.sequence), 'all actual model saves occur after the real investigation deadline');
+  const rejectedInitial = saves.filter(event => event.sequence < boundary.sequence);
+  assert.equal(rejectedInitial.length, 1, 'the real initial pass receives rejection without persisting a record');
+  assert.match((rejectedInitial[0]!.payload.body as { text: string }).text, /status=rejected\ncode=final_source_mismatch/);
+  const acceptedSaves = events.filter(event => event.type === 'comparison.findings_updated');
+  assert.ok(acceptedSaves.every(event => event.sequence > boundary.sequence), 'all accepted actual model saves occur after the real initial checkpoint deadline');
   const preview = events.find(event => event.type === 'agent.tool_completed' && event.payload.tool === 'preview_report' && !event.payload.nativeHook);
   if (mode !== 'success') {
     assert.equal(preview, undefined); assert.equal(sourceRequests, 0);
+    if (mode === 'hard') { assert.equal(requests, 2); assert.equal(closureRequests, 0); assert.equal(acceptedSaves.length, 0); }
+    if (mode === 'cancel') { assert.equal(closureRequests, 1); assert.equal(acceptedSaves.length, 0); }
     const closureCalls = events.filter(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'findings');
     assert.ok(closureCalls.length <= 2); if (mode === 'verbal' || mode === 'not_ready' || mode === 'save_fail') assert.equal(closureCalls.length, 2);
     return;
   }
-  assert.equal(requests, 9); assert.equal(closureRequests, 1); assert.equal(saves.length, 2);
+  assert.equal(requests, 9); assert.equal(closureRequests, 1); assert.equal(saves.length, 3); assert.equal(acceptedSaves.length, 1, 'unchanged independent snapshot reuses the actual persisted revision');
+  for (const saved of saves.slice(1)) assert.match((saved.payload.body as { text: string }).text, /^status=accepted\n/);
   const accepted = events.find(event => event.type === 'comparison.findings_updated')!; assert.ok(accepted.sequence > boundary.sequence);
   const findingsClosure = events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'review-findings')!;
   const audit = events.find(event => event.type === 'comparison.draft_audit_started')!;
   const inspect = events.filter(event => event.type === 'agent.tool_completed' && event.payload.tool === 'inspect_comparison_draft' && !event.payload.nativeHook).at(-1)!;
-  assert.ok(saves[1]!.sequence < findingsClosure.sequence && findingsClosure.sequence < audit.sequence && audit.sequence < inspect.sequence && inspect.sequence < preview!.sequence);
+  assert.ok(saves[2]!.sequence < findingsClosure.sequence && findingsClosure.sequence < audit.sequence && audit.sequence < inspect.sequence && inspect.sequence < preview!.sequence);
   assert.ok(events.some(event => event.type === 'agent.model_request' && event.sequence > inspect.sequence && event.sequence < preview!.sequence && 'generationInput' in event.payload));
   assert.match(await readFile(join(result.experimentRoot, 'report.html'), 'utf8'), /Quality remains unverified/);
 });
