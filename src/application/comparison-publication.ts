@@ -106,20 +106,20 @@ export function classifyComparisonFailure(input: {
     return { failureClass: "provider", phase: input.recordedPhase ?? (input.reportPresent ? "review" : "compose") };
   }
   if (code === "invalid_envelope" || message === "invalid JSON" || message.startsWith("schema validation failed") || message.includes("invalid JSON")) {
-    return { failureClass: "protocol", phase: "review" };
+    return { failureClass: "protocol", phase: input.recordedPhase ?? "review" };
   }
   if (code === "host_zone_modified" || message.includes("Host zone") || message.includes("Host metrics") || message.includes("Host status")) {
     const metrics = message.includes("metrics") || message.includes("Host metrics") || message.includes("Host status");
     return { failureClass: metrics ? "metrics" : "publication", phase: "publication" };
   }
   if (code === "evidence_unresolved" || message.includes("unknown evidence")) {
-    return { failureClass: "evidence", phase: "review" };
+    return { failureClass: "evidence", phase: input.recordedPhase ?? "review" };
   }
   if (code === "media_unavailable") {
     return { failureClass: "media", phase: "publication" };
   }
   if (code === "draft_invalid" || code === "report_incomplete" || code === "preview_failed" || code === "publication_failed" || message.includes("without writing report.html")) {
-    return { failureClass: "publication", phase: code === "preview_failed" ? "review" : code === "publication_failed" ? "publication" : "compose" };
+    return { failureClass: "publication", phase: code === "publication_failed" ? "publication" : input.recordedPhase ?? (code === "preview_failed" ? "review" : "compose") };
   }
   return { failureClass: "unknown", phase: input.recordedPhase ?? (input.reportPresent ? "review" : "compose") };
 }

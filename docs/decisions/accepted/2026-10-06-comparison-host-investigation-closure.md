@@ -8,6 +8,12 @@
 
 ## 决定
 
+### 尚无初始 snapshot 的边界
+
+真实调查截止时可能从未调用或接受 `update_comparison_findings`。不存在的记录不能由 Host 转换 pending 状态。经过原整体硬限检查和父取消检查后，仅当生产 `hasSavedFindings()` 明确返回 false，保持原真实 `bounded_investigation_timeout` outcome，沿用 submitted 流程已经存在的 findings-only 分支，最多两次真实模型保存调用。Host 不生成 criteria、finals、finding、question 或 observation，不新增阶段、预算或成功认证。
+
+该分支只按可信同进程 getter 判断当前记录缺失，不捕获或匹配错误文本。已有 snapshot 的引用校验、持久化、审计及未 ready 失败继续 fatal；没有提供 getter 的旧调用保持原 Host closure 行为。实际初始保存仍过原 schema、引用、身份与持久化校验，失败、口头承诺或两次后仍 pending 不能 compose；取消和硬限优先。
+
 仅 `requireFindings` 生产路径传入 Host 闭合 callback。初始调查实际返回 `yielded/bounded_investigation_timeout` 且 findings 尚未 ready 时调用；其他完成、输出限额、失败、取消或非 opt-in 端口保持原逻辑。整体硬保护与取消仍优先。
 
 Discovery 在原串行队列内 clone 实际 accepted snapshot，只将 pending 问题改为 unavailable，并用固定 Host 过程文字注明调查截止、问题未核验、不能判断证据不存在、不认证语义。ID、question、decisionImpact、证据引用、nextCheck、重开历史、已 settled 问题、criteria、finals、findings 和限制原样保留。不得生成观察、空占位 snapshot，或从私有 reasoning 补回未保存内容。
@@ -35,6 +41,8 @@ compose 的下一实际模型输入携带新保存状态及明确的 Host 过程
 冻结评估输入的追加事件白名单同步允许 `comparison.investigation_closed` 与 `comparison.draft_audit_started`；它们属于 Comparison 自身流程，不改变源输入身份和原 committed prefix。仍逐字节核对原文件与前缀，拒绝未知 Comparison 类型及新 Runtime、Controller 观察，不能以新事件为由放宽输入门禁。
 
 ## 验证
+
+缺记录回归经真实生产 experiment 工具和 Pi adapter 执行仅 read 的调查、实际局部 deadline、模型初始 accepted save、compose、fresh independent source 与真实 findings 更新、完整 audit、新正式 inspect、后续真实 generation、matching preview 及发布；确认截止前没有更新，Host 没有闭合或制造记录。初始 schema 拒绝、口头承诺、两次 pending、父取消和硬模型请求限制均不得进入 compose/preview。已有记录 invalid refs、persist、audit、not ready 以及未提供 getter 的旧入口仍有 fatal 逆例。
 
 真实生产入口 fixture 从实际接受 pending snapshot 到 Provider 截止、Host artifact/event、下一实际 compose 输入、实际独立更新、新 audit/inspect/generation/preview 与发布全链验证；无 paid findings pass，Host 不增加模型 tool-call 数。
 

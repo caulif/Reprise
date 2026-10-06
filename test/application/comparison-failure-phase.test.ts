@@ -32,4 +32,8 @@ test('failure diagnostics use the current attempt phase despite an existing Host
   assert.equal(classifyComparisonFailure({ result, reportPresent: false }).phase, 'compose');
   assert.equal(classifyComparisonFailure({ result: { status: 'cancelled' }, reportPresent: true, recordedPhase: 'investigate' }).phase, 'investigate');
   assert.equal(classifyComparisonFailure({ result: { status: 'failed', failure: { code: 'agent_failure', message: 'Unknown failure', attempts: 1 } }, reportPresent: true, recordedPhase: 'compose' }).phase, 'compose');
+  for (const code of ['invalid_envelope', 'draft_invalid', 'report_incomplete', 'evidence_unresolved', 'preview_failed'] as const) {
+    assert.equal(classifyComparisonFailure({ result: { status: 'failed', failure: { code, message: 'Actual phase failure', attempts: 1 } }, reportPresent: true, recordedPhase: 'investigate' }).phase, 'investigate');
+    assert.equal(classifyComparisonFailure({ result: { status: 'failed', failure: { code, message: 'Actual phase failure', attempts: 1 } }, reportPresent: true, recordedPhase: 'compose' }).phase, 'compose');
+  }
 });

@@ -13,6 +13,7 @@ import { comparisonToolFeedback, comparisonSoftLimitFeedback } from './compariso
 import { comparisonDecisionMetrics, comparisonOutputContinuation, comparisonTimeout, comparisonWorkDeadline, comparisonYieldBoundary, type ComparisonWorkPass } from './comparison-invocation-boundaries.js';
 import { ComparisonReviewFindingsClosure, reviewDraftInspectionCheckpoint } from './comparison-review-findings.js';
 import { ComparisonCompositionTools } from './comparison-composition-tools.js';
+import { composeComparisonAuthorSystemPrompt } from './comparison-author-prompt.js';
 export type { ComparisonAgentEnvelope } from '../core/schema.js';
 export type ComparisonResult = Omit<ComparisonAgentEnvelope, 'reportPath'> & { reportPath: 'report.html' };
 export type ComparisonContext = {
@@ -658,7 +659,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
       ...(audit?.commitModelInput ? { commitModelInput: (bytes: Uint8Array) => audit.commitModelInput!(bytes) } : {}),
     };
     let session = await this.#sessionFor(attemptId, context, phasedTools, measuredAudit);
-    let freshReview = false;
+    let freshReview = false, freshAuthor = false;
     const measuredWork = async (phase: 'understand' | 'investigate' | 'compose' | 'review', promptContent: string, reviewPass?: ComparisonWorkPass) => {
       setComparisonPass(current, phase, reviewPass);
       reviewFindings.begin(reviewPass);
@@ -668,14 +669,16 @@ export class ComparisonAgent implements ComparisonAgentPort {
       const startedAt = Date.now();
       let outcome: FreeformInvocation | undefined;
       try {
-        if (phase === 'review' && options?.getSubmittedResult && !freshReview) {
-          resources.checkHard('fresh review session');
+        const author = phase === 'compose' && options?.reviewFindings && options.enforcePhaseBoundaries;
+        if (options?.getSubmittedResult && ((phase === 'review' && !freshReview) || (author && !freshAuthor))) {
+          resources.checkHard('fresh Comparison session');
           if (signal?.aborted) return { status: 'cancelled' as const, sessionId: session.sessionId };
           await this.#sessions.release(attemptId);
           if (signal?.aborted) return { status: 'cancelled' as const, sessionId: session.sessionId };
-          session = await this.#sessionFor(attemptId, context, phasedTools, measuredAudit);
-          await options.onReviewStarted?.(session.sessionId);
-          freshReview = true;
+          resources.checkHard('fresh Comparison session after release');
+          session = await this.#sessionFor(attemptId, context, phasedTools, measuredAudit, author ? 'author' : undefined);
+          if (author) freshAuthor = true;
+          else { await options.onReviewStarted?.(session.sessionId); freshReview = true; }
         }
         if (signal?.aborted) return { status: 'cancelled' as const, sessionId: session.sessionId };
         const deadline = comparisonWorkDeadline(resources, phase, reviewPass);
@@ -749,7 +752,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
     }
     const findings = options.getFindingsState?.();
     const prefix = investigated.status === 'completed' || investigated.status === 'yielded'
-      ? await measuredWork('compose', `${COMPARISON_TURN_PROMPTS.compose}\n\n${investigationBoundary} Use only actually received observations; unchecked task relationships remain unknown and must qualify conflicting quality claims or recommendation premises.${options.closeBoundedInvestigation && investigated.status === 'yielded' && investigated.reason === 'bounded_investigation_timeout' ? ' The Host may have marked saved pending questions unavailable only because the actual investigation deadline ended. This process closure is not a semantic answer: preserve their original decisionImpact in conditional conclusions and visible decision boundaries; it does not establish that evidence is absent.' : ''}${findings ? `\n\nSaved findings (provenance checked, semantics still require review): ${findings}` : ''}`)
+      ? await measuredWork('compose', `${options.reviewFindings && options.enforcePhaseBoundaries ? `Task: ${context.task.summary}\n\n${context.promptContent ?? ''}\n\n` : ''}${COMPARISON_TURN_PROMPTS.compose}\n\n${investigationBoundary} Use only actually received observations; unchecked task relationships remain unknown and must qualify conflicting quality claims or recommendation premises.${options.closeBoundedInvestigation && investigated.status === 'yielded' && investigated.reason === 'bounded_investigation_timeout' ? ' The Host may have marked saved pending questions unavailable only because the actual investigation deadline ended. This process closure is not a semantic answer: preserve their original decisionImpact in conditional conclusions and visible decision boundaries; it does not establish that evidence is absent.' : ''}${findings ? `\n\nSaved findings (provenance checked, semantics still require review): ${findings}` : ''}`)
       : investigated;
     if (prefix.status !== 'completed' && !(prefix.status === 'yielded' && prefix.reason === 'author_draft_ready' && options.hasAcceptedDraft?.())) {
       if (prefix.status === 'failed') await this.#sessions.discard(attemptId);
@@ -873,10 +876,10 @@ export class ComparisonAgent implements ComparisonAgentPort {
     return { ...result, value: completeComparisonEnvelope(result.value) };
   }
 
-  async #sessionFor(attemptId: string, context: ComparisonContext, tools: readonly AgentToolDefinition[], audit?: AgentAuditSink): Promise<AgentSessionHost> {
+  async #sessionFor(attemptId: string, context: ComparisonContext, tools: readonly AgentToolDefinition[], audit?: AgentAuditSink, purpose?: 'author'): Promise<AgentSessionHost> {
     const { session } = await this.#sessions.get(attemptId, () => this.#host.createSession({
       role: 'comparison',
-      systemPrompt: comparisonDecisionMetrics(composeComparisonSystemPrompt(this.#locale), 'review', context.reportFacts.metrics),
+      systemPrompt: comparisonDecisionMetrics(purpose === 'author' ? composeComparisonAuthorSystemPrompt(this.#locale) : composeComparisonSystemPrompt(this.#locale), 'review', context.reportFacts.metrics),
       allowModelText: context.allowModelText,
       compactionInstructions: COMPARISON_COMPACTION,
       tools,

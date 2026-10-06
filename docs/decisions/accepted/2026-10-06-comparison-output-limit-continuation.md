@@ -25,6 +25,8 @@
 
 选择同阶段一次真实续写，保留正常工具执行、输入审计、发布校验和全部失败边界。单次 model request 的 Provider maxTokens 不变，第二次请求计入原全局账本。
 
+失败诊断沿用当前 attempt 的实际 `comparison.phase_completed` 阶段。真实 compose 连续两次截断可在归一化后成为 `invalid_envelope`；错误类别不能据此把阶段改成 review。`invalid_envelope`、证据解析、draft/report 不完整及 preview 错误优先采用实际记录阶段；缺记录时保留原 legacy 回退。明确 publication_failed、Host zone/指标修改和 media_unavailable 仍属于 publication 校验。此归属只说明故障发生位置，不把阶段失败当作模型能力或语义结论，也不因 Host 已创建 report 外壳而推断审阅已发生。
+
 ## 验证
 
 原生 Pi 消费者逆例覆盖纯 reasoning 截断后真实 inspection/action、length 中被 SDK 拒绝的截断 inspection 不得产生副作用或直接 preview、续轮真实 inspection 后才进入 closure、double length 明确失败、同 review Session 与 audit-start 一次、费用方向对照实际进入模型输入和事件、取消/费用硬限优先。Provider 另验证先前完整 toolUse 的副作用在后续截断时保留且不会重放；不虚构 length 中的截断工具已经成功。另验证两类局部 deadline 的续写绝对时间不变、未知与零区分、普通错误与其它资源 yield 不续写。统一 build 后运行 phase-yield、Provider 针对测试及全门禁；自动化通过不作为真实 Comparison 语义或用户阅读验收。

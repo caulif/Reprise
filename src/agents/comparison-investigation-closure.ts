@@ -8,6 +8,7 @@ export async function closeBoundedInvestigation(options: ComparisonCompareOption
     || !options.closeBoundedInvestigation || options.findingsReady?.()) return outcome;
   resources.checkHard('Host investigation closure');
   if (signal.aborted) return { status: 'cancelled', sessionId: outcome.sessionId };
+  if (options.hasSavedFindings?.() === false) return outcome;
   try {
     await options.closeBoundedInvestigation({ sessionId: outcome.sessionId, reason: 'bounded_investigation_timeout' }, signal);
   } catch {
