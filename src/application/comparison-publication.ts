@@ -499,7 +499,7 @@ function rewriteAgentZones(html: string, rewrite: (inner: string) => string): st
     const outer = extractOuter(next, "data-agent-zone", zone);
     const inner = extractInner(next, "data-agent-zone", zone);
     if (!outer || !inner) continue;
-    next = next.replace(outer, outer.replace(inner, rewrite(inner)));
+    next = next.replace(outer, () => outer.replace(inner, () => rewrite(inner)));
   }
   return next;
 }
@@ -510,7 +510,7 @@ function replaceZoneInner(html: string, attr: string, name: string, nextInner: s
   const open = outer.match(new RegExp(`^<(${ZONE_TAG})\\b[^>]*>`, "i"));
   if (!open) return html;
   const tag = open[1] ?? "section";
-  return html.replace(outer, `${open[0]}${nextInner}</${tag}>`);
+  return html.replace(outer, () => `${open[0]}${nextInner}</${tag}>`);
 }
 
 const ZONE_TAG = "header|section|style|p|span";
@@ -521,7 +521,7 @@ function appendHostLimitations(html: string, locale: AgentLocale, keys: readonly
   const outer = extractOuter(html, "data-agent-zone", "comparison");
   if (!outer) return html;
   const notes = uniqueKeys.map((key) => `<p data-host-limitation="${key}">${escapeText(reportString(locale, key))}</p>`).join("");
-  return html.replace(outer, outer.replace(/<\/section>\s*$/i, `${notes}</section>`));
+  return html.replace(outer, () => outer.replace(/<\/section>\s*$/i, () => `${notes}</section>`));
 }
 
 function repairEmptyComparisonZone(
@@ -600,7 +600,7 @@ function applyShareCardPresentationFixes(html: string, locale: AgentLocale): str
     const shareFixed = transformOutsideEvidenceQuotes(share, text => text
       .replace(/<u\b[^>]*>/gi, "")
       .replace(/<\/u>/gi, ""));
-    if (shareFixed !== share) next = next.replace(share, shareFixed);
+    if (shareFixed !== share) next = next.replace(share, () => shareFixed);
   }
   next = transformOutsideEvidenceQuotes(next, text => text.replace(/<summary[^>]*>\s*(价格与证据|Prices and evidence)\s*<\/summary>/gi, "")
     .replace(/本卡由/g, "").replace(/Written by /gi, ""));
@@ -612,7 +612,7 @@ function applyShareCardPresentationFixes(html: string, locale: AgentLocale): str
   ] as const) {
     const inner = extractInner(next, attr, name);
     if (!inner) continue;
-    const replaced = transformOutsideEvidenceQuotes(inner, text => text.replaceAll("历史侧", historical).replaceAll("候选侧", current));
+    const replaced = transformOutsideEvidenceQuotes(inner, text => text.replaceAll("历史侧", () => historical).replaceAll("候选侧", () => current));
     if (replaced !== inner) next = replaceZoneInner(next, attr, name, replaced);
   }
   return next;
@@ -873,7 +873,7 @@ function markUnresolvedInHostEvidence(html: string, unresolved: readonly string[
   if (outer.includes('data-host="unresolved-evidence"')) return html;
   const refs = unresolved.join(locale === "zh" ? "、" : ", ");
   const note = `<p data-host="unresolved-evidence">${escapeText(reportString(locale, "unresolvedEvidence", { refs }))}</p>`;
-  return html.replace(outer, outer.replace(/<\/section>\s*$/i, `${note}</section>`));
+  return html.replace(outer, () => outer.replace(/<\/section>\s*$/i, () => `${note}</section>`));
 }
 
 async function stripBrokenMedia(

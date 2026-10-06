@@ -130,7 +130,7 @@ function rewriteMarkupMediaHref(html: string, from: string, to: string): string 
     html = `${html.slice(0, edit.start)}${edit.replacement}${html.slice(edit.end)}`;
   }
   const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return html.replace(new RegExp(`url\\((['"]?)${escaped}\\1\\)`, "gi"), `url($1${to}$1)`);
+  return html.replace(new RegExp(`url\\((['"]?)${escaped}\\1\\)`, "gi"), (_all: string, quote: string) => `url(${quote}${to}${quote})`);
 }
 
 function visitHtml(html: string, visit: (node: HtmlNode) => void, tagName?: string): void {

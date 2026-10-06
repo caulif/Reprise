@@ -51,7 +51,7 @@ export class ComparisonResourceTracker {
       ? pass === 'audit' || pass === 'preview' ? pass : 'review' : 'investigate');
     if (this.#boundedStages && (pass === 'sources' || pass === 'review-supplement') && !this.#sourceDeadlines.has(pass)) {
       const scale = Math.min(1, this.#limits.maxElapsedMs! / 600_000);
-      this.#sourceDeadlines.set(pass, Date.now() + (pass === 'sources' ? 110_000 : 30_000) * scale);
+      this.#sourceDeadlines.set(pass, this.#deadline((pass === 'sources' ? 110_000 : 30_000) * scale));
     }
     if (phase === this.#phase) return;
     if (this.#phase === 'investigate') this.#investigationElapsed += Date.now() - this.#phaseStarted;
@@ -67,7 +67,11 @@ export class ComparisonResourceTracker {
     const allowance = Math.min(STAGE_BUDGETS[stage] * scale,
       stage === 'investigate' ? this.#limits.investigationMs ?? Infinity : Infinity);
     const globalBoundary = this.#started + this.#limits.maxElapsedMs! - FINISH_RESERVES[stage] * scale;
-    this.#stageDeadlines.set(stage, Math.min(Date.now() + allowance, globalBoundary));
+    this.#stageDeadlines.set(stage, this.#deadline(allowance, globalBoundary));
+  }
+
+  #deadline(allowance: number, boundary = Infinity): number {
+    return Math.floor(Math.min(Date.now() + allowance, boundary));
   }
 
   workDeadline(): { at: number; reason: string } | undefined {

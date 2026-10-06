@@ -1,3 +1,5 @@
+import { AgentHost } from '../../src/infrastructure/agent/host.js';
+import { comparisonWorkDeadline } from '../../src/agents/comparison-invocation-boundaries.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ComparisonResourceTracker } from '../../src/agents/comparison-resources.js';
@@ -248,4 +250,26 @@ test('investigation deadline retains explicit unlimited resources and hard-only 
   const local = new ComparisonResourceTracker({ investigationMs: 10 });
   t.mock.timers.tick(10);
   assert.equal(local.investigationRemainingMs(), 0, 'local allowance alone also clamps at exhaustion');
+});
+
+test('fractionally scaled deadlines pass the real Session audit boundary without extending windows', async t => {
+  t.mock.method(Date, 'now', () => 1_000_000);
+  const tracker = new ComparisonResourceTracker({ maxElapsedMs: 100_000 }, { boundedStages: true });
+  let calls = 0;
+  const events: AgentAuditEvent[] = [];
+  const session = await new AgentHost({ createSession: () => ({
+    append: async ({ yieldDeadline }) => { calls++; assert.ok(Number.isInteger(yieldDeadline?.at)); return 'done'; }, cancel() {},
+  }) }).createSession({ role: 'comparison', systemPrompt: 'test', audit: { append: async event => { events.push(event); } } });
+  for (const [phase, pass, allowance] of [
+    ['investigate', undefined, 20_000], ['compose', undefined, 15_000],
+    ['review', 'sources', 110_000 / 6], ['review', 'review-supplement', 5_000],
+    ['review', 'audit', 15_000], ['review', 'preview', 15_000],
+  ] as const) {
+    const deadline = comparisonWorkDeadline(tracker, phase, pass);
+    const result = await session.work({ promptContent: 'test', timeoutMs: 1_000, ...deadline });
+    assert.equal(result.status, 'completed', JSON.stringify(result));
+    assert.equal(deadline.yieldDeadline?.at, Math.floor(Date.now() + allowance));
+  }
+  assert.equal(calls, 6);
+  assert.equal(events.filter(event => event.type === 'agent.invocation_started').length, 6);
 });

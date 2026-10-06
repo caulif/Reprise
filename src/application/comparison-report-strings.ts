@@ -128,7 +128,7 @@ export type ComparisonReportStringKey = keyof typeof M;
 export function reportString(locale: AgentLocale, key: ComparisonReportStringKey, vars?: Record<string, string | number>): string {
   let text: string = M[key][locale] ?? M[key].en;
   if (vars) {
-    for (const [name, value] of Object.entries(vars)) text = text.replaceAll(`{${name}}`, String(value));
+    for (const [name, value] of Object.entries(vars)) text = text.replaceAll(`{${name}}`, () => String(value));
   }
   return text;
 }

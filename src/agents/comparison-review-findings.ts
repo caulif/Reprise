@@ -1,4 +1,4 @@
-import { isFindingsUpdate, comparisonProtocol } from './comparison-stage-policy.js';
+import { isFindingsUpdate, comparisonProtocol, comparisonStagePolicy } from './comparison-stage-policy.js';
 import type { ComparisonCompareOptions } from './comparison-agent.js';
 import type { ComparisonWorkPass } from './comparison-invocation-boundaries.js';
 import type { AgentToolResult, FreeformInvocation } from '../infrastructure/agent/host.js';
@@ -23,7 +23,7 @@ export function composeComparisonReviewerSystemPrompt(locale: AgentLocale): stri
 export const COMPARISON_REVIEW_FINDINGS_PROMPT = [
   'This is the independent review findings closure after source observations and actual draft delivery in this same session.',
   'Call update_comparison_findings_delta when available (otherwise update_comparison_findings) now. The minimal delta has exactly these required fields: kind="delta", binding=the exact current state.binding object, findingDecisions=[{id,action:"retain"} for every existing findingIds], and questionDecisions=[one retain or replace object for every existing questionIds]. Both arrays are required even when empty; their entries are objects, never strings. Use only registered schema field names, not findings/questions aliases or invented fields. Retain unchanged findings explicitly; evidence-supported corrections may use action="replace" with a complete replacement. Saved findings are hypotheses, not evidence: decide each entry from independent observations, preserve question identity and decisive uncertainty. Retain is an explicit reviewed decision, not automatic verification; unchanged valid content may be accepted without a new revision.',
-  'Only update_comparison_findings and strictly registered repair reads are permitted. Do not investigate, submit a draft, inspect, write or preview. Ready saved state or a verbal promise does not replace an actual accepted update in this closure.',
+  `Only ${comparisonStagePolicy('review-findings', { strict: true, direct: true, initial: false }).names!.join(' and ')} and strictly registered repair reads are permitted. Do not investigate, submit a draft, inspect, write or preview. Ready saved state or a verbal promise does not replace an actual accepted update in this closure.`,
   'Save only necessary changes; retain unchanged entries explicitly. If an independently discovered decision-changing question requires a source check, keep its original identity and nextCheck pending in this actual update; the Host can provide one bounded supplemental source pass. Do not repeatedly rewrite the same pending snapshot.',
   'The Host then starts full draft audit, new formal inspection and preview-only closure; accepted findings do not certify semantic correctness or publication.',
 ].join('\n');

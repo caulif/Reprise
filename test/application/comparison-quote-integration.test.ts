@@ -1,6 +1,8 @@
+import { rewriteMediaHref } from '../../src/application/comparison-publish-evidence.js';
+import { reportString } from '../../src/application/comparison-report-strings.js';
 import { extractHostZoneSnapshot, extractOuter, hostZoneIntegrityError, missingComparisonSlots } from '../../src/core/comparison-html.js';
 import { stagePublishedEvidence } from '../../src/application/comparison-publish-evidence.js';
-import { comparisonReportModelFromHtml } from '../../src/application/comparison-publication.js';
+import { comparisonReportModelFromHtml, publishComparisonArtifacts } from '../../src/application/comparison-publication.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -226,4 +228,29 @@ for (const kind of ['evidence', 'media'] as const) test(`quoted verification wor
     evidence: kind === 'media' ? f.catalog.snapshot().links : [], hostZoneSnapshot: extractHostZoneSnapshot(original)!, quoteSources: f.sources, locale: 'en' });
   assert.ok('html' in checked, JSON.stringify(checked));
   if ('html' in checked) assert.doesNotMatch(checked.html, /used verification wording without resolvable evidence|Cited media could not be resolved/);
+});
+
+for (const pattern of ['$&', '$$', "$'", '$`', '$1']) test(`literal replacement pattern ${pattern} survives submit, preview and publication byte-exact`, async t => {
+  const f = await fixture(t, `before price=${pattern} after`);
+  const html = await readFile(join(f.attemptRoot, 'report.html'), 'utf8');
+  assert.ok(html.includes(f.quote.html));
+  const preview = await materializeComparisonReportPreview({ attemptRoot: f.attemptRoot, media: [], evidence: f.catalog.snapshot().links, catalogRevision: f.catalog.snapshot().revision });
+  assert.ok(preview.html.includes(f.quote.html));
+  f.draft.recordPreview(preview);
+  assert.ok(await f.draft.completedResult());
+  const checked = await verifyAndRenderComparisonReport({ html, facts, result: publishedResult, attemptRoot: f.attemptRoot,
+    media: [], evidence: f.catalog.snapshot().links, quoteSources: f.sources, locale: 'en' });
+  assert.ok('html' in checked, JSON.stringify(checked));
+  if (!('html' in checked)) return;
+  await publishComparisonArtifacts({ attemptRoot: f.attemptRoot, experimentRoot: f.experimentRoot, html: checked.html, quoteSources: f.sources });
+  assert.ok((await readFile(join(f.experimentRoot, 'report.html'), 'utf8')).includes(f.quote.html));
+});
+
+test('dynamic CSS URLs and report interpolation preserve replacement patterns literally', () => {
+  const value = "$& $$ $' $` $1";
+  assert.equal(reportString('en', 'unresolvedEvidence', { refs: value }), reportString('en', 'unresolvedEvidence').split('{refs}').join(value));
+  for (const quote of ['', "'", '"']) {
+    const html = `<style>a{background:url(${quote}old.png${quote})}</style>`;
+    assert.equal(rewriteMediaHref(html, 'old.png', value), `<style>a{background:url(${quote}${value}${quote})}</style>`);
+  }
 });
