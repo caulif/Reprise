@@ -2,6 +2,8 @@
 
 状态：accepted
 
+后继：严格三会话路径的编排与时间策略已有[有界审阅收敛](2026-10-06-comparison-bounded-review-convergence.md)作为后继，其他审计、错误优先和发布约束保留。
+
 ## 问题
 
 独立 source review 与实际稿件交付完成后，核稿仍可能在较宽工具面中耗尽输出而未修稿或检查。SDK 的模型输入转换会丢弃纯 thinking assistant；同 Session 的有界再调用保留实际工具材料和阶段，不保证续接私有推理。不能将口头计划、旧 ready 状态或未完成生成当作独立评估已保存。

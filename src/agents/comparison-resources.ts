@@ -8,6 +8,14 @@ export const DEFAULT_COMPARISON_RESOURCES: Readonly<ComparisonResources> = Objec
 
 class ComparisonResourceLimit extends Error {}
 
+type WorkStage = 'investigate' | 'compose' | 'review' | 'audit' | 'preview';
+const STAGE_BUDGETS: Readonly<Record<WorkStage, number>> = { investigate: 120_000, compose: 90_000, review: 150_000, audit: 90_000, preview: 90_000 };
+const FINISH_RESERVES: Readonly<Record<WorkStage, number>> = { investigate: 480_000, compose: 390_000, review: 240_000, audit: 150_000, preview: 60_000 };
+const STAGE_REASONS: Readonly<Record<WorkStage, string>> = {
+  investigate: 'bounded_investigation_timeout', compose: 'bounded_compose_timeout', review: 'bounded_source_timeout',
+  audit: 'bounded_audit_timeout', preview: 'bounded_preview_timeout',
+};
+
 export class ComparisonResourceTracker {
   readonly #limits: ComparisonResources;
   readonly #started = Date.now();
@@ -25,15 +33,47 @@ export class ComparisonResourceTracker {
   #priceUnknown = false;
   #phase = 'investigate';
   readonly #toolIds = new Set<string>();
+  readonly #boundedStages: boolean;
+  readonly #stageDeadlines = new Map<WorkStage, number>();
+  readonly #sourceDeadlines = new Map<string, number>();
+  #workStage: WorkStage = 'investigate';
+  #workPass: string | undefined;
 
-  constructor(limits: ComparisonResources) { this.#limits = limits; }
+  constructor(limits: ComparisonResources, options?: { boundedStages?: boolean }) {
+    this.#limits = limits;
+    this.#boundedStages = !!options?.boundedStages && limits.maxElapsedMs !== undefined;
+    if (this.#boundedStages) this.#enterStage('investigate');
+  }
 
-  phase(phase: string): void {
+  phase(phase: string, pass?: string): void {
+    this.#workPass = pass;
+    if (this.#boundedStages) this.#enterStage(phase === 'compose' ? 'compose' : phase === 'review'
+      ? pass === 'audit' || pass === 'preview' ? pass : 'review' : 'investigate');
+    if (this.#boundedStages && (pass === 'sources' || pass === 'review-supplement') && !this.#sourceDeadlines.has(pass)) {
+      const scale = Math.min(1, this.#limits.maxElapsedMs! / 600_000);
+      this.#sourceDeadlines.set(pass, Date.now() + (pass === 'sources' ? 60_000 : 30_000) * scale);
+    }
     if (phase === this.#phase) return;
     if (this.#phase === 'investigate') this.#investigationElapsed += Date.now() - this.#phaseStarted;
     if (this.#phase === 'review') this.#reviewElapsed += Date.now() - this.#phaseStarted;
     this.#phaseStarted = Date.now();
     this.#phase = phase;
+  }
+
+  #enterStage(stage: WorkStage): void {
+    this.#workStage = stage;
+    if (this.#stageDeadlines.has(stage)) return;
+    const scale = Math.min(1, this.#limits.maxElapsedMs! / 600_000);
+    const allowance = Math.min(STAGE_BUDGETS[stage] * scale,
+      stage === 'investigate' ? this.#limits.investigationMs ?? Infinity : Infinity);
+    const globalBoundary = this.#started + this.#limits.maxElapsedMs! - FINISH_RESERVES[stage] * scale;
+    this.#stageDeadlines.set(stage, Math.min(Date.now() + allowance, globalBoundary));
+  }
+
+  workDeadline(): { at: number; reason: string } | undefined {
+    const at = this.#stageDeadlines.get(this.#workStage);
+    const source = this.#workPass === undefined ? undefined : this.#sourceDeadlines.get(this.#workPass);
+    return at === undefined ? undefined : { at: Math.min(at, source ?? Infinity), reason: STAGE_REASONS[this.#workStage] };
   }
 
   observe(event: AgentAuditEvent): void {
@@ -78,6 +118,8 @@ export class ComparisonResourceTracker {
 
   beforeTool(name: string): string | undefined {
     this.checkHard(name);
+    const deadline = this.workDeadline();
+    if (deadline && Date.now() >= deadline.at) return deadline.reason;
     if (this.#phase === 'review') {
       if (['inspect_comparison_draft', 'quote_evidence', 'update_comparison_findings', 'submit_comparison_draft', 'preview_report', 'write', 'edit'].includes(name)) return undefined;
       return this.reviewReason();
@@ -96,6 +138,13 @@ export class ComparisonResourceTracker {
   }
 
   reviewReason(): string | undefined {
+    if (this.#boundedStages) {
+      const deadline = this.workDeadline();
+      if (deadline && Date.now() >= deadline.at) return deadline.reason;
+      if ((this.#limits.maxModelRequests !== undefined && this.#limits.maxModelRequests - this.#requests <= 4)
+        || (this.#limits.maxToolCalls !== undefined && this.#limits.maxToolCalls - this.#tools <= 6)) return 'reserve_finish';
+      return undefined;
+    }
     const limits = this.#limits;
     if ((limits.maxModelRequests !== undefined && limits.maxModelRequests - this.#requests <= 6)
       || (limits.maxToolCalls !== undefined && limits.maxToolCalls - this.#tools <= 20)
@@ -108,6 +157,7 @@ export class ComparisonResourceTracker {
   }
 
   investigationRemainingMs(): number | undefined {
+    if (this.#boundedStages) return Math.max(0, this.#stageDeadlines.get('investigate')! - Date.now());
     const now = Date.now();
     const remaining: number[] = [];
     if (this.#limits.investigationMs !== undefined) remaining.push(this.#limits.investigationMs
@@ -117,6 +167,10 @@ export class ComparisonResourceTracker {
   }
 
   sourceRemainingMs(): number | undefined {
+    if (this.#boundedStages) {
+      const deadline = this.#workStage === 'review' ? this.workDeadline()?.at : this.#stageDeadlines.get('review');
+      return deadline === undefined ? undefined : Math.max(0, deadline - Date.now());
+    }
     const now = Date.now();
     const remaining: number[] = [];
     if (this.#limits.investigationMs !== undefined) remaining.push(this.#limits.investigationMs
@@ -126,7 +180,9 @@ export class ComparisonResourceTracker {
   }
 
   snapshot(): Record<string, unknown> {
+    const deadline = this.workDeadline();
     return { schemaVersion: 1, modelRequests: this.#requests, toolCalls: this.#tools, elapsedMs: Date.now() - this.#started,
+      ...(deadline ? { workStage: this.#workStage, workDeadlineAt: deadline.at, workRemainingMs: Math.max(0, deadline.at - Date.now()) } : {}),
       estimatedCostUsd: this.#priceUnknown || this.#usageReports === 0 || this.#usageReports < this.#requests ? null : this.#estimatedCost,
       knownEstimatedCostUsd: this.#estimatedCost, usageReports: this.#usageReports,
       pricingIncomplete: this.#priceUnknown || this.#usageReports < this.#requests || this.#usageReports === 0,

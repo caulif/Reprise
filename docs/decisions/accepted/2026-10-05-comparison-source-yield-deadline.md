@@ -2,6 +2,8 @@
 
 状态：accepted
 
+后继：严格三会话路径的编排与时间策略已有[有界审阅收敛](2026-10-06-comparison-bounded-review-convergence.md)作为后继，其他审计、错误优先和发布约束保留。
+
 ## 问题
 
 完整 turn 后的 `shouldStopAfterTurn` 能阻止下一次生成，却不能限制已开始的 thinking。真实评估中，来源调查最后一次请求在累计 118887ms 开始，软额度只剩 1113ms；随后请求持续 111463ms，以 length 和纯 thinking 结束，来源调查累计 230353ms。hook 正常让出时，整体硬限前只剩约 30 秒，draft 没有完成 inspection 或 preview。此前首次 findings 检查点已走通，本次失败不能归因于没有保存。

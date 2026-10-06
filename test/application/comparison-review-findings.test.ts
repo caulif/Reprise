@@ -7,6 +7,7 @@ import { AgentHost, type AgentAuditEvent } from '../../src/infrastructure/agent/
 import { PiModelCaller, type PiModels } from '../../src/infrastructure/agent/model-caller.js';
 import { ComparisonReviewFindingsClosure } from '../../src/agents/comparison-review-findings.js';
 import { ComparisonResourceTracker } from '../../src/agents/comparison-resources.js';
+import type { ComparisonWorkPass } from '../../src/agents/comparison-invocation-boundaries.js';
 
 const model: Model<'openai-completions'> = { id: 'fixture', name: 'fixture', api: 'openai-completions', provider: 'fixture', baseUrl: 'https://example.test', reasoning: false, input: ['text'], contextWindow: 128_000, maxTokens: 16_384, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 const context: ComparisonContext = { task: { caseId: 'case', summary: 'Compare' }, attemptId: 'attempt', baseline: { summary: 'baseline', evidenceRefs: [] }, candidates: [], telemetry: [], artifactRefs: [], allowModelText: true,
@@ -18,6 +19,97 @@ function response(content: AssistantMessage['content'], stopReason: 'stop' | 'to
 const stop = () => response([{ type: 'text', text: 'Actual completed phase or promise only' }]);
 const length = () => response([{ type: 'thinking', thinking: 'Unfinished private reasoning is not a saved finding' }], 'length');
 const calls = (...names: string[]) => response(names.map((name, index) => ({ type: 'toolCall', name, id: `${name}-${index}`, arguments: { path: index === 1 ? 'unregistered' : 'registered' } })), 'toolUse');
+
+for (const finalPending of [false, true]) test(`strict independent review opens one source supplement and ${finalPending ? 'rejects pending publication' : 'publishes only after actual audit'}`, async () => {
+  let ready = true, updates = 0, material = false, formal = false, previewed = false, checks = 0, forbidden = 0;
+  const events: AgentAuditEvent[] = [], inputs: { tools: { name: string }[]; messages: unknown[] }[] = [];
+  const responses = [stop(), stop(), stop(), calls('inspect_comparison_draft'), calls('update_comparison_findings'),
+    calls('read', 'write', 'preview_report'), stop(), calls('update_comparison_findings'), calls('inspect_comparison_draft'), calls('preview_report')];
+  const models = { getModel: () => model, streamSimple: (_model: unknown, actual: unknown) => {
+    const current = actual as typeof inputs[number]; inputs.push({ tools: current.tools.map(tool => ({ name: tool.name })), messages: structuredClone(current.messages) });
+    const next = responses.shift(); assert.ok(next, 'no extra model recovery is permitted');
+    const stream = createAssistantMessageEventStream(); stream.push({ type: 'done', reason: next.stopReason as 'stop' | 'toolUse', message: next }); return stream;
+  } } as unknown as PiModels;
+  const caller = new PiModelCaller({ schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' }, providerId: 'fixture', modelId: 'fixture', effort: 'low' }, models);
+  const tools = [
+    { name: 'read', execute: async () => { checks++; return { content: 'Actual source observation for the original pending question' }; } },
+    { name: 'write', execute: async () => { forbidden++; return { content: 'Forbidden side effect' }; } },
+    { name: 'update_comparison_findings', execute: async () => { updates++; ready = updates === 2 && !finalPending; formal = false; return { content: 'status=accepted\nActual revision changed' }; } },
+    { name: 'inspect_comparison_draft', execute: async () => ({ content: 'Actual latest bound draft with decisive limitation' }), onCompleted: async () => { material = true; formal = true; } },
+    { name: 'preview_report', execute: async () => { previewed = true; return { content: 'Actual current matching preview' }; } },
+  ].map(tool => ({ ...tool, description: tool.name, parameters: Type.Object({ path: Type.Optional(Type.String()) }) }));
+  const result = await new ComparisonAgent({ host: new AgentHost(caller), timeoutMs: 1_000, maxRepairAttempts: 0, resources: {} }).compare(context, tools,
+    { append: async event => { events.push(event); } }, new AbortController().signal, {
+      enforcePhaseBoundaries: true, reviewFindings: true, findingsReady: () => ready,
+      getFindingsState: () => 'Original question, original decisionImpact; actual check remains unknown',
+      hasReviewDraftMaterial: () => material, hasCurrentReviewInspection: () => formal,
+      onDraftAuditStarted: () => { formal = false; },
+      getSubmittedResult: async () => ready && formal && previewed ? { status: 'completed', reportPath: 'report.html', headline: 'Conditional', evidenceRefs: [] } : undefined,
+    });
+  assert.equal(result.status, finalPending ? 'failed' : 'completed', JSON.stringify(result));
+  assert.equal(updates, 2); assert.equal(checks, 1); assert.equal(forbidden, 0); assert.equal(previewed, !finalPending);
+  const phases = events.filter(event => event.type === 'comparison.phase_completed');
+  assert.equal(phases.filter(event => event.payload.pass === 'review-supplement').length, 1);
+  assert.equal(phases.find(event => event.payload.pass === 'review-findings')!.payload.yieldReason, 'review_findings_pending');
+  assert.deepEqual(inputs[5]!.tools.map(tool => tool.name), ['read']);
+  assert.match(JSON.stringify(inputs[7]!.messages), /final bounded findings closure/);
+  if (!finalPending) {
+    assert.match(JSON.stringify(inputs.at(-1)!.messages), /Actual latest bound draft/);
+    assert.ok(phases.find(event => event.payload.pass === 'audit'));
+  }
+});
+
+test('supplement execute and completion guards reject hidden publication side effects', async () => {
+  let effects = 0;
+  const closure = new ComparisonReviewFindingsClosure({ enforcePhaseBoundaries: true, reviewFindings: true });
+  const tools = closure.bind(['write', 'edit', 'update_comparison_findings', 'submit_comparison_draft', 'inspect_comparison_draft', 'preview_report'].map(name => ({
+    name, description: name, parameters: Type.Object({}), execute: async () => { effects++; return { content: 'status=accepted' }; }, onCompleted: async () => { effects++; },
+  })), new ComparisonResourceTracker({}));
+  closure.begin('review-supplement'); assert.deepEqual(closure.toolNames(tools), []);
+  for (const tool of tools) {
+    const result = await tool.execute({}, new AbortController().signal);
+    assert.match(result.content, /review_supplement_only/); await tool.onCompleted?.(result);
+  }
+  assert.equal(effects, 0);
+});
+
+test('supplement cancellation and actual source persistence errors stay fatal', async () => {
+  for (const cancelled of [false, true]) {
+    let ready = false, passes = 0;
+    const controller = new AbortController();
+    const closure = new ComparisonReviewFindingsClosure({ enforcePhaseBoundaries: true, reviewFindings: true, findingsReady: () => ready, hasReviewDraftMaterial: () => true });
+    const tools = closure.bind([{ name: 'update_comparison_findings', description: 'update', parameters: Type.Object({}), execute: async () => ({ content: 'status=accepted' }) },
+      { name: 'register_evidence', description: 'register', parameters: Type.Object({}), execute: async () => { throw new Error('Actual persistence failure'); } }], new ComparisonResourceTracker({}));
+    const work = async (_phase: 'review', _prompt: string, pass?: ComparisonWorkPass) => {
+      passes++; closure.begin(pass);
+      if (pass === 'review-findings') { await tools[0]!.execute({}, controller.signal); return { status: 'yielded' as const, sessionId: 'review', reason: 'review_findings_pending' }; }
+      if (cancelled) { controller.abort(); return { status: 'cancelled' as const, sessionId: 'review' }; }
+      await tools[1]!.execute({}, controller.signal); ready = true;
+      return { status: 'completed' as const, sessionId: 'review', value: {} };
+    };
+    if (cancelled) assert.equal((await closure.run(work, 'review', true))?.status, 'cancelled');
+    else await assert.rejects(closure.run(work, 'review', true), /Actual persistence failure/);
+    assert.equal(passes, 2, 'no final update after cancellation or persistence failure');
+  }
+});
+
+for (const reason of ['bounded_audit_timeout', 'output_limit']) test(`strict incomplete audit ${reason} cannot publish an inspected draft`, async () => {
+  let material = false, formal = false, previews = 0;
+  const host = new AgentHost({ createSession: input => ({ append: async ({ allowedToolNames, signal }) => {
+    if (allowedToolNames?.length === 1 && allowedToolNames[0] === 'inspect_comparison_draft') { material = true; formal = true; }
+    else if (allowedToolNames?.length === 1 && allowedToolNames[0] === 'update_comparison_findings') await input.tools.find(tool => tool.name === 'update_comparison_findings')!.execute({}, signal);
+    else if (allowedToolNames?.includes('inspect_comparison_draft')) { formal = true; return { status: 'yielded' as const, reason }; }
+    return 'Actual turn';
+  }, cancel() {} }) });
+  const result = await new ComparisonAgent({ host, timeoutMs: 1_000, maxRepairAttempts: 0, resources: {} }).compare(context, [
+    { name: 'update_comparison_findings', description: 'update', parameters: Type.Object({}), execute: async () => ({ content: 'status=accepted' }) },
+    { name: 'inspect_comparison_draft', description: 'inspect', parameters: Type.Object({}), execute: async () => ({ content: 'Actual draft' }) },
+    { name: 'preview_report', description: 'preview', parameters: Type.Object({}), execute: async () => { previews++; return { content: 'Preview' }; } },
+  ], undefined, undefined, { enforcePhaseBoundaries: true, reviewFindings: true, findingsReady: () => true,
+    hasReviewDraftMaterial: () => material, hasCurrentReviewInspection: () => formal, onDraftAuditStarted: () => { formal = false; },
+    getSubmittedResult: async () => formal && previews ? { status: 'completed', reportPath: 'report.html', evidenceRefs: [] } : undefined });
+  assert.equal(result.status, 'failed', JSON.stringify(result)); assert.equal(previews, 0);
+});
 
 for (const mode of ['success', 'late', 'length', 'repeat_length', 'length_after_update', 'verbal', 'rejected', 'malformed', 'cancel', 'hard', 'provider', 'usage_audit', 'legacy'] as const) test(`native independent findings closure preserves ${mode} boundaries`, async () => {
   const events: AgentAuditEvent[] = [], inputs: { tools: { name: string }[]; messages: unknown[] }[] = [];

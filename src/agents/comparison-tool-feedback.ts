@@ -6,6 +6,7 @@ export function comparisonToolFeedback(result: AgentToolResult, resources: Compa
   const feedback = {
     phase: snapshot.phase, remainingRequests: snapshot.remainingRequests,
     remainingTools: snapshot.remainingTools, remainingMs: snapshot.remainingMs,
+    ...(snapshot.workStage ? { workStage: snapshot.workStage, workDeadlineAt: snapshot.workDeadlineAt, workRemainingMs: snapshot.workRemainingMs } : {}),
     reviewLimit: snapshot.reviewLimit,
     ...(toolName === 'read' ? { readCoverage: readCoverage(result.details) } : {}),
     ...(submissionState ? boundedSubmissionState(submissionState) : {}),
