@@ -709,6 +709,7 @@ function comparisonTools(
       onRenderedCheck: recordRenderCheck,
     }),
     createPreviewReportTool({
+      ...(input.input.comparisonPreviewRenderer ? { render: input.input.comparisonPreviewRenderer } : {}),
       catalog: renderCatalog,
       attemptRoot,
       allowImages: input.taskCase.privacy.allowBinary,

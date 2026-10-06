@@ -1,4 +1,4 @@
-import { transformOutsideEvidenceQuotes } from './comparison-quote-protection.js';
+import { evidenceQuoteMarkupOnly, transformOutsideEvidenceQuotes } from '../core/comparison-html.js';
 import { createHash } from "node:crypto";
 import { mkdir, readFile, realpath } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
@@ -42,7 +42,7 @@ export async function stagePublishedEvidence(input: {
   let html = input.html;
   const hrefMap = new Map<string, string>();
   for (const link of input.evidence) {
-    if (link.origin !== "derived_analysis" || !link.contentHash || !link.reportHref || !html.includes(link.reportHref)) continue;
+    if (link.origin !== "derived_analysis" || !link.contentHash || !link.reportHref || !evidenceQuoteMarkupOnly(html).includes(link.reportHref)) continue;
     const { href, hash, bytes } = await loadDerivedEvidence(input.attemptRoot, link);
     const publishedHref = `evidence/${hash}${extname(href)}`;
     await mkdir(join(input.experimentRoot, "evidence"), { recursive: true });

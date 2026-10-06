@@ -1,8 +1,7 @@
-import { isFindingsUpdate, comparisonProtocol, comparisonStagePolicy, stageToolNames, bindComparisonStageTools } from './comparison-stage-policy.js';
+import { isFindingsUpdate, comparisonProtocol } from './comparison-stage-policy.js';
 import type { ComparisonCompareOptions } from './comparison-agent.js';
 import type { ComparisonWorkPass } from './comparison-invocation-boundaries.js';
-import type { ComparisonResourceTracker } from './comparison-resources.js';
-import type { AgentToolDefinition, AgentToolResult, FreeformInvocation } from '../infrastructure/agent/host.js';
+import type { AgentToolResult, FreeformInvocation } from '../infrastructure/agent/host.js';
 import { withLanguageBlock, type AgentLocale } from './language.js';
 import { VISIBLE_PROCESS_NARRATION } from './visible-process.js';
 
@@ -49,7 +48,6 @@ type Work = (phase: 'review', prompt: string, pass?: ComparisonWorkPass) => Prom
 export class ComparisonReviewFindingsClosure {
   #active = false;
   #accepted = false;
-  #supplement = false;
   #source = false;
   #sourceAccepted = false;
   #sourceState: string | undefined;
@@ -57,7 +55,7 @@ export class ComparisonReviewFindingsClosure {
   readonly #options: ComparisonCompareOptions | undefined;
   constructor(options: ComparisonCompareOptions | undefined) { this.#options = options; this.directSources = comparisonProtocol(options).direct; }
   begin(pass?: ComparisonWorkPass): void {
-    this.#active = pass === 'review-findings'; this.#supplement = pass === 'review-supplement'; this.#accepted = false;
+    this.#active = pass === 'review-findings'; this.#accepted = false;
     this.#source = this.directSources && (pass === 'sources' || pass === 'source-save');
     if (this.#source) { this.#sourceAccepted = false; this.#sourceState = undefined; }
   }
@@ -70,14 +68,6 @@ export class ComparisonReviewFindingsClosure {
     if (!isFindingsUpdate(name) || !/^status=accepted(?:\r?\n|$)/.test(result.content)) return;
     if (this.#source) { this.#sourceAccepted = true; this.#sourceState = this.#options?.getFindingsState?.(); }
     if (this.#active) this.#accepted = true;
-  }
-  #policy() { return comparisonStagePolicy(this.#source ? 'sources' : this.#supplement ? 'review-supplement' : this.#active ? 'review-findings' : 'review', {
-    strict: false, direct: this.directSources, initial: false, options: this.#options,
-    observed: (name, _params, result) => this.observe(name, result),
-  }); }
-  toolNames(tools: readonly AgentToolDefinition[]): readonly string[] { return stageToolNames(this.#policy(), tools) ?? tools.map(tool => tool.name); }
-  bind(tools: readonly AgentToolDefinition[], resources: ComparisonResourceTracker): AgentToolDefinition[] {
-    return bindComparisonStageTools(tools, () => this.#policy(), name => resources.checkHard(name));
   }
   async run(work: Work, sessionId: string, toolAvailable: boolean, sourceCompleted = false, sourceInterrupted = false): Promise<Extract<FreeformInvocation, { status: 'failed' | 'cancelled' }> | undefined> {
     if (!this.#options?.reviewFindings) return undefined;

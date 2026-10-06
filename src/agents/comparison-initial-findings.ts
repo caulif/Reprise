@@ -1,7 +1,7 @@
-import { comparisonProtocol, comparisonStagePolicy, stageToolNames, bindComparisonStageTools } from './comparison-stage-policy.js';
+import { comparisonProtocol } from './comparison-stage-policy.js';
 import type { ComparisonCompareOptions } from './comparison-agent.js';
 import type { ComparisonWorkPass } from './comparison-invocation-boundaries.js';
-import type { AgentToolDefinition, AgentToolResult } from '../infrastructure/agent/host.js';
+import type { AgentToolResult } from '../infrastructure/agent/host.js';
 import { withLanguageBlock, type AgentLocale } from './language.js';
 
 export const COMPARISON_INITIAL_FINDINGS_PROMPT = 'This is the initial findings persistence checkpoint, before investigation. Call update_comparison_findings now with a minimal complete snapshot of the supplied task: criteria, both finals unavailable if not yet located, findings: [], importantLimitations: [], and pending decision-changing questions with nextCheck. Do not invent observations, references, locations, resolved answers or a winner. An accepted saved snapshot allows investigation; it does not establish ready findings or task success.';
@@ -30,11 +30,5 @@ export class ComparisonInitialFindings {
   observe(name: string, result: AgentToolResult): void {
     if (this.#active && name === 'update_comparison_findings' && /^status=accepted(?:\r?\n|$)/.test(result.content)) this.#accepted = true;
   }
-  #policy() { return comparisonStagePolicy(this.#active ? 'initial-findings' : 'review', {
-    strict: false, direct: false, initial: this.enabled, observed: (name, _params, result) => this.observe(name, result),
-  }); }
-  toolNames(tools: readonly AgentToolDefinition[]): readonly string[] | undefined { return stageToolNames(this.#policy(), tools); }
-  bind(tools: readonly AgentToolDefinition[]): AgentToolDefinition[] {
-    return this.enabled ? bindComparisonStageTools(tools, () => this.#policy()) : [...tools];
-  }
+
 }

@@ -1,3 +1,4 @@
+import { transformOutsideEvidenceQuotes } from '../core/comparison-html.js';
 import { mkdir, readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
@@ -493,9 +494,10 @@ function inspectPreparedReportMechanics(html: string): Record<string, unknown> {
     for (const child of node.childNodes ?? []) visit(child);
   };
   visit(parse(html) as Node);
+  const reportText = transformOutsideEvidenceQuotes(html, text => text, true);
   const modelLabels = {
-    hasHistorical: /历史会话|Historical/i.test(html),
-    hasCurrent: /当前会话|Current/i.test(html),
+    hasHistorical: /历史会话|Historical/i.test(reportText),
+    hasCurrent: /当前会话|Current/i.test(reportText),
   };
   return {
     ...active,

@@ -39,7 +39,7 @@ import { extensionForMediaType, rewriteMediaHref, stagePublishedEvidence, stageP
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
 import type { ComparisonQuoteSourcePort } from "./comparison-source.js";
 import { validateComparisonEvidenceQuotes } from "./comparison-evidence-quotes.js";
-import { evidenceQuoteMarkupOnly, transformOutsideEvidenceQuotes } from "./comparison-quote-protection.js";
+import { evidenceQuoteMarkupOnly, transformOutsideEvidenceQuotes } from "../core/comparison-html.js";
 import { invalidAgentReferences, unexpectedAgentZones } from "./comparison-reference-validation.js";
 
 export type ComparisonFailureClass =
@@ -372,7 +372,8 @@ export function comparisonReportModelFromHtml(
     const hit = evidence.find((item) => item.shortRef === short);
     return hit?.contentHash ? [{ shortRef: short, contentHash: hit.contentHash, sourceRefs: hit.sourceRefs ?? [] }] : [];
   });
-  const mediaRefs = media.filter((item) => html.includes(item.reportHref) || (item.shortRef && html.includes(item.shortRef))).map((item) => item.ref);
+  const markup = evidenceQuoteMarkupOnly(html);
+  const mediaRefs = media.filter((item) => markup.includes(item.reportHref) || (item.shortRef && markup.includes(item.shortRef))).map((item) => item.ref);
   const slotHeadline = oneLineFromHtml(extractInner(html, "data-agent-slot", "headline"));
   const headline = result.headline ?? (slotHeadline.length > 0 && slotHeadline.length <= 280 ? slotHeadline : undefined);
   return {
@@ -673,7 +674,7 @@ function verifiedWordlist(locale: AgentLocale): RegExp {
 }
 
 function claimsVerifiedWithoutEvidence(html: string, unresolved: readonly string[], locale: AgentLocale): boolean {
-  const body = extractInner(html, "data-agent-zone", "comparison");
+  const body = evidenceQuoteMarkupOnly(extractInner(html, "data-agent-zone", "comparison"));
   if (!verifiedWordlist(locale).test(body)) return false;
   const cited = unique([...body.matchAll(/\bdata-evidence-ref="([^"]+)"/gi)].map((match) => match[1] ?? "").filter(Boolean));
   if (cited.length === 0) return false;
@@ -686,7 +687,7 @@ function wordlistVerifiedWithoutResolvableEvidence(
   evidence: readonly ComparisonLinkRecord[],
   locale: AgentLocale,
 ): boolean {
-  const body = extractInner(html, "data-agent-zone", "comparison");
+  const body = evidenceQuoteMarkupOnly(extractInner(html, "data-agent-zone", "comparison"));
   if (!verifiedWordlist(locale).test(body)) return false;
   const cited = unique([...body.matchAll(/\bdata-evidence-ref="([^"]+)"/gi)].map((match) => match[1] ?? "").filter(Boolean));
   const resolvable = new Set(evidence.filter((item) => item.shortRef && (item.reportHref || item.inspectPath)).map((item) => item.shortRef as string));
@@ -836,7 +837,7 @@ function unpairedShareCardImages(
   html: string,
   media: readonly ComparisonMediaRecord[],
 ): "one_sided" | "missing_note" | undefined {
-  const face = `${extractInner(html, "data-host-zone", "header")}${extractInner(html, "data-agent-slot", "headline")}${extractInner(html, "data-agent-zone", "comparison")}`;
+  const face = transformOutsideEvidenceQuotes(`${extractInner(html, "data-host-zone", "header")}${extractInner(html, "data-agent-slot", "headline")}${extractInner(html, "data-agent-zone", "comparison")}`, text => text, true);
   const imgs = [...face.matchAll(/<img\b[^>]*>/gi)].map((match) => match[0] ?? "");
   if (imgs.length === 0) return undefined;
   const byShort = new Map(media.filter((item) => item.shortRef).map((item) => [item.shortRef as string, item]));
@@ -857,7 +858,7 @@ function unpairedShareCardImages(
 
 function citedMediaAllUnresolved(html: string, unresolved: readonly string[], locale: AgentLocale): boolean {
   if (unresolved.length === 0) return false;
-  const body = extractInner(html, "data-agent-zone", "comparison");
+  const body = evidenceQuoteMarkupOnly(extractInner(html, "data-agent-zone", "comparison"));
   if (!verifiedWordlist(locale).test(body)) return false;
   const cited = unique([...body.matchAll(/\bdata-media-ref="([^"]+)"/gi)].map((match) => match[1] ?? "").filter(Boolean));
   if (cited.length === 0) return false;

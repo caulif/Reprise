@@ -1,3 +1,4 @@
+import { ComparisonStages } from '../../src/agents/comparison-stages.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Type } from '@sinclair/typebox';
@@ -5,14 +6,13 @@ import { createAssistantMessageEventStream, type AssistantMessage, type Model } 
 import { ComparisonAgent, type ComparisonContext } from '../../src/agents/comparison-agent.js';
 import { AgentHost, type AgentAuditEvent } from '../../src/infrastructure/agent/host.js';
 import { PiModelCaller, type PiModels } from '../../src/infrastructure/agent/model-caller.js';
-import { ComparisonReviewFindingsClosure } from '../../src/agents/comparison-review-findings.js';
 import { ComparisonResourceTracker } from '../../src/agents/comparison-resources.js';
 import type { ComparisonWorkPass } from '../../src/agents/comparison-invocation-boundaries.js';
 
 test('expired findings closure stops once without inventing another actual model request or certifying saved readiness', async () => {
   let calls = 0;
-  const closure = new ComparisonReviewFindingsClosure({ reviewFindings: true, enforcePhaseBoundaries: true,
-    findingsReady: () => true, hasReviewDraftMaterial: () => true, getFindingsState: () => 'saved but not audited' });
+  const stages = new ComparisonStages([], new ComparisonResourceTracker({}), { reviewFindings: true, enforcePhaseBoundaries: true,
+    findingsReady: () => true, hasReviewDraftMaterial: () => true, getFindingsState: () => 'saved but not audited' }), closure = stages.reviewFindings;
   const result = await closure.run(async () => {
     calls++;
     return { status: 'yielded', sessionId: 'session', reason: 'bounded_source_timeout' };
@@ -29,13 +29,13 @@ test('expired findings closure stops once without inventing another actual model
 for (const mode of ['accepted-ready', 'old-ready', 'pending', 'fake-receipt', 'deadline', 'unfinished'] as const) test(`interrupted source requires exactly one actual final findings closure: ${mode}`, async () => {
   let ready = true, calls = 0, updates = 0;
   const state = JSON.stringify({ binding: { revision: 1, digest: 'a'.repeat(64), catalogRevision: 0 }, findingIds: ['finding'], questionIds: ['question'] });
-  const closure = new ComparisonReviewFindingsClosure({ reviewFindings: true, enforcePhaseBoundaries: true,
-    getSubmittedResult: async () => undefined, findingsReady: () => ready, getFindingsState: () => state, hasReviewDraftMaterial: () => true });
-  const [tool] = closure.bind([{ name: 'update_comparison_findings_delta', description: 'Save actual findings', parameters: Type.Object({}),
-    execute: async () => { updates++; return { content: updates > 1 && mode === 'fake-receipt' ? 'status=accepted_by_assumption' : 'status=accepted\nActual receipt' }; } }], new ComparisonResourceTracker({}));
-  closure.begin('sources'); await tool!.execute({}, new AbortController().signal);
+  const stages = new ComparisonStages([], new ComparisonResourceTracker({}), { reviewFindings: true, enforcePhaseBoundaries: true,
+    getSubmittedResult: async () => undefined, findingsReady: () => ready, getFindingsState: () => state, hasReviewDraftMaterial: () => true }), closure = stages.reviewFindings;
+  const [tool] = stages.bind([{ name: 'update_comparison_findings_delta', description: 'Save actual findings', parameters: Type.Object({}),
+    execute: async () => { updates++; return { content: updates > 1 && mode === 'fake-receipt' ? 'status=accepted_by_assumption' : 'status=accepted\nActual receipt' }; } }]);
+  stages.begin('review', 'sources'); await tool!.execute({}, new AbortController().signal);
   assert.equal(closure.sourceReady(), true, 'the preexisting source marker really is accepted and ready');
-  closure.begin('inspection');
+  stages.begin('review', 'inspection');
   const result = await closure.run(async (_phase, prompt, pass) => {
     calls++; assert.equal(pass, 'review-findings', 'source interruption must not open a supplementary source pass');
     assert.match(prompt, /final bounded findings closure/);
@@ -43,7 +43,7 @@ for (const mode of ['accepted-ready', 'old-ready', 'pending', 'fake-receipt', 'd
     assert.match(prompt, /Both arrays are required even when empty/);
     assert.match(prompt, /status="unavailable"/); assert.match(prompt, /exact id\/question\/decisionImpact and history/);
     assert.match(prompt, /No further source pass will be opened/);
-    closure.begin(pass);
+    stages.begin('review', pass);
     if (mode !== 'old-ready') await tool!.execute({}, new AbortController().signal);
     if (mode === 'pending') ready = false;
     if (mode === 'deadline') return { status: 'yielded', sessionId: 'review', reason: 'bounded_source_timeout' };
@@ -113,18 +113,18 @@ for (const sourcePending of [false, true]) test(`direct independent source save 
 
 for (const mode of ['actual-ready', 'missing-getter', 'empty-state', 'changed-state', 'fake-receipt', 'no-update', 'unfinished-source'] as const) test(`direct source closure shortcut requires accepted current saved state: ${mode}`, async () => {
   let state = mode === 'empty-state' ? '' : 'Current actual snapshot', calls = 0;
-  const closure = new ComparisonReviewFindingsClosure({ enforcePhaseBoundaries: true, reviewFindings: true,
+  const stages = new ComparisonStages([], new ComparisonResourceTracker({}), { enforcePhaseBoundaries: true, reviewFindings: true,
     getSubmittedResult: async () => undefined, findingsReady: () => true, hasReviewDraftMaterial: () => true,
     ...(mode === 'missing-getter' ? {} : { getFindingsState: () => state }),
-  });
-  const [tool] = closure.bind([{ name: 'update_comparison_findings', description: 'update', parameters: Type.Object({}),
-    execute: async () => ({ content: mode === 'fake-receipt' ? 'status=accepted_by_assumption' : 'status=accepted\nActual receipt' }) }], new ComparisonResourceTracker({}));
-  closure.begin('sources');
+  }), closure = stages.reviewFindings;
+  const [tool] = stages.bind([{ name: 'update_comparison_findings', description: 'update', parameters: Type.Object({}),
+    execute: async () => ({ content: mode === 'fake-receipt' ? 'status=accepted_by_assumption' : 'status=accepted\nActual receipt' }) }]);
+  stages.begin('review', 'sources');
   if (mode !== 'no-update') await tool!.execute({}, new AbortController().signal);
   if (mode === 'changed-state') state = 'A later binding changed the snapshot';
-  closure.begin('inspection');
+  stages.begin('review', 'inspection');
   const result = await closure.run(async (_phase, _prompt, pass) => {
-    calls++; assert.equal(pass, 'review-findings'); closure.begin(pass);
+    calls++; assert.equal(pass, 'review-findings'); stages.begin('review', pass);
     if (mode === 'fake-receipt') return { status: 'completed', sessionId: 'review', value: {} };
     await tool!.execute({}, new AbortController().signal);
     return { status: 'completed', sessionId: 'review', value: {} };
@@ -135,11 +135,11 @@ for (const mode of ['actual-ready', 'missing-getter', 'empty-state', 'changed-st
 
 test('direct source execute and completion guards reject hidden authoring and publication', async () => {
   let effects = 0;
-  const closure = new ComparisonReviewFindingsClosure({ getSubmittedResult: async () => undefined, enforcePhaseBoundaries: true, reviewFindings: true });
-  const tools = closure.bind(['write', 'edit', 'submit_comparison_draft', 'inspect_comparison_draft', 'preview_report'].map(name => ({
+  const stages = new ComparisonStages([], new ComparisonResourceTracker({}), { getSubmittedResult: async () => undefined, enforcePhaseBoundaries: true, reviewFindings: true });
+  const tools = stages.bind(['write', 'edit', 'submit_comparison_draft', 'inspect_comparison_draft', 'preview_report'].map(name => ({
     name, description: name, parameters: Type.Object({}), execute: async () => { effects++; return { content: 'status=accepted' }; }, onCompleted: async () => { effects++; },
-  })), new ComparisonResourceTracker({}));
-  closure.begin('sources'); assert.deepEqual(closure.toolNames(tools), []);
+  })));
+  stages.begin('review', 'sources'); assert.deepEqual(stages.toolNames(tools), []);
   for (const tool of tools) {
     const result = await tool.execute({}, new AbortController().signal);
     assert.match(result.content, /source_review_not_ready/); await tool.onCompleted?.(result);
@@ -188,11 +188,11 @@ for (const finalPending of [false, true]) test(`strict independent review opens 
 
 test('supplement execute and completion guards reject hidden publication side effects', async () => {
   let effects = 0;
-  const closure = new ComparisonReviewFindingsClosure({ enforcePhaseBoundaries: true, reviewFindings: true });
-  const tools = closure.bind(['write', 'edit', 'update_comparison_findings', 'submit_comparison_draft', 'inspect_comparison_draft', 'preview_report'].map(name => ({
+  const stages = new ComparisonStages([], new ComparisonResourceTracker({}), { enforcePhaseBoundaries: true, reviewFindings: true });
+  const tools = stages.bind(['write', 'edit', 'update_comparison_findings', 'submit_comparison_draft', 'inspect_comparison_draft', 'preview_report'].map(name => ({
     name, description: name, parameters: Type.Object({}), execute: async () => { effects++; return { content: 'status=accepted' }; }, onCompleted: async () => { effects++; },
-  })), new ComparisonResourceTracker({}));
-  closure.begin('review-supplement'); assert.deepEqual(closure.toolNames(tools), []);
+  })));
+  stages.begin('review', 'review-supplement'); assert.deepEqual(stages.toolNames(tools), []);
   for (const tool of tools) {
     const result = await tool.execute({}, new AbortController().signal);
     assert.match(result.content, /review_supplement_only/); await tool.onCompleted?.(result);
@@ -204,11 +204,11 @@ test('supplement cancellation and actual source persistence errors stay fatal', 
   for (const cancelled of [false, true]) {
     let ready = false, passes = 0;
     const controller = new AbortController();
-    const closure = new ComparisonReviewFindingsClosure({ enforcePhaseBoundaries: true, reviewFindings: true, findingsReady: () => ready, hasReviewDraftMaterial: () => true });
-    const tools = closure.bind([{ name: 'update_comparison_findings', description: 'update', parameters: Type.Object({}), execute: async () => ({ content: 'status=accepted' }) },
-      { name: 'register_evidence', description: 'register', parameters: Type.Object({}), execute: async () => { throw new Error('Actual persistence failure'); } }], new ComparisonResourceTracker({}));
+    const stages = new ComparisonStages([], new ComparisonResourceTracker({}), { enforcePhaseBoundaries: true, reviewFindings: true, findingsReady: () => ready, hasReviewDraftMaterial: () => true }), closure = stages.reviewFindings;
+    const tools = stages.bind([{ name: 'update_comparison_findings', description: 'update', parameters: Type.Object({}), execute: async () => ({ content: 'status=accepted' }) },
+      { name: 'register_evidence', description: 'register', parameters: Type.Object({}), execute: async () => { throw new Error('Actual persistence failure'); } }]);
     const work = async (_phase: 'review', _prompt: string, pass?: ComparisonWorkPass) => {
-      passes++; closure.begin(pass);
+      passes++; stages.begin('review', pass);
       if (pass === 'review-findings') { await tools[0]!.execute({}, controller.signal); return { status: 'yielded' as const, sessionId: 'review', reason: 'review_findings_pending' }; }
       if (cancelled) { controller.abort(); return { status: 'cancelled' as const, sessionId: 'review' }; }
       await tools[1]!.execute({}, controller.signal); ready = true;
@@ -305,18 +305,18 @@ for (const mode of ['success', 'late', 'length', 'repeat_length', 'length_after_
 
 test('an adapter ignoring closure exposure cannot execute arbitrary reads or expanded tools', async () => {
   let effects = 0;
-  const closure = new ComparisonReviewFindingsClosure({ reviewFindings: true, findingsReady: () => true, isRepairRead: async () => false });
-  const resources = new ComparisonResourceTracker({}); resources.phase('review');
-  const tools = closure.bind(['read', 'write', 'edit', 'shell_exec', 'ls', 'grep', 'render_artifact', 'register_evidence', 'submit_comparison_draft', 'inspect_comparison_draft', 'preview_report', 'update_comparison_findings'].map(name => ({
+  const stages = new ComparisonStages([], new ComparisonResourceTracker({}), { reviewFindings: true, findingsReady: () => true, isRepairRead: async () => false }), closure = stages.reviewFindings;
+  stages.begin('review');
+  const tools = stages.bind(['read', 'write', 'edit', 'shell_exec', 'ls', 'grep', 'render_artifact', 'register_evidence', 'submit_comparison_draft', 'inspect_comparison_draft', 'preview_report', 'update_comparison_findings'].map(name => ({
     name, description: name, parameters: Type.Object({}), execute: async () => { effects++; return { content: 'status=accepted\nActual accepted receipt' }; },
-  })), resources);
-  closure.begin('review-findings'); assert.equal(closure.ready(), false, 'old ready state alone is insufficient');
+  })));
+  stages.begin('review', 'review-findings'); assert.equal(closure.ready(), false, 'old ready state alone is insufficient');
   for (const tool of tools.filter(tool => tool.name !== 'update_comparison_findings')) assert.match((await tool.execute({}, new AbortController().signal)).content, /review_findings_only/);
   assert.equal(effects, 0);
   await tools.find(tool => tool.name === 'update_comparison_findings')!.execute({}, new AbortController().signal);
   assert.equal(effects, 1); assert.equal(closure.ready(), true);
-  closure.begin('review-findings'); assert.equal(closure.ready(), false, 'a second invocation cannot inherit accepted execution from the first');
-  closure.begin('audit'); await tools.find(tool => tool.name === 'write')!.execute({}, new AbortController().signal);
+  stages.begin('review', 'review-findings'); assert.equal(closure.ready(), false, 'a second invocation cannot inherit accepted execution from the first');
+  stages.begin('review', 'audit'); await tools.find(tool => tool.name === 'write')!.execute({}, new AbortController().signal);
   assert.equal(effects, 2, 'full audit keeps its lawful repair tool surface');
 });
 

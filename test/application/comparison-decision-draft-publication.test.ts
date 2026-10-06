@@ -1,3 +1,5 @@
+import { sha256 } from '../../src/core/identity.js';
+import type { ArtifactRenderer } from '../../src/infrastructure/artifact-renderer.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -70,7 +72,21 @@ test('plain decision input traverses production native findings, audit, inspecti
   } } as unknown as PiModels;
   const comparison = new ComparisonAgent({ requireFindings: true, timeoutMs: 0, maxRepairAttempts: 0,
     host: new AgentHost(new PiModelCaller({ schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' }, providerId: 'fixture', modelId: 'fixture', effort: 'low' }, models)) });
-  const result = await startExperiment({ ...base, comparison }).result;
+  let previewRenders = 0;
+  const comparisonPreviewRenderer: ArtifactRenderer = async request => {
+    previewRenders++;
+    assert.equal(request.entryRelativePath, 'preview.html');
+    const prepared = await readFile(join(request.bundleRoot, request.entryRelativePath), 'utf8');
+    assert.match(prepared, /Neither final output is confirmed usable/);
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    await mkdir(request.outputRoot, { recursive: true });
+    const pngPath = join(request.outputRoot, 'preview.png');
+    await writeFile(pngPath, png);
+    return { ok: true, frames: [{ sampleTimeMs: 0, actualTimeMs: 0, pngPath, byteLength: png.byteLength, contentHash: sha256(png) }],
+      diagnostics: [], measured: { loadMs: 1, viewport: request.viewport, origin: 'fixture://preview' } };
+  };
+  const result = await startExperiment({ ...base, comparison, comparisonPreviewRenderer }).result;
+  assert.equal(previewRenders, 1);
   assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result));
   assert.equal(requests, 8);
   assert.equal(investigationRequests, 1);

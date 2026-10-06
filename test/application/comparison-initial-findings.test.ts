@@ -1,7 +1,9 @@
+import { ComparisonResourceTracker } from '../../src/agents/comparison-resources.js';
+import { ComparisonStages } from '../../src/agents/comparison-stages.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Type } from '@sinclair/typebox';
-import { ComparisonInitialFindings, COMPARISON_INITIAL_FINDINGS_PROMPT, composeComparisonInvestigatorSystemPrompt } from '../../src/agents/comparison-initial-findings.js';
+import { COMPARISON_INITIAL_FINDINGS_PROMPT, composeComparisonInvestigatorSystemPrompt } from '../../src/agents/comparison-initial-findings.js';
 import { ComparisonAgent, type ComparisonContext } from '../../src/agents/comparison-agent.js';
 import { AgentHost, type AgentToolDefinition } from '../../src/infrastructure/agent/host.js';
 import { sha256 } from '../../src/core/identity.js';
@@ -13,30 +15,30 @@ test('strict initial persistence exposes only actual update and denies forced re
   const names = ['read', 'shell_exec', 'render_artifact', 'register_evidence', 'write', 'inspect_comparison_draft', 'preview_report'];
   const tools: AgentToolDefinition[] = names.map(name => ({ name, description: name, parameters: Type.Object({}), execute: async () => { effects++; return { content: 'effect' }; }, onCompleted: async () => { effects++; } }));
   tools.push({ name: 'update_comparison_findings', description: 'Save', parameters: Type.Object({}), execute: async () => { saved = true; return { content: 'status=accepted\nreadyToCompose=false' }; } });
-  const helper = new ComparisonInitialFindings({ ...strict, hasSavedFindings: () => saved }); helper.begin('initial-findings');
-  assert.deepEqual(helper.toolNames(tools), ['update_comparison_findings']); assert.equal(helper.saved(), false);
-  const bound = helper.bind(tools);
+  const stages = new ComparisonStages([], new ComparisonResourceTracker({}), { ...strict, hasSavedFindings: () => saved }), helper = stages.initialFindings; stages.begin('review', 'initial-findings');
+  assert.deepEqual(stages.toolNames(tools), ['update_comparison_findings']); assert.equal(helper.saved(), false);
+  const bound = stages.bind(tools);
   for (const tool of bound.slice(0, -1)) { const result = await tool.execute({}, signal()); assert.match(result.content, /initial_findings_only/); await tool.onCompleted?.(result); }
   assert.equal(effects, 0); await bound.at(-1)!.execute({}, signal()); assert.equal(helper.saved(), true, 'an accepted pending snapshot is sufficient for persistence, not semantic readiness');
-  helper.begin(); assert.equal(helper.toolNames(tools), undefined); await bound[0]!.execute({}, signal()); assert.equal(effects, 1);
+  stages.begin('review'); assert.equal(stages.toolNames(tools), undefined); await bound[0]!.execute({}, signal()); assert.equal(effects, 1);
 });
 
 test('initial checkpoint requires actual accepted receipt and current saved state; errors and cancellation propagate', async () => {
   let receipt = 'status=rejected', saved = true;
-  const helper = new ComparisonInitialFindings({ ...strict, hasSavedFindings: () => saved }); helper.begin('initial-findings');
+  const stages = new ComparisonStages([], new ComparisonResourceTracker({}), { ...strict, hasSavedFindings: () => saved }), helper = stages.initialFindings; stages.begin('review', 'initial-findings');
   const raw: AgentToolDefinition = { name: 'update_comparison_findings', description: 'Save', parameters: Type.Object({}), execute: async () => ({ content: receipt }) };
-  const bound = helper.bind([raw])[0]!; await bound.execute({}, signal()); assert.equal(helper.saved(), false, 'old saved state cannot replace an accepted update');
+  const bound = stages.bind([raw])[0]!; await bound.execute({}, signal()); assert.equal(helper.saved(), false, 'old saved state cannot replace an accepted update');
   receipt = 'status=accepted'; saved = false; await bound.execute({}, signal()); assert.equal(helper.saved(), false, 'receipt alone cannot fabricate persisted state');
   const cancelled = new AbortController(); cancelled.abort(new Error('cancelled')); await assert.rejects(bound.execute({}, cancelled.signal), /cancelled/);
-  const failure = new Error('persist failed'); await assert.rejects(helper.bind([{ ...raw, execute: async () => { throw failure; } }])[0]!.execute({}, signal()), error => error === failure);
+  const failure = new Error('persist failed'); await assert.rejects(stages.bind([{ ...raw, execute: async () => { throw failure; } }])[0]!.execute({}, signal()), error => error === failure);
 });
 
 test('legacy and independent review retain tool identity/default exposure; investigator role is short and localized', () => {
   const raw: AgentToolDefinition = { name: 'read', description: 'Read', parameters: Type.Object({}), execute: async () => ({ content: 'source' }) };
   for (const options of [undefined, strict, { ...strict, reviewFindings: false }, { ...strict, enforcePhaseBoundaries: false }, { reviewFindings: true, enforcePhaseBoundaries: true }]) {
-    const helper = new ComparisonInitialFindings(options); helper.begin('initial-findings'); assert.equal(helper.needed(), false); assert.equal(helper.bind([raw])[0], raw); assert.equal(helper.toolNames([raw]), undefined);
+    const stages = new ComparisonStages([], new ComparisonResourceTracker({}), options), helper = stages.initialFindings; stages.begin('review', 'initial-findings'); assert.equal(helper.needed(), false); assert.equal(stages.bind([raw])[0]!.name, raw.name); assert.equal(stages.toolNames([raw]), undefined);
   }
-  const helper = new ComparisonInitialFindings(strict); helper.begin('review-findings'); assert.equal(helper.toolNames([raw]), undefined);
+  const stages = new ComparisonStages([], new ComparisonResourceTracker({}), strict); stages.begin('review'); assert.equal(stages.toolNames([raw]), undefined);
   assert.match(composeComparisonInvestigatorSystemPrompt('zh'), /Simplified Chinese/); assert.match(composeComparisonInvestigatorSystemPrompt('en'), /Report prose.*English/);
   assert.ok(composeComparisonInvestigatorSystemPrompt('en').length < 1600); assert.doesNotMatch(composeComparisonInvestigatorSystemPrompt('en'), /Final JSON|Return.*JSON/);
 });

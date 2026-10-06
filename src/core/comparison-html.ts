@@ -1,3 +1,50 @@
+import { parseFragment, type DefaultTreeAdapterMap } from 'parse5';
+
+function quoteSpans(html: string): { start: number; end: number; bodyStart: number; bodyEnd: number }[] {
+  const spans: { start: number; end: number; bodyStart: number; bodyEnd: number }[] = [];
+  const visit = (node: DefaultTreeAdapterMap['node']): void => {
+    if ('attrs' in node && node.nodeName === 'figure' && node.attrs.some(attr => attr.name === 'data-component' && attr.value === 'evidence-quote')) {
+      const location = node.sourceCodeLocation;
+      if (!location) throw new Error('Validated evidence quotation has no source span.');
+      spans.push({ start: location.startOffset, end: location.endOffset,
+        bodyStart: location.startTag?.endOffset ?? location.startOffset, bodyEnd: location.endTag?.startOffset ?? location.endOffset });
+      return;
+    }
+    if ('childNodes' in node) for (const child of node.childNodes) visit(child);
+    if ('content' in node) visit(node.content);
+  };
+  visit(parseFragment(html, { sourceCodeLocationInfo: true }));
+  return spans;
+}
+
+export function transformOutsideEvidenceQuotes(html: string, transform: (text: string) => string, omitQuotes = false): string {
+  let cursor = 0;
+  let output = '';
+  for (const span of quoteSpans(html).sort((a, b) => a.start - b.start)) {
+    output += transform(html.slice(cursor, span.start));
+    if (!omitQuotes) output += html.slice(span.start, span.end);
+    cursor = span.end;
+  }
+  return output + transform(html.slice(cursor));
+}
+
+export function evidenceQuoteMarkupOnly(html: string): string {
+  let output = html;
+  for (const span of quoteSpans(html).sort((a, b) => b.bodyStart - a.bodyStart)) output = output.slice(0, span.bodyStart) + output.slice(span.bodyEnd);
+  return output;
+}
+
+function comparisonElements(html: string): DefaultTreeAdapterMap['element'][] {
+  const elements: DefaultTreeAdapterMap['element'][] = [];
+  const visit = (node: DefaultTreeAdapterMap['node']): void => {
+    if ('attrs' in node) elements.push(node);
+    if ('childNodes' in node) for (const child of node.childNodes) visit(child);
+    if ('content' in node) visit(node.content);
+  };
+  visit(parseFragment(html, { sourceCodeLocationInfo: true }));
+  return elements;
+}
+
 const HOST_ZONES = ["style", "header", "metrics", "cost-note", "evidence", "process"] as const;
 /** Format-2 agent zones. Legacy visual-evidence / key-differences / delivery / limitations are not accepted on new drafts. */
 export const AGENT_ZONES = ["comparison", "details"] as const;
@@ -28,13 +75,13 @@ export function missingComparisonSlots(html: string): string | undefined {
     if (!hasMarker(html, "data-agent-slot", slot)) return `Comparison report is missing data-agent-slot="${slot}".`;
   }
   for (const name of COMPONENT_TEMPLATES) {
-    if (!html.includes(`data-component-template="${name}"`)) return `Comparison report is missing component template "${name}".`;
+    if (!hasMarker(html, "data-component-template", name)) return `Comparison report is missing component template "${name}".`;
   }
   return shareCardLayoutError(html);
 }
 
 function shareCardLayoutError(html: string): string | undefined {
-  if (!/\bdata-report-format\s*=\s*(["'])2\1/i.test(html)) {
+  if (!hasMarker(html, "data-report-format", "2")) {
     return 'Share card must declare data-report-format="2".';
   }
   const header = tagMarkerIndex(html, "data-host-zone", "header");
@@ -42,7 +89,7 @@ function shareCardLayoutError(html: string): string | undefined {
   const comparison = tagMarkerIndex(html, "data-agent-zone", "comparison");
   const metrics = tagMarkerIndex(html, "data-host-zone", "metrics");
   const details = tagMarkerIndex(html, "data-agent-zone", "details");
-  const compact = /\bdata-metrics-layout\s*=\s*(["'])compact\1/i.test(extractOuter(html, "data-host-zone", "metrics") ?? "");
+  const compact = hasMarker(extractOuter(html, "data-host-zone", "metrics") ?? "", "data-metrics-layout", "compact");
   const costNote = tagMarkerIndex(html, "data-host-zone", "cost-note");
   const orderError = compact
     ? "Share card order must be header, headline, metrics, cost-note, then comparison; details stay after the share card."
@@ -77,15 +124,11 @@ export function agentZoneBlank(html: string, zone: AgentZoneName): boolean {
 }
 
 function tagMarkerIndex(html: string, attr: string, value: string): number {
-  const escapedAttr = attr.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
-  const escapedValue = value.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
-  return html.search(new RegExp(`<(?:${ZONE_TAG})\\b[^>]*\\b${escapedAttr}\\s*=\\s*(["'])${escapedValue}\\1`, "i"));
+  return comparisonElements(html).find(node => node.attrs.some(item => item.name === attr && item.value === value))?.sourceCodeLocation?.startOffset ?? -1;
 }
 
 function hasMarker(html: string, attr: string, value: string): boolean {
-  const escapedAttr = attr.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
-  const escapedValue = value.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
-  return new RegExp(`\\b${escapedAttr}\\s*=\\s*(["'])${escapedValue}\\1`, "i").test(html);
+  return comparisonElements(html).some(node => node.attrs.some(item => item.name === attr && item.value === value));
 }
 
 export function extractHostZoneSnapshot(html: string): HostZoneSnapshot | undefined {
@@ -103,7 +146,7 @@ export function hostZoneIntegrityError(html: string, snapshot: HostZoneSnapshot)
   if (missing) return missing;
   const current = extractHostZoneSnapshot(html);
   if (!current) return "Host zone snapshot is incomplete.";
-  const order = [...html.matchAll(/\bdata-host-zone\s*=\s*(["'])(.*?)\1/gi)].map((match) => match[2]);
+  const order = comparisonElements(html).flatMap(node => node.attrs.filter(attr => attr.name === "data-host-zone").map(attr => attr.value));
   if (order.join("\0") !== HOST_ZONES.join("\0")) return "Host zone order or count was modified.";
   for (const zone of HOST_ZONES) {
     if (current[zone] !== snapshot[zone]) return `Host zone "${zone}" was modified.`;
@@ -159,38 +202,7 @@ export function extractInner(html: string, attr: string, name: string): string {
 }
 
 export function extractOuter(html: string, attr: string, name: string): string | undefined {
-  const escapedAttr = attr.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
-  const escapedName = name.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
-  const start = html.search(new RegExp(`<(${ZONE_TAG})\\b[^>]*\\b${escapedAttr}\\s*=\\s*(["'])${escapedName}\\2[^>]*>`, "i"));
-  if (start < 0) return undefined;
-  const open = html.slice(start).match(new RegExp(`^<(${ZONE_TAG})\\b[^>]*>`, "i"));
-  if (!open) return undefined;
-  const tag = open[1] ?? "section";
-  const innerStart = start + open[0].length;
-  const inner = innerUntilClose(html.slice(innerStart), tag);
-  const close = `</${tag}>`;
-  return html.slice(start, innerStart + inner.length + close.length);
-}
-
-function innerUntilClose(html: string, tag: string): string {
-  const open = new RegExp(`<${tag}\\b`, "ig");
-  const close = new RegExp(`</${tag}>`, "ig");
-  let depth = 1;
-  let index = 0;
-  while (index < html.length && depth > 0) {
-    open.lastIndex = index;
-    close.lastIndex = index;
-    const nextOpen = open.exec(html);
-    const nextClose = close.exec(html);
-    if (!nextClose) return html;
-    if (nextOpen && nextOpen.index < nextClose.index) {
-      depth += 1;
-      index = nextOpen.index + nextOpen[0].length;
-      continue;
-    }
-    depth -= 1;
-    if (depth === 0) return html.slice(0, nextClose.index);
-    index = nextClose.index + nextClose[0].length;
-  }
-  return html;
+  const node = comparisonElements(html).find(node => node.attrs.some(item => item.name === attr && item.value === name));
+  const location = node?.sourceCodeLocation;
+  return location ? html.slice(location.startOffset, location.endOffset) : undefined;
 }

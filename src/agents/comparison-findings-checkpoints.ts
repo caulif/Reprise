@@ -1,8 +1,7 @@
-import { COMPARISON_SOURCE_TOOLS, isFindingsUpdate, comparisonProtocol, comparisonStagePolicy, bindComparisonStageTools } from './comparison-stage-policy.js';
+import { COMPARISON_SOURCE_TOOLS, isFindingsUpdate, comparisonProtocol } from './comparison-stage-policy.js';
 import type { ComparisonCompareOptions } from './comparison-agent.js';
 import type { ComparisonWorkPass } from './comparison-invocation-boundaries.js';
 import type { AgentToolDefinition, AgentToolResult, FreeformInvocation } from '../infrastructure/agent/host.js';
-import type { ComparisonResourceTracker } from './comparison-resources.js';
 
 const navigationPaths = new Set([
   'INDEX.md', 'briefing/INDEX.md', 'briefing/decision-map.md', 'briefing/task/initial-input.txt',
@@ -41,7 +40,6 @@ export class ComparisonFindingsCheckpoints {
   }
   due(): boolean { return this.#source && this.#checks >= 6; }
   saved(): boolean { return this.#saving && !!this.#acceptedState && this.#acceptedState === this.#options?.getFindingsState?.(); }
-  toolNames(): readonly string[] | undefined { return this.#saving ? this.#policy().names : undefined; }
   observe(name: string, params: unknown, result: AgentToolResult): void {
     if (!this.enabled) return;
     if (this.#source && countsSourceObservation(name, params)) this.#checks++;
@@ -49,13 +47,6 @@ export class ComparisonFindingsCheckpoints {
       this.#checks = 0;
       if (this.#saving) this.#acceptedState = this.#options?.getFindingsState?.();
     }
-  }
-  #policy() {
-    return comparisonStagePolicy(this.#saving ? 'source-save' : 'investigate', { strict: false, direct: false, initial: false,
-      checkpointDue: () => this.due(), observed: (name, params, result) => this.observe(name, params, result) });
-  }
-  bind(tools: readonly AgentToolDefinition[], resources?: ComparisonResourceTracker): AgentToolDefinition[] {
-    return this.enabled ? bindComparisonStageTools(tools, () => this.#policy(), name => resources?.checkHard(name)) : [...tools];
   }
   async run<P extends Phase>(work: (phase: P, prompt: string, pass?: ComparisonWorkPass) => Promise<FreeformInvocation>, phase: P, prompt: string, pass?: 'sources'): Promise<FreeformInvocation> {
     let outcome = await work(phase, prompt, pass);

@@ -1,3 +1,6 @@
+import { extractHostZoneSnapshot, extractOuter, hostZoneIntegrityError, missingComparisonSlots } from '../../src/core/comparison-html.js';
+import { stagePublishedEvidence } from '../../src/application/comparison-publish-evidence.js';
+import { comparisonReportModelFromHtml } from '../../src/application/comparison-publication.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -129,4 +132,98 @@ test('publication rewrites actual registered media without changing a colliding 
   assert.ok(prepared.html.includes(f.quote.html));
   assert.match(prepared.html, /<img src="media\/[a-f0-9]+\.png">/);
   assert.match(prepared.html, /<style>a\{background:url\(media\/[a-f0-9]+\.png\)\}<\/style>/);
+});
+
+const publishedResult = { status: 'completed' as const, reportPath: 'report.html' as const, headline: 'Exact text', evidenceRefs: ['ev-01'] };
+
+test('quoted Host attributes submit, preview and publish; real duplicate and reordered Host zones fail', async t => {
+  const f = await fixture(t, '<section data-host-zone="metrics">literal</section> data-host-zone="header"');
+  const html = await readFile(join(f.attemptRoot, 'report.html'), 'utf8');
+  const snapshot = extractHostZoneSnapshot(html)!;
+  assert.equal(hostZoneIntegrityError(html, snapshot), undefined);
+  const preview = await materializeComparisonReportPreview({ attemptRoot: f.attemptRoot, media: [], evidence: f.catalog.snapshot().links, catalogRevision: f.catalog.snapshot().revision });
+  f.draft.recordPreview(preview);
+  assert.ok(await f.draft.completedResult());
+  const checked = await verifyAndRenderComparisonReport({ html, facts, result: publishedResult, attemptRoot: f.attemptRoot,
+    media: [], evidence: f.catalog.snapshot().links, hostZoneSnapshot: snapshot, quoteSources: f.sources, locale: 'en' });
+  assert.ok('html' in checked, JSON.stringify(checked));
+  const published = await prepareComparisonArtifacts({ attemptRoot: f.attemptRoot, experimentRoot: f.experimentRoot,
+    html: 'html' in checked ? checked.html : '', quoteSources: f.sources });
+  assert.ok(published.html.includes(f.quote.html));
+  const evidence = extractOuter(html, 'data-host-zone', 'evidence')!;
+  const process = extractOuter(html, 'data-host-zone', 'process')!;
+  for (const changed of [html + '<section data-host-zone="metrics">duplicate</section>',
+    html.replace(evidence, 'SWAP').replace(process, evidence).replace('SWAP', process)]) {
+    assert.match(hostZoneIntegrityError(changed, snapshot) ?? '', /order or count/);
+  }
+});
+
+for (const [attr, name] of [['data-host-zone', 'metrics'], ['data-agent-zone', 'details'], ['data-agent-slot', 'category'],
+  ['data-component-template', 'timeline'], ['data-report-format', '2']] as const) {
+  test(`quoted ${attr} cannot replace an actual required marker`, async t => {
+    const f = await fixture(t, `${attr}="${name}"`);
+    const html = await readFile(join(f.attemptRoot, 'report.html'), 'utf8');
+    const outer = extractOuter(html, attr, name)!;
+    const changed = html.replace(outer, outer.replace(`${attr}="${name}"`, `${attr}="removed"`));
+    assert.ok(missingComparisonSlots(changed));
+  });
+}
+
+test('quoted verification words and references neither invent a claim nor resolve actual unsupported prose', async t => {
+  const f = await fixture(t, 'verified data-evidence-ref="ev-99" data-media-ref="media-99"');
+  assert.match(await f.draft.submit({ status: 'completed', category: 'Result', headline: 'Actual source', comparisonHtml: `<p>A concrete difference.</p>${f.quote.html}` }), /status=accepted/);
+  const html = await readFile(join(f.attemptRoot, 'report.html'), 'utf8');
+  const checked = await verifyAndRenderComparisonReport({ html, facts, result: publishedResult, attemptRoot: f.attemptRoot, media: [],
+    hostZoneSnapshot: extractHostZoneSnapshot(html)!, quoteSources: f.sources, locale: 'en' });
+  assert.ok('html' in checked, JSON.stringify(checked));
+  if ('html' in checked) assert.doesNotMatch(checked.html, /used verification wording without resolvable evidence/);
+  assert.match(await f.draft.submit({ status: 'completed', category: 'Result', headline: 'Unsupported', comparisonHtml: '<p>verified result</p>' }), /status=accepted/);
+  assert.match(await readFile(join(f.attemptRoot, 'report.html'), 'utf8'), /used verification wording without resolvable evidence/);
+  assert.match(await f.draft.submit({ status: 'completed', category: 'Result', headline: 'Unsupported claim', comparisonHtml: '<p data-claim="verified">verified result</p>' }), /status=rejected/);
+});
+
+test('quoted media paths do not become report model media references', async t => {
+  const f = await fixture(t, 'unused.png media-99');
+  const html = await readFile(join(f.attemptRoot, 'report.html'), 'utf8');
+  const model = comparisonReportModelFromHtml(html, facts, publishedResult,
+    [{ ref: 'unused', shortRef: 'media-99', side: 'baseline', inspectPath: 'unused.png', reportHref: 'unused.png', mediaType: 'image/png', available: true }]);
+  assert.deepEqual(model.mediaRefs, []);
+});
+
+test('quoted derived paths do not stage missing evidence while actual links still fail closed', async t => {
+  const href = 'evidence/derived/0123456789abcdef.html';
+  const f = await fixture(t, href);
+  const html = await readFile(join(f.attemptRoot, 'report.html'), 'utf8');
+  const evidence = [{ side: 'baseline' as const, origin: 'derived_analysis' as const, inspectPath: href, reportHref: href, contentHash: 'a'.repeat(64) }];
+  const input = { attemptRoot: f.attemptRoot, experimentRoot: f.experimentRoot, html, evidence };
+  assert.equal((await stagePublishedEvidence(input, text => text)).hrefMap.size, 0);
+  await assert.rejects(stagePublishedEvidence({ ...input, html: html + `<a href="${href}">Actual link</a>` }, text => text), /ENOENT/);
+});
+
+
+test('quoted missing-side words cannot supply a nearby note for an actual one-sided image', async t => {
+  const f = await fixture(t, 'missing unavailable data-host-limitation');
+  await writeFile(join(f.attemptRoot, 'logo.png'), 'registered image bytes');
+  const html = await readFile(join(f.attemptRoot, 'report.html'), 'utf8');
+  const media = [{ ref: 'logo', side: 'baseline' as const, inspectPath: 'logo.png', reportHref: 'logo.png', mediaType: 'image/png', available: true }];
+  for (const actualNote of [false, true]) {
+    const checked = await verifyAndRenderComparisonReport({ html: html.replace(f.quote.html, `${f.quote.html}<img src="logo.png">${actualNote ? '<p>Current side unavailable</p>' : ''}`),
+      hostTask: 'Compare', facts, result: publishedResult, attemptRoot: f.attemptRoot, media, evidence: f.catalog.snapshot().links, quoteSources: f.sources, locale: 'en' });
+    assert.ok('html' in checked, JSON.stringify(checked));
+    if ('html' in checked) assert.equal(checked.html.includes('without an explicit nearby note'), !actualNote);
+  }
+});
+
+
+for (const kind of ['evidence', 'media'] as const) test(`quoted verification wording does not diagnose actual unresolved ${kind} references as verification claims`, async t => {
+  const f = await fixture(t, 'verified data-evidence-ref="ev-01" data-media-ref="media-99"');
+  const original = await readFile(join(f.attemptRoot, 'report.html'), 'utf8');
+  const ref = kind === 'evidence' ? 'ev-01' : 'media-99';
+  const unresolved = `<span data-${kind}-ref="${ref}">Unresolved reference</span>`
+    + (kind === 'evidence' ? `<a data-evidence-ref="${ref}">Link</a>` : `<img data-media-ref="${ref}" alt="Unavailable image">`);
+  const html = original.replace(f.quote.html, f.quote.html + unresolved);
+  const checked = await verifyAndRenderComparisonReport({ html, facts, result: publishedResult, attemptRoot: f.attemptRoot, media: [],
+    evidence: kind === 'media' ? f.catalog.snapshot().links : [], hostZoneSnapshot: extractHostZoneSnapshot(original)!, quoteSources: f.sources, locale: 'en' });
+  assert.ok('html' in checked, JSON.stringify(checked));
+  if ('html' in checked) assert.doesNotMatch(checked.html, /used verification wording without resolvable evidence|Cited media could not be resolved/);
 });

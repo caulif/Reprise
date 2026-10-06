@@ -1,3 +1,4 @@
+import { ComparisonStages } from '../../src/agents/comparison-stages.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Type } from '@sinclair/typebox';
@@ -26,15 +27,16 @@ function harness(receipt = 'status=accepted\nSaved current state') {
     execute: async () => { effects++; return { content: name.startsWith('update_') ? receipt : 'Source boundary fixture result' }; },
     onCompleted: async () => { completions++; },
   }));
-  const checkpoints = new ComparisonFindingsCheckpoints(definitions, { getSubmittedResult: async () => undefined, enforcePhaseBoundaries: true,
+  const stages = new ComparisonStages(definitions, new ComparisonResourceTracker({}), { getSubmittedResult: async () => undefined, enforcePhaseBoundaries: true,
     reviewFindings: true, getFindingsState: () => state, findingsReady: () => ready });
-  const tools = checkpoints.bind(definitions);
-  return { checkpoints, definitions, tools, tool: (name: string) => tools.find(tool => tool.name === name)!,
+  const checkpoints = stages.checkpoints;
+  const tools = stages.bind(definitions);
+  return { stages, checkpoints, definitions, tools, tool: (name: string) => tools.find(tool => tool.name === name)!,
     state: (value: string) => { state = value; }, ready: () => { ready = true; }, effects: () => effects, completions: () => completions };
 }
 
 test('six actual source effects force a checkpoint and execute/completion reject the next check', async () => {
-  const f = harness(); f.checkpoints.begin('investigate');
+  const f = harness(); f.stages.begin('investigate');
   for (const name of sourceNames.slice(0, 6)) await f.tool(name).execute({}, signal);
   assert.equal(f.checkpoints.due(), true); assert.equal(f.effects(), 6);
   const seventh = await f.tool('quote_evidence').execute({}, signal);
@@ -44,8 +46,8 @@ test('six actual source effects force a checkpoint and execute/completion reject
 });
 
 test('save-only exposes the dedicated delta object schema and blocks original full-schema tool and effects', async () => {
-  const f = harness(); f.checkpoints.begin('investigate', 'source-save');
-  assert.deepEqual(f.checkpoints.toolNames(), ['update_comparison_findings_delta']);
+  const f = harness(); f.stages.begin('investigate', 'source-save');
+  assert.deepEqual(f.stages.toolNames(f.tools), ['update_comparison_findings_delta']);
   assert.equal(f.tool('update_comparison_findings_delta').parameters, ComparisonFindingsDeltaSchema);
   assert.equal('anyOf' in f.tool('update_comparison_findings_delta').parameters, false);
   for (const tool of f.tools.filter(tool => tool.name !== 'update_comparison_findings_delta')) {
@@ -67,16 +69,17 @@ async function productionFixture(t: { after: (callback: () => Promise<void>) => 
   const definitions: AgentToolDefinition[] = [discovery.tool(), discovery.deltaTool(), {
     name: 'read', description: 'read', parameters: Type.Object({ path: Type.Optional(Type.String()) }), execute: async () => { reads++; return { content: 'Unverified boundary fixture input; no quality evidence.' }; },
   }];
-  const checkpoints = new ComparisonFindingsCheckpoints(definitions, { getSubmittedResult: async () => undefined, enforcePhaseBoundaries: true,
+  const stages = new ComparisonStages(definitions, new ComparisonResourceTracker({}), { getSubmittedResult: async () => undefined, enforcePhaseBoundaries: true,
     reviewFindings: true, getFindingsState: () => discovery.state(), findingsReady: () => discovery.readyToCompose() });
   const resources = new ComparisonResourceTracker({});
-  const tools = checkpoints.bind(definitions, resources);
+  const checkpoints = stages.checkpoints;
+  const tools = stages.bind(definitions);
   const delta = (): ComparisonFindingsDelta => {
     const current = discovery.snapshot()!;
     return { kind: 'delta', binding: { revision: current.revision, digest: current.digest, catalogRevision: catalog.snapshot().revision },
       findingDecisions: [], questionDecisions: current.submission.decisionQuestions.map(question => ({ id: question.id, action: 'retain' })) };
   };
-  return { discovery, checkpoints, tools, delta, resources, reads: () => reads };
+  return { discovery, stages, checkpoints, tools, delta, resources, reads: () => reads };
 }
 
 test('native production metadata navigation remains audited and counted without forcing a save before actual source observations', async t => {
@@ -103,7 +106,7 @@ test('native production metadata navigation remains audited and counted without 
     tools: f.tools, audit: { append: async event => { f.resources.observe(event); } } });
   const passes: (ComparisonWorkPass | undefined)[] = [];
   const result = await f.checkpoints.run(async (phase, prompt, pass) => {
-    passes.push(pass); f.checkpoints.begin(phase, pass);
+    passes.push(pass); f.stages.begin(phase, pass);
     return session.work({ promptContent: prompt, timeoutMs: 2_000,
       yieldAfterTurn: () => f.checkpoints.saved() ? 'findings_checkpoint_saved' : f.checkpoints.due() ? 'findings_checkpoint_required' : undefined });
   }, 'review', 'Inspect actual sources', 'sources');
@@ -115,7 +118,7 @@ test('native production metadata navigation remains audited and counted without 
 });
 
 test('only fixed virtual Host navigation paths skip source counting; mounted lookalikes and verification tools still checkpoint', async () => {
-  const f = harness(); f.checkpoints.begin('review', 'sources');
+  const f = harness(); f.stages.begin('review', 'sources');
   for (const [name, path] of [['ls', 'briefing'], ['ls', 'facts'], ['grep', 'briefing/facts/context.json'],
     ['read', 'observations/user-inputs/INDEX.tsv'], ['read', 'candidate/INDEX.md']] as const) {
     await f.tool(name).execute({ path }, signal);
@@ -132,7 +135,7 @@ test('only fixed virtual Host navigation paths skip source counting; mounted loo
 for (const phase of ['investigate', 'review'] as const) for (const ready of [false, true]) test(`actual ${phase} checkpoint ${ready ? 'ends on ready unknown disposition' : 'accepts pending and resumes the same source session'}`, async t => {
   const f = await productionFixture(t), passes: (ComparisonWorkPass | undefined)[] = [];
   const outcome = await f.checkpoints.run(async (currentPhase, prompt, pass) => {
-    assert.equal(currentPhase, phase); passes.push(pass); f.checkpoints.begin(currentPhase, pass);
+    assert.equal(currentPhase, phase); passes.push(pass); f.stages.begin(currentPhase, pass);
     if (pass === 'source-save') {
       assert.match(prompt, /addedFindings\/addedQuestions[\s\S]*Pending with an actual nextCheck is valid/);
       const change = f.delta();
@@ -161,7 +164,7 @@ for (const phase of ['investigate', 'review'] as const) for (const ready of [fal
 for (const mode of ['fake', 'empty', 'stale', 'timeout', 'output_limit', 'no-update'] as const) test(`checkpoint ${mode} cannot resume source effects`, async () => {
   const f = harness(mode === 'fake' ? 'status=accepted_by_assumption' : undefined), passes: (ComparisonWorkPass | undefined)[] = [];
   const outcome = await f.checkpoints.run(async (phase, _prompt, pass) => {
-    passes.push(pass); f.checkpoints.begin(phase, pass);
+    passes.push(pass); f.stages.begin(phase, pass);
     if (pass !== 'source-save') return yieldResult('findings_checkpoint_required');
     if (mode === 'empty') f.state('');
     if (mode !== 'no-update') await f.tool('update_comparison_findings_delta').execute({}, signal);
@@ -176,7 +179,7 @@ for (const mode of ['fake', 'empty', 'stale', 'timeout', 'output_limit', 'no-upd
 test('checkpoint continuation is bounded to five saves and preserves the final due boundary', async () => {
   const f = harness(); let saves = 0, sourceCalls = 0;
   const outcome = await f.checkpoints.run(async (phase, _prompt, pass) => {
-    f.checkpoints.begin(phase, pass);
+    f.stages.begin(phase, pass);
     if (pass === 'source-save') { saves++; await f.tool('update_comparison_findings_delta').execute({}, signal); return yieldResult('findings_checkpoint_saved'); }
     sourceCalls++; return yieldResult('findings_checkpoint_required');
   }, 'investigate', 'Source task');
@@ -189,6 +192,6 @@ test('checkpoint is opt-in and missing current state or delta tool preserves exi
   const old = new ComparisonFindingsCheckpoints(f.definitions.filter(tool => tool.name !== 'update_comparison_findings_delta'), {
     getSubmittedResult: async () => undefined, enforcePhaseBoundaries: true, reviewFindings: true, getFindingsState: () => 'state',
   });
-  assert.equal(old.enabled, false); assert.deepEqual(old.bind(f.definitions), f.definitions);
-  old.begin('investigate', 'source-save'); assert.equal(old.toolNames(), undefined); assert.equal(old.due(), false);
+  assert.equal(old.enabled, false);
+  old.begin('investigate', 'source-save'); assert.equal(old.due(), false);
 });

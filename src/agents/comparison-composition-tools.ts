@@ -1,6 +1,5 @@
-import { comparisonProtocol, comparisonStagePolicy, stageToolNames, bindComparisonStageTools } from './comparison-stage-policy.js';
+import { comparisonProtocol } from './comparison-stage-policy.js';
 import type { ComparisonCompareOptions } from './comparison-agent.js';
-import type { AgentToolDefinition } from '../infrastructure/agent/host.js';
 
 export const COMPARISON_COMPOSITION_BOUNDARY_PROMPT = [
   'This is report composition from the observations and saved findings already received.',
@@ -28,12 +27,5 @@ export class ComparisonCompositionTools {
     this.#phase = phase;
   }
   #active(): boolean { return this.#strict && this.#phase() === 'compose'; }
-  #policy() { return comparisonStagePolicy(this.#phase(), { strict: this.#strict, direct: this.#decision, initial: false }); }
   prompt(): string { return this.#active() ? this.#decision ? decisionPrompt : COMPARISON_COMPOSITION_BOUNDARY_PROMPT : ''; }
-  allowedToolNames(tools: readonly AgentToolDefinition[]): readonly string[] | undefined {
-    return stageToolNames(this.#policy(), tools);
-  }
-  bind(tools: readonly AgentToolDefinition[]): AgentToolDefinition[] {
-    return this.#strict ? bindComparisonStageTools(tools, () => this.#policy()) : [...tools];
-  }
 }

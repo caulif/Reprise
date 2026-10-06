@@ -1,6 +1,6 @@
 import type { ComparisonLinkRecord, ComparisonMediaRecord } from '../core/schema.js';
 import { AGENT_ZONES } from '../core/comparison-html.js';
-import { evidenceQuoteMarkupOnly } from './comparison-quote-protection.js';
+import { evidenceQuoteMarkupOnly } from '../core/comparison-html.js';
 
 type ReferenceFailure = { failureClass: 'evidence'; code: 'evidence_unresolved'; message: string }
   | { failureClass: 'media'; code: 'media_unavailable'; message: string };
