@@ -14,6 +14,7 @@
 - checkpoint 在真实 getter ready 的 completed-turn 边界 yielded，最多两次实际调用；口头承诺不能完成 checkpoint。缺少检查工具、两次调用仍无真实正文交付则明确失败；普通 timeout、工具/Provider/审计错误、取消和整体硬限不转换成成功。未传 getter 的旧端口保持原流程。
 - source、inspection checkpoint 与完整 draft audit 使用同一个独立 review session；不新建审查会话、不以 Host 编造工具结果或注入模型正文。取得实际材料后解锁原工具面，立即比较实际 claims 与保留的独立反证，不重复检查仅为再取得未变正文。
 - stale 材料必须按现有规则修复；任何 accepted revision 或 binding 变化仍需新的正式当前检查和 preview。真实检查工具结果进入后续实际 generation snapshot 的发表认证保持不变。初始正文交付、最终检查、预览和模型语义判断分别成立，机械 ready 不认证判断正确。
+- 接受身份以类型化的完整提交、结果、HTML digest 和 catalog/findings revision 比较，而不以 HTML 代理审查声明。status 或 conclusionScope 等字段改变了被审阅的主张，即使 HTML 不变也更新结果、递增 bindingRevision、失效旧 inspection/preview，并重新追加既有接受绑定事件；离线认证继续用最新事件顺序与工具回执排除旧版本。完整身份相同才保持幂等，不增加 on-disk 字段。
 - 不调整 lane、effort、maxTokens、请求/时间/费用预算，也不加入具体实验答案。此检查点只改善取得材料的收敛，仍不能保证模型短时间调用工具、修正所有错误或成功发表。
 
 ## 备选方案

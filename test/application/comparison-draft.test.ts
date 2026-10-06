@@ -9,6 +9,7 @@ import { materializeComparisonReportPreview } from "../../src/application/compar
 import { verifyAndRenderComparisonReport } from "../../src/application/comparison-publication.js";
 import { sha256 } from "../../src/core/identity.js";
 import { ComparisonDiscovery } from "../../src/application/comparison-discovery.js";
+import type { ComparisonDraftSubmission } from "../../src/core/schema.js";
 
 const facts = {
   run: { runId: "run-1", outcome: "completed", terminationCode: "completed", initiatedBy: "controller" },
@@ -44,6 +45,12 @@ test("production drafts require settled findings and invalidate preview after fi
   await draft.submit(submission);
   assert.equal(bindings, 1);
   assert.ok(await draft.completedResult());
+  await draft.submit({ ...submission, status: "completed" });
+  await draft.submit(submission);
+  assert.equal(bindings, 3, 'status changes persist a new acceptance even with identical HTML');
+  assert.equal(await draft.completedResult(), undefined);
+  draft.recordPreview(preview);
+  assert.equal((await draft.completedResult())?.status, "insufficient_evidence");
   await discovery.update({ ...findings, importantLimitations: ["New evidence gap"] });
   assert.equal(await draft.completedResult(), undefined);
   assert.match(draft.submissionState(), /discoveryRevision/);
@@ -55,6 +62,60 @@ test("production drafts require settled findings and invalidate preview after fi
   assert.match(long, /advisory, not a word-limit gate/);
   assert.match(long, /mainTextCharacters=805/);
 });
+
+for (const change of [
+  { name: 'status only', initialScope: 'undetermined', status: 'insufficient_evidence' },
+  { name: 'scope only', initialScope: 'conditional', status: 'completed' },
+  { name: 'status and scope', initialScope: 'conditional', status: 'insufficient_evidence' },
+] as const) {
+  test(`same HTML with changed ${change.name} requires new inspection and preview`, async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "reprise-draft-identity-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const catalog = await ComparisonEvidenceCatalog.create({ attemptRoot: root, attemptId: "attempt-1", links: [], media: [] });
+    const draft = new ComparisonDraft({ attemptRoot: root, task: "Compare outputs.", facts, locale: "en", catalog, deliveredImages: new Set() });
+    const submission: ComparisonDraftSubmission = { status: 'completed', category: 'Results', headline: 'A scoped difference.',
+      comparisonHtml: '<p>A concrete difference.</p>', decisionShape: 'single_difference', conclusionScope: change.initialScope,
+      decisionSummary: 'Both outputs are usable.', decisionBoundary: '', decisionBasis: [], findingDispositions: [] };
+    const signal = new AbortController().signal;
+    const submit = draft.tool();
+    const accepted = await submit.execute(submission, signal);
+    assert.match(accepted.content, /status=accepted/);
+    const html = await readFile(join(root, 'report.html'), 'utf8');
+    const digest = sha256(html);
+    const preview = { htmlPath: 'preview.html', html, draftDigest: digest, preparedDigest: digest, dependencyDigest: digest,
+      catalogRevision: catalog.snapshot().revision, outputRoot: root };
+    draft.beginReview();
+    const inspect = draft.inspectTool();
+    const inspected = await inspect.execute({}, signal);
+    await inspect.onCompleted?.(inspected);
+    draft.recordPreview(preview);
+    assert.equal((await draft.completedResult())?.status, 'completed');
+    const identical = await submit.execute(structuredClone(submission), signal);
+    assert.deepEqual(identical.details, accepted.details);
+    assert.equal(draft.hasCurrentReviewInspection(), true);
+    assert.equal((await draft.completedResult())?.status, 'completed');
+    const pending = await inspect.execute({}, signal);
+    const revisedSubmission = { ...submission, status: change.status, conclusionScope: 'undetermined' as const };
+    const revised = await submit.execute(revisedSubmission, signal);
+    assert.match(revised.content, /status=accepted/);
+    assert.equal(await readFile(join(root, 'report.html'), 'utf8'), html);
+    assert.deepEqual(revised.details, { ...accepted.details as object, bindingRevision: 2 });
+    await inspect.onCompleted?.(pending);
+    assert.equal(draft.hasCurrentReviewInspection(), false, 'old delivery cannot certify the new claim');
+    assert.equal(draft.hasReviewDraftMaterial(), false);
+    assert.equal(await draft.completedResult(), undefined);
+    const fresh = await inspect.execute({}, signal);
+    assert.match(fresh.content, new RegExp(`"reportStatus":"${change.status}"`));
+    await inspect.onCompleted?.(fresh);
+    assert.equal(draft.hasCurrentReviewInspection(), true);
+    assert.equal(await draft.completedResult(), undefined, 'new inspection alone cannot reuse the old preview');
+    draft.recordPreview(preview);
+    assert.equal((await draft.completedResult())?.status, change.status);
+    const repeated = await submit.execute(structuredClone(revisedSubmission), signal);
+    assert.deepEqual(repeated.details, revised.details);
+    assert.equal((await draft.completedResult())?.status, change.status);
+  });
+}
 
 test("Host draft submission validates content and publishes only the previewed digest", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-draft-"));

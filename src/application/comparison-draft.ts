@@ -26,7 +26,7 @@ import { decisionTextHtml, decisionSupportDetailsHtml, decisionContractError } f
 import { materializeComparisonDecisionDraft } from './comparison-decision-draft.js';
 
 type HtmlNode = { nodeName?: string; value?: string; attrs?: { name: string; value: string }[]; childNodes?: HtmlNode[]; content?: HtmlNode };
-type AcceptedDraft = { digest: string; revision: number; discoveryRevision?: number; result: ComparisonResult; decisionShape?: ComparisonDraftSubmission["decisionShape"] };
+type AcceptedDraft = { digest: string; revision: number; discoveryRevision?: number; result: ComparisonResult; decisionShape?: ComparisonDraftSubmission["decisionShape"]; submission: ComparisonDraftSubmission };
 type DraftInspectionDelivery = { accepted: AcceptedDraft; reviewEpoch: number; catalogRevision: number; findingsRevision: number | undefined; formal: boolean };
 const InspectionMaterialTextSchema = Type.Object({ status: Type.Union([Type.Literal('available'), Type.Literal('stale')]),
   headline: Type.String(), comparisonHtml: Type.String(), detailsHtml: Type.Optional(Type.String()), truncated: Type.Optional(Type.Boolean()),
@@ -390,7 +390,9 @@ export class ComparisonDraft {
     }
     await writeAtomic(join(this.#attemptRoot, "report.html"), verified.html);
     const digest = sha256(verified.html);
-    const changed = this.#accepted?.digest !== digest || this.#accepted.revision !== catalog.revision || this.#accepted.discoveryRevision !== discovery?.revision || this.#accepted.decisionShape !== draft.decisionShape;
+    const identity: AcceptedDraft = { digest, revision: catalog.revision, ...(discovery ? { discoveryRevision: discovery.revision } : {}),
+      result, ...(draft.decisionShape ? { decisionShape: draft.decisionShape } : {}), submission: structuredClone(draft) };
+    const changed = !Value.Equal(this.#accepted, identity);
     if (changed && discovery && this.#persistAccepted) await this.#persistAccepted({ draftDigest: digest, catalogRevision: catalog.revision, findingsRevision: discovery.revision });
     if (changed) {
       this.#bindingRevision++;
@@ -400,7 +402,7 @@ export class ComparisonDraft {
       this.#reviewDraftMaterial = undefined;
       this.#pendingReviewMaterials = new WeakMap();
     }
-    if (changed) this.#accepted = { digest, revision: catalog.revision, ...(discovery ? { discoveryRevision: discovery.revision } : {}), result, ...(draft.decisionShape ? { decisionShape: draft.decisionShape } : {}) };
+    if (changed) this.#accepted = identity;
     this.#lastRejection = undefined;
     const feedback = length > 600
       ? "Shorten repeated conclusions and move methods to details in one batch revision; preserve decisive evidence and limitations, then preview. This is advisory, not a word-limit gate."
