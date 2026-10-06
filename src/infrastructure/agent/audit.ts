@@ -12,7 +12,7 @@ export function callerLoopHooks(
   audit: AgentAuditSink | undefined,
 ): Pick<
   Parameters<ProviderAdapter["createSession"]>[0],
-  "onContextCompact" | "onAssistantVisible" | "onRetry" | "onBeforeToolCall" | "onAfterToolCall" | "onModelRequest" | "onModelUsage"
+  "onContextCompact" | "onAssistantVisible" | "onRetry" | "onBeforeToolCall" | "onToolRejected" | "onAfterToolCall" | "onModelRequest" | "onModelUsage"
 > {
   return {
     onModelUsage: async (payload) => {
@@ -45,6 +45,13 @@ export function callerLoopHooks(
     },
     onBeforeToolCall: async ({ tool }) => {
       await audit?.append({ type: "agent.tool_called", sessionId, role, payload: { tool, nativeHook: "before" } });
+    },
+    onToolRejected: async ({ tool, callDigest }) => {
+      const payload = { tool, toolCallId: `${cursor.invocationId ?? sessionId}:tool:${cursor.toolSeq = (cursor.toolSeq ?? 0) + 1}`, callDigest,
+        ...(cursor.invocationId ? { invocationId: cursor.invocationId } : {}), nativeHook: 'sdk_rejected', code: 'sdk_pre_execution_rejected' };
+      await audit?.append({ type: 'agent.tool_called', sessionId, role, payload });
+      await audit?.append({ type: 'agent.tool_failed', sessionId, role, payload: { ...payload,
+        message: 'Pi SDK rejected the tool call before Host execution; no Host tool effect occurred.' } });
     },
     onAfterToolCall: async (payload) => {
       await audit?.append({ type: "agent.tool_completed", sessionId, role, payload: { ...payload, nativeHook: "after" } });

@@ -2,6 +2,8 @@
 
 状态：accepted
 
+后继：[有界审阅与收敛](2026-10-06-comparison-bounded-review-convergence.md)在严格路径增加单一 delta schema 的专用工具，以及 `addedFindings` / `addedQuestions`；新增对象不再必须重抄完整输入。旧 ID 显式覆盖、完整物化校验、历史身份、原子队列和发布保护继续适用，磁盘完整记录格式不变。以下记录初始决策。
+
 ## 问题
 
 独立 source 与实际 draft 已交付后，模型仍需复制全部 findings 和问题历史才可完成实际更新。真实验收出现仅重组结构的长生成、输出截断和反复格式修复，占用审阅与发布预算。已有完整记录可复用，但不能把省略对象解释为独立审查通过。

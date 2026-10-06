@@ -80,7 +80,7 @@ for (const mode of ['success', 'save_fail', 'verbal', 'not_ready', 'cancel', 'ha
     } else if (prompt.includes(COMPARISON_TURN_PROMPTS.orientAndInvestigate)) {
       investigationRequests++; throw new Error('Investigation cannot run without an accepted initial record');
     } else if (prompt.includes('Use this bounded closure turn only to submit update_comparison_findings')) {
-      closureRequests++; assert.deepEqual(context.tools?.map(tool => tool.name), ['update_comparison_findings']);
+      closureRequests++; assert.deepEqual(context.tools?.map(tool => tool.name), ['update_comparison_findings', 'update_comparison_findings_delta']);
       assert.match(prompt, /possibly during an unfinished generation[\s\S]*not a completed-turn boundary/);
       const stop = mode === 'verbal' || ((mode === 'save_fail' || mode === 'not_ready') && closureRequests % 2 === 0);
       const submission = mode === 'save_fail' ? { invalid: true } : mode === 'not_ready'

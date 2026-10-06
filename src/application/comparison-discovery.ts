@@ -1,6 +1,6 @@
 import { Value } from "@sinclair/typebox/value";
 import {
-  ComparisonDiscoveryRecordSchema, ComparisonFindingsToolSubmissionSchema, ComparisonFindingsCompleteToolSubmissionSchema,
+  ComparisonDiscoveryRecordSchema, ComparisonFindingsToolSubmissionSchema, ComparisonFindingsCompleteToolSubmissionSchema, ComparisonFindingsDeltaSchema,
   type ComparisonDiscoveryRecord, type ComparisonFindingsSubmission, type ComparisonInvestigationClosure, type ComparisonFindingsDelta,
 } from "../core/schema.js";
 import { sha256 } from "../core/identity.js";
@@ -26,14 +26,23 @@ export class ComparisonDiscovery {
   }
 
   tool(): AgentToolDefinition {
+    return this.#tool(false);
+  }
+
+  deltaTool(): AgentToolDefinition {
+    return this.#tool(true);
+  }
+
+  #tool(deltaOnly: boolean): AgentToolDefinition {
+    const parameters = deltaOnly ? ComparisonFindingsDeltaSchema : ComparisonFindingsToolSubmissionSchema;
     return {
-      name: "update_comparison_findings",
-      description: "Submit a complete initial findings snapshot. With a saved binding, prefer kind=delta against current state.binding. Delta requires one explicit retain/replace decision for every state.findingIds and state.questionIds; replacement objects are complete, existing IDs cannot be omitted, added or deleted, and retained objects are not implicit semantic approval. Use the complete variant for new findings or questions. Task criteria, final-source locations, scoped observations and question history remain mandatory in the materialized record. Each finding has exactly one baseline and one candidate observation; retain historical question and decisionImpact identity. References must be registered. Every observation needs supportBoundary with the same compared relationship, domain, coveredInstances and uncheckedInstances. delivered_output requires actual downstream drawn/written/returned output support and covered instances, not reconstructed targets or self-reports. Unknown checks remain unavailable or conditional with decisive limitations; retaining a pending question does not make findings ready. New grounds and reopenReason are required to reopen settled questions. Both variants run the same full validation; acceptance validates provenance and structure, never semantic truth.",
-      parameters: ComparisonFindingsToolSubmissionSchema,
+      name: deltaOnly ? 'update_comparison_findings_delta' : 'update_comparison_findings',
+      description: `${deltaOnly ? 'Submit only kind=delta against the actual current saved binding.' : 'Submit a complete initial snapshot, or prefer kind=delta with an existing binding.'} Delta requires one explicit retain/replace decision for every state.findingIds and state.questionIds; replacement objects are complete, existing IDs cannot be omitted or deleted, and retained objects are not implicit semantic approval. Add complete new entries through addedFindings/addedQuestions instead of repeating the saved snapshot; new IDs must be unique and cannot collide with existing IDs. Task criteria, final-source locations, scoped observations and question history remain mandatory in the materialized record. Each finding has exactly one baseline and one candidate observation; retain historical question and decisionImpact identity. References must be registered. Every observation needs supportBoundary with the same compared relationship, domain, coveredInstances and uncheckedInstances. delivered_output requires actual downstream drawn/written/returned output support and covered instances, not reconstructed targets or self-reports. Unknown checks remain unavailable or conditional with decisive limitations; retaining a pending question does not make findings ready. New grounds and reopenReason are required to reopen settled questions. Both tools use the same full validation and persistence queue; acceptance validates provenance and structure, never semantic truth.`,
+      parameters,
       execute: async (params, signal) => {
         signal.throwIfAborted();
-        if (!Value.Check(ComparisonFindingsToolSubmissionSchema, params)) {
-          const errors = [...Value.Errors(ComparisonFindingsToolSubmissionSchema, params)].slice(0, 3).map(error => ({ path: error.path, message: error.message }));
+        if (!Value.Check(parameters, params)) {
+          const errors = [...Value.Errors(parameters, params)].slice(0, 3).map(error => ({ path: error.path, message: error.message }));
           return { content: `status=rejected\ncode=invalid_findings\nerrors=${JSON.stringify(errors)}\nCorrect these fields and resubmit the complete snapshot or strictly bound delta.` };
         }
         const input = structuredClone(params);
@@ -181,6 +190,7 @@ export class ComparisonDiscovery {
     const receipt = { revision: record.revision, catalogRevision: record.catalogRevision, digest: record.digest, readyToCompose: this.readyToCompose(),
       binding: { revision: record.revision, catalogRevision: this.#catalog.snapshot().revision, digest: record.digest },
       findingIds: record.submission.findings.map(item => item.id), questionIds: record.submission.decisionQuestions.map(item => item.id),
+      deltaAdditionFields: { findings: 'addedFindings', questions: 'addedQuestions' },
       pendingQuestions: record.submission.decisionQuestions.filter(question => question.status === 'pending').map(question => question.id),
       importantLimitationCount: record.submission.importantLimitations.length };
     return `status=accepted\n${JSON.stringify(receipt)}\nKeep decision-changing limitations visible next to the conclusion. Omit routine provenance, missing metrics and edit-history inventories already covered by the Host; details are optional and only needed for a substantive reproducible argument or method boundary. Registration validates references and scope fields, not the truth of natural-language claims.`;
@@ -190,5 +200,6 @@ export class ComparisonDiscovery {
   readyToCompose(): boolean { return !!this.#accepted && this.#accepted.catalogRevision === this.#catalog.snapshot().revision && this.#accepted.submission.decisionQuestions.every((item) => item.status !== "pending"); }
   state(): string { return JSON.stringify({ revision: this.#accepted?.revision ?? 0, readyToCompose: this.readyToCompose(),
     binding: this.#accepted && { revision: this.#accepted.revision, digest: this.#accepted.digest, catalogRevision: this.#catalog.snapshot().revision },
-    findingIds: this.#accepted?.submission.findings.map(item => item.id) ?? [], questionIds: this.#accepted?.submission.decisionQuestions.map(item => item.id) ?? [], record: this.#accepted }); }
+      findingIds: this.#accepted?.submission.findings.map(item => item.id) ?? [], questionIds: this.#accepted?.submission.decisionQuestions.map(item => item.id) ?? [],
+      deltaAdditionFields: { findings: 'addedFindings', questions: 'addedQuestions' }, record: this.#accepted }); }
 }

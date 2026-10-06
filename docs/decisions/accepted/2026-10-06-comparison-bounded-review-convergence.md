@@ -4,11 +4,19 @@
 
 ## 问题
 
-独立审阅可以从真实来源发现新的决定性问题，但原 findings-only closure 不允许查证。实际接受 pending 更新后仍留在同一窄工具调用，随后再次 retain pending，无法进入核稿。另有 findings 和 audit 生成仅受整体截止约束，调查软预算不能阻止这些回合耗尽发布余量。增加恢复次数或总预算不能解决该状态冲突。首版真实校准的交互例在来源窗口取得工具结果后，没有保存独立 findings；随后 closure 单次生成无工具执行即截止。原例也失败，后续批次已停止。公开事件证明缺少实际保存，不足以将原因唯一归于上下文或私有推理。
+独立审阅可以从真实来源发现新的决定性问题，但原 findings-only closure 不允许查证。实际接受 pending 更新后仍留在同一窄工具调用，随后再次 retain pending，无法进入核稿。另有 findings 和 audit 生成仅受整体截止约束，调查软预算不能阻止这些回合耗尽发布余量。增加恢复次数或总预算不能解决该状态冲突。首版真实校准的交互例在来源窗口取得工具结果后，没有保存独立 findings；随后 closure 单次生成无工具执行即截止。第二版交互例在调查工具上限后才保存，SDK 拒绝缺字段和额外属性的工具参数，拒绝发生在 Host 工具入口前，因此原事件计数中的零工具并不表示没有尝试。公开 generation 快照保留该拒绝；问题是保存节奏与模型工具契约，不能根据私有推理归因。
 
 ## 决定
 
 严格路径由 `getSubmittedResult`、`enforcePhaseBoundaries` 与 `reviewFindings` 同时启用。调查、短作者和独立审阅继续使用各自 Session，资源属于同一 attempt。严格独立来源初查同时允许真实 update_comparison_findings：模型按实际任务、双方封存终稿和保存的待证假设查证，取得有用观察后立即保存，不将全部持久化推迟到最后的文字总结。工具面仅包含已注册 source 工具和 findings 更新，拒绝写稿、提交、inspection 和 preview。旧端口仍禁止 source 更新。
+
+严格路径向模型提供单一 delta schema 的 `update_comparison_findings_delta`，避免完整 snapshot 与 delta 的联合 schema。delta 可携带 `addedFindings`、`addedQuestions`；原有每个 finding/question ID 仍必须恰好一次 retain 或 replace，新增 ID 不能冒充替换或绕过历史身份。Host 从当前真实状态合成完整记录，再以原 canonical schema 与来源绑定校验和持久化；只派生结构，不补写观察、问题答案或决定影响。原完整工具保留兼容，两个工具名在初存、调查、保存窗口、来源、补查、创作、审阅及完成回调均按同一阶段策略守卫，别名不能扩大权限。
+
+正常调查与独立来源审查每完成6次来源工具后，在完整 turn 边界进入仅保存窗口。每个窗口只允许 findings 更新，读取、渲染、登记及其他副作用均拒绝；真实 accepted 回执与当前实际非空 saved state 一致才可继续。pending 可作为保存完成进入下一来源批次，不能被解释为 ready 或语义通过；ready 才可结束调查或来源审查。每个阶段最多5个保存窗口，同 Session、工具和请求累计不重置，调查仍共享原120秒，独立来源仍共享初查110秒及所在审阅截止。旧端口不启用此节奏。达到上限、超时或缺实际接受状态不能继续无限保存，原有有限关闭与失败边界仍生效。
+
+下述 `independent_findings_pending` 是来源阶段的最终完成边界；保存窗口内 accepted pending 只解锁下一来源批次，不立即跳到稿件检查点或补查。窗口不能把之前 accepted 状态复用为本次保存回执。
+
+SDK 工具参数校验拒绝在进入应用执行前，使用既有安全工具审计追加 called/failed，并计入真实资源。审计只保存工具身份与拒绝类别，不复制整份无效参数或完整 SDK 回执到新增事件；模型实际收到的回执仍由脱敏 generation 输入保留。该记录不认证工具执行、副作用或语义。审计写入失败保持 fatal，不能被降级为可纠正参数错误。
 
 本次 source 的精确 accepted 回执和实际非空 saved state 由独立 marker 记录，marker不随正文检查点重置；当前 state须与接受时完全一致，且重新核对 readiness。仅正常 completed 或明确 independent_findings_ready/pending 完成边界才可使用这份保存记录，旧 ready、缺失状态、伪回执、来源超时和 output_limit 不能解锁。actual accepted ready 在安全完整工具 turn 以 independent_findings_ready 让出；在实际稿件交付之后可直接进入 full audit，省去重复 closure。accepted pending 以 independent_findings_pending 让出，正文交付之后使用唯一补查及最后一次 closure。没有该有效保存证据时继续原最多两次闭合路径：实际精确 accepted 回执且当前 ready 才能进入核稿；实际 accepted 但仍 pending 在完整工具 turn 后以 review_findings_pending 让出，不继续重抄。
 
@@ -39,5 +47,7 @@
 严格预览仅接受 completed 或明确 report_ready 的调用完成边界；即使已产生实际匹配预览回执，超时或重复输出截断仍不能认证发布。反向用例必须覆盖实际预览后返回未完成状态。
 
 回归必须证明：本次 source实际accepted、state一致与当前ready才能省略closure，旧ready/缺失state/伪回执/来源超时/截断不能冒充；来源保存后正文checkpoint仍必需，binding改变使旧稿stale并要求修复；accepted pending 后恰好一次补查；第二次仍 pending 不发布；拒绝、伪回执及 output_limit 不冒充 ready；适配器忽略名单仍无报告或完成回调副作用；截止和续写不重置预算；findings变化后必须重新审核当前绑定；取消、持久化和审计失败仍 fatal。先 build 再执行编译测试与完整 check，记录本版实际结果，不沿用旧版成功证据。
+
+增量与保存节奏的反向用例还须覆盖旧 ID 缺失/重复、新 ID 冲突、失效 binding、每6次来源工具后的仅保存守卫、pending 接受后续查及5窗口上限、假 accepted 或空状态不能解锁、工具别名在全部阶段不越权，以及 SDK 参数拒绝有安全计数且审计失败 fatal。这些机制尚未证明真实模型性能或跨任务稳定性，须以本版实际发布报告另做语义、篇幅、耗时和布局验收。
 
 本决策局部替代[独立发现闭合](2026-10-06-comparison-independent-findings-closure.md)、[调查绝对截止](2026-10-06-comparison-investigation-absolute-deadline.md)及[来源复审局部截止](2026-10-05-comparison-source-yield-deadline.md)中的严格路径编排与时间策略；它们的真实审计、错误优先、已收到材料和发布约束继续有效。

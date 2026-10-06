@@ -154,6 +154,23 @@ test('legacy findings/audit/preview deadlines retain their previous opt-out sema
   assert.equal(legacy.workDeadline(), undefined);
 });
 
+test('source-save checkpoints share the original investigation and source-window absolute deadlines', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const tracker = bounded();
+  const investigation = comparisonWorkDeadline(tracker, 'investigate').yieldDeadline!;
+  t.mock.timers.tick(80_000);
+  assert.deepEqual(comparisonWorkDeadline(tracker, 'investigate', 'source-save').yieldDeadline, investigation);
+  t.mock.timers.tick(40_000);
+  assert.equal(tracker.beforeTool('update_comparison_findings_delta'), 'bounded_investigation_timeout');
+  const source = comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline!;
+  assert.equal(source.at, 231_000);
+  t.mock.timers.tick(80_000);
+  assert.deepEqual(comparisonWorkDeadline(tracker, 'review', 'source-save').yieldDeadline, source);
+  t.mock.timers.tick(30_000);
+  assert.equal(tracker.beforeTool('update_comparison_findings_delta'), 'bounded_source_timeout');
+  assert.deepEqual(comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline, source);
+});
+
 test('bounded review protects finishing requests and tools without blocking findings or overriding hard limits', () => {
   const requests = new ComparisonResourceTracker({ maxElapsedMs: 600_000, maxModelRequests: 5 }, { boundedStages: true });
   assert.equal(requests.sourceRemainingMs(), undefined);

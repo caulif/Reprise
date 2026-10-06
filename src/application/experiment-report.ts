@@ -595,7 +595,7 @@ async function invokeCompare(
   });
   const result = await input.input.comparison.compare(
     context,
-    [...comparisonTools(input, attemptRoot, catalog, draft, recordRenderCheck, quoteSources), ...(requireFindings ? [discovery.tool()] : [])],
+    [...comparisonTools(input, attemptRoot, catalog, draft, recordRenderCheck, quoteSources), ...(requireFindings ? [discovery.tool(), discovery.deltaTool()] : [])],
     comparisonAudit(input, attemptId, deliveredImageContentHashes),
     input.signal,
     {

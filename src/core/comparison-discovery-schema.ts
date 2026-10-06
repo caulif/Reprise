@@ -79,10 +79,12 @@ export const ComparisonFindingsDeltaSchema = Type.Object({
     catalogRevision: Type.Integer({ minimum: 0 }) }, { additionalProperties: false }),
   findingDecisions: Type.Array(decision(strictFinding), { maxItems: 12, description: 'Explicit retain or replace decision for every existing finding ID exactly once. Retain is your reviewed decision, not implicit approval; omitted or extra IDs are rejected.' }),
   questionDecisions: Type.Array(decision(question), { maxItems: 16, description: 'Explicit retain or replace decision for every historical question ID exactly once. Replacement preserves question and decisionImpact identity; retain does not resolve unknowns.' }),
+  addedFindings: Type.Optional(Type.Array(strictFinding, { maxItems: 12, description: 'Complete new findings only. Each ID must be new and unique; existing findings still need explicit retain/replace decisions. The materialized total remains at most 12.' })),
+  addedQuestions: Type.Optional(Type.Array(question, { maxItems: 16, description: 'Complete new decision questions only. Each ID must be new and unique; preserve every historical question through explicit decisions. The materialized total remains at most 16.' })),
   criteria: Type.Optional(ComparisonFindingsSubmissionSchema.properties.criteria),
   finals: Type.Optional(ComparisonFindingsSubmissionSchema.properties.finals),
   importantLimitations: Type.Optional(ComparisonFindingsSubmissionSchema.properties.importantLimitations),
-}, { additionalProperties: false, description: 'Bounded update against the exact saved revision/digest and current catalogRevision. Host materializes a complete record and runs all original validation. No implicit ID retention, deletion or addition; use the complete variant for new findings or questions. No semantic certification.' });
+}, { additionalProperties: false, description: 'Bounded update against the exact saved revision/digest and current catalogRevision. Host materializes a complete record and runs all original validation. No implicit ID retention or deletion; new entries must be complete objects in addedFindings/addedQuestions, never extra retain/replace decisions. No semantic certification.' });
 export type ComparisonFindingsDelta = Static<typeof ComparisonFindingsDeltaSchema>;
 export const ComparisonFindingsToolSubmissionSchema = Type.Union([ComparisonFindingsCompleteToolSubmissionSchema, ComparisonFindingsDeltaSchema], { type: 'object' });
 

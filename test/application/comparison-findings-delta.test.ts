@@ -42,6 +42,12 @@ async function fixture(t: { after: (fn: () => Promise<void>) => void }, persist?
   return { root, catalog, discovery, submission, saved, delta };
 }
 
+function strictFindingFixture(submission: ComparisonFindingsSubmission) {
+  const finding = structuredClone(submission.findings[0]!);
+  assert.ok(Value.Check(ComparisonFindingsDeltaSchema.properties.addedFindings.items, finding));
+  return finding;
+}
+
 test('strict delta retains unchanged content explicitly and persists only model-supplied changes through the original full contract', async t => {
   const { discovery, submission, saved, delta } = await fixture(t); const signal = new AbortController().signal;
   await discovery.tool().execute(submission, signal); const before = discovery.snapshot()!;
@@ -59,6 +65,79 @@ test('strict delta retains unchanged content explicitly and persists only model-
   const state = JSON.parse(discovery.state()) as { binding: unknown; findingIds: unknown; questionIds: unknown };
   assert.deepEqual(state.binding, { revision: 2, digest: after.digest, catalogRevision: after.catalogRevision });
   assert.deepEqual(state.findingIds, ['quality']); assert.deepEqual(state.questionIds, ['pending', 'settled']);
+});
+
+for (const deltaOnly of [false, true]) test(`bound additions use ${deltaOnly ? 'the dedicated delta tool' : 'the compatible original tool'} and preserve historical objects`, async t => {
+  const { discovery, submission, saved, delta } = await fixture(t), signal = new AbortController().signal;
+  submission.decisionQuestions[0]!.status = 'unavailable'; submission.decisionQuestions[0]!.resolution = 'No additional input was checked'; delete submission.decisionQuestions[0]!.nextCheck;
+  await discovery.tool().execute(submission, signal); const before = discovery.snapshot()!;
+  assert.equal(discovery.readyToCompose(), true);
+  const change = delta(), finding = strictFindingFixture(submission);
+  finding.id = 'new-difference'; finding.difference = 'An additional actual source observation';
+  change.addedFindings = [finding];
+  change.addedQuestions = [{ id: 'new-question', question: 'Could a distinct input reverse the preference?', decisionImpact: 'Could reverse the choice',
+    status: 'pending', evidenceRefs: [], nextCheck: 'Check the actual final under that input' }];
+  const tool = deltaOnly ? discovery.deltaTool() : discovery.tool();
+  assert.equal(tool.name, deltaOnly ? 'update_comparison_findings_delta' : 'update_comparison_findings');
+  if (deltaOnly) { assert.equal('anyOf' in tool.parameters, false); assert.equal(tool.parameters, ComparisonFindingsDeltaSchema); }
+  assert.match((await tool.execute(change, signal)).content, /^status=accepted\n/);
+  const after = discovery.snapshot()!;
+  assert.equal(saved.length, 2); assert.equal(after.revision, 2); assert.ok(Value.Check(ComparisonDiscoveryRecordSchema, after));
+  assert.deepEqual(after.submission.findings, [...before.submission.findings, finding]);
+  assert.deepEqual(after.submission.decisionQuestions, [...before.submission.decisionQuestions, ...change.addedQuestions]);
+  assert.equal(discovery.readyToCompose(), false, 'adding a pending question never certifies a ready decision');
+  const state = JSON.parse(discovery.state()) as { deltaAdditionFields: { findings: string; questions: string } };
+  assert.deepEqual(state.deltaAdditionFields, { findings: 'addedFindings', questions: 'addedQuestions' });
+});
+
+for (const mode of ['finding_collision', 'finding_duplicate', 'question_collision', 'question_duplicate', 'omit_old_finding', 'omit_old_question',
+  'finding_total', 'question_total', 'side_refs', 'support_missing', 'criterion', 'next_check', 'stale_binding'] as const) test(`delta addition rejects ${mode} without mutating persisted state`, async t => {
+  const { discovery, submission, saved, delta } = await fixture(t), signal = new AbortController().signal;
+  await discovery.tool().execute(submission, signal); const before = discovery.snapshot()!, change = delta();
+  const finding = strictFindingFixture(submission); finding.id = 'new-finding';
+  const question = { id: 'new-question', question: 'Is a distinct input checked?', decisionImpact: 'Could reverse preference', status: 'pending' as const, evidenceRefs: [], nextCheck: 'Inspect the distinct actual output' };
+  change.addedFindings = [finding]; change.addedQuestions = [question];
+  if (mode === 'finding_collision') finding.id = submission.findings[0]!.id;
+  if (mode === 'finding_duplicate') change.addedFindings.push(structuredClone(finding));
+  if (mode === 'question_collision') question.id = submission.decisionQuestions[0]!.id;
+  if (mode === 'question_duplicate') change.addedQuestions.push(structuredClone(question));
+  if (mode === 'omit_old_finding') change.findingDecisions = [];
+  if (mode === 'omit_old_question') change.questionDecisions = [];
+  if (mode === 'finding_total') change.addedFindings = Array.from({ length: 12 }, (_, index) => ({ ...structuredClone(finding), id: `new-${index}` }));
+  if (mode === 'question_total') change.addedQuestions = Array.from({ length: 15 }, (_, index) => ({ ...structuredClone(question), id: `new-${index}` }));
+  if (mode === 'side_refs') finding.observations[0]!.evidenceRefs = finding.observations[1]!.evidenceRefs;
+  if (mode === 'support_missing') delete (finding.observations[0]! as { supportBoundary?: unknown }).supportBoundary;
+  if (mode === 'criterion') finding.criterion = 'Unregistered criterion';
+  if (mode === 'next_check') delete change.addedQuestions[0]!.nextCheck;
+  if (mode === 'stale_binding') change.binding.revision++;
+  assert.match((await discovery.deltaTool().execute(change, signal)).content, /^status=rejected\n/);
+  assert.deepEqual(discovery.snapshot(), before); assert.equal(saved.length, 1);
+});
+
+test('the dedicated delta tool shares schema rejection, binding protection and the original persistence queue', async t => {
+  let block = false, entered!: () => void, release!: () => void;
+  const entry = new Promise<void>(resolve => { entered = resolve; }), released = new Promise<void>(resolve => { release = resolve; });
+  const { discovery, submission, delta } = await fixture(t, async () => { if (block) { entered(); await released; } });
+  const signal = new AbortController().signal;
+  assert.match((await discovery.deltaTool().execute(submission, signal)).content, /code=invalid_findings/);
+  assert.match((await discovery.deltaTool().execute({ kind: 'delta', binding: { revision: 1, digest: 'a'.repeat(64), catalogRevision: 0 }, findingDecisions: [], questionDecisions: [] }, signal)).content, /delta_snapshot_missing/);
+  await discovery.tool().execute(submission, signal);
+  const change = delta(); change.addedQuestions = [{ id: 'added', question: 'Was another output checked?', decisionImpact: 'Could change preference', status: 'unavailable', evidenceRefs: [], resolution: 'No additional check was performed' }];
+  block = true;
+  const pending = discovery.deltaTool().execute(change, signal); await entry;
+  const queued = discovery.tool().execute(change, signal); release();
+  assert.match((await pending).content, /^status=accepted\n/);
+  assert.match((await queued).content, /delta_binding_stale/);
+  assert.equal(discovery.snapshot()!.revision, 2);
+});
+
+test('dedicated delta addition persistence failure remains fatal and does not accept a materialized record', async t => {
+  let fail = false;
+  const { discovery, submission, delta } = await fixture(t, async () => { if (fail) throw new Error('Actual delta persistence failure'); });
+  const signal = new AbortController().signal; await discovery.tool().execute(submission, signal); const before = discovery.snapshot();
+  const change = delta(); change.addedFindings = [{ ...strictFindingFixture(submission), id: 'new-finding' }]; fail = true;
+  await assert.rejects(discovery.deltaTool().execute(change, signal), /Actual delta persistence failure/);
+  assert.deepEqual(discovery.snapshot(), before);
 });
 
 for (const mode of ['missing', 'revision', 'digest', 'catalog', 'omit_finding', 'extra_finding', 'duplicate_finding', 'omit_question', 'extra_question', 'duplicate_question', 'replacement_id', 'question_identity', 'reopen', 'support', 'side_refs', 'criterion'] as const) test(`delta ${mode} rejection preserves the actual saved snapshot`, async t => {
@@ -186,8 +265,8 @@ for (const changed of [false, true]) test(`production ${changed ? 'replacement' 
         assert.ok(Value.Check(ComparisonDiscoveryRecordSchema, state.record)); assert.match(content, /using kind=delta/);
         const delta: ComparisonFindingsDelta = { kind: 'delta', binding: state.binding, findingDecisions: state.record.submission.findings.map(item => ({ id: item.id, action: 'retain' })),
           questionDecisions: state.record.submission.decisionQuestions.map(item => changed ? { id: item.id, action: 'replace', replacement: { ...item, resolution: 'Independent review still cannot establish final quality; retain its effect on preference.' } } : { id: item.id, action: 'retain' }) };
-        assert.ok(Value.Check(ComparisonFindingsDeltaSchema, delta)); assert.deepEqual(allowedToolNames, ['read', 'update_comparison_findings']);
-        assert.match((await call('update_comparison_findings', delta, signal)).content, /^status=accepted\n/); actualDelta = true;
+        assert.ok(Value.Check(ComparisonFindingsDeltaSchema, delta)); assert.deepEqual(allowedToolNames, ['read', 'update_comparison_findings', 'update_comparison_findings_delta']);
+        assert.match((await call('update_comparison_findings_delta', delta, signal)).content, /^status=accepted\n/); actualDelta = true;
       } else if (content.includes('The initial checkpoint is not formal certification: after this full audit')) {
         assert.ok(actualDelta); if (changed) assert.match((await call('submit_comparison_draft', draft, signal)).content, /^status=accepted\n/);
         await call('inspect_comparison_draft', {}, signal);
@@ -202,8 +281,9 @@ for (const changed of [false, true]) test(`production ${changed ? 'replacement' 
   assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result)); assert.equal(turns, 8); assert.ok(actualDelta);
   const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { sequence: number; type: string; payload: Record<string, unknown> });
   assert.equal(events.filter(event => event.type === 'comparison.findings_updated').length, changed ? 2 : 1);
-  const updates = events.filter(event => event.type === 'agent.tool_completed' && event.payload.tool === 'update_comparison_findings' && !event.payload.nativeHook);
-  assert.equal(updates.length, 2, 'author and independent reviewer must really execute the same findings tool');
+  const updates = events.filter(event => event.type === 'agent.tool_completed' && ['update_comparison_findings', 'update_comparison_findings_delta'].includes(String(event.payload.tool)) && !event.payload.nativeHook);
+  assert.equal(updates.length, 2, 'initial snapshot and independent delta must both actually execute');
+  assert.equal(updates[0]!.payload.tool, 'update_comparison_findings'); assert.equal(updates[1]!.payload.tool, 'update_comparison_findings_delta');
   const closure = events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'review-findings')!;
   assert.equal(closure.payload.yieldReason, 'review_findings_ready'); assert.ok(updates[1]!.sequence < closure.sequence);
   const audit = events.find(event => event.type === 'comparison.draft_audit_started')!;

@@ -12,6 +12,7 @@ import { closeBoundedInvestigation } from './comparison-investigation-closure.js
 import { comparisonToolFeedback } from './comparison-tool-feedback.js';
 import { comparisonDecisionMetrics, comparisonOutputContinuation, comparisonTimeout, comparisonWorkDeadline, comparisonYieldBoundary, type ComparisonWorkPass } from './comparison-invocation-boundaries.js';
 import { ComparisonReviewFindingsClosure, comparisonSourceReviewPrompt, composeComparisonReviewerSystemPrompt, reviewDraftInspectionCheckpoint } from './comparison-review-findings.js';
+import { ComparisonFindingsCheckpoints, isFindingsUpdate } from './comparison-findings-checkpoints.js';
 import { ComparisonCompositionTools } from './comparison-composition-tools.js';
 import { composeComparisonAuthorSystemPrompt, COMPARISON_AUTHOR_COMPOSE_PROMPT } from './comparison-author-prompt.js';
 import { resourceBoundTools, setComparisonPass } from './comparison-phase-tools.js';
@@ -136,7 +137,7 @@ function phaseTools(tools: readonly AgentToolDefinition[], current: { phase: Com
           message: 'Finish the current turn and return. The Host starts the next phase; do not retry preview_report until the review turn.' }) });
       }
       const result = await tool.execute(params, signal);
-      if (tool.name === 'update_comparison_findings' && current.phase === 'investigate' && result.content.startsWith('status=accepted')) {
+      if (isFindingsUpdate(tool.name) && current.phase === 'investigate' && result.content.startsWith('status=accepted')) {
         return { ...result, content: `${result.content}\nIf readyToCompose=true, finish this turn with a brief findings summary. The Host starts compose next; do not submit or preview in this turn.` };
       }
       return tool.name === 'submit_comparison_draft' && result.content.startsWith('status=accepted')
@@ -180,7 +181,7 @@ function comparisonPassToolNames(tools: readonly AgentToolDefinition[], resource
     const exhausted = resources.reviewReason() !== undefined;
     return tools.filter(tool => tool.name !== 'preview_report' && (!exhausted || tool.name === 'read' || !resources.beforeTool(tool.name))).map(tool => tool.name);
   }
-  return pass === 'findings' ? ['update_comparison_findings'] : pass === 'inspection' ? ['inspect_comparison_draft'] : pass === 'preview' ? ['preview_report'] : undefined;
+  return pass === 'findings' ? tools.filter(tool => isFindingsUpdate(tool.name)).map(tool => tool.name) : pass === 'inspection' ? ['inspect_comparison_draft'] : pass === 'preview' ? ['preview_report'] : undefined;
 }
 
 export const COMPARISON_PREVIEW_CLOSURE_PROMPT = [
@@ -213,9 +214,10 @@ const COMPARISON_COMPACTION = [
 function comparisonWorkTools(tools: readonly AgentToolDefinition[], current: Parameters<typeof resourceBoundTools>[1], resources: ComparisonResourceTracker,
   options: ComparisonCompareOptions | undefined, reviewFindings: ComparisonReviewFindingsClosure) {
   const composition = new ComparisonCompositionTools(options, () => current.phase), initialFindings = new ComparisonInitialFindings(options);
+  const checkpoints = new ComparisonFindingsCheckpoints(tools, options);
   const boundedTools = reviewFindings.bind(resourceBoundTools(tools, current, resources, options), resources);
-  const phasedTools = comparisonFeedbackTools(initialFindings.bind(composition.bind(options?.enforcePhaseBoundaries ? phaseTools(boundedTools, current) : boundedTools)), resources, options);
-  return { composition, initialFindings, phasedTools };
+  const phasedTools = comparisonFeedbackTools(initialFindings.bind(checkpoints.bind(composition.bind(options?.enforcePhaseBoundaries ? phaseTools(boundedTools, current) : boundedTools), resources)), resources, options);
+  return { composition, initialFindings, checkpoints, phasedTools };
 }
 
 export const COMPARISON_SYSTEM_PROMPT = [
@@ -516,11 +518,13 @@ function comparisonProviderFailure<T>(result: AgentInvocation<T> | Extract<Freef
   return { ...result, failure: { ...result.failure, code: 'provider_failure' } };
 }
 
-function comparisonYieldPolicy(resources: ComparisonResourceTracker, phase: string, pass: ComparisonWorkPass | undefined, options: ComparisonCompareOptions | undefined, reviewFindings: ComparisonReviewFindingsClosure, initialFindings: ComparisonInitialFindings): () => Promise<string | undefined> {
+function comparisonYieldPolicy(resources: ComparisonResourceTracker, phase: string, pass: ComparisonWorkPass | undefined, options: ComparisonCompareOptions | undefined, reviewFindings: ComparisonReviewFindingsClosure, initialFindings: ComparisonInitialFindings, checkpoints: ComparisonFindingsCheckpoints): () => Promise<string | undefined> {
   return async () => {
     resources.checkHard('completed provider turn');
     if (pass === 'review-findings') return reviewFindings.ready() ? 'review_findings_ready' : reviewFindings.pending() ? 'review_findings_pending' : undefined;
     if (pass === 'initial-findings') return initialFindings.saved() ? 'initial_findings_saved' : resources.softReason();
+    if (pass === 'source-save') return checkpoints.saved() ? 'findings_checkpoint_saved' : undefined;
+    if (checkpoints.due()) return 'findings_checkpoint_required';
     if (pass === 'sources' && reviewFindings.directSources) {
       if (reviewFindings.sourceReady()) return 'independent_findings_ready';
       if (reviewFindings.sourcePending()) return 'independent_findings_pending';
@@ -603,7 +607,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
     const current = { phase: 'investigate' as ComparisonPhase, sourceReview: false, findingsClosure: false, draftInspection: false, draftAudit: false, previewClosure: false };
     const boundedStages = !!options?.getSubmittedResult && options.enforcePhaseBoundaries === true && options.reviewFindings === true;
     const resources = new ComparisonResourceTracker(this.#resources, { boundedStages }), reviewFindings = new ComparisonReviewFindingsClosure(options);
-    const { composition, initialFindings, phasedTools } = comparisonWorkTools(tools, current, resources, options, reviewFindings);
+    const { composition, initialFindings, checkpoints, phasedTools } = comparisonWorkTools(tools, current, resources, options, reviewFindings);
     let activePhase: 'understand' | 'investigate' | 'compose' | 'review' | undefined;
     let counts = { modelRequests: 0, toolCalls: 0, compactions: 0, previews: 0 };
     const measuredAudit: AgentAuditSink = {
@@ -629,8 +633,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
     let freshReview = false, freshAuthor = false;
     const measuredWork = async (phase: 'understand' | 'investigate' | 'compose' | 'review', promptContent: string, reviewPass?: ComparisonWorkPass) => {
       setComparisonPass(current, phase, reviewPass);
-      reviewFindings.begin(reviewPass);
-      initialFindings.begin(reviewPass);
+      reviewFindings.begin(reviewPass); initialFindings.begin(reviewPass); checkpoints.begin(phase, reviewPass);
       resources.phase(phase, reviewPass);
       activePhase = phase;
       counts = { modelRequests: 0, toolCalls: 0, compactions: 0, previews: 0 };
@@ -654,8 +657,8 @@ export class ComparisonAgent implements ComparisonAgentPort {
           if (signal.aborted) return { status: 'cancelled', sessionId: session.sessionId };
           if (boundedStages && deadline.yieldDeadline && Date.now() >= deadline.yieldDeadline.at) return { status: 'yielded', sessionId: session.sessionId, reason: deadline.yieldDeadline.reason };
           const next = await session.work({ promptContent: [comparisonDecisionMetrics(prompt, phase, context.reportFacts.metrics), composition.prompt()].filter(Boolean).join('\n\n'), timeoutMs: comparisonTimeout(resources, this.#resources, this.#timeoutMs),
-            allowedToolNames: initialFindings.toolNames(phasedTools) ?? (phase === 'compose' ? composition.allowedToolNames(phasedTools) : reviewPass === 'review-findings' || reviewPass === 'review-supplement' || (reviewPass === 'sources' && reviewFindings.directSources) ? reviewFindings.toolNames(phasedTools) : comparisonPassToolNames(phasedTools, resources, reviewPass)), ...deadline,
-            signal, yieldAfterTurn: comparisonYieldPolicy(resources, phase, reviewPass, options, reviewFindings, initialFindings) });
+            allowedToolNames: checkpoints.toolNames() ?? initialFindings.toolNames(phasedTools) ?? (phase === 'compose' ? composition.allowedToolNames(phasedTools) : reviewPass === 'review-findings' || reviewPass === 'review-supplement' || (reviewPass === 'sources' && reviewFindings.directSources) ? reviewFindings.toolNames(phasedTools) : comparisonPassToolNames(phasedTools, resources, reviewPass)), ...deadline,
+            signal, yieldAfterTurn: comparisonYieldPolicy(resources, phase, reviewPass, options, reviewFindings, initialFindings, checkpoints) });
           return comparisonYieldBoundary(next, resources, signal);
         };
         return outcome = await (reviewPass === 'review-findings' ? invoke(promptContent) : comparisonOutputContinuation(invoke, promptContent, boundedStages ? deadline.yieldDeadline : undefined));
@@ -665,7 +668,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
       }
     };
     try {
-      if (options?.getSubmittedResult) return await this.#submittedComparison(context, options, measuredWork, session.sessionId, attemptId, tools, reviewFindings, resources, signal, initialFindings);
+      if (options?.getSubmittedResult) return await this.#submittedComparison(context, options, measuredWork, session.sessionId, attemptId, tools, reviewFindings, resources, signal, initialFindings, checkpoints);
 
       for (const step of ['understand', 'investigate', 'compose'] as const) {
         current.phase = step;
@@ -699,10 +702,10 @@ export class ComparisonAgent implements ComparisonAgentPort {
     measuredWork: (phase: 'investigate' | 'compose' | 'review', prompt: string, reviewPass?: ComparisonWorkPass) => Promise<FreeformInvocation>,
     sessionId: string,
     attemptId: string,
-    tools: readonly AgentToolDefinition[], reviewFindings: ComparisonReviewFindingsClosure, resources: ComparisonResourceTracker, signal: AbortSignal, initialFindings: ComparisonInitialFindings,
+    tools: readonly AgentToolDefinition[], reviewFindings: ComparisonReviewFindingsClosure, resources: ComparisonResourceTracker, signal: AbortSignal, initialFindings: ComparisonInitialFindings, checkpoints: ComparisonFindingsCheckpoints,
   ): Promise<AgentInvocation<ComparisonResult>> {
     const first = initialFindings.needed() ? await measuredWork('investigate', `${context.task.summary}\n\n${context.promptContent ?? ''}\n\n${COMPARISON_INITIAL_FINDINGS_PROMPT}`, 'initial-findings') : undefined;
-    let investigated = first && !(first.status === 'yielded' && first.reason === 'initial_findings_saved') ? first : await measuredWork('investigate', context.promptContent
+    let investigated = first && !(first.status === 'yielded' && first.reason === 'initial_findings_saved') ? first : await checkpoints.run(measuredWork, 'investigate', context.promptContent
       ? `${context.promptContent}\n\n${COMPARISON_TURN_PROMPTS.orientAndInvestigate}`
       : COMPARISON_TURN_PROMPTS.orientAndInvestigate);
     investigated = await closeBoundedInvestigation(options, investigated, resources, signal);
@@ -719,6 +722,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
       }
       closureCalls++;
       investigated = await measuredWork('investigate', `${investigationBoundary} Use this bounded closure turn only to submit update_comparison_findings from already received observations. ${closureCalls === 2 ? 'The previous closure call did not produce an actually accepted ready findings update. Call update_comparison_findings now; do not give another verbal promise to save it. ' : ''}Do not run more investigation or repeat settled checks. Resolve questions only with existing supporting evidence; otherwise mark unavailable with the decisive uncertainty and limitation. Preserve actual saved findings and the complete question history. Current findings: ${state}`, 'findings');
+      investigated = await closeBoundedInvestigation(options, investigated, resources, signal);
     }
     const findings = options.getFindingsState?.();
     const prefix = investigated.status === 'completed' || investigated.status === 'yielded'
@@ -728,7 +732,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
       if (prefix.status === 'failed') await this.#sessions.discard(attemptId);
       return comparisonProviderFailure(prefix);
     }
-    return this.#reviewSubmitted(context, options, measuredWork, attemptId, tools, reviewFindings);
+    return this.#reviewSubmitted(context, options, measuredWork, attemptId, tools, reviewFindings, checkpoints);
   }
 
   async #reviewSubmitted(
@@ -736,9 +740,9 @@ export class ComparisonAgent implements ComparisonAgentPort {
     options: ComparisonCompareOptions,
     work: (phase: 'review', prompt: string, reviewPass?: ComparisonWorkPass) => Promise<FreeformInvocation>,
     attemptId: string,
-    tools: readonly AgentToolDefinition[], reviewFindings: ComparisonReviewFindingsClosure,
+    tools: readonly AgentToolDefinition[], reviewFindings: ComparisonReviewFindingsClosure, checkpoints: ComparisonFindingsCheckpoints,
   ): Promise<AgentInvocation<ComparisonResult>> {
-    const sources = await work('review', comparisonSourceReviewPrompt(options, context.promptContent, COMPARISON_SOURCE_REVIEW_PROMPT), 'sources');
+    const sources = await checkpoints.run(work, 'review', comparisonSourceReviewPrompt(options, context.promptContent, COMPARISON_SOURCE_REVIEW_PROMPT), 'sources');
     if (sources.status !== 'completed' && sources.status !== 'yielded') {
       if (sources.status === 'failed') await this.#sessions.discard(attemptId);
       return comparisonProviderFailure(sources);

@@ -7,10 +7,10 @@ export const COMPARISON_INITIAL_FINDINGS_PROMPT = 'This is the initial findings 
 
 export function composeComparisonInvestigatorSystemPrompt(locale: AgentLocale): string {
   return withLanguageBlock([
-    'You investigate the recorded task and two actual deliveries for a concise Comparison report. Save a minimal provisional findings snapshot before any reading or checking; unknown finals and pending questions are valid.',
-    'After the actual checkpoint, read only sources needed for consequential result or process differences. Keep findings and decision-changing questions current with registered references and exact side ownership. Declare what the actual method supports: source inspection is not a rendered-output measurement, an intermediate result is not the final output, and unknown remains unknown.',
-    'Save supported observations promptly after useful source checks instead of deferring all findings until the deadline. An actual saved ready snapshot ends investigation; unresolved questions must retain their identity and become explicitly unavailable with their decisionImpact when no necessary check remains. Do not keep investigating after recording a sufficient conditional decision.',
-    'Use the registered tool schemas and actual rejection feedback. Preserve question identity and history. At the investigation deadline the Host may close pending questions as unavailable, without certifying their answers. Do not author, inspect or preview the report here; the Host assigns later independent author and review sessions.',
+    'Investigate the recorded task and both actual deliveries for a concise Comparison. First save a minimal provisional snapshot; unknown finals and pending questions are valid.',
+    'Check only consequential result or process differences. Use registered references with exact side ownership. State the actual method and scope: source inference, intermediate calculations, rendered output and execution records support different claims. Unknown remains unknown.',
+    'Save useful observations promptly. Prefer update_comparison_findings_delta when available: exact binding, explicit retain/replace for every old ID, new complete objects only in addedFindings/addedQuestions. Do not reconstruct the whole snapshot. The Host pauses small source batches for save-only checkpoints; pending with nextCheck allows further necessary checks.',
+    'A saved ready snapshot ends investigation. Preserve question identity, history and decisionImpact; unsupported answers become unavailable when no necessary check remains. Follow tool schemas and actual rejection feedback. At the deadline the Host can close saved pending questions as unavailable, never certify answers. Do not author, inspect or preview; later independent author and review sessions do that.',
   ].join('\n'), locale, 'comparison');
 }
 

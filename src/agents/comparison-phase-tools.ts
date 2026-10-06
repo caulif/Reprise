@@ -3,6 +3,7 @@ import type { ComparisonWorkPass } from './comparison-invocation-boundaries.js';
 import type { ComparisonResourceTracker } from './comparison-resources.js';
 import type { AgentToolDefinition } from '../infrastructure/agent/host.js';
 import { comparisonSoftLimitFeedback } from './comparison-tool-feedback.js';
+import { isFindingsUpdate } from './comparison-findings-checkpoints.js';
 
 type Phase = 'understand' | 'investigate' | 'compose' | 'review';
 export type ComparisonToolPhase = { phase: Phase; sourceReview: boolean; findingsClosure: boolean; draftInspection: boolean; draftAudit: boolean; previewClosure: boolean };
@@ -13,7 +14,7 @@ export function setComparisonPass(current: ComparisonToolPhase, phase: Phase, pa
 
 function sourceReviewFeedback(name: string, reason: string | undefined, directFindings: boolean): { content: string } | undefined {
   const forbidden = ['inspect_comparison_draft', 'submit_comparison_draft', 'preview_report',
-    ...(directFindings ? ['write', 'edit'] : ['update_comparison_findings'])];
+    ...(directFindings ? ['write', 'edit'] : ['update_comparison_findings', 'update_comparison_findings_delta'])];
   if (forbidden.includes(name)) return { content: JSON.stringify({ code: 'source_review_not_ready',
     message: directFindings
       ? 'Check actual sources and save findings now; do not open, write, submit or preview the author draft. The Host starts actual draft inspection and audit next.'
@@ -37,7 +38,7 @@ export function resourceBoundTools(tools: readonly AgentToolDefinition[], curren
       message: 'Finish this actual full draft audit turn and formally inspect the current accepted binding. The Host then starts a preview-only closure in the same session; do not retry preview in this audit.' }) };
     if (current.draftInspection && tool.name !== 'inspect_comparison_draft') return { content: JSON.stringify({ code: 'draft_inspection_only',
       message: 'Call inspect_comparison_draft to receive the actual full accepted text. This checkpoint permits no investigation, findings changes, submission, writing or preview. Delivery is not semantic or publication approval.' }) };
-    if (current.findingsClosure && tool.name !== 'update_comparison_findings') return { content: JSON.stringify({ code: 'closure_only',
+    if (current.findingsClosure && !isFindingsUpdate(tool.name)) return { content: JSON.stringify({ code: 'closure_only',
       message: 'This findings closure permits only update_comparison_findings from already observed evidence. Do not investigate, write, submit or preview here.' }) };
     const sourceFeedback = current.sourceReview ? sourceReviewFeedback(tool.name, reason, directFindings) : undefined;
     if (sourceFeedback) return sourceFeedback;

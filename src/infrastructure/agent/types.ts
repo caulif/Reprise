@@ -213,6 +213,7 @@ export interface ProviderAdapter {
     onRetry?: (payload: { attempt: number; kind: string; delayMs: number }) => Promise<void>;
     onAssistantVisible?: (payload: { text: string; turn: number }) => Promise<void>;
     onBeforeToolCall?: (payload: { tool: string }) => Promise<void>;
+    onToolRejected?: (payload: { tool: string; callDigest: string }) => Promise<void>;
     onAfterToolCall?: (payload: {
       tool: string;
       isError: boolean;

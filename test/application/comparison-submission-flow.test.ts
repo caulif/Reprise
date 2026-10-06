@@ -208,7 +208,7 @@ for (const bounded of [false, true]) test(`production requireFindings ${bounded 
         }
         else if (content.includes('This is the actual draft inspection checkpoint') || content.includes('The initial checkpoint is not formal certification: after this full audit')) await call('inspect_comparison_draft', {}, signal);
         else if (content.includes('This is the independent review findings closure')) {
-          reviewUpdates++; assert.deepEqual(allowedToolNames, ['read', 'update_comparison_findings']);
+          reviewUpdates++; assert.deepEqual(allowedToolNames, ['read', 'update_comparison_findings', 'update_comparison_findings_delta']);
           assert.match((await call('update_comparison_findings', reviewFindings, signal)).content, /^status=accepted/);
         } else if (content.includes('This is the preview-only closure')) {
           assert.deepEqual(allowedToolNames, ['preview_report']);

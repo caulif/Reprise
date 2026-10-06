@@ -23,6 +23,10 @@ function turn(name: string, args: unknown): AssistantMessage {
 }
 type Event = { sequence: number; sessionId?: string; type: string; payload: Record<string, unknown> };
 
+function correctionCommand(content: string): string {
+  return process.platform === 'win32' ? `Set-Content corrected.txt '${content}'` : `printf '%s\\n' '${content}' > corrected.txt`;
+}
+
 for (const mode of ['success', 'cancel', 'hard'] as const) test(`production native readonly denial, correction and source soft boundary preserve ${mode}`, async t => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-refusal-publication-')); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime()); await mkdir(base.sourceRoot, { recursive: true }); await writeFile(join(base.sourceRoot, 'README.md'), '# sealed source\n');
@@ -51,9 +55,9 @@ for (const mode of ['success', 'cancel', 'hard'] as const) test(`production nati
       if (sourceRequests === 2) {
         assert.match(JSON.stringify(context.messages), /write_denied[\s\S]*Keep source inspection and work-copy mutation in separate shell calls/);
         assert.ok(context.messages.some(item => item.role === 'toolResult' && 'isError' in item && item.isError));
-        response = turn('shell_exec', { command: "Set-Content corrected.txt 'Corrected in writable scratch'" });
+        response = turn('shell_exec', { command: correctionCommand('Corrected in writable scratch') });
         if (mode === 'hard') response.content = Array.from({ length: 28 }, (_, index) => ({ type: 'toolCall', id: `corrected-${index}`, name: 'shell_exec',
-          arguments: { command: `Set-Content corrected.txt 'Corrected write ${index}'` } }));
+          arguments: { command: correctionCommand(`Corrected write ${index}`) } }));
       } else response = turn('shell_exec', { command: 'Set-Content finals/policy-denial-sentinel.txt denied' });
     }
     else if (actualPrompt.includes('This is the actual draft inspection checkpoint')) response = turn('inspect_comparison_draft', {});
@@ -90,7 +94,8 @@ for (const mode of ['success', 'cancel', 'hard'] as const) test(`production nati
     assert.ok(events.some(event => {
       const details = event.payload.details as { command?: string; exitCode?: number; stderrBytes?: number } | undefined;
       return event.type === 'agent.tool_completed' && event.payload.tool === 'shell_exec' && !event.payload.nativeHook
-        && details?.command?.startsWith('Set-Content corrected.txt') && details.exitCode === 0 && details.stderrBytes === 0;
+        && typeof details?.command === 'string' && /^(?:Set-Content corrected\.txt |printf '%s\\n' .* > corrected\.txt$)/.test(details.command)
+        && details.exitCode === 0 && details.stderrBytes === 0;
     }), 'a permitted correction command actually exits successfully, rather than only returning a tool receipt');
     assert.match(await readFile(join(attemptRoot, 'scratch/corrected.txt'), 'utf8'), /Corrected (?:in writable scratch|write \d+)/, 'a separate permitted shell call actually writes scratch before completion or the hard stop');
   }

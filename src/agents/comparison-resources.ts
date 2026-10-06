@@ -72,7 +72,7 @@ export class ComparisonResourceTracker {
 
   workDeadline(): { at: number; reason: string } | undefined {
     const at = this.#stageDeadlines.get(this.#workStage);
-    const source = this.#workPass === undefined ? undefined : this.#sourceDeadlines.get(this.#workPass);
+    const source = this.#workPass === undefined ? undefined : this.#sourceDeadlines.get(this.#workPass === 'source-save' && this.#workStage === 'review' ? 'sources' : this.#workPass);
     return at === undefined ? undefined : { at: Math.min(at, source ?? Infinity), reason: STAGE_REASONS[this.#workStage] };
   }
 
@@ -121,10 +121,10 @@ export class ComparisonResourceTracker {
     const deadline = this.workDeadline();
     if (deadline && Date.now() >= deadline.at) return deadline.reason;
     if (this.#phase === 'review') {
-      if (['inspect_comparison_draft', 'quote_evidence', 'update_comparison_findings', 'submit_comparison_draft', 'preview_report', 'write', 'edit'].includes(name)) return undefined;
+      if (['inspect_comparison_draft', 'quote_evidence', 'update_comparison_findings', 'update_comparison_findings_delta', 'submit_comparison_draft', 'preview_report', 'write', 'edit'].includes(name)) return undefined;
       return this.reviewReason();
     }
-    if (this.#phase !== 'investigate' || name === 'update_comparison_findings') return undefined;
+    if (this.#phase !== 'investigate' || name === 'update_comparison_findings' || name === 'update_comparison_findings_delta') return undefined;
     return this.softReason();
   }
 

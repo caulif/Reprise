@@ -21,6 +21,7 @@ import type { HarnessModelConfig } from "../../../harness-model-config.js";
 import { piRequestUsage } from './request-usage.js';
 import { invocationToolExposure } from './tool-exposure.js';
 import { invocationYieldDeadline, observePiFailure } from './yield-deadline.js';
+import { piToolRejections } from './tool-rejections.js';
 
 export type PiModels = Pick<Models, "getProviders" | "getModels" | "getModel" | "getAuth" | "completeSimple" | "streamSimple">;
 
@@ -73,6 +74,7 @@ export class PiProviderAdapter implements ProviderAdapter {
     let active = true;
     let toolsEnabled = true;
     const registeredTools = input.tools.map(tool => toPiTool(tool, recordFailure));
+    const rejections = piToolRejections(input, recordFailure);
     const turnYield: TurnYieldState = { policy: undefined, reason: undefined, failure: undefined };
     const fixedTokens = Math.ceil(Buffer.byteLength(input.systemPrompt + JSON.stringify(input.tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })))) / 3);
     const availableWindow = contextWindowOf(model) - fixedTokens - Math.max(1_024, model.maxTokens);
@@ -81,6 +83,7 @@ export class PiProviderAdapter implements ProviderAdapter {
       streamFn: usage.stream,
       convertToLlm,
       beforeToolCall: async ({ toolCall }) => {
+        rejections.before(toolCall.id);
         if (!active) return { block: true, reason: "Agent session is no longer active.", terminate: true };
         if (!toolsEnabled) return { block: true, reason: "Tools are disabled for this invocation.", terminate: true };
         if (!exposure.permits(toolCall.name)) return { block: true, reason: 'Tool is unavailable in this invocation.', terminate: true };
@@ -116,6 +119,7 @@ export class PiProviderAdapter implements ProviderAdapter {
       },
     });
     const exposure = invocationToolExposure(agent, registeredTools);
+    rejections.subscribe(agent);
     subscribeVisibleAssistant(agent, input.onAssistantVisible, recordFailure);
     return {
       inputCapabilities: [...model.input],

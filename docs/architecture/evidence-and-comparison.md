@@ -24,6 +24,12 @@ History 从已校验的提交日志前缀构造只读附件读取器，每个 Se
 
 ## Comparison attempt
 
+严格三会话路径向模型提供单一 schema 的 `update_comparison_findings_delta`，delta 的 `addedFindings` / `addedQuestions` 可新增观察或问题；已有每个 ID 仍须完整且恰好一次 retain/replace，新增不能覆盖旧身份。Host 根据真实当前记录合成 canonical submission，继续经过原 `Value.Check`、来源及 catalog/findings 绑定校验，不补造语义内容。完整工具保留兼容，两个名称在全部阶段、完成回调和副作用入口服从相同守卫。
+
+正常调查和独立来源审查每6次来源工具后在完整 turn 边界进入只准保存的窗口，禁止读取、渲染、登记和其他副作用。只有真实 accepted 且当前实际非空 saved state 匹配才可继续；pending 保存可回到下一来源批次，不能冒充 ready，ready 才可结束该调查。每个阶段最多5窗口，Session、累计资源和绝对截止不重置：调查仍共享120秒，独立来源初查及保存仍共享110秒并受审阅总截止限制。下述 `independent_findings_pending` 指来源完成边界，窗口内 accepted pending 本身不立即结束来源阶段。旧端口保持兼容，有限收尾、稿件失效和实际核稿/inspection/preview要求不放宽。见[有界审阅收敛](../decisions/accepted/2026-10-06-comparison-bounded-review-convergence.md)。
+
+SDK 参数校验拒绝可能发生在 Host 应用工具入口前，仍通过既有安全 called/failed 工具事件计数；新审计只记录工具身份与拒绝类别，不复制整份无效参数或 SDK 回执。模型可见拒绝继续由脱敏 generation 快照复原。拒绝不代表应用工具执行成功；审计失败保持 fatal。增量保存及有界窗口不构成实际模型性能或稳定性验收。
+
 新草稿生产调查通过同进程 `hasSavedFindings` 读取 discovery 的真实接受状态。首次 snapshot 接受前，调查执行边界拒绝 shell/render/register，read 与导航按原预算开放，模型须先保存最小完整的任务标准、双侧 final（未知可 unavailable）、空或实际 findings、pending 问题与 nextCheck；非法更新与口头承诺不能解锁。接受仅解除首次检查点，pending 与旧 catalog 仍不能 compose；重要检查后提示要求完整替换并保留问题历史，不新增独立阶段、不重复扩大工具结果。closure 与独立 source pass 按后述严格路径共享阶段截止或旧端口兼容规则推进，整体硬保护和取消先检查，旧无 getter 端口保持兼容。见[首次 findings 检查点](../decisions/accepted/2026-10-05-comparison-first-findings-checkpoint.md)。
 
 Session 以有效 Provider 冻结身份、API、输入能力、声明来源与无凭据配置指纹，Session 声明冲突则取消。图片工具结果、压缩 retained tail 和最终 `agent.model_request.images` 保存不可变附件的 hash、长度与 artifactId，不存 base64。最终清单反映 Pi 转换后的实际图片；视觉声明和离线恢复优先依据这些实际清单，只有无清单的历史日志沿用旧交付事实。重建校验附件，无附件或二进制 resolver 时标记不完整，读取失败与 hash 错误有诊断。文本裁剪保留最近 12 个原生图片块，旧图片换成 hash 与重新读取提示。
