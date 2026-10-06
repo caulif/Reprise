@@ -10,6 +10,8 @@ export function invocationYieldDeadline(agent: { abort(): void; readonly signal?
   const signal = AbortSignal.any([outer, local.signal]);
   let expired = false;
   let failure: Error | undefined;
+  let providerFailure: Error | undefined;
+  let toolFailure: Error | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const knownReasons = new Set<unknown>();
   const abort = () => {
@@ -34,13 +36,20 @@ export function invocationYieldDeadline(agent: { abort(): void; readonly signal?
     recordFailure(error: unknown) {
       if (!signal.aborted || !isKnownAbort(error, knownReasons)) failure ??= error instanceof Error ? error : new Error('Pi invocation failed.', { cause: error });
     },
+    recordProviderFailure(error: unknown) { if (!signal.aborted || !isKnownAbort(error, knownReasons)) providerFailure ??= error instanceof Error ? error : new Error('Provider response failed.', { cause: error }); },
+    recordToolFailure(error: unknown) { if (!signal.aborted || !isKnownAbort(error, knownReasons)) toolFailure ??= error instanceof Error ? error : new Error('Pi tool failed.', { cause: error }); },
+    providerRecovered() { providerFailure = undefined; },
+    assertCanRecover() { outer.throwIfAborted(); if (failure !== undefined) throw failure; },
     reason() {
       outer.throwIfAborted();
       if (!expired) return undefined;
       if (failure !== undefined) throw failure;
+      if (providerFailure !== undefined) throw providerFailure;
+      if (toolFailure !== undefined) throw toolFailure;
       return deadline!.reason;
     },
-    assertCanYield() { outer.throwIfAborted(); if (failure !== undefined) throw failure; },
+    assertCanYield() { outer.throwIfAborted(); if (failure !== undefined) throw failure; if (providerFailure !== undefined) throw providerFailure; if (toolFailure !== undefined) throw toolFailure; },
+    assertCanComplete() { outer.throwIfAborted(); if (failure !== undefined) throw failure; if (providerFailure !== undefined) throw providerFailure; },
     dispose() { if (timer) clearTimeout(timer); signal.removeEventListener('abort', abort); },
   };
 }

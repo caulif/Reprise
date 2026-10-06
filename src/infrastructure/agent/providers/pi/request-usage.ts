@@ -7,7 +7,7 @@ import { observePiFailure } from './yield-deadline.js';
 
 type Hooks = Parameters<ProviderAdapter['createSession']>[0];
 
-export function piRequestUsage(source: PiModels, input: Pick<Hooks, 'onModelUsage' | 'onModelRequest'>, onFailure?: (error: unknown) => void) {
+export function piRequestUsage(source: PiModels, input: Pick<Hooks, 'onModelUsage' | 'onModelRequest'>, onFailure?: (error: unknown) => void, onProviderFailure = onFailure) {
   const pending: Promise<void>[] = [];
   let auditFailed = false;
   let auditFailure: unknown;
@@ -22,8 +22,9 @@ export function piRequestUsage(source: PiModels, input: Pick<Hooks, 'onModelUsag
     if (auditFailed) throw auditFailure;
   };
   const report = async (message: { model: string; usage: AgentUsageFacts['usage']; stopReason?: string; errorMessage?: string }, scope: AgentUsageFacts['scope'], signal?: AbortSignal) => {
-    if (message.stopReason === 'error') onFailure?.(new Error(message.errorMessage ?? 'Provider response failed.'));
-    if (message.stopReason === 'aborted' && !signal?.aborted) onFailure?.(new Error(message.errorMessage ?? 'Provider response aborted independently.'));
+    const responseFailure = scope === 'generation' ? onProviderFailure : onFailure;
+    if (message.stopReason === 'error') responseFailure?.(new Error(message.errorMessage ?? 'Provider response failed.'));
+    if (message.stopReason === 'aborted' && !signal?.aborted) responseFailure?.(new Error(message.errorMessage ?? 'Provider response aborted independently.'));
     // Pinned SDK failure messages initialize usage to zero before any provider usage arrives; these zeros are not a bill.
     if ((message.stopReason === 'error' || message.stopReason === 'aborted')
       && [message.usage.input, message.usage.output, message.usage.cacheRead, message.usage.cacheWrite, message.usage.totalTokens].every(count => count === 0)) return;
@@ -67,8 +68,8 @@ export function piRequestUsage(source: PiModels, input: Pick<Hooks, 'onModelUsag
     args[2]?.signal?.throwIfAborted();
     let result: ReturnType<PiModels['streamSimple']>;
     try { result = source.streamSimple(args[0], context, { ...args[2], maxRetries: 0, maxRetryDelayMs: 8_000 }); }
-    catch (error) { onFailure?.(error); throw error; }
-    const task = observePiFailure(() => result.result(), onFailure).then((message) => report(message, 'generation', args[2]?.signal)).catch(error => { onFailure?.(error); throw error; });
+    catch (error) { onProviderFailure?.(error); throw error; }
+    const task = observePiFailure(() => result.result(), onProviderFailure).then((message) => report(message, 'generation', args[2]?.signal)).catch(error => { if (auditFailed) onFailure?.(error); else onProviderFailure?.(error); throw error; });
     // Lifecycle checkpoints await failures; attach a handler while the stream is still being consumed.
     void task.catch(() => undefined);
     pending.push(task);

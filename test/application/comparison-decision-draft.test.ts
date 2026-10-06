@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Value } from '@sinclair/typebox/value';
@@ -9,7 +9,7 @@ import { materializeComparisonDecisionDraft } from '../../src/application/compar
 import { ComparisonDraft } from '../../src/application/comparison-draft.js';
 import { ComparisonDiscovery } from '../../src/application/comparison-discovery.js';
 import { ComparisonEvidenceCatalog } from '../../src/application/comparison-evidence.js';
-import { comparisonVisibleMainText } from '../../src/application/comparison-report-text.js';
+import { comparisonDetailsText, comparisonVisibleMainText } from '../../src/application/comparison-report-text.js';
 
 const base: ComparisonDecisionDraftSubmission = { kind: 'decision', status: 'insufficient_evidence', category: 'Results', headline: 'Unknown',
   decisionShape: 'single_difference', decisionSummary: 'Output quality remains unchecked.', decisionBoundary: 'Quality could change the choice.',
@@ -18,10 +18,12 @@ const facts = { run: { runId: 'run', outcome: 'completed', terminationCode: 'com
   models: { candidate: 'candidate' }, activity: {}, limits: { triggered: [] }, runtime: { productId: 'codex' },
   delivery: { changedPaths: [], targetArtifactStatus: 'unavailable', verificationStatus: 'unavailable' },
   replay: { conditions: [], baselineEvidence: 'unavailable', candidateEvidence: 'unavailable' } };
-async function fixture(t: { after(fn: () => Promise<void>): void }, withFinding = false) {
+async function fixture(t: { after(fn: () => Promise<void>): void }, withFinding = false, withSources = false) {
   const root = await mkdtemp(join(tmpdir(), 'reprise-decision-draft-'));
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5 }));
-  const catalog = await ComparisonEvidenceCatalog.create({ attemptRoot: root, attemptId: 'attempt', links: [], media: [] });
+  if (withSources) await Promise.all(['baseline', 'candidate'].map(side => writeFile(join(root, `${side}.txt`), `${side} source fixture`)));
+  const catalog = await ComparisonEvidenceCatalog.create({ attemptRoot: root, attemptId: 'attempt',
+    links: withSources ? (['baseline', 'candidate'] as const).map(side => ({ side, inspectPath: `${side}.txt`, evidenceRef: `artifact:${side}` })) : [], media: [] });
   const discovery = new ComparisonDiscovery({ catalog, attemptId: 'attempt', persist: async () => {} });
   if (withFinding) assert.match(await discovery.update({ criteria: ['Quality'],
     finals: (['baseline', 'candidate'] as const).map(side => ({ side, status: 'unavailable', sourceRefs: [], description: 'Unchecked final' })),
@@ -32,8 +34,59 @@ async function fixture(t: { after(fn: () => Promise<void>): void }, withFinding 
           supportStage: 'unavailable', coveredInstances: [], uncheckedInstances: ['Quality'] } })) }] }), /status=accepted/);
   const draft = new ComparisonDraft({ attemptRoot: root, task: 'Compare outputs', facts, locale: 'en', catalog, deliveredImages: new Set(),
     ...(withFinding ? { discovery } : {}) });
-  return { root, draft, tool: draft.tool(), signal: new AbortController().signal };
+  return { root, draft, discovery, catalog, tool: draft.tool(), signal: new AbortController().signal };
 }
+
+test('production decision shares the recorded criterion without rewriting original compact scope or bypassing details budget', async t => {
+  const f = await fixture(t, false, true);
+  const refs = f.catalog.snapshot().links.map(item => item.shortRef!);
+  const criterion = '产出一个HTML文件，其内容使用SVG绘制鹈鹕骑自行车的2D动画，并可在浏览器中打开查看';
+  const scopes = [
+    [{ relationship: '基线 2D 动画实现方式', domain: 'CSS keyframes', coveredInstances: ['pelican_bike.html 全文'], uncheckedInstances: ['浏览器渲染'] },
+      { relationship: '候选 2D 动画实现方式', domain: 'SMIL + JS', coveredInstances: ['pelican-bike.html 全文'], uncheckedInstances: ['浏览器渲染'] }],
+    [{ relationship: '基线降级方式', domain: 'CSS 降级', coveredInstances: ['.wheel-spin/.pedal-spin 规则'], uncheckedInstances: ['浏览器渲染'] },
+      { relationship: '候选降级方式', domain: 'SMIL + JS 降级', coveredInstances: ['matchMedia 分支'], uncheckedInstances: ['浏览器渲染'] }],
+  ];
+  const submission = { criteria: [criterion], finals: (['baseline', 'candidate'] as const).map((side, index) => ({ side,
+    status: 'located' as const, sourceRefs: [refs[index]!], description: 'Source scope fixture' })), importantLimitations: ['未渲染'], decisionQuestions: [],
+    findings: scopes.map((pair, index) => ({ id: `scope-${index}`, criterion, difference: '不同实现', userConsequence: '影响使用',
+      limitations: [], counterEvidenceRefs: [], observations: (['baseline', 'candidate'] as const).map((side, sideIndex) => ({ side,
+        method: 'source_inspection' as const, timing: 'comparison_check' as const, result: '源码范围', scope: '最终源码', evidenceRefs: [refs[sideIndex]!],
+        supportBoundary: { ...pair[sideIndex]!, supportStage: 'delivered_output' as const } })) })) };
+  assert.match(await f.discovery.update(submission), /status=accepted/);
+  const before = structuredClone(f.discovery.state());
+  const draft = new ComparisonDraft({ attemptRoot: f.root, task: '比较动画', facts, locale: 'zh', catalog: f.catalog,
+    deliveredImages: new Set(), discovery: f.discovery });
+  const decision: ComparisonDecisionDraftSubmission = { ...base, headline: '动画实现不同', decisionSummary: '按使用条件取舍。',
+    decisionBoundary: '只检源码，浏览器渲染未知。', findingDispositions: submission.findings.map(item => ({ findingId: item.id,
+      disposition: 'basis', explanation: '关系限定' })) };
+  assert.match((await draft.tool().execute(decision, f.signal)).content, /status=accepted/);
+  const html = await readFile(join(f.root, 'report.html'), 'utf8');
+  const text = comparisonDetailsText(html, { excludeValidatedQuotes: true });
+  assert.ok([...text.replace(/\s/g, '')].length <= 400);
+  assert.equal(text.split(criterion).length - 1, 1);
+  for (const pair of scopes) for (const scope of pair) for (const value of [scope.relationship, scope.domain,
+    ...scope.coveredInstances, ...scope.uncheckedInstances]) assert.ok(text.includes(value), value);
+  assert.deepEqual(f.discovery.state(), before, 'rendering must not alter evidence to fit its budget');
+  const expanded = structuredClone(submission);
+  const original = [
+    [{ relationship: '基线交付物中 SVG 鹈鹕骑自行车 2D 动画的实现方式', domain: '单文件 HTML 内联 SVG 动画（CSS keyframes 路径）',
+      coveredInstances: ['finals/pelican_bike.html 全文'], uncheckedInstances: ['浏览器实际渲染帧', '用户机器上历史原始文件字节一致性'] },
+    { relationship: '候选交付物中 SVG 鹈鹕骑自行车 2D 动画的实现方式', domain: '单文件 HTML 内联 SVG 动画（SMIL + JS 驱动路径）',
+      coveredInstances: ['candidate/pelican-bike.html 全文'], uncheckedInstances: ['浏览器实际渲染帧', 'JS 在真实浏览器中的运行时输出'] }],
+    [{ relationship: '减少动态效果偏好与无 JS 条件下基线动画的降级方式', domain: '单文件 HTML 的动画降级路径（CSS 路径）',
+      coveredInstances: ['finals/pelican_bike.html 的 @media 规则与 .wheel-spin/.pedal-spin 规则'], uncheckedInstances: ['浏览器实际渲染结果', '媒体查询在用户环境中的实际命中'] },
+    { relationship: '减少动态效果偏好与无 JS 条件下候选动画的降级方式', domain: '单文件 HTML 的动画降级路径（SMIL + JS 路径）',
+      coveredInstances: ['candidate/pelican-bike.html 的 matchMedia 分支与 rAF 驱动代码'], uncheckedInstances: ['浏览器实际渲染结果', '媒体查询在用户环境中的实际命中'] }],
+  ];
+  expanded.findings.forEach((item, index) => item.observations.forEach((observation, side) => {
+    observation.supportBoundary = { ...original[index]![side]!, supportStage: 'delivered_output' };
+  }));
+  assert.match(await f.discovery.update(expanded), /status=accepted/);
+  const expandedState = f.discovery.state();
+  assert.match((await draft.tool().execute(decision, f.signal)).content, /draft_details_too_long/);
+  assert.equal(f.discovery.state(), expandedState, 'the length gate keeps the saved original scopes');
+});
 
 test('decision input is a strict object; canonical materialization derives only basis IDs and empty markup', () => {
   const input = { ...base, findingDispositions: [

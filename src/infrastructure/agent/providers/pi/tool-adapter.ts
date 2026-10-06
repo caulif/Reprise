@@ -1,13 +1,14 @@
 import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
 import { ToolPreconditionRejected } from "../../../../core/tool-precondition-rejected.js";
 import type { AgentToolDefinition } from "../../types.js";
+import { AgentToolFailure } from '../../tools.js';
 import { observePiFailure } from './yield-deadline.js';
 
 const WRITE_TOOLS = new Set(["edit", "write", "shell_exec"]);
 
 const PI_TOOL_EXECUTION = "sequential" as const;
 
-export function toPiTool(tool: AgentToolDefinition, onFailure?: (error: unknown) => void): AgentTool {
+export function toPiTool(tool: AgentToolDefinition, onFailure?: (error: unknown) => void, onRecoverableFailure = onFailure): AgentTool {
   return {
     name: tool.name,
     label: tool.name,
@@ -16,7 +17,8 @@ export function toPiTool(tool: AgentToolDefinition, onFailure?: (error: unknown)
     ...(WRITE_TOOLS.has(tool.name) ? { executionMode: "sequential" as const } : {}),
     async execute(_toolCallId, params, signal) {
       const result = await observePiFailure(() => tool.execute(params, signal ?? new AbortController().signal), (error) => {
-        if (!(error instanceof ToolPreconditionRejected)) onFailure?.(error);
+        if (error instanceof AgentToolFailure) onFailure?.(error);
+        else if (!(error instanceof ToolPreconditionRejected)) onRecoverableFailure?.(error);
       });
       return {
         content: result.contentBlocks ? [...result.contentBlocks] : [{ type: "text", text: result.content }],

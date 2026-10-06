@@ -68,12 +68,12 @@ export class PiProviderAdapter implements ProviderAdapter {
     const model = this.#model;
     let deadline: ReturnType<typeof invocationYieldDeadline> | undefined;
     const recordFailure = (error: unknown) => deadline?.recordFailure(error);
-    const usage = piRequestUsage(this.#models, input, recordFailure);
+    const usage = piRequestUsage(this.#models, input, recordFailure, error => deadline?.recordProviderFailure(error));
     const models = usage.models;
     const effort = this.#config.effort;
     let active = true;
     let toolsEnabled = true;
-    const registeredTools = input.tools.map(tool => toPiTool(tool, recordFailure));
+    const registeredTools = input.tools.map(tool => toPiTool(tool, recordFailure, error => deadline?.recordToolFailure(error)));
     const rejections = piToolRejections(input, recordFailure);
     const turnYield: TurnYieldState = { policy: undefined, reason: undefined, failure: undefined };
     const fixedTokens = Math.ceil(Buffer.byteLength(input.systemPrompt + JSON.stringify(input.tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })))) / 3);
@@ -167,12 +167,16 @@ async function appendPiPrompt(args: {
     await usage.flush();
     const interrupted = localYield();
     if (interrupted) return interrupted;
+    deadline.assertCanRecover();
     const yieldedReason = yieldReasonAfterPrompt(agent, turnYield, deadline.signal);
     if (yieldedReason !== undefined) { deadline.assertCanYield(); return { status: 'yielded', reason: yieldedReason }; }
     await recoverAgentResponse(agent, model, models, effort, deadline.signal, input.compactionInstructions, input.onContextCompact, input.onRetry);
     await usage.flush();
+    const recoveredMessage = lastAssistant(agent.state.messages);
+    if (recoveredMessage?.stopReason === 'stop') deadline.providerRecovered();
     const afterRecovery = localYield();
     if (afterRecovery) return afterRecovery;
+    deadline.assertCanComplete();
     const recoveredYield = yieldReasonAfterPrompt(agent, turnYield, deadline.signal);
     if (recoveredYield !== undefined) { deadline.assertCanYield(); return { status: 'yielded', reason: recoveredYield }; }
     const message = lastAssistant(agent.state.messages);

@@ -18,6 +18,12 @@
 
 SDK 工具参数校验拒绝在进入应用执行前，使用既有安全工具审计追加 called/failed，并计入真实资源。审计只保存工具身份与拒绝类别，不复制整份无效参数或完整 SDK 回执到新增事件；模型实际收到的回执仍由脱敏 generation 输入保留。该记录不认证工具执行、副作用或语义。审计写入失败保持 fatal，不能被降级为可纠正参数错误。
 
+受限 workspace 文件工具在 `pathIn` 的纯路径校验中拒绝绝对路径、父级遍历等非法输入时，使用 `ToolPreconditionRejected(invalid_path)`。该拒绝发生在文件系统访问、写入 journal 和进程创建前，仍向模型返回错误并记实际 failed；模型可改用合法虚拟 mount 路径，原拒绝不能污染随后成功的 invocation。仅这项确定性前置校验改分类，不扩大可读写范围或 Controller 能力；真实文件系统、symlink、进程、完成回调、审计及持久化异常继续沿用原致命错误边界，取消与硬限同样不降级。回归须用实际 Pi adapter 证明非法 ls 后可正确读取封存来源并完成、直接非法 write/edit 无副作用，以及拒绝审计和后续合法写入的持久化失败仍不完成。
+
+Pi SDK 可能把真实执行或审计异常作为错误工具结果交给模型，再产出正常最终 stop；因此正常完成边界也必须显式检查 invocation 已记录的真实致命错误与外部取消，不能只在局部截止或安全 turn yield 时检查。完成断言不把局部 deadline 转成成功或新 yield，也不因随后纠正工具或最终文字覆盖原致命错误；Provider recovery 前及其实际 drain 后继续执行错误优先检查。回归必须覆盖普通工具执行异常、拒绝审计失败和后续写入持久化失败之后 SDK 的正常 stop，均不得返回 completed；纯路径前置拒绝后合法来源读取的正常 stop 仍可成功。
+
+实际 generation Provider error response/stream 异常与 Host 致命错误按来源分开记录，避免正常完成检查截断原有 context-overflow/暂态恢复。recovery 前只拦 Host 致命错误；局部截止或 yield 仍让已记录 Provider 错误优先。只有实际恢复后最新 assistant 为正常 stop，才清该 Provider 错误；length 不清，Host 记录永不清。Host instrument 包装的 `AgentToolFailure` 按实际 instanceof 识别，包括执行与审计异常；compaction、模型请求和 usage 审计、钩子异常保持原 fatal 来源。Provider direct 旧入口未经 Host instrument 的普通 raw 工具错误保持普通 stop 可完成的兼容语义，但仍在截止/yield 优先；不以 name/message 伪装包装身份。即使 Host 工具错误文字碰巧包含 context_length_exceeded，也不能按消息降级或恢复。
+
 本次 source 的精确 accepted 回执和实际非空 saved state 由独立 marker 记录，marker不随正文检查点重置；当前 state须与接受时完全一致，且重新核对 readiness。仅正常 completed 或明确 independent_findings_ready/pending 完成边界才可使用这份保存记录，旧 ready、缺失状态、伪回执、来源超时和 output_limit 不能解锁。actual accepted ready 在安全完整工具 turn 以 independent_findings_ready 让出；在实际稿件交付之后可直接进入 full audit，省去重复 closure。accepted pending 以 independent_findings_pending 让出，正文交付之后使用唯一补查及最后一次 closure。没有该有效保存证据时继续原最多两次闭合路径：实际精确 accepted 回执且当前 ready 才能进入核稿；实际 accepted 但仍 pending 在完整工具 turn 后以 review_findings_pending 让出，不继续重抄。
 
 本次 source 有效保存 pending，或第一次 closure 接受 pending 时，在同一独立 Session 只开放一次 `review-supplement`，处理保存的问题及其下一项必要检查。模型可见名单与执行守卫均仅允许已注册的 read、ls、grep、shell_exec、render_artifact、register_evidence、quote_evidence；原文件、沙箱、shell、来源登记和审计边界继续生效。不开放 findings 更新、报告写入、提交、inspection 或 preview，也不把保存的假设当证据。补查结束必须执行第二次实际 closure；未查清的问题由模型提交 unavailable、精确原因和原 decisionImpact，保留历史身份。Host 不补造观察或事实答案。第二次仍无 accepted-ready 即失败，不追加第三次。首次输出截断仍消耗两次 closure 中的第一次机会，不叠加额外 continuation。
@@ -51,3 +57,5 @@ SDK 工具参数校验拒绝在进入应用执行前，使用既有安全工具�
 增量与保存节奏的反向用例还须覆盖旧 ID 缺失/重复、新 ID 冲突、失效 binding、每6次来源工具后的仅保存守卫、pending 接受后续查及5窗口上限、假 accepted 或空状态不能解锁、工具别名在全部阶段不越权，以及 SDK 参数拒绝有安全计数且审计失败 fatal。这些机制尚未证明真实模型性能或跨任务稳定性，须以本版实际发布报告另做语义、篇幅、耗时和布局验收。
 
 本决策局部替代[独立发现闭合](2026-10-06-comparison-independent-findings-closure.md)、[调查绝对截止](2026-10-06-comparison-investigation-absolute-deadline.md)及[来源复审局部截止](2026-10-05-comparison-source-yield-deadline.md)中的严格路径编排与时间策略；它们的真实审计、错误优先、已收到材料和发布约束继续有效。
+
+Host 自动渲染的 supportBoundary 范围说明只共享精确相等的字段，并保留每项依据与历史/当前运行的对应关系。不同 relationship、domain、已检查或未检查项不得合并、截断或语义改写；HTML 转义和原篇幅门禁保持。作者反馈明确自动范围也计入详情预算，不能为省字删除检查范围、未知或改 disposition。真实记录即使精确去重仍超预算，也继续拒绝；不能用去重承诺固定范围必然通过。

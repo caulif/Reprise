@@ -802,7 +802,7 @@ function readUnavailableReason(path: ResolvedWorkspacePath): "filesystem_error" 
 function pathIn(ctx: RecoveryToolContext, input: string): ResolvedWorkspacePath {
   const relativePath = workspaceRelative(input);
   if (relativePath === undefined)
-    throw new Error("Path must be a slash-separated relative path without .. or backslashes.");
+    throw new ToolPreconditionRejected("invalid_path", "Path must be a slash-separated relative path within the workspace without .. or an absolute prefix. Use the documented virtual mount paths.");
   if (typeof relativePath !== "string") return workspaceRootPath(ctx);
   const parts = relativePath.split("/");
   if (ctx.options.workspaceAlias && parts[0] === WORKSPACE_ALIAS) {

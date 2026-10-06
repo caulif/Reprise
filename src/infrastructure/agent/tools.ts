@@ -5,7 +5,7 @@ import type { AgentAuditEvent, AgentAuditSink, AgentToolDefinition, AgentToolRes
 import { recordedImageRefs } from './artifacts.js';
 import { preserveToolDelivery } from './tool-delivery.js';
 
-class AgentToolFailure extends Error {
+export class AgentToolFailure extends Error {
   constructor(role: string, cause: unknown) {
     super(`${role} agent tool execution failed.`, { cause });
     this.name = "AgentToolFailure";
@@ -101,8 +101,7 @@ async function appendToolAudit(audit: AgentAuditSink | undefined, role: string, 
   try {
     await audit?.append(event);
   } catch (error) {
-    if (error instanceof ToolPreconditionRejected) throw new AgentToolFailure(role, error);
-    throw error;
+    throw new AgentToolFailure(role, error);
   }
 }
 

@@ -76,6 +76,53 @@ test('actual readonly shell refusal remains audited and model-visible, then corr
   assert.equal(events.some(event => event.type === 'agent.invocation_failed'), false);
 });
 
+test('invalid workspace paths reject before filesystem reads, writes, journals or process creation', async t => {
+  const f = await fixture(t); let reads = 0;
+  const tools = workspaceTools(f.work, { mounts: { source: f.source }, filesystem: {
+    readDirectory: async () => { reads++; throw new Error('Invalid path must not reach directory access'); },
+    readRegularFile: async () => { reads++; throw new Error('Invalid path must not reach file access'); },
+  }, onControlledWrite: async () => { throw new Error('Invalid path must not reach persistence'); } });
+  for (const path of ['../../', join(f.source, 'input.txt')]) {
+    for (const [name, params] of [
+      ['ls', { path }], ['read', { path }], ['write', { path, content: 'changed' }],
+      ['edit', { path, oldText: 'sealed', newText: 'changed' }],
+    ] as const) await assert.rejects(tools.find(tool => tool.name === name)!.execute(params, new AbortController().signal),
+      error => error instanceof ToolPreconditionRejected && error.reason === 'invalid_path');
+  }
+  assert.equal(reads, 0); assert.deepEqual(f.counts(), { spawns: 0, writes: 0 });
+  assert.deepEqual(await readdir(f.work), []); assert.equal(await readFile(join(f.source, 'input.txt'), 'utf8'), 'sealed');
+});
+
+for (const mode of ['corrected', 'audit', 'persist'] as const) test(`native invalid ls path allows correction but preserves ${mode} outcome`, async t => {
+  const f = await fixture(t); const contexts: Context[] = [], events: AgentAuditEvent[] = [];
+  let persistenceFailures = 0;
+  const responses = [turn('ls', { path: '../../' }), turn('ls', { path: f.source }), turn('read', { path: 'source/input.txt' }),
+    ...(mode === 'persist' ? [turn('write', { path: 'result.txt', content: 'corrected' })] : []), message([{ type: 'text', text: 'Done' }], 'stop')];
+  const tools = mode === 'persist' ? workspaceTools(f.work, { mounts: { source: f.source },
+    onControlledWrite: async () => { persistenceFailures++; throw new Error('Actual correction persistence failure'); } }) : f.tools;
+  const session = await new AgentHost(new PiModelCaller(config, native(responses, contexts))).createSession({
+    role: 'comparison', systemPrompt: 'Use virtual workspace paths', tools, audit: { append: async event => {
+      events.push(event);
+      if (mode === 'audit' && event.type === 'agent.tool_failed') { persistenceFailures++; throw new Error('Actual invalid-path audit persistence failure'); }
+    } },
+  });
+  const result = await session.work({ promptContent: 'Inspect the sealed source', timeoutMs: 2_000 });
+  assert.equal(result.status, mode === 'corrected' ? 'completed' : 'failed', JSON.stringify(result));
+  assert.equal(await readFile(join(f.source, 'input.txt'), 'utf8'), 'sealed');
+  assert.deepEqual(await readdir(f.work), []);
+  if (mode !== 'corrected') {
+    assert.ok(persistenceFailures > 0, 'the fixture actually triggers the audited or controlled-write persistence failure');
+    assert.ok(events.some(event => event.type === 'agent.invocation_failed'));
+    assert.equal(events.some(event => event.type === 'agent.invocation_completed'), false);
+  }
+  assert.ok(events.some(event => event.type === 'agent.tool_completed' && event.payload.tool === 'read' && !event.payload.nativeHook));
+  assert.match(JSON.stringify(contexts[3]!.messages), /sealed/);
+  const denied = events.filter(event => event.type === 'agent.tool_failed' && String(event.payload.message).includes('relative path within the workspace'));
+  assert.equal(denied.length, 2, 'both traversal and absolute ls attempts are refused and audited');
+  for (const context of contexts.slice(1, 3)) assert.ok(context.messages.some(item => item.role === 'toolResult' && 'isError' in item && item.isError));
+  if (mode === 'corrected') assert.equal(events.some(event => event.type === 'agent.invocation_failed'), false);
+});
+
 for (const mode of ['execute', 'persist', 'delivery', 'audit', 'before_hook', 'after_hook', 'cancel', 'hard'] as const) test(`a readonly refusal cannot hide subsequent ${mode} failure behind a safe-turn yield`, async t => {
   const f = await fixture(t); const events: AgentAuditEvent[] = []; const contexts: Context[] = [];
   const controller = new AbortController(); let turns = 0;
@@ -98,6 +145,19 @@ for (const mode of ['execute', 'persist', 'delivery', 'audit', 'before_hook', 'a
   assert.equal(events.some(event => event.type === 'agent.invocation_yielded'), false);
   assert.equal(await readFile(join(f.source, 'input.txt'), 'utf8'), 'sealed'); assert.equal(f.counts().spawns, 0);
   if (mode === 'persist') await assert.rejects(readFile(join(f.work, 'result.txt')), { code: 'ENOENT' });
+});
+
+for (const failure of ['Actual ordinary tool execution failure', '400 context_length_exceeded: Your input exceeds the context window of this model.']) test(`a Host tool failure (${failure}) remains fatal after the native SDK produces a normal stop`, async () => {
+  const events: AgentAuditEvent[] = [], contexts: Context[] = [];
+  const session = await new AgentHost(new PiModelCaller(config, native([turn('check'), message([{ type: 'text', text: 'Done' }], 'stop')], contexts))).createSession({
+    role: 'comparison', systemPrompt: 'Check', tools: [{ name: 'check', description: 'Actual failing check', parameters: Type.Object({}),
+      execute: async () => { throw new Error(failure); } }], audit: { append: async event => { events.push(event); } },
+  });
+  const result = await session.work({ promptContent: 'Check the actual source', timeoutMs: 2_000 });
+  assert.equal(contexts.length, 2, 'the SDK actually continues to the normal final stop after its error tool result');
+  assert.equal(result.status, 'failed', JSON.stringify(result));
+  assert.ok(events.some(event => event.type === 'agent.tool_failed' && event.payload.message === failure));
+  assert.equal(events.some(event => event.type === 'agent.invocation_completed'), false);
 });
 
 test('same denial message or name on an ordinary error does not exempt actual execute failures', async () => {
