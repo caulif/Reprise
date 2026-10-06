@@ -34,7 +34,7 @@ test('plain decision input traverses production native findings, audit, inspecti
     decisionQuestions: [{ id: 'quality', question: 'Does the output meet the task?', decisionImpact: 'Could reverse choice', status: 'unavailable',
       evidenceRefs: [], resolution: 'Final quality remains unverified' }] };
   const decision = { kind: 'decision', status: 'insufficient_evidence', category: 'Results', headline: 'Quality unknown', decisionShape: 'single_difference',
-    decisionSummary: 'Neither final output is confirmed usable.', decisionBoundary: 'Final quality could reverse the choice.', conclusionScope: 'undetermined', findingDispositions: [] };
+    decisionSummary: 'Neither final output is confirmed usable.', decisionBoundary: 'Final quality could reverse the choice.', conclusionScope: 'undetermined', findingDispositions: [], scopeSummaries: [] };
   let investigationRequests = 0, requests = 0;
   const actualOutputs: AssistantMessage[] = [];
   const models = { getModel: () => model, streamSimple: (_: unknown, context: Context) => {

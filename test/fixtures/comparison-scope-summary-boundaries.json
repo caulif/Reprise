@@ -1,0 +1,62 @@
+[
+  {
+    "criterion": "车轮必须围绕自身轮心旋转。分析动画检查范围。",
+    "boundaries": [
+      {
+        "coveredInstances": [
+          "finals/wheel.svg 中 animateTransform 的 from/to 属性值 '0 150 50' 与 '360 150 50'",
+          "finals/wheel.svg 中两个圆的圆心坐标 cx=50/cy=50 与 cx=250/cy=50"
+        ],
+        "domain": "基线最终交付 SVG 的动画定义（wheel.svg）",
+        "relationship": "交付的动画源码中 animateTransform 的旋转中心参数与各车轮自身圆心坐标的对照",
+        "supportStage": "delivered_output",
+        "uncheckedInstances": [
+          "该 SVG 在浏览器或渲染器中的实际渲染帧",
+          "历史会话中生成该文件时的工具调用与自检记录"
+        ]
+      },
+      {
+        "coveredInstances": [
+          "candidate/wheel.svg 中两个 animateTransform 的 from/to 属性值 '0 50 50'/'360 50 50' 与 '0 250 50'/'360 250 50'",
+          "candidate/wheel.svg 中两个圆的圆心坐标 cx=50/cy=50 与 cx=250/cy=50"
+        ],
+        "domain": "候选最终交付 SVG 的动画定义（wheel.svg）",
+        "relationship": "交付的动画源码中 animateTransform 的旋转中心参数与各车轮自身圆心坐标的对照",
+        "supportStage": "delivered_output",
+        "uncheckedInstances": [
+          "该 SVG 在浏览器或渲染器中的实际渲染帧",
+          "候选运行中对该动画的检查/验证事件载荷（本次尚未打开）"
+        ]
+      }
+    ]
+  },
+  {
+    "criterion": "车轮必须围绕自身轮心旋转。分析动画检查范围。",
+    "boundaries": [
+      {
+        "coveredInstances": [
+          "history/transcript/historical-final.txt 全文（15 字节）"
+        ],
+        "domain": "基线最终交付的可见文本与其交付 SVG 的一致性",
+        "relationship": "最终回复中的结论句与同一侧交付动画源码所描述行为的一致/矛盾关系",
+        "supportStage": "delivered_output",
+        "uncheckedInstances": [
+          "生成该句前的历史工具调用与自检载荷",
+          "该文本是否附带未纳入最终回复的其他交付物"
+        ]
+      },
+      {
+        "coveredInstances": [
+          "turns/0001/visible.txt 全文（33 字节）"
+        ],
+        "domain": "候选最终交付的可见文本与其交付 SVG 的一致性",
+        "relationship": "最终可见输出中的结论句与同一侧交付动画源码所描述行为的一致/矛盾关系",
+        "supportStage": "delivered_output",
+        "uncheckedInstances": [
+          "生成该句前的候选工具调用与自检载荷（process-index 中的 observation_path 未打开）",
+          "该文本是否附带未纳入可见输出的其他交付物"
+        ]
+      }
+    ]
+  }
+]

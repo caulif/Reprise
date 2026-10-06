@@ -4,7 +4,8 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Value } from '@sinclair/typebox/value';
-import { ComparisonDecisionDraftSubmissionSchema, ComparisonDraftSubmissionSchema, type ComparisonDecisionDraftSubmission } from '../../src/core/schema.js';
+import { Type } from '@sinclair/typebox';
+import { ComparisonDecisionDraftSubmissionSchema, ComparisonDraftSubmissionSchema, ComparisonFindingsSubmissionSchema, type ComparisonDecisionDraftSubmission, type ComparisonFindingsSubmission } from '../../src/core/schema.js';
 import { materializeComparisonDecisionDraft } from '../../src/application/comparison-decision-draft.js';
 import { ComparisonDraft } from '../../src/application/comparison-draft.js';
 import { ComparisonDiscovery } from '../../src/application/comparison-discovery.js';
@@ -13,7 +14,7 @@ import { comparisonDetailsText, comparisonVisibleMainText } from '../../src/appl
 
 const base: ComparisonDecisionDraftSubmission = { kind: 'decision', status: 'insufficient_evidence', category: 'Results', headline: 'Unknown',
   decisionShape: 'single_difference', decisionSummary: 'Output quality remains unchecked.', decisionBoundary: 'Quality could change the choice.',
-  conclusionScope: 'undetermined', findingDispositions: [] };
+  conclusionScope: 'undetermined', findingDispositions: [], scopeSummaries: [] };
 const facts = { run: { runId: 'run', outcome: 'completed', terminationCode: 'completed', initiatedBy: 'controller' },
   models: { candidate: 'candidate' }, activity: {}, limits: { triggered: [] }, runtime: { productId: 'codex' },
   delivery: { changedPaths: [], targetArtifactStatus: 'unavailable', verificationStatus: 'unavailable' },
@@ -47,7 +48,7 @@ test('production decision shares the recorded criterion without rewriting origin
     [{ relationship: '基线降级方式', domain: 'CSS 降级', coveredInstances: ['.wheel-spin/.pedal-spin 规则'], uncheckedInstances: ['浏览器渲染'] },
       { relationship: '候选降级方式', domain: 'SMIL + JS 降级', coveredInstances: ['matchMedia 分支'], uncheckedInstances: ['浏览器渲染'] }],
   ];
-  const submission = { criteria: [criterion], finals: (['baseline', 'candidate'] as const).map((side, index) => ({ side,
+  const submission: ComparisonFindingsSubmission = { criteria: [criterion], finals: (['baseline', 'candidate'] as const).map((side, index) => ({ side,
     status: 'located' as const, sourceRefs: [refs[index]!], description: 'Source scope fixture' })), importantLimitations: ['未渲染'], decisionQuestions: [],
     findings: scopes.map((pair, index) => ({ id: `scope-${index}`, criterion, difference: '不同实现', userConsequence: '影响使用',
       limitations: [], counterEvidenceRefs: [], observations: (['baseline', 'candidate'] as const).map((side, sideIndex) => ({ side,
@@ -59,8 +60,12 @@ test('production decision shares the recorded criterion without rewriting origin
     deliveredImages: new Set(), discovery: f.discovery });
   const decision: ComparisonDecisionDraftSubmission = { ...base, headline: '动画实现不同', decisionSummary: '按使用条件取舍。',
     decisionBoundary: '只检源码，浏览器渲染未知。', findingDispositions: submission.findings.map(item => ({ findingId: item.id,
-      disposition: 'basis', explanation: '关系限定' })) };
-  assert.match((await draft.tool().execute(decision, f.signal)).content, /status=accepted/);
+      disposition: 'basis', explanation: '关系限定' })), scopeSummaries: [
+      { findingId: 'scope-0', baseline: '静态源码已检；浏览器渲染未知。', candidate: '静态源码已检；浏览器渲染未知。' },
+      { findingId: 'scope-1', baseline: 'CSS降级源码已检；浏览器渲染未知。', candidate: 'SMIL和JS降级源码已检；浏览器渲染未知。' },
+    ] };
+  const { scopeSummaries: _summaries, ...legacy } = materializeComparisonDecisionDraft(decision);
+  assert.match((await draft.tool().execute(legacy, f.signal)).content, /status=accepted/);
   const html = await readFile(join(f.root, 'report.html'), 'utf8');
   const text = comparisonDetailsText(html, { excludeValidatedQuotes: true });
   assert.ok([...text.replace(/\s/g, '')].length <= 400);
@@ -84,8 +89,44 @@ test('production decision shares the recorded criterion without rewriting origin
   }));
   assert.match(await f.discovery.update(expanded), /status=accepted/);
   const expandedState = f.discovery.state();
-  assert.match((await draft.tool().execute(decision, f.signal)).content, /draft_details_too_long/);
+  assert.match((await draft.tool().execute(legacy, f.signal)).content, /draft_details_too_long/);
   assert.equal(f.discovery.state(), expandedState, 'the length gate keeps the saved original scopes');
+  const summarized = { ...decision, scopeSummaries: [
+    { findingId: 'scope-0', baseline: '静态源码已检；未查渲染帧及历史原文件字节一致性。', candidate: '静态源码已检；未查渲染帧及真实浏览器JS输出。' },
+    { findingId: 'scope-1', baseline: '@media/CSS规则已检；未查真实渲染及用户环境媒体查询命中。', candidate: 'matchMedia/rAF已检；未查真实渲染及用户环境媒体查询命中。' },
+  ] };
+  assert.match((await draft.tool().execute(summarized, f.signal)).content, /status=accepted/);
+  const summarizedHtml = await readFile(join(f.root, 'report.html'), 'utf8');
+  const summarizedDetails = comparisonDetailsText(summarizedHtml, { excludeValidatedQuotes: true });
+  assert.ok([...summarizedDetails.replace(/\s/g, '')].length <= 400);
+  for (const summary of summarized.scopeSummaries) for (const side of ['baseline', 'candidate'] as const) assert.ok(summarizedDetails.includes(summary[side]));
+  assert.equal(f.discovery.state(), expandedState, 'a report summary cannot rewrite the original complete record');
+  assert.notEqual(summarizedHtml, html, 'the new draft binding must reflect its scope summary');
+  assert.match((await draft.tool().execute({ ...summarized, scopeSummaries: [] }, f.signal)).content, /decision_scope_summaries_invalid/);
+  assert.match((await draft.tool().execute({ ...summarized, scopeSummaries: [...summarized.scopeSummaries, summarized.scopeSummaries[0]!] }, f.signal)).content, /decision_scope_summaries_invalid/);
+  const recorded: unknown = JSON.parse(await readFile('test/fixtures/comparison-scope-summary-boundaries.json', 'utf8'));
+  const recordedSchema = Type.Array(Type.Object({ criterion: Type.String({ minLength: 1 }),
+    boundaries: Type.Array(ComparisonFindingsSubmissionSchema.properties.findings.items.properties.observations.items.properties.supportBoundary,
+      { minItems: 2, maxItems: 2 }) }, { additionalProperties: false }), { minItems: 2, maxItems: 2 });
+  if (!Value.Check(recordedSchema, recorded)) throw new Error('Recorded scope fixture failed core boundary schema validation');
+  expanded.criteria = [recorded[0]!.criterion];
+  expanded.findings.forEach((item, index) => {
+    item.criterion = recorded[index]!.criterion;
+    item.observations.forEach((observation, side) => { observation.supportBoundary = recorded[index]!.boundaries[side]!; });
+  });
+  assert.match(await f.discovery.update(expanded), /status=accepted/);
+  const recordedState = f.discovery.state();
+  const rejection = (await draft.tool().execute(legacy, f.signal)).content;
+  assert.match(rejection, /draft_details_too_long/);
+  assert.ok(Number(/detailsTextCharacters=(\d+)/.exec(rejection)![1]) >= 900, 'the recorded long scope still counts toward the same budget');
+  const compact = { ...decision, scopeSummaries: [
+    { findingId: 'scope-0', baseline: '源码轮心参数已检；实际渲染帧、历史生成检查记录未知。', candidate: '源码轮心参数已检；实际渲染帧、候选验证事件载荷未读。' },
+    { findingId: 'scope-1', baseline: '可见回复已检；此前工具自检载荷、可能额外交付未知。', candidate: '可见回复已检；此前工具自检载荷、可能额外交付未知。' },
+  ] };
+  assert.match((await draft.tool().execute(compact, f.signal)).content, /status=accepted/);
+  assert.equal(f.discovery.state(), recordedState);
+  const compactHtml = await readFile(join(f.root, 'report.html'), 'utf8');
+  assert.ok([...comparisonDetailsText(compactHtml, { excludeValidatedQuotes: true }).replace(/\s/g, '')].length <= 400);
 });
 
 test('decision input is a strict object; canonical materialization derives only basis IDs and empty markup', () => {
@@ -103,6 +144,7 @@ test('decision input is a strict object; canonical materialization derives only 
   assert.equal(canonical.detailsHtml, undefined);
   assert.equal('kind' in canonical, false);
   assert.deepEqual(canonical.findingDispositions, input.findingDispositions);
+  assert.deepEqual(canonical.scopeSummaries, input.scopeSummaries);
   assert.equal(canonical.decisionSummary, input.decisionSummary);
   assert.equal(canonical.decisionBoundary, input.decisionBoundary);
   for (const extra of [{ comparisonHtml: '<p>Duplicate</p>' }, { detailsHtml: '<p>Hidden</p>' }, { decisionBasis: ['other'] }, { ignored: 'extra' }]) {
@@ -111,6 +153,10 @@ test('decision input is a strict object; canonical materialization derives only 
   for (const key of Object.keys(base)) {
     const missing = { ...base } as Record<string, unknown>; delete missing[key];
     assert.equal(Value.Check(ComparisonDecisionDraftSubmissionSchema, missing), false, key);
+  }
+  for (const summary of [{ findingId: 'a', baseline: ' ', candidate: 'checked' }, { findingId: 'a', baseline: 'checked' },
+    { findingId: 'a', baseline: 'checked', candidate: 'checked', hiddenScope: 'extra' }]) {
+    assert.equal(Value.Check(ComparisonDecisionDraftSubmissionSchema, { ...base, scopeSummaries: [summary] }), false);
   }
 });
 
@@ -142,7 +188,8 @@ test('lean submissions cannot omit current findings or erase important boundarie
   const f = await fixture(t, true);
   assert.match((await f.tool.execute(base, f.signal)).content, /decision_findings_invalid/);
   const valid: ComparisonDecisionDraftSubmission = { ...base,
-    findingDispositions: [{ findingId: 'quality', disposition: 'basis', explanation: 'Uncertainty affects use' }] };
+    findingDispositions: [{ findingId: 'quality', disposition: 'basis', explanation: 'Uncertainty affects use' }],
+    scopeSummaries: [{ findingId: 'quality', baseline: 'Final output unverified.', candidate: 'Final output unverified.' }] };
   assert.match((await f.tool.execute({ ...valid, findingDispositions: [...valid.findingDispositions, ...valid.findingDispositions] }, f.signal)).content, /invalid_submission/);
   assert.match((await f.tool.execute({ ...valid, decisionBoundary: '' }, f.signal)).content, /decision_boundary_missing/);
   assert.match((await f.tool.execute({ ...valid, status: 'completed', conclusionScope: 'supported_in_scope' }, f.signal)).content, /decision_scope_incomplete/);

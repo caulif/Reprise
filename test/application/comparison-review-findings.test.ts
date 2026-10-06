@@ -9,6 +9,23 @@ import { ComparisonReviewFindingsClosure } from '../../src/agents/comparison-rev
 import { ComparisonResourceTracker } from '../../src/agents/comparison-resources.js';
 import type { ComparisonWorkPass } from '../../src/agents/comparison-invocation-boundaries.js';
 
+test('expired findings closure stops once without inventing another actual model request or certifying saved readiness', async () => {
+  let calls = 0;
+  const closure = new ComparisonReviewFindingsClosure({ reviewFindings: true, enforcePhaseBoundaries: true,
+    findingsReady: () => true, hasReviewDraftMaterial: () => true, getFindingsState: () => 'saved but not audited' });
+  const result = await closure.run(async () => {
+    calls++;
+    return { status: 'yielded', sessionId: 'session', reason: 'bounded_source_timeout' };
+  }, 'session', true);
+  assert.equal(calls, 1);
+  assert.equal(result?.status, 'failed');
+  if (result?.status === 'failed') {
+    assert.equal(result.failure.kind, 'timeout');
+    assert.equal(result.failure.attempts, 0);
+    assert.doesNotMatch(result.failure.message, /two actual calls/);
+  }
+});
+
 const model: Model<'openai-completions'> = { id: 'fixture', name: 'fixture', api: 'openai-completions', provider: 'fixture', baseUrl: 'https://example.test', reasoning: false, input: ['text'], contextWindow: 128_000, maxTokens: 16_384, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 const context: ComparisonContext = { task: { caseId: 'case', summary: 'Compare' }, attemptId: 'attempt', baseline: { summary: 'baseline', evidenceRefs: [] }, candidates: [], telemetry: [], artifactRefs: [], allowModelText: true,
   replayScope: { historical: 'original', candidate: 'original' }, reportFacts: { run: { runId: 'run', outcome: 'completed', terminationCode: 'completed', initiatedBy: 'controller' }, models: { candidate: 'fixture' }, activity: {}, limits: { triggered: [] }, runtime: { productId: 'codex' }, delivery: { changedPaths: [], targetArtifactStatus: 'unavailable', verificationStatus: 'unavailable' }, replay: { conditions: [], baselineEvidence: 'available', candidateEvidence: 'available' } } };

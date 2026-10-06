@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Type } from '@sinclair/typebox';
+import { createAssistantMessageEventStream, type AssistantMessage, type Model } from '@earendil-works/pi-ai';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -9,6 +10,9 @@ import { ComparisonDiscovery } from '../../src/application/comparison-discovery.
 import { ComparisonEvidenceCatalog } from '../../src/application/comparison-evidence.js';
 import { ComparisonFindingsDeltaSchema, type ComparisonFindingsDelta, type ComparisonFindingsSubmission } from '../../src/core/schema.js';
 import type { AgentToolDefinition, FreeformInvocation } from '../../src/infrastructure/agent/host.js';
+import { AgentHost } from '../../src/infrastructure/agent/host.js';
+import { PiModelCaller, type PiModels } from '../../src/infrastructure/agent/model-caller.js';
+import { ComparisonResourceTracker } from '../../src/agents/comparison-resources.js';
 import type { ComparisonWorkPass } from '../../src/agents/comparison-invocation-boundaries.js';
 
 const signal = new AbortController().signal;
@@ -61,18 +65,69 @@ async function productionFixture(t: { after: (callback: () => Promise<void>) => 
   assert.match((await discovery.tool().execute(initial, signal)).content, /^status=accepted\n/);
   let reads = 0;
   const definitions: AgentToolDefinition[] = [discovery.tool(), discovery.deltaTool(), {
-    name: 'read', description: 'read', parameters: Type.Object({}), execute: async () => { reads++; return { content: 'Unverified boundary fixture input; no quality evidence.' }; },
+    name: 'read', description: 'read', parameters: Type.Object({ path: Type.Optional(Type.String()) }), execute: async () => { reads++; return { content: 'Unverified boundary fixture input; no quality evidence.' }; },
   }];
   const checkpoints = new ComparisonFindingsCheckpoints(definitions, { getSubmittedResult: async () => undefined, enforcePhaseBoundaries: true,
     reviewFindings: true, getFindingsState: () => discovery.state(), findingsReady: () => discovery.readyToCompose() });
-  const tools = checkpoints.bind(definitions);
+  const resources = new ComparisonResourceTracker({});
+  const tools = checkpoints.bind(definitions, resources);
   const delta = (): ComparisonFindingsDelta => {
     const current = discovery.snapshot()!;
     return { kind: 'delta', binding: { revision: current.revision, digest: current.digest, catalogRevision: catalog.snapshot().revision },
       findingDecisions: [], questionDecisions: current.submission.decisionQuestions.map(question => ({ id: question.id, action: 'retain' })) };
   };
-  return { discovery, checkpoints, tools, delta, reads: () => reads };
+  return { discovery, checkpoints, tools, delta, resources, reads: () => reads };
 }
+
+test('native production metadata navigation remains audited and counted without forcing a save before actual source observations', async t => {
+  const f = await productionFixture(t);
+  const metadata = ['briefing/decision-map.md', 'briefing/task/initial-input.txt', 'briefing/facts/context.json',
+    'briefing/facts/comparison-links.json', 'briefing/facts/evidence-index.json', 'briefing/facts/media.json'];
+  const model: Model<'openai-completions'> = { id: 'fixture', name: 'fixture', api: 'openai-completions', provider: 'fixture', baseUrl: 'https://example.test',
+    reasoning: false, input: ['text'], contextWindow: 128_000, maxTokens: 16_384, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
+  const batch = (paths: string[]): AssistantMessage['content'] => paths.map((path, index) => ({ type: 'toolCall', id: `${path}-${index}`, name: 'read', arguments: { path } }));
+  const delta = f.delta();
+  delta.questionDecisions[0] = { id: 'quality', action: 'replace', replacement: { ...f.discovery.snapshot()!.submission.decisionQuestions[0]!,
+    status: 'unavailable', resolution: 'Actual source fixture cannot establish quality' } };
+  const turns: AssistantMessage['content'][] = [batch([...metadata, ...metadata]), batch(Array.from({ length: 6 }, (_, index) => `source/facts/context-${index}.json`)),
+    [{ type: 'toolCall', id: 'save', name: 'update_comparison_findings_delta', arguments: delta }]];
+  const native = { getModel: () => model, streamSimple: () => {
+    const content = turns.shift(); assert.ok(content, 'no automatic request after accepted checkpoint');
+    const message: AssistantMessage = { role: 'assistant', api: model.api, provider: model.provider, model: model.id, content,
+      stopReason: 'toolUse', timestamp: Date.now(), usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+    const stream = createAssistantMessageEventStream(); stream.push({ type: 'done', reason: 'toolUse', message }); return stream;
+  } } as unknown as PiModels;
+  const session = await new AgentHost(new PiModelCaller({ schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' },
+    providerId: 'fixture', modelId: 'fixture', effort: 'low' }, native)).createSession({ role: 'comparison', systemPrompt: 'Source checkpoint fixture',
+    tools: f.tools, audit: { append: async event => { f.resources.observe(event); } } });
+  const passes: (ComparisonWorkPass | undefined)[] = [];
+  const result = await f.checkpoints.run(async (phase, prompt, pass) => {
+    passes.push(pass); f.checkpoints.begin(phase, pass);
+    return session.work({ promptContent: prompt, timeoutMs: 2_000,
+      yieldAfterTurn: () => f.checkpoints.saved() ? 'findings_checkpoint_saved' : f.checkpoints.due() ? 'findings_checkpoint_required' : undefined });
+  }, 'review', 'Inspect actual sources', 'sources');
+  assert.deepEqual(result, { status: 'yielded', sessionId: session.sessionId, reason: 'independent_findings_ready' });
+  assert.deepEqual(passes, ['sources', 'source-save']);
+  assert.equal(f.reads(), 18, 'all twelve metadata and six source reads actually execute');
+  assert.equal(f.resources.snapshot().toolCalls, 19, 'navigation remains part of actual resource accounting');
+  assert.equal(f.resources.snapshot().modelRequests, 3);
+});
+
+test('only fixed virtual Host navigation paths skip source counting; mounted lookalikes and verification tools still checkpoint', async () => {
+  const f = harness(); f.checkpoints.begin('review', 'sources');
+  for (const [name, path] of [['ls', 'briefing'], ['ls', 'facts'], ['grep', 'briefing/facts/context.json'],
+    ['read', 'observations/user-inputs/INDEX.tsv'], ['read', 'candidate/INDEX.md']] as const) {
+    await f.tool(name).execute({ path }, signal);
+  }
+  assert.equal(f.checkpoints.due(), false);
+  for (const [name, path] of [['read', 'source/briefing/facts/context.json'], ['read', 'finals/INDEX.md'], ['grep', 'candidate/facts/context.json'],
+    ['shell_exec', 'briefing/facts/context.json'], ['render_artifact', 'briefing/facts/context.json'], ['quote_evidence', 'briefing/facts/context.json']] as const) {
+    await f.tool(name).execute({ path }, signal);
+  }
+  assert.equal(f.checkpoints.due(), true);
+  assert.equal(f.effects(), 11);
+});
 
 for (const phase of ['investigate', 'review'] as const) for (const ready of [false, true]) test(`actual ${phase} checkpoint ${ready ? 'ends on ready unknown disposition' : 'accepts pending and resumes the same source session'}`, async t => {
   const f = await productionFixture(t), passes: (ComparisonWorkPass | undefined)[] = [];
@@ -91,6 +146,7 @@ for (const phase of ['investigate', 'review'] as const) for (const ready of [fal
       assert.equal(f.checkpoints.due(), true); return yieldResult('findings_checkpoint_required');
     }
     assert.match(prompt, /Continue only the remaining decision-changing source questions/);
+    assert.ok(!prompt.includes('Source task'), 'same-session continuation must not repeat its initial briefing');
     assert.equal(f.checkpoints.due(), false);
     await f.tools.find(tool => tool.name === 'read')!.execute({}, signal);
     return { status: 'completed', sessionId: 'same-session', value: {} };

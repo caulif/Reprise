@@ -59,3 +59,6 @@ Pi SDK 可能把真实执行或审计异常作为错误工具结果交给模型�
 本决策局部替代[独立发现闭合](2026-10-06-comparison-independent-findings-closure.md)、[调查绝对截止](2026-10-06-comparison-investigation-absolute-deadline.md)及[来源复审局部截止](2026-10-05-comparison-source-yield-deadline.md)中的严格路径编排与时间策略；它们的真实审计、错误优先、已收到材料和发布约束继续有效。
 
 Host 自动渲染的 supportBoundary 范围说明只共享精确相等的字段，并保留每项依据与历史/当前运行的对应关系。不同 relationship、domain、已检查或未检查项不得合并、截断或语义改写；HTML 转义和原篇幅门禁保持。作者反馈明确自动范围也计入详情预算，不能为省字删除检查范围、未知或改 disposition。真实记录即使精确去重仍超预算，也继续拒绝；不能用去重承诺固定范围必然通过。
+
+真实校准证明自动展开整份 supportBoundary 与短报告契约冲突：不同范围文字本身即可超出详情预算。紧凑 decision 现要求 scopeSummaries，以 findingId 映射每项 basis/boundary（含完整支持项），明确历史/当前双侧的简短范围；canonical 同字段可选以兼容旧稿，提供后必须有 decisionSummary，非空摘要须有当前 findings，双侧文本非空白，相关ID必须恰好覆盖一次。Host 按实际依据编号转义显示作者原文，全部仍计入原400/1000详情预算；无新字段的legacy稿继续原完整投影。完整原始范围不按篇幅改写，不自动截断或放宽门禁。摘要是模型声明，ID校验不认证其语义；每次独立正式audit及有界repair将当前完整getFindingsState（含原范围及revision/binding）追加到真实模型输入，message_appended与generation snapshot保留，实际最新稿仍经inspection交付。独审对照来源、完整范围和报告，纠正扩大的覆盖、改变的domain、遗漏的决定性未知与反证；修订使旧inspection/preview失效。
+固定Host briefing、索引与导航读取仍计工具/请求和真实审计，但不触发来源观察保存点；真实来源读取与验证工具仍按6次触发，同阶段最多5窗口。恢复只引用同Session已交付材料和实际保存的问题，不重发完整初始briefing；必要的当前保存state仍在保存窗口提供。闭包已经达到审阅绝对截止时立即失败并保留timeout事实，不再追加0请求的第二次闭包或声称完成了两次真实模型调用。

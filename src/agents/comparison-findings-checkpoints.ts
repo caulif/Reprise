@@ -5,6 +5,20 @@ import type { ComparisonResourceTracker } from './comparison-resources.js';
 
 export const isFindingsUpdate = (name: string): boolean => name === 'update_comparison_findings' || name === 'update_comparison_findings_delta';
 const sourceTools = new Set(['read', 'ls', 'grep', 'shell_exec', 'render_artifact', 'register_evidence', 'quote_evidence']);
+const navigationPaths = new Set([
+  'INDEX.md', 'briefing/INDEX.md', 'briefing/decision-map.md', 'briefing/task/initial-input.txt',
+  ...['context.json', 'comparison-links.json', 'media.json', 'evidence-index.json'].flatMap(name => [`facts/${name}`, `briefing/facts/${name}`]),
+  'briefing/facts/links-diagnostics.json', 'history/INDEX.md', 'history/messages.tsv', 'candidate/INDEX.md',
+  ...['process-index.tsv', 'SNAPSHOT.txt', 'git-sink-refs.txt', 'git-sink-manifest.json'].flatMap(name => [`candidate/${name}`, `briefing/candidate/${name}`]),
+  'observations/INDEX.md', 'observations/INDEX.tsv', 'observations/user-inputs/INDEX.tsv',
+]);
+const navigationDirectories = new Set(['briefing', 'briefing/facts', 'briefing/task', 'briefing/candidate', 'facts']);
+
+function countsSourceObservation(name: string, params: unknown): boolean {
+  if (!sourceTools.has(name)) return false;
+  if (!['read', 'ls', 'grep'].includes(name) || !params || typeof params !== 'object' || !('path' in params) || typeof params.path !== 'string') return true;
+  return !navigationPaths.has(params.path) && !(name === 'ls' && navigationDirectories.has(params.path));
+}
 type Phase = 'investigate' | 'review';
 
 export class ComparisonFindingsCheckpoints {
@@ -38,7 +52,7 @@ export class ComparisonFindingsCheckpoints {
         content: JSON.stringify({ code: 'findings_checkpoint_required', message: 'Save this bounded source batch through the bound delta tool. No additional source or report effects may execute until an actual accepted save.' }),
       };
       const result = await tool.execute(params, signal); signal.throwIfAborted();
-      if (this.#source && sourceTools.has(tool.name)) this.#checks++;
+      if (this.#source && countsSourceObservation(tool.name, params)) this.#checks++;
       if (isFindingsUpdate(tool.name) && /^status=accepted(?:\r?\n|$)/.test(result.content)) {
         this.#checks = 0;
         if (this.#saving) this.#acceptedState = this.#options?.getFindingsState?.();
@@ -58,7 +72,7 @@ export class ComparisonFindingsCheckpoints {
       if (!completed) return saved;
       if (!this.saved()) return { status: 'failed', sessionId: saved.sessionId, failure: { code: 'draft_invalid', kind: 'protocol', attempts: saves + 1, message: 'The bounded source checkpoint did not save an accepted current findings state.' } };
       if (this.#options?.findingsReady?.()) return { status: 'yielded', sessionId: saved.sessionId, reason: phase === 'investigate' ? 'findings_ready' : 'independent_findings_ready' };
-      outcome = await work(phase, `${prompt}\nContinue only the remaining decision-changing source questions after the actual saved checkpoint. Do not repeat settled checks.`, pass);
+      outcome = await work(phase, 'Continue only the remaining decision-changing source questions after the actual saved checkpoint. Use the task, source material and saved question identities already delivered in this same session, including any audited compaction summary and retained tail. Do not repeat settled checks or reread navigation merely to reconstruct the briefing.', pass);
     }
     return outcome;
   }

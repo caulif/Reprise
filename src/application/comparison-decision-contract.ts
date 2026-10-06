@@ -10,7 +10,7 @@ function incomplete(boundary: ComparisonSupportBoundary | undefined): boolean {
 }
 
 export function decisionContractError(draft: ComparisonDraftSubmission, findings?: ComparisonFindingsSubmission): string | undefined {
-  if (draft.decisionBasis === undefined && draft.conclusionScope === undefined && draft.findingDispositions === undefined) return undefined;
+  if (draft.decisionBasis === undefined && draft.conclusionScope === undefined && draft.findingDispositions === undefined && draft.scopeSummaries === undefined) return undefined;
   const basis = draft.decisionBasis ?? [];
   const dispositions = draft.findingDispositions ?? [];
   const ids = new Set(findings?.findings.map(finding => finding.id) ?? []);
@@ -34,6 +34,14 @@ export function decisionContractError(draft: ComparisonDraftSubmission, findings
     return `code=decision_questions_unavailable\nquestions=${JSON.stringify(unavailable.map(({ id, question, decisionImpact, resolution }) => ({ id, question, decisionImpact, resolution })))}\nmessage=Decision-changing questions remain unavailable. Use conditional or undetermined and a nonempty visible decisionBoundary explaining their effect on this choice. A deadline closes investigation, not the task relationship; saved question text and resolutions are repair hypotheses, not certified facts.`;
   }
   const relevant = new Set(dispositions.filter(item => item.disposition !== 'not_decisive').map(item => item.findingId));
+  if (draft.scopeSummaries !== undefined) {
+    if (draft.decisionSummary === undefined) return 'code=decision_scope_summaries_invalid\nmessage=Scope summaries require a plain-text decisionSummary; legacy HTML without summaries keeps its original scope projection.';
+    const expected = findings?.findings.filter(finding => relevant.has(finding.id)).map(finding => finding.id) ?? [];
+    const actual = draft.scopeSummaries.map(summary => summary.findingId);
+    if (new Set(actual).size !== actual.length || actual.length !== expected.length || actual.some(id => !expected.includes(id))) {
+      return `code=decision_scope_summaries_invalid\nexpectedFindingIds=${JSON.stringify(expected)}\nmessage=Summarize every relevant basis/boundary finding exactly once using its current ID and both sides. Preserve decision-changing unknowns and method limits from the full saved findings; a structurally accepted summary is not semantic approval.`;
+    }
+  }
   if (draft.conclusionScope === 'supported_in_scope' && findings?.findings.some(finding => relevant.has(finding.id)
     && finding.observations.some(observation => incomplete(observation.supportBoundary)))) {
     return 'code=decision_scope_incomplete\nmessage=Selected basis and boundary findings include incomplete or unavailable output support. Use conditional or undetermined and preserve this boundary in the visible decision.';
@@ -64,6 +72,15 @@ function sideName(side: 'baseline' | 'candidate', locale: AgentLocale): string {
 
 export function decisionSupportDetailsHtml(draft: ComparisonDraftSubmission, findings?: ComparisonFindingsSubmission, locale: AgentLocale = 'zh'): string {
   if (draft.decisionSummary === undefined) return '';
+  if (draft.scopeSummaries !== undefined) {
+    const details = draft.scopeSummaries.map(summary => {
+      const index = findings?.findings.findIndex(finding => finding.id === summary.findingId) ?? -1;
+      const label = locale === 'en' ? `Basis ${index + 1}` : `依据${index + 1}`;
+      return paragraph(`${label}${locale === 'en' ? ': ' : '：'}${sideName('baseline', locale)}${locale === 'en' ? ': ' : '：'}${summary.baseline}`)
+        + paragraph(`${label}${locale === 'en' ? ': ' : '：'}${sideName('candidate', locale)}${locale === 'en' ? ': ' : '：'}${summary.candidate}`);
+    }).join('');
+    return details ? paragraph(locale === 'en' ? 'Scope summary recorded by the model; not certified.' : '检查范围摘要（模型记录，非认证）') + details : '';
+  }
   const relevant = new Set(draft.findingDispositions?.filter(item => item.disposition !== 'not_decisive').map(item => item.findingId));
   const criteria = new Map<string, string>();
   const details = (findings?.findings ?? []).flatMap((finding, index) => {

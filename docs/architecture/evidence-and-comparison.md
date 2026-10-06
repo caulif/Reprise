@@ -151,3 +151,5 @@ Comparison 的 `quote_evidence` 只读取当前 catalog 的已登记文本引用
 独立复审在同一新 Session 内先审原任务与决定性原件，再核接受稿；严格来源初始输入将保存findings作为待证假设及绑定导航，旧端口不注入作者findings；取得实际正文后仍只将保存记录作为修复假设；严格路径共享审阅阶段截止，其他旧路径累计原 review 软额度，均累计同一 attempt 硬额度。来源审查优先追实际输出链并寻找决定性反例，不能把内部目标或作者自检当作最终输出验证。第一调用失败或取消不会进入核稿，稿件 inspection/submit/preview 在来源审查阶段拒绝；read/shell 未隔离作者文件，因此该顺序保护不是完全盲化。第二调用沿用自己的来源审查上下文，修订后仍须最终正文读取和当前版本预览；正常完成不认证语义。
 
 Comparison 紧凑 decision 的 Host 范围投影按精确相等共享字段，保留依据及双侧范围映射；不同范围和未知不合并，自动文字仍计入原详情篇幅。作者不得仅为满足篇幅改变 findings 的检查范围或 disposition。workspace 工具的纯非法路径前置拒绝允许模型纠正合法虚拟路径，仍审计实际失败；权限、真实文件系统、审计及持久化错误边界不变。见[收敛改造](../decisions/accepted/2026-10-06-comparison-bounded-review-convergence.md)。
+
+紧凑 decision 的 scopeSummaries 是报告展示层：每项 basis/boundary 对应一个 findingId 及历史/当前双侧简短范围，非空白并精确覆盖当前ID。Host 转义展示且计入原详情预算；完整supportBoundary保留于findings，既有legacy稿无此字段仍完整投影。独立正式audit每轮收到当前完整saved state与实际稿件，真实消息和generation snapshot保留revision/binding和全部范围；摘要的语义仍须独审，结构通过不认证它。固定Host导航不触发6次实际来源检查后的保存点，资源与审计照常计入；恢复不重复整份briefing。闭包截止立即失败，避免记录不存在的额外模型请求。

@@ -123,6 +123,37 @@ test('legacy typed draft and absent findings produce no invented support declara
   assert.equal(decisionTextHtml(withoutDispositions, current), decisionTextHtml(draft));
 });
 
+test('scope summaries cover all selected findings exactly once, including complete support, and escape each side', () => {
+  const complete = { ...partial, uncheckedInstances: [] };
+  const current = findings([finding('wheel', 'Wheel', partial, complete), finding('other', 'Other', complete, complete),
+    finding('unused', 'Unused', partial, partial)]);
+  const selected: ComparisonDraftSubmission = { ...draft, decisionBasis: ['wheel'], findingDispositions: [
+    ...draft.findingDispositions!, { findingId: 'other', disposition: 'boundary', explanation: 'Relevant' },
+    { findingId: 'unused', disposition: 'not_decisive', explanation: 'Outside task' }], scopeSummaries: [
+      { findingId: 'other', baseline: 'Complete <script>&', candidate: 'Complete "scope"' },
+      { findingId: 'wheel', baseline: 'Far wheel and full cycle remain unknown.', candidate: 'All listed instances checked.' },
+    ] };
+  assert.equal(decisionContractError(selected, current), undefined);
+  const before = structuredClone(current);
+  for (const locale of ['zh', 'en'] as const) {
+    const details = decisionSupportDetailsHtml(selected, current, locale);
+    assert.match(details, locale === 'zh' ? /依据2：历史运行：Complete &lt;script&gt;&amp;/ : /Basis 2: Historical run: Complete &lt;script&gt;&amp;/);
+    assert.match(details, /&quot;scope&quot;/);
+    assert.ok(details.includes(selected.scopeSummaries![1]!.baseline));
+    assert.doesNotMatch(details, /<script>|Entire animation|Frame 0|Unused/);
+  }
+  assert.deepEqual(current, before);
+  for (const scopeSummaries of [[], selected.scopeSummaries!.slice(0, 1), [...selected.scopeSummaries!, selected.scopeSummaries![0]!],
+    [...selected.scopeSummaries!, { findingId: 'unused', baseline: 'Unused', candidate: 'Unused' }],
+    [...selected.scopeSummaries!, { findingId: 'unknown', baseline: 'Unknown', candidate: 'Unknown' }]]) {
+    assert.match(decisionContractError({ ...selected, scopeSummaries }, current)!, /decision_scope_summaries_invalid/);
+  }
+  const { decisionSummary: _summary, ...withoutDecision } = selected;
+  assert.match(decisionContractError(withoutDecision, current)!, /Scope summaries require/);
+  assert.match(decisionContractError(selected)!, /decision_scope_summaries_invalid/, 'nonempty summaries require actual saved finding IDs');
+  assert.equal(decisionSupportDetailsHtml({ ...draft, findingDispositions: [], decisionBasis: [], scopeSummaries: [] }, findings([])), '');
+});
+
 test('unavailable decision questions prevent unconditional scope and require a visible boundary even without saved limitations', () => {
   const complete: ComparisonSupportBoundary = { ...partial, uncheckedInstances: [] };
   const current = findings([finding('wheel', 'Wheel containment', complete, complete)]);

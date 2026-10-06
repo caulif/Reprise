@@ -389,6 +389,7 @@ const COMPARISON_REVIEW_STEPS = [
   'Respect explicit task constraints in remedies; inferred alternatives do not replace requirements. Check cost/time direction against each current Host metric side; do not infer cost from elapsed time or inherit old report prices. Unknown usage/prices are unknown, not zero; estimates are not invoices.',
   '4. Keep one consequential contrast single_difference: 250 main characters; multiple_differences: 600 only for independently decision-changing contrasts. Evidence/consequences of one defect do not multiply it. Count headline, decisionSummary, decisionBoundary and comparisonHtml together. Preserve user impact and conditions; move technical numbers/methods to details, never discard another decisive quality to fit single_difference. Empty decisionBoundary requires no important limitation, not merely no broad guarantee.',
   'Details allow 400/1000 characters respectively, including hidden/folded prose but excluding Host-validated fixed quotations. Keep only necessary argument, counterexample or method boundary; omit repeated conclusions, inventories and Host metrics.',
+  'For compact corrections, scopeSummaries must cover each basis/boundary finding once with findingId and concise baseline/candidate scope text. Compare summaries with the complete current saved ranges supplied for this audit, including domains, checked conditions and decision-changing unknowns. Do not certify a shortened summary from its ID coverage or rewrite evidence just to fit length; repair inaccurate or incomplete presentation and obtain a new current inspection.',
   '5. Use repair tools now: preserve historical question identities when replacing findings, revise from independent observations, then batch supported changes through submit_comparison_draft against the current catalog. Stale inspected text is repair material only. Intentions do not prove actual submitted text changed; inspect the actual accepted headline, main text and all details as required below. Do not resubmit merely to tune advisory length.',
   'Structural validation, source-pass completion, inspection and preview never certify semantic correctness.',
 ] as const;
@@ -773,7 +774,8 @@ export class ComparisonAgent implements ComparisonAgentPort {
     const seen = new Set<string>();
     for (let repair = 0; ; repair++) {
       if (options.hasCurrentReviewInspection) await options.onDraftAuditStarted?.(sources.sessionId);
-      let reviewed = await work('review', prompt,
+      const currentFindings = options.enforcePhaseBoundaries && options.reviewFindings ? options.getFindingsState?.() : undefined;
+      let reviewed = await work('review', currentFindings ? `${prompt}\n\nCurrent complete findings for audit (model declarations, not certified facts; compare report scope summaries with every actual side, domain, covered and unchecked instance, and preserve decision-changing uncertainty): ${currentFindings}` : prompt,
         options.hasCurrentReviewInspection ? 'audit' : undefined);
       if (options.enforcePhaseBoundaries && options.reviewFindings && reviewed.status === 'yielded' && reviewed.reason !== 'final_inspection_ready') return comparisonProviderFailure(reviewed);
       if ((reviewed.status === 'completed' || reviewed.status === 'yielded') && options.hasCurrentReviewInspection?.()) {

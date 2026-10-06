@@ -147,6 +147,11 @@ export const ComparisonDraftSubmissionSchema = Type.Object({
     disposition: Type.Union([Type.Literal("basis"), Type.Literal("boundary"), Type.Literal("not_decisive")]),
     explanation: Type.String({ minLength: 1, maxLength: 1200, pattern: "\\S" }),
   }, { additionalProperties: false }), { maxItems: 12, description: "Cover every current finding exactly once and explain its decision role; explanations are unverified declarations." })),
+  scopeSummaries: Type.Optional(Type.Array(Type.Object({
+    findingId: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" }),
+    baseline: Type.String({ minLength: 1, maxLength: 1200, pattern: "\\S" }),
+    candidate: Type.String({ minLength: 1, maxLength: 1200, pattern: "\\S" }),
+  }, { additionalProperties: false }), { maxItems: 12, description: "One brief scope summary per relevant basis/boundary finding, including complete support. Preserve each side's decision-changing unchecked relationships and method limits. Summaries are unverified model declarations checked against full saved findings by independent review; they count toward the existing details budget. Use [] only when no relevant finding exists." })),
   comparisonHtml: Type.String({ minLength: 1, maxLength: 262_144 }),
   detailsHtml: Type.Optional(Type.String({ maxLength: 262_144 })),
   decisionShape: Type.Optional(Type.Union([Type.Literal("single_difference"), Type.Literal("multiple_differences")], {
@@ -157,7 +162,7 @@ export type ComparisonDraftSubmission = Static<typeof ComparisonDraftSubmissionS
 export const ComparisonDecisionDraftSubmissionSchema = Type.Object({
   kind: Type.Literal('decision'),
   ...Type.Required(Type.Omit(ComparisonDraftSubmissionSchema, ['comparisonHtml', 'detailsHtml', 'decisionBasis'])).properties,
-}, { additionalProperties: false, description: 'Plain decision variant. Host renders summary, boundary and existing findings scope once and derives decisionBasis from basis dispositions. Do not submit HTML or a second copy of basis IDs. All current findings and decisive unknowns remain mandatory; original report length and publication gates apply.' });
+}, { additionalProperties: false, description: 'Plain decision variant. Host renders summary, boundary and provided scope summaries once and derives decisionBasis from basis dispositions. Independent review checks those scope summaries against the complete saved findings; structural acceptance is not semantic approval. Do not submit HTML or a second copy of basis IDs. All current findings and decisive unknowns remain mandatory; original report length and publication gates apply.' });
 export type ComparisonDecisionDraftSubmission = Static<typeof ComparisonDecisionDraftSubmissionSchema>;
 const ComparisonOutputSchema = Type.Object({
   status: Type.Union([Type.Literal("completed"), Type.Literal("insufficient_evidence")]),
