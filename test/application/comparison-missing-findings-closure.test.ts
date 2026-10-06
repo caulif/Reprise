@@ -4,7 +4,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createAssistantMessageEventStream, type AssistantMessage, type Context, type Model } from '@earendil-works/pi-ai';
-import { ComparisonAgent, COMPARISON_SOURCE_REVIEW_PROMPT, COMPARISON_TURN_PROMPTS } from '../../src/agents/comparison-agent.js';
+import { ComparisonAgent, COMPARISON_TURN_PROMPTS } from '../../src/agents/comparison-agent.js';
+import { COMPARISON_DIRECT_SOURCE_REVIEW_PROMPT } from '../../src/agents/comparison-review-findings.js';
 import { closeBoundedInvestigation } from '../../src/agents/comparison-investigation-closure.js';
 import { ComparisonResourceTracker } from '../../src/agents/comparison-resources.js';
 import { COMPARISON_INITIAL_FINDINGS_PROMPT } from '../../src/agents/comparison-initial-findings.js';
@@ -86,7 +87,11 @@ for (const mode of ['success', 'save_fail', 'verbal', 'not_ready', 'cancel', 'ha
         ? { ...initial, decisionQuestions: [{ ...initial.decisionQuestions[0], status: 'pending', nextCheck: 'Check original outputs', resolution: undefined }] } : initial;
       message = stop ? response([{ type: 'text', text: 'A verbal promise is not a saved finding.' }], 'stop') : turn('update_comparison_findings', submission);
     } else if (prompt.includes(COMPARISON_TURN_PROMPTS.compose) || prompt.includes(COMPARISON_AUTHOR_COMPOSE_PROMPT)) message = turn('submit_comparison_draft', draft);
-    else if (prompt.includes(COMPARISON_SOURCE_REVIEW_PROMPT)) { sourceRequests++; message = response([{ type: 'text', text: 'No final quality check is supported; preserve the limitation.' }], 'stop'); }
+    else if (prompt.includes(COMPARISON_DIRECT_SOURCE_REVIEW_PROMPT)) {
+      sourceRequests++; assert.ok(context.tools?.some(tool => tool.name === 'update_comparison_findings'));
+      assert.ok(context.tools?.every(tool => !['write', 'submit_comparison_draft', 'preview_report'].includes(tool.name)));
+      message = response([{ type: 'text', text: 'No final quality check is supported; preserve the limitation.' }], 'stop');
+    }
     else if (prompt.includes('This is the independent review findings closure')) message = turn('update_comparison_findings', initial);
     else if (prompt.includes('This is the actual draft inspection checkpoint') || prompt.includes('The initial checkpoint is not formal certification: after this full audit')) message = turn('inspect_comparison_draft', {});
     else if (prompt.includes('This is the preview-only closure')) message = turn('preview_report', {});

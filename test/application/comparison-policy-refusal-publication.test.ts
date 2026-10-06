@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { createAssistantMessageEventStream, type AssistantMessage, type Context, type Model } from '@earendil-works/pi-ai';
 import { Value } from '@sinclair/typebox/value';
 import { ComparisonAgent, COMPARISON_SOURCE_REVIEW_PROMPT, COMPARISON_TURN_PROMPTS } from '../../src/agents/comparison-agent.js';
+import { COMPARISON_DIRECT_SOURCE_REVIEW_PROMPT } from '../../src/agents/comparison-review-findings.js';
 import { COMPARISON_INITIAL_FINDINGS_PROMPT } from '../../src/agents/comparison-initial-findings.js';
 import { COMPARISON_AUTHOR_COMPOSE_PROMPT } from '../../src/agents/comparison-author-prompt.js';
 import { AgentHost } from '../../src/infrastructure/agent/host.js';
@@ -41,21 +42,18 @@ for (const mode of ['success', 'cancel', 'hard'] as const) test(`production nati
       decisionQuestions: initial.decisionQuestions.map(({ resolution: _resolution, ...question }) => ({ ...question, status: 'pending', nextCheck: 'Inspect final sources before any quality verdict.' })) });
     else if (actualPrompt.includes(COMPARISON_TURN_PROMPTS.orientAndInvestigate)) {
       investigationRequests++;
-      if (investigationRequests === 1) response = turn('update_comparison_findings', initial);
-      else {
-        assert.equal(investigationRequests, 2, 'accepted findings are followed by one real stop turn');
-        response = { ...turn('unused', {}), stopReason: 'stop', content: [{ type: 'text', text: 'Final quality remains unchecked; compose a conditional report.' }] };
-      }
+      assert.equal(investigationRequests, 1, 'an actual saved ready snapshot ends investigation at its completed tool turn');
+      response = turn('update_comparison_findings', initial);
     } else if (actualPrompt.includes(COMPARISON_TURN_PROMPTS.compose) || actualPrompt.includes(COMPARISON_AUTHOR_COMPOSE_PROMPT)) response = turn('submit_comparison_draft', draft);
-    else if (actualPrompt.includes(COMPARISON_SOURCE_REVIEW_PROMPT)) {
+    else if (actualPrompt.includes(COMPARISON_SOURCE_REVIEW_PROMPT) || actualPrompt.includes(COMPARISON_DIRECT_SOURCE_REVIEW_PROMPT)) {
       sourceRequests++;
       assert.ok(sourceRequests <= 3, 'source soft boundary requires no extra generation');
       if (sourceRequests === 2) {
         assert.match(JSON.stringify(context.messages), /write_denied[\s\S]*Keep source inspection and work-copy mutation in separate shell calls/);
         assert.ok(context.messages.some(item => item.role === 'toolResult' && 'isError' in item && item.isError));
-        response = turn('write', { path: 'scratch/corrected.txt', content: 'Corrected in writable scratch' });
-        if (mode === 'hard') response.content = Array.from({ length: 28 }, (_, index) => ({ type: 'toolCall', id: `corrected-${index}`, name: 'write',
-          arguments: { path: 'scratch/corrected.txt', content: `Corrected write ${index}` } }));
+        response = turn('shell_exec', { command: "Set-Content corrected.txt 'Corrected in writable scratch'" });
+        if (mode === 'hard') response.content = Array.from({ length: 28 }, (_, index) => ({ type: 'toolCall', id: `corrected-${index}`, name: 'shell_exec',
+          arguments: { command: `Set-Content corrected.txt 'Corrected write ${index}'` } }));
       } else response = turn('shell_exec', { command: 'Set-Content finals/policy-denial-sentinel.txt denied' });
     }
     else if (actualPrompt.includes('This is the actual draft inspection checkpoint')) response = turn('inspect_comparison_draft', {});
@@ -84,6 +82,18 @@ for (const mode of ['success', 'cancel', 'hard'] as const) test(`production nati
   const result = await handle.result;
   assert.equal(result.comparison.result.status, mode === 'success' ? 'completed' : mode === 'cancel' ? 'cancelled' : 'failed', JSON.stringify(result.comparison.result));
   const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as Event);
+  const attemptId = events.find(event => event.type === 'comparison.requested')?.payload.attemptId;
+  assert.equal(typeof attemptId, 'string');
+  const attemptRoot = join(result.experimentRoot, 'comparison-attempts', String(attemptId));
+  await assert.rejects(readFile(join(attemptRoot, 'finals/policy-denial-sentinel.txt')), { code: 'ENOENT' }, 'the readonly denial leaves no forbidden file');
+  if (mode !== 'cancel') {
+    assert.ok(events.some(event => {
+      const details = event.payload.details as { command?: string; exitCode?: number; stderrBytes?: number } | undefined;
+      return event.type === 'agent.tool_completed' && event.payload.tool === 'shell_exec' && !event.payload.nativeHook
+        && details?.command?.startsWith('Set-Content corrected.txt') && details.exitCode === 0 && details.stderrBytes === 0;
+    }), 'a permitted correction command actually exits successfully, rather than only returning a tool receipt');
+    assert.match(await readFile(join(attemptRoot, 'scratch/corrected.txt'), 'utf8'), /Corrected (?:in writable scratch|write \d+)/, 'a separate permitted shell call actually writes scratch before completion or the hard stop');
+  }
   assert.ok(events.some(event => event.type === 'agent.tool_failed' && String(event.payload.message).includes('write_denied')));
   assert.ok(events.some(event => event.type === 'agent.tool_completed' && event.payload.tool === 'shell_exec' && event.payload.nativeHook === 'after' && event.payload.isError === true));
   const preview = events.find(event => event.type === 'agent.tool_completed' && event.payload.tool === 'preview_report' && !event.payload.nativeHook);
@@ -91,15 +101,16 @@ for (const mode of ['success', 'cancel', 'hard'] as const) test(`production nati
     assert.equal(preview, undefined);
     if (mode === 'hard') {
       assert.equal(sourceRequests, 2);
-      assert.ok(events.some(event => event.type === 'agent.tool_completed' && event.payload.tool === 'write' && !event.payload.nativeHook));
+      assert.ok(events.some(event => event.type === 'agent.tool_completed' && event.payload.tool === 'shell_exec' && !event.payload.nativeHook));
       assert.ok(events.some(event => event.type === 'agent.tool_failed' && String(event.payload.message).includes('maxToolCalls')));
     }
     return;
   }
-  assert.equal(contexts.length, 11); assert.equal(investigationRequests, 2); assert.equal(sourceRequests, 3); assert.ok(actualDelta);
+  assert.equal(contexts.length, 10); assert.equal(investigationRequests, 1); assert.equal(sourceRequests, 3); assert.ok(actualDelta);
   const source = events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'sources')!;
   assert.equal(source.payload.outcome, 'yielded'); assert.equal(source.payload.yieldReason, 'reviewModelRequests');
-  const correction = events.find(event => event.type === 'agent.tool_completed' && event.payload.tool === 'write' && !event.payload.nativeHook)!;
+  const denied = events.find(event => event.type === 'agent.tool_failed' && String(event.payload.message).includes('write_denied'))!;
+  const correction = events.find(event => event.type === 'agent.tool_completed' && event.payload.tool === 'shell_exec' && !event.payload.nativeHook && event.sequence > denied.sequence)!;
   assert.ok(correction.sequence < source.sequence);
   const update = events.filter(event => event.type === 'agent.tool_completed' && event.payload.tool === 'update_comparison_findings' && !event.payload.nativeHook).at(-1)!;
   const closure = events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'review-findings')!;

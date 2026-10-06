@@ -2,7 +2,7 @@
 
 状态：accepted
 
-后继：严格三会话路径的编排与时间策略已有[有界审阅收敛](2026-10-06-comparison-bounded-review-convergence.md)作为后继，其他审计、错误优先和发布约束保留。
+后继：严格三会话路径的来源查证与实时保存合并、非盲假设输入、完成边界及时间策略已有[有界审阅收敛](2026-10-06-comparison-bounded-review-convergence.md)作为后继，其他审计、错误优先和发布约束保留。
 
 ## 问题
 

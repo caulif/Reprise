@@ -51,7 +51,7 @@ export class ComparisonResourceTracker {
       ? pass === 'audit' || pass === 'preview' ? pass : 'review' : 'investigate');
     if (this.#boundedStages && (pass === 'sources' || pass === 'review-supplement') && !this.#sourceDeadlines.has(pass)) {
       const scale = Math.min(1, this.#limits.maxElapsedMs! / 600_000);
-      this.#sourceDeadlines.set(pass, Date.now() + (pass === 'sources' ? 60_000 : 30_000) * scale);
+      this.#sourceDeadlines.set(pass, Date.now() + (pass === 'sources' ? 110_000 : 30_000) * scale);
     }
     if (phase === this.#phase) return;
     if (this.#phase === 'investigate') this.#investigationElapsed += Date.now() - this.#phaseStarted;

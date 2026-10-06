@@ -5,9 +5,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Type } from '@sinclair/typebox';
 import { createAssistantMessageEventStream, type AssistantMessage, type Context, type Model } from '@earendil-works/pi-ai';
-import { ComparisonAgent, COMPARISON_SOURCE_REVIEW_PROMPT, COMPARISON_TURN_PROMPTS, type ComparisonContext } from '../../src/agents/comparison-agent.js';
+import { ComparisonAgent, COMPARISON_TURN_PROMPTS, type ComparisonContext } from '../../src/agents/comparison-agent.js';
 import { composeComparisonAuthorSystemPrompt, COMPARISON_AUTHOR_COMPOSE_PROMPT } from '../../src/agents/comparison-author-prompt.js';
 import { COMPARISON_INITIAL_FINDINGS_PROMPT } from '../../src/agents/comparison-initial-findings.js';
+import { COMPARISON_DIRECT_SOURCE_REVIEW_PROMPT } from '../../src/agents/comparison-review-findings.js';
 import { AgentHost } from '../../src/infrastructure/agent/host.js';
 import { PiModelCaller, type PiModels } from '../../src/infrastructure/agent/model-caller.js';
 import { ExperimentStore } from '../../src/infrastructure/store/experiment-store.js';
@@ -63,8 +64,9 @@ test('production fresh author submits recorded hypotheses then independently upd
     } else if (prompt.includes(COMPARISON_TURN_PROMPTS.compose) || prompt.includes(COMPARISON_AUTHOR_COMPOSE_PROMPT)) {
       assert.match(actual.systemPrompt!, /short provisional report/); assert.doesNotMatch(JSON.stringify(actual), /RAW_INVESTIGATION_ONLY_SENTINEL/);
       assert.match(prompt, /SAVED_PROVISIONAL_FINDING/); turn = call('submit_comparison_draft', draft);
-    } else if (prompt.includes(COMPARISON_SOURCE_REVIEW_PROMPT)) {
-      assert.doesNotMatch(JSON.stringify(actual), /RAW_INVESTIGATION_ONLY_SENTINEL|SAVED_PROVISIONAL_FINDING|No supported replacement choice/); turn = response();
+    } else if (prompt.includes(COMPARISON_DIRECT_SOURCE_REVIEW_PROMPT)) {
+      assert.doesNotMatch(JSON.stringify(actual), /RAW_INVESTIGATION_ONLY_SENTINEL|No supported replacement choice/);
+      assert.match(prompt, /SAVED_PROVISIONAL_FINDING/); turn = response();
     } else if (prompt.includes('This is the actual draft inspection checkpoint')) turn = call('inspect_comparison_draft', {});
     else if (prompt.includes('This is the independent review findings closure')) {
       const state = JSON.parse(prompt.split('Current saved findings (hypotheses only): ')[1]!.split('\n\nCurrent Host-owned metric pair:')[0]!) as { binding: ComparisonFindingsDelta['binding']; findingIds: string[]; questionIds: string[] };
@@ -129,7 +131,9 @@ for (const strict of [true, false]) test(`actual Pi author isolation retains tas
   assert.match(author.systemPrompt!, /"costUsd":0.4/); assert.match(author.systemPrompt!, /"costUsd":0.08/);
   if (strict) { assert.doesNotMatch(JSON.stringify(author), /RAW_INVESTIGATION_ONLY_SENTINEL/); assert.match(author.systemPrompt!, /short provisional report/); }
   else assert.match(JSON.stringify(author), /RAW_INVESTIGATION_ONLY_SENTINEL/);
-  assert.doesNotMatch(JSON.stringify(source), /RAW_INVESTIGATION_ONLY_SENTINEL|SAVED_PROVISIONAL_FINDING|AUTHOR_DRAFT_HYPOTHESIS/);
+  assert.doesNotMatch(JSON.stringify(source), /RAW_INVESTIGATION_ONLY_SENTINEL|AUTHOR_DRAFT_HYPOTHESIS/);
+  if (strict) assert.match(JSON.stringify(source), /SAVED_PROVISIONAL_FINDING/);
+  else assert.doesNotMatch(JSON.stringify(source), /SAVED_PROVISIONAL_FINDING/);
   assert.match(JSON.stringify(source), /TASK_SOURCE_REQUIRED/);
   const phases = store.events().filter(e => e.type === 'comparison.phase_completed').map(e => { assert.ok(isRecord(e.payload)); return { ...e, payload: e.payload }; });
   assert.deepEqual(phases.map(e => e.payload.pass ?? e.payload.phase), ['investigate', 'compose', 'sources', 'inspection', 'review-findings', 'audit', 'preview']);
