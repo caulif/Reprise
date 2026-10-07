@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>对照 · gpt-5 vs 未记录 对比</title>
 <style data-host-zone="style" data-id="host-style">
 
@@ -18,7 +19,11 @@ h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; ma
 .task { margin:0 0 8px; font-size:16px; color:var(--soft); line-height:1.45; }
 .note,[data-agent-slot="headline"] { margin:0 0 18px; font-size:16px; line-height:1.5; }
 [data-agent-slot="headline"] strong,[data-component="diff-table"] strong,[data-claim] { font-weight:inherit; }
-.board { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin: 8px 0 0; }
+.board { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin: 8px 0 0; }
+.token-details { margin-top:10px; font-size:13px; }
+.token-details > summary { cursor:pointer; color:var(--accent); }
+.token-details .card { margin-top:8px; }
+.token-breakdown { margin-top:8px; }
 .card,.result-card,[data-host="diagnostic-card"],[data-component="difference-card"] { background:#f7f9f8; border-radius:8px; box-shadow:none; border:1px solid var(--line); padding:16px 16px 14px; min-width:0; }
 .card { min-height:0; }
 .card .label { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); margin-bottom:12px; }
@@ -41,6 +46,9 @@ h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; ma
 [data-agent-zone="comparison"] [data-host="visual-unavailable"],[data-agent-zone="comparison"] [data-host="pairing-hint"] { margin:0 0 8px; font-size:14px; }
 [data-agent-zone="comparison"] table,[data-component="diff-table"] { width:100%; border-collapse:collapse; margin:8px 0; }
 [data-agent-zone="comparison"] { min-width:0; overflow-x:auto; }
+[data-component="evidence-quote"] { margin:12px 0; min-width:0; }
+[data-component="evidence-quote"] figcaption { color:var(--soft); font-size:12px; margin-bottom:6px; }
+[data-component="evidence-quote"] pre { margin:0; padding:10px 12px; border:1px solid var(--hair); border-radius:6px; max-width:100%; overflow-x:auto; font-size:12px; line-height:1.5; }
 [data-agent-zone="comparison"] th,[data-agent-zone="comparison"] td,[data-component="diff-table"] th,[data-component="diff-table"] td { overflow-wrap:anywhere; }
 [data-agent-zone="comparison"] th,[data-agent-zone="comparison"] td,[data-component="diff-table"] th,[data-component="diff-table"] td { border:none; padding:10px 8px; vertical-align:top; font-size:16px; font-weight:400; }
 .details { margin-top:20px; color:var(--soft); background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 18px 16px; overflow-wrap:anywhere; }
@@ -122,8 +130,8 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
   <p class="task" data-slot="task" data-agent-slot="task">Fix the report.</p></header>
     <p class="field-label">主要结论</p>
     <p class="note" data-agent-slot="headline">The candidate produced a usable file.</p>
-    <section class="slot" data-agent-zone="comparison" data-id="agent-comparison"><p>The candidate delivered a file; history did not.</p></section>
-    <section class="board" data-host-zone="metrics" data-id="host-metrics" data-host="metrics" data-fingerprint="{&quot;b&quot;:[null,null,null,&quot;not_collected&quot;],&quot;c&quot;:[4000,null,null,&quot;not_collected&quot;]}" aria-label="时间, Token, 费用">
+    <section data-host-zone="metrics" data-id="host-metrics" data-host="metrics" data-metrics-layout="compact" data-fingerprint="{&quot;b&quot;:[null,null,null,&quot;not_collected&quot;,null,null,null,null],&quot;c&quot;:[4000,null,null,&quot;not_collected&quot;,null,null,null,null]}" aria-label="时间, Token, 估算费用">
+    <div class="board">
     <article class="card">
       <div class="label">时间</div>
       <div class="pair">
@@ -138,6 +146,21 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
       </div>
     </article>
     <article class="card">
+      <div class="label">估算费用</div>
+      <div class="pair">
+        <div class="col">
+          <div class="who">历史会话</div>
+          <div class="num miss">未采集</div>
+        </div>
+        <div class="col">
+          <div class="who">当前会话</div>
+          <div class="num miss">未采集</div>
+        </div>
+      </div>
+    </article>
+    </div>
+    <details class="token-details"><summary>展开 Token 口径</summary>
+      <article class="card">
       <div class="label">Token</div>
       <div class="pair">
         <div class="col">
@@ -150,25 +173,16 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
         </div>
       </div>
     </article>
-    <article class="card">
-      <div class="label">费用</div>
-      <div class="pair">
-        <div class="col">
-          <div class="who">历史会话</div>
-          <div class="num miss">未采集</div>
-        </div>
-        <div class="col">
-          <div class="who">当前会话</div>
-          <div class="num miss">未采集</div>
-        </div>
-      </div>
-    </article>
+      <div class="pair token-breakdown"><div class="col"><span class="who">历史会话</span><ul><li>输入: 未采集</li><li>输出: 未采集</li><li>缓存输入: 未采集</li><li>推理: 未采集</li></ul></div><div class="col"><span class="who">当前会话</span><ul><li>输入: 未采集</li><li>输出: 未采集</li><li>缓存输入: 未采集</li><li>推理: 未采集</li></ul></div></div>
+      <p class="kicker">分项可能重叠或未记录；不同工具的 Token 口径不能直接作为模型效率评分。</p>
+    </details>
   </section>
+    <p class="kicker cost-note" data-host-zone="cost-note" data-id="host-cost-note">费用按本次钉住的价格快照估算，不是供应商账单，不含工具费用。缺失记录保持未知；价格口径可在下方展开。</p>
+    <section class="slot" data-agent-zone="comparison" data-id="agent-comparison"><p>The candidate delivered a file; history did not.</p></section>
   </article>
   <details class="details">
     <summary>查看依据与补充</summary>
     <section class="slot" data-agent-zone="details" data-id="agent-details"><!-- 可选：较长方法、文件清单与调查细节。Host 证据与过程区在下方。 --></section>
-    <p class="kicker cost-note" data-host-zone="cost-note" data-id="host-cost-note">费用按本次钉住的价格快照计算，不含工具调用成本。无 Token 显示未采集；有 Token 无价格显示价格未配置。价格表 2026-09-19-cc-switch-seed。</p>
     <section class="slot" data-host-zone="evidence" data-id="host-evidence"><details class="evidence-expand" data-host="run-diagnostics"><summary>运行诊断</summary><ul class="kv-list">
     <li><span class="who">gpt-5</span> verifiable</li>
     <li><span class="who">未记录</span> incomplete · limit.turns · harness</li>

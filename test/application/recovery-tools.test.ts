@@ -810,6 +810,31 @@ test("ls treats omitted path, dot, and dot-slash as the staging root", async (t)
   await assert.rejects(listing.execute({ path: "C:/outside" }, signal));
 });
 
+test("absent denied mounts do not reject scratch shell writes; present mounts remain protected", async (t) => {
+  const root = await workspace();
+  const scratch = join(root, "scratch");
+  const finals = join(root, "sealed");
+  await mkdir(scratch);
+  await mkdir(finals);
+  await writeFile(join(finals, "answer.txt"), "sealed");
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const shell = tool(root, "shell_exec", {
+    mounts: { finals },
+    denyDestructiveOnPrefix: ["finals", "observations"],
+    shellCwd: scratch,
+  });
+  const signal = new AbortController().signal;
+  const result = await shell.execute({ command: hostShellWriteFile("probe.txt", "scratch") }, signal);
+  assert.equal(shellExitCode(result), 0);
+  assert.equal((await readFile(join(scratch, "probe.txt"), "utf8")).trim(), "scratch");
+  assert.equal(shellExitCode(await shell.execute({ command: hostShellDelete("probe.txt") }, signal)), 0);
+  await assert.rejects(readFile(join(scratch, "probe.txt")), { code: "ENOENT" });
+  for (const target of ["finals/answer.txt", join(finals, "answer.txt"), "observations/answer.txt"]) {
+    await assert.rejects(shell.execute({ command: hostShellDelete(target) }, signal), /write_denied/);
+  }
+  assert.equal(await readFile(join(finals, "answer.txt"), "utf8"), "sealed");
+});
+
 test("source mount is readable and not writable; workspace alias writes the copy", async (t) => {
   const root = await workspace();
   const source = await mkdtemp(join(tmpdir(), "reprise-source-mount-"));

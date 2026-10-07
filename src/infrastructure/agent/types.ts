@@ -1,6 +1,7 @@
 import type { TSchema } from "@sinclair/typebox";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { AgentFailureKind } from "./failure.js";
+import type { AgentUsageFacts } from '../../core/schema.js';
 
 export type { AgentFailureKind };
 
@@ -45,7 +46,7 @@ export type AgentInvocation<T> =
 
 export type StructuredAgentResult<T> = AgentInvocation<T>;
 /** Optional visible diagnostic for audit; business agents must not depend on `text`. */
-export type FreeformInvocation = AgentInvocation<{ text?: string }>;
+export type FreeformInvocation = AgentInvocation<{ text?: string }> | { status: "yielded"; reason: string; sessionId: string; invocationId?: string };
 
 export type AgentToolDefinition = {
   name: string;
@@ -57,6 +58,8 @@ export type AgentToolDefinition = {
 
 export type AgentAuditEventType =
   | "comparison.phase_completed"
+  | "comparison.resources_completed"
+  | "agent.usage_reported"
   | "agent.session_started"
   | "agent.session_completed"
   | "agent.session_failed"
@@ -65,6 +68,7 @@ export type AgentAuditEventType =
   | "agent.invocation_completed"
   | "agent.invocation_failed"
   | "agent.invocation_cancelled"
+  | "agent.invocation_yielded"
   | "agent.message_appended"
   | "agent.tool_called"
   | "agent.tool_completed"
@@ -129,6 +133,12 @@ export type FreeformWorkRequest = {
   timeoutMs: number;
   requestId?: string;
   maxRepairAttempts?: number;
+  /** Optional model-visible subset of this session's registered tools; execution guards still apply. */
+  allowedToolNames?: readonly string[] | undefined;
+  /** Optional invocation-local interrupt; Provider must settle idle and usage before yielding. */
+  yieldDeadline?: { at: number; reason: string };
+  /** Checked at a completed provider turn; yielding preserves the live transcript and never certifies completion. */
+  yieldAfterTurn?: () => string | undefined | Promise<string | undefined>;
 };
 
 export type StructuredWorkRequest<T> = {
@@ -158,7 +168,8 @@ export type StructuredAgentRequest<T> = StructuredWorkRequest<T> & {
 
 export interface AgentSession {
   readonly sessionId: string;
-  work(input: FreeformWorkRequest): Promise<FreeformInvocation>;
+  work(input: FreeformWorkRequest & ({ yieldAfterTurn: NonNullable<FreeformWorkRequest['yieldAfterTurn']> } | { yieldDeadline: NonNullable<FreeformWorkRequest['yieldDeadline']> })): Promise<FreeformInvocation>;
+  work(input: Omit<FreeformWorkRequest, 'yieldAfterTurn' | 'yieldDeadline'>): Promise<AgentInvocation<{ text?: string }>>;
   request<T>(input: StructuredWorkRequest<T>): Promise<AgentInvocation<T>>;
   cancel(reason?: string, requestId?: string): Promise<void>;
   close(): Promise<void>;
@@ -170,7 +181,7 @@ export interface AgentHost {
 
 export interface ProviderSession {
   readonly inputCapabilities?: readonly string[];
-  append(input: { content: string; images?: readonly ImageContent[]; signal: AbortSignal }): Promise<string>;
+  append(input: { content: string; images?: readonly ImageContent[]; signal: AbortSignal; yieldAfterTurn?: FreeformWorkRequest['yieldAfterTurn']; allowedToolNames?: readonly string[]; yieldDeadline?: FreeformWorkRequest['yieldDeadline'] }): Promise<string | { status: "yielded"; reason: string }>;
   cancel(): void;
   waitForIdle?(): Promise<void>;
   setToolsEnabled?(enabled: boolean): void;
@@ -202,6 +213,7 @@ export interface ProviderAdapter {
     onRetry?: (payload: { attempt: number; kind: string; delayMs: number }) => Promise<void>;
     onAssistantVisible?: (payload: { text: string; turn: number }) => Promise<void>;
     onBeforeToolCall?: (payload: { tool: string }) => Promise<void>;
+    onToolRejected?: (payload: { tool: string; callDigest: string }) => Promise<void>;
     onAfterToolCall?: (payload: {
       tool: string;
       isError: boolean;
@@ -209,7 +221,8 @@ export interface ProviderAdapter {
       byteLength: number;
       contentDigest: string;
     }) => Promise<void>;
-    onModelRequest?: (payload: { model: string; digest: string; messageCount: number; images?: readonly ImageContent[] }) => Promise<void>;
+    onModelRequest?: (payload: { model: string; digest: string; messageCount: number; images?: readonly ImageContent[]; scope?: 'generation' | 'compaction'; compactionContext?: { systemPrompt?: string; messages: readonly unknown[]; tools?: readonly unknown[] }; generationContext?: { systemPrompt?: string; messages: readonly unknown[]; tools?: readonly unknown[] } }) => Promise<void>;
+    onModelUsage?: (payload: AgentUsageFacts) => Promise<void>;
   }): Promise<ProviderSession> | ProviderSession;
 }
 

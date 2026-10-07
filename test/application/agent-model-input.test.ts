@@ -32,6 +32,23 @@ test('redaction strips bearer tokens before anything is recorded or sent', () =>
   assert.doesNotMatch(redacted.text, /ultra-secret-token/);
 });
 
+test('compaction requests cannot replace the generation manifest or block working-set reconstruction', async () => {
+  const events = [
+    envelope(1, 'agent.session_started', { sessionId: 'session-1', role: 'comparison', systemPrompt: 'Compare', tools: [] }),
+    envelope(2, 'agent.message_appended', { sessionId: 'session-1', invocationId: 'inv-1', requestIndex: 1, body: inlineBody('Inspect final sources') }),
+    envelope(3, 'agent.model_request', { sessionId: 'session-1', invocationId: 'inv-1', requestIndex: 1, scope: 'compaction', model: 'fixture', digest: 'a'.repeat(64), messageCount: 1, images: [] }),
+    envelope(4, 'agent.context_compacted', { sessionId: 'session-1', invocationId: 'inv-1', requestIndex: 1, summary: 'Preserve scoped findings', retainedTail: inlineBody('[]') }),
+  ];
+  const compacted = await reconstructModelRequests(events);
+  assert.equal(compacted.diagnostic, undefined);
+  assert.equal(compacted.requests[0]?.modelRequestDigest, undefined);
+  assert.match(JSON.stringify(compacted.requests[0]?.messages), /Preserve scoped findings/);
+  events.push(envelope(5, 'agent.model_request', { sessionId: 'session-1', invocationId: 'inv-1', requestIndex: 1, scope: 'generation', model: 'fixture', digest: 'b'.repeat(64), messageCount: 1, images: [] }));
+  const generated = await reconstructModelRequests(events);
+  assert.equal(generated.diagnostic, undefined);
+  assert.equal(generated.requests[0]?.modelRequestDigest, 'b'.repeat(64));
+});
+
 test('reconstructed requests include a repair prompt and a compacted working set', async () => {
   const events = [
     envelope(1, 'agent.session_started', {

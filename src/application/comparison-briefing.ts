@@ -8,7 +8,7 @@ import { ComparisonBriefingContextSchema, ComparisonLinksSchema, GitSinkManifest
 import type { ArtifactManifest } from "../infrastructure/store/experiment-store.js";
 import { briefingComparisonContext } from "./comparison.js";
 import { controllerBriefingRoot } from "./controller-briefing.js";
-import { OBSERVATIONS_MOUNT, writeFrozenObservationTree } from "../products/history/observations-materializer.js";
+import { OBSERVATIONS_MOUNT, observationRelativePath, writeFrozenObservationTree } from "../products/history/observations-materializer.js";
 import { finalizeGitSinkCatalog, gitSinkRefsListing, gitSinkRoot, readGitSinkManifest } from "../environment/git-sink.js";
 import {
   isComparisonImagePath,
@@ -26,6 +26,7 @@ import {
   collectHistoricalDeliverableNames,
 } from "./historical-final-discovery.js";
 import { attemptFinalsRoot } from "./prepare-historical-artifacts.js";
+import { comparisonSealedFinalLinks } from './comparison-sealed-finals.js';
 
 export const MAX_COMPARISON_LINKS = 64;
 
@@ -151,7 +152,9 @@ export async function writeComparisonBriefing(input: {
   });
   const decisionMap = comparisonDecisionMap({
     links, media, snapshotStatus,
+    events: input.events,
     openableSources: mediaBundle.openableSources,
+    sealedFinalGaps: mediaBundle.sealedFinalGaps,
     omitted: selected.omitted + invalidLinkCount,
     changedPathsIndexed: selected.changedPathsIndexed,
   });
@@ -190,8 +193,9 @@ export async function writeComparisonBriefing(input: {
 async function comparisonMediaBundle(
   input: Parameters<typeof writeComparisonBriefing>[0],
   selected: Awaited<ReturnType<typeof comparisonLinks>>,
-): Promise<{ links: ComparisonLink[]; media: ComparisonMediaRecord[]; invalidLinkCount: number; openableSources: { baseline: string[]; candidate: string[] } }> {
-  const rawLinks = withEvidenceShortRefs(selected.links);
+): Promise<{ links: ComparisonLink[]; media: ComparisonMediaRecord[]; invalidLinkCount: number; sealedFinalGaps: string[]; openableSources: { baseline: string[]; candidate: string[] } }> {
+  const finals = await comparisonSealedFinalLinks(input.attemptRoot);
+  const rawLinks = withEvidenceShortRefs([...finals.links, ...selected.links.filter(link => !finals.links.some(final => final.inspectPath === link.inspectPath && final.side === link.side))]);
   const links = rawLinks.filter((link) => Value.Check(ComparisonLinksSchema, [link]));
   const invalidLinkCount = rawLinks.length - links.length;
   const openable = await discoverOpenableSources({
@@ -216,7 +220,7 @@ async function comparisonMediaBundle(
     ...(input.signal ? { signal: input.signal } : {}),
   });
   return {
-    links: augmented.links, media: augmented.media, invalidLinkCount,
+    links: augmented.links, media: augmented.media, invalidLinkCount, sealedFinalGaps: finals.unavailable,
     openableSources: {
       baseline: openable.baselineSources.map((item) => item.inspectPath),
       candidate: openable.candidateSources.map((item) => item.inspectPath),
@@ -317,7 +321,7 @@ function comparisonIndex(
     "- briefing/facts/comparison-links.json: inspect paths and stable report links; not the full workspace listing",
     "- briefing/facts/media.json: registered images and previews, shortRef media-01, reportHref, availability",
     "- briefing/facts/evidence-index.json: short evidence refs ev-01 with descriptive names",
-    "- briefing/candidate/process-index.tsv: complete run event index including post-settlement events",
+    "- briefing/candidate/process-index.tsv: complete run event index including post-settlement events; observation_path opens each payload. Event type alone does not prove check results.",
     "- observations/user-inputs/INDEX.tsv: complete user demand in session order (historical_user vs controller)",
     "- observations/INDEX.md: frozen transcript, historical events, and this run's events (read-only)",
     "- history/outline.tsv and history/transcript/: frozen historical conversation (read-only mount)",
@@ -335,6 +339,8 @@ function comparisonIndex(
 }
 
 function comparisonDecisionMap(input: {
+  events: readonly EventEnvelope[];
+  sealedFinalGaps?: readonly string[];
   links: readonly ComparisonLinkRecord[];
   media: readonly ComparisonMediaRecord[];
   openableSources: { baseline: readonly string[]; candidate: readonly string[] };
@@ -363,7 +369,8 @@ function comparisonDecisionMap(input: {
     for (const path of openable.slice(0, 6)) lines.push(`- ${path} (openable delivery lead; confirm final version)`);
     if (openable.length > 6) lines.push(`- ${openable.length - 6} more openable leads: finals/ or candidate/`);
     for (const link of candidates.slice(0, 6)) {
-      lines.push(`- ${link.shortRef ?? "unreferenced"} ${link.inspectPath}${link.origin ? ` (${link.origin})` : ""}`);
+      const sources = link.sourceRefs?.length ? ` sources=${link.sourceRefs.slice(0, 3).join(', ')}${link.sourceRefs.length > 3 ? ` (+${link.sourceRefs.length - 3} in the full evidence index)` : ''}` : '';
+      lines.push(`- ${link.shortRef ?? "unreferenced"} ${link.inspectPath}${link.origin ? ` (${link.origin})` : ""}${link.contentHash ? ` hash=${link.contentHash}` : ""}${sources}`);
     }
     if (candidates.length > 6) lines.push(`- ${candidates.length - 6} more indexed leads: briefing/facts/comparison-links.json`);
     for (const item of images.slice(0, 6)) {
@@ -372,7 +379,16 @@ function comparisonDecisionMap(input: {
     if (images.length > 6) lines.push(`- ${images.length - 6} more media: briefing/facts/media.json`);
     lines.push("");
   }
+  const process = input.events.filter(event => event.type === 'runtime.tool_finished' || event.type === 'runtime.visible_output');
+  lines.push('## Candidate process payload leads', '',
+    'Event types are navigation only. To assess a verification claim, open the relevant tool-result payload and compare it with the visible output; do not infer success or failure from an index row.',
+    'These are the most recent tool-result/visible-output events, including post-settlement events, selected by type only. They are not a full verification history or a semantic finding.');
+  for (const event of process.slice(-6)) lines.push(`- ${event.sequence} ${event.type}: ${OBSERVATIONS_MOUNT}/${observationRelativePath(`event:${event.eventId}`, 'run_events')}`);
+  if (process.length > 6) lines.push(`- ${process.length - 6} earlier matching events omitted here; all rows remain in candidate/process-index.tsv.`);
+  if (!process.length) lines.push('- No matching tool-result/visible-output event in this frozen run index; this alone does not prove that no checks occurred.');
+  lines.push('Observation files expose truncated/originalChars. If truncated=true, the excerpt cannot establish the unseen remainder; obtain a complete registered source or disclose that scope limit.', '');
   lines.push("## Checks to resolve", "");
+  for (const gap of input.sealedFinalGaps ?? []) lines.push(`- ${gap}`);
   if (input.snapshotStatus !== "complete") lines.push("- Determine what can be concluded without a complete sealed candidate snapshot.");
   if (!input.links.some((link) => link.side === "baseline") && input.openableSources.baseline.length === 0) lines.push("- Locate the historical final delivery, or report the evidence gap.");
   if (input.snapshotStatus === "complete" && !input.links.some((link) => link.side === "candidate") && input.openableSources.candidate.length === 0) lines.push("- Locate the candidate final delivery, or report the evidence gap.");
@@ -385,9 +401,10 @@ function comparisonDecisionMap(input: {
 }
 
 function processIndex(events: readonly EventEnvelope[]): string {
-  const lines = ["sequence\ttype\toccurred_at\tpayload_bytes\tevidence_ref"];
+  const lines = ["sequence\ttype\toccurred_at\tpayload_bytes\tevidence_ref\tobservation_path"];
   for (const event of events) {
-    lines.push([event.sequence, event.type, event.occurredAt, Buffer.byteLength(JSON.stringify(event.payload)), `event:${event.eventId}`].join("\t"));
+    lines.push([event.sequence, event.type, event.occurredAt, Buffer.byteLength(JSON.stringify(event.payload)), `event:${event.eventId}`,
+      `${OBSERVATIONS_MOUNT}/${observationRelativePath(`event:${event.eventId}`, 'run_events')}`].join("\t"));
   }
   return `${lines.join("\n")}\n`;
 }

@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
-import { AgentImageRefSchema } from '../core/agent-model-input-schema.js';
+import { createComparisonImageDeliveryRecorder } from './comparison-image-delivery-recorder.js';
 import type { ControllerDecision } from "../agents/controller-agent.js";
 import { buildComparisonContext, briefingComparisonContext, comparisonOwnedObservationRefs } from "./comparison.js";
 import type { CandidateRun } from "./candidate-run.js";
@@ -29,7 +29,7 @@ import { ComparisonVisualMediaError } from "./comparison-openable-media.js";
 import { prepareHistoricalArtifacts } from "./prepare-historical-artifacts.js";
 import { buildResultPathLinks } from "./result-paths.js";
 import { controllerBriefingRoot } from "./controller-briefing.js";
-import { ComparisonAgent, assertComparisonResult, type ComparisonContext, type ComparisonResult } from "../agents/comparison-agent.js";
+import { assertComparisonResult, type ComparisonContext, type ComparisonResult } from "../agents/comparison-agent.js";
 import type { AgentAuditSink, AgentInvocation, AgentToolDefinition } from "../infrastructure/agent/host.js";
 import { extractHostZoneSnapshot, metricsFromReportFacts, renderComparisonReportShell } from "./comparison-report-shell.js";
 import { readOperatorLocale } from "./operator-locale.js";
@@ -38,17 +38,28 @@ import { Type } from "@sinclair/typebox";
 import { ComparisonEvidenceCatalog, lookupCompletedToolCall } from "./comparison-evidence.js";
 import type { ComparisonCatalogSnapshot } from "./comparison-evidence.js";
 import { createComparisonRenderCatalogPort } from "./comparison-render-catalog.js";
-import { createPreviewReportTool, createRenderArtifactTool } from "./comparison-render-tools.js";
+import { createPreviewReportTool, createRenderArtifactTool, type ComparisonRenderedCheck } from "./comparison-render-tools.js";
 import { materializeComparisonReportPreview } from "./comparison-report-preview.js";
 import { ComparisonDraft } from "./comparison-draft.js";
+import { completedReviewedComparison } from './comparison-live-review.js';
+import { persistComparisonDraftAcceptance } from './comparison-recovery-discovery.js';
+import { ComparisonDiscovery } from './comparison-discovery.js';
+import { AgentUsageFactsSchema, ComparisonInvestigationClosedSchema } from '../core/schema.js';
+import { usagePricing } from './session-usage.js';
+import { loadOperatorPricingOverride } from './model-pricing.js';
 import {
   comparisonFailureDiagnostic,
+  comparisonRecordedFailurePhase,
+  type ComparisonFailurePhase,
   persistComparisonReportModel,
   publishComparisonArtifacts,
   verifyAndRenderComparisonReport,
 } from "./comparison-publication.js";
 import { withComparisonShellDeny } from "./comparison-shell-deny.js";
 import { preflightComparisonDraft } from "./comparison-draft-preflight.js";
+import { createComparisonQuoteSourcePort, type ComparisonQuoteSourcePort } from "./comparison-source.js";
+import { ComparisonReviewRequestSchema, ComparisonReviewStartedSchema } from "../core/comparison-review-schema.js";
+import { createQuoteEvidenceTool, validateComparisonEvidenceQuotes } from "./comparison-evidence-quotes.js";
 
 export { comparisonCandidateMount };
 
@@ -294,7 +305,7 @@ async function compareExperimentOutcome(
       shortEvidenceRefs: briefing.links.flatMap((link) => link.shortRef ? [link.shortRef] : []),
       ...(hostZoneSnapshot ? { hostZoneSnapshot } : {}),
     };
-    await persistComparisonRequest(input.store, input.input.runId, attemptId, { ...briefingContext, media: briefing.media });
+    await persistComparisonRequest(input.store, input.input.runId, attemptId, { ...briefingContext, media: briefing.media }, input.input.comparison.requireFindings === true || input.input.comparison.reviewInspectionRequired === true);
     comparisonResult = await runComparisonAttempt({
       host: input, attemptId, attemptRoot, briefing, compareFacts, reportShellHtml, locale,
     });
@@ -388,6 +399,7 @@ async function runComparisonAttempt(input: {
         { links: finalCatalog.links, media: finalCatalog.media },
         input.locale,
         deliveredImageContentHashes,
+        quoteSourcesForAttempt(input.host, input.attemptRoot, catalog, compareContext.allowModelText),
       );
     }
     if (comparisonResult.status === "completed") {
@@ -401,6 +413,7 @@ async function runComparisonAttempt(input: {
           media: catalog.snapshot().media,
           evidence: catalog.snapshot().links,
           model: publishedModel,
+          quoteSources: quoteSourcesForAttempt(input.host, input.attemptRoot, catalog, compareContext.allowModelText),
         });
       } catch (error) {
         comparisonResult = comparisonFailed("publication_failed", error, comparisonResult.sessionId);
@@ -445,6 +458,7 @@ async function persistComparisonInvocation(input: {
       attemptId: input.attemptId,
       attemptRoot: input.attemptRoot,
       locale: input.locale,
+      recordedPhase: comparisonRecordedFailurePhase(input.store.events(input.runId), input.runId, input.attemptId),
     });
   }
   await input.store.append({
@@ -482,6 +496,7 @@ async function enforcePublishedReport(
   briefing: { links: readonly ComparisonLinkRecord[]; media: readonly ComparisonMediaRecord[] },
   locale: AgentLocale,
   deliveredImageContentHashes: ReadonlySet<string>,
+  quoteSources: ComparisonQuoteSourcePort,
 ): Promise<AgentInvocation<ComparisonResult>> {
   if (result.status !== "completed") return result;
   if (!(await reportExists(attemptRoot, result.value.reportPath))) {
@@ -505,6 +520,7 @@ async function enforcePublishedReport(
     evidence: briefing.links,
     locale,
     deliveredImageContentHashes,
+    quoteSources,
     ...(context.hostZoneSnapshot ? { hostZoneSnapshot: context.hostZoneSnapshot } : {}),
   });
   if ("failureClass" in verified) {
@@ -541,23 +557,80 @@ async function invokeCompare(
   if (input.signal?.aborted) {
     return { result: { status: "cancelled" }, deliveredImageContentHashes };
   }
+  const discovery = new ComparisonDiscovery({ catalog, attemptId, persist: async (record) => {
+    const artifact = await input.store.commitArtifact({ artifactId: `comparison-findings-${attemptId}-${record.revision}`,
+      runId: input.input.runId, kind: 'comparison_findings', mediaType: 'application/json',
+      bytes: Buffer.from(JSON.stringify(record), 'utf8') });
+    await input.store.append({ type: 'comparison.findings_updated', runId: input.input.runId,
+      operationId: `comparison-findings-${attemptId}-${record.revision}`,
+      payload: { schemaVersion: 1, attemptId, revision: record.revision, catalogRevision: record.catalogRevision,
+        digest: record.digest, artifactId: artifact.artifactId } });
+  } });
+  const requireFindings = input.input.comparison.requireFindings === true;
+  const override = loadOperatorPricingOverride(input.input.dataDir);
+  const estimateUsageCost = (payload: Record<string, unknown>): number | undefined => {
+    if (!Value.Check(AgentUsageFactsSchema, payload)) throw new Error('Invalid Comparison usage facts.');
+    const usage = payload.usage;
+    return usagePricing({ parts: { input: usage.input, output: usage.output, cacheRead: usage.cacheRead, cacheCreation: usage.cacheWrite },
+      display: usage.totalTokens, inputIncludesCache: false }, payload.model, undefined,
+      { ...(override ? { override } : {}) }).costUsd;
+  };
+  const renderChecks: ComparisonRenderedCheck[] = [];
+  const quoteSources = quoteSourcesForAttempt(input, attemptRoot, catalog, context.allowModelText);
+  let omittedRenderChecks = 0;
+  const recordRenderCheck = (check: ComparisonRenderedCheck): void => {
+    renderChecks.push(structuredClone(check));
+    if (renderChecks.length > 24) {
+      renderChecks.shift();
+      omittedRenderChecks++;
+    }
+  };
   const draft = new ComparisonDraft({
     attemptRoot, task: context.task.summary, facts: context.reportFacts,
     locale: await readOperatorLocale(input.input.dataDir), catalog,
     deliveredImages: deliveredImageContentHashes,
+    renderCheckHistory: () => ({ records: renderChecks, omitted: omittedRenderChecks }),
+    quoteSources,
+    ...(requireFindings ? { discovery, persistAccepted: binding => persistComparisonDraftAcceptance(input.store, input.input.runId, attemptId, binding) } : {}),
   });
   const result = await input.input.comparison.compare(
     context,
-    comparisonTools(input, attemptRoot, catalog, draft),
+    [...comparisonTools(input, attemptRoot, catalog, draft, recordRenderCheck, quoteSources), ...(requireFindings ? [discovery.tool(), discovery.deltaTool()] : [])],
     comparisonAudit(input, attemptId, deliveredImageContentHashes),
     input.signal,
     {
       getEvidenceCatalog: () => catalog.snapshot(),
-      getSubmittedResult: () => draft.completedResult(),
+      getSubmittedResult: () => completedReviewedComparison({ draft, store: input.store, attemptId, attemptRoot, context, catalog }),
+      hasAcceptedDraft: () => draft.hasAcceptedDraft(),
+      onReviewStarted: async sessionId => {
+        draft.beginReview();
+        const payload = { schemaVersion: 1 as const, attemptId, sessionId, inspectionRequired: true as const };
+        if (!Value.Check(ComparisonReviewStartedSchema, payload)) throw new Error('Invalid Comparison review contract.');
+        await input.store.append({ type: 'comparison.review_started', runId: input.input.runId,
+          payload });
+      },
       getSubmissionFailure: () => draft.failureReason(),
       getSubmissionState: () => draft.submissionState(),
+      hasReviewDraftMaterial: () => draft.hasReviewDraftMaterial(),
+      onDraftAuditStarted: async sessionId => {
+        draft.beginDraftAudit();
+        const payload = { schemaVersion: 1 as const, attemptId, sessionId, inspectionRequired: true as const };
+        if (!Value.Check(ComparisonReviewStartedSchema, payload)) throw new Error('Invalid Comparison draft audit contract.');
+        await input.store.append({ type: 'comparison.draft_audit_started', runId: input.input.runId, payload });
+      },
+      hasCurrentReviewInspection: () => draft.hasCurrentReviewInspection(),
+      isRepairRead: params => draft.isRepairRead(params),
       preflightDraft: () => preflightComparisonDraft(attemptRoot),
       enforcePhaseBoundaries: true,
+      estimateUsageCost,
+      ...(requireFindings ? { reviewFindings: true, findingsReady: () => discovery.readyToCompose(), hasSavedFindings: () => discovery.snapshot() !== undefined, getFindingsState: () => discovery.state(),
+        closeBoundedInvestigation: async (boundary, signal) => {
+          const closure = await discovery.closeAtInvestigationDeadline(signal);
+          signal.throwIfAborted();
+          const payload = { schemaVersion: 1 as const, attemptId, ...boundary, ...closure, semanticAssessment: 'not_certified' as const };
+          if (!Value.Check(ComparisonInvestigationClosedSchema, payload)) throw new Error('Invalid Host investigation closure audit.');
+          await input.store.append({ type: 'comparison.investigation_closed', runId: input.input.runId, payload });
+        } } : {}),
     },
   );
   return { result, deliveredImageContentHashes };
@@ -569,11 +642,19 @@ function comparisonWorkspaceRoot(input: Parameters<typeof finishExperiment>[0]):
     : join(input.experimentRoot, "comparison-attempts", "candidate-snapshot-unavailable");
 }
 
+function quoteSourcesForAttempt(input: Parameters<typeof finishExperiment>[0], attemptRoot: string, catalog: ComparisonEvidenceCatalog, allowModelText: boolean): ComparisonQuoteSourcePort {
+  return createComparisonQuoteSourcePort({ evidence: () => catalog.snapshot().links, attemptRoot, allowModelText,
+    mounts: comparisonAttemptMounts({ experimentRoot: input.experimentRoot, runId: input.input.runId, attemptRoot,
+      candidateSnapshotStatus: input.candidateSnapshotStatus, candidateSnapshotRoot: input.candidateSnapshotRoot }) });
+}
+
 function comparisonTools(
   input: Parameters<typeof finishExperiment>[0],
   attemptRoot: string,
   catalog: ComparisonEvidenceCatalog,
   draft: ComparisonDraft,
+  recordRenderCheck: (check: ComparisonRenderedCheck) => void,
+  quoteSources: ComparisonQuoteSourcePort,
 ): AgentToolDefinition[] {
   const controllerRoot = controllerBriefingRoot(input.experimentRoot, input.input.runId);
   const scratchRoot = join(attemptRoot, "scratch");
@@ -600,10 +681,10 @@ function comparisonTools(
       role: "comparison",
       allowBinary: input.taskCase.privacy.allowBinary,
       mounts,
-      allowWrite: input.input.comparison instanceof ComparisonAgent
+      allowWrite: (input.input.comparison.requireFindings === true || input.input.comparison.reviewInspectionRequired === true)
         ? comparisonAttemptWriteAllowed
         : (path) => path === "report.html" || comparisonAttemptWriteAllowed(path),
-      completionPaths: new Set(input.input.comparison instanceof ComparisonAgent
+      completionPaths: new Set((input.input.comparison.requireFindings === true || input.input.comparison.reviewInspectionRequired === true)
         ? ["work/comparison-plan.md"] : ["work/comparison-plan.md", "report.html"]),
       denyDestructiveOnPrefix: ["candidate", "evidence", "history", "finals", "turns", "run", "observations"],
       allowShell: true,
@@ -619,26 +700,38 @@ function comparisonTools(
     }),
     registerEvidenceTool(catalog),
     draft.tool(),
+    draft.inspectTool(),
+    createQuoteEvidenceTool({ sources: quoteSources }),
     createRenderArtifactTool({
       catalog: renderCatalog,
       attemptRoot,
       allowImages: input.taskCase.privacy.allowBinary,
+      onRenderedCheck: recordRenderCheck,
     }),
     createPreviewReportTool({
+      ...(input.input.comparisonPreviewRenderer ? { render: input.input.comparisonPreviewRenderer } : {}),
       catalog: renderCatalog,
       attemptRoot,
       allowImages: input.taskCase.privacy.allowBinary,
       onPreviewSuccess: (prepared) => draft.recordPreview(prepared),
       onPreviewFinished: (prepared, outcome) => draft.recordPreviewOutcome(prepared, outcome),
-      preflightDraft: () => preflightComparisonDraft(attemptRoot),
+      preflightDraft: async () => {
+        const preflight = await preflightComparisonDraft(attemptRoot);
+        if (preflight.error) return preflight;
+        const error = await validateComparisonEvidenceQuotes(await readFile(join(attemptRoot, "report.html"), "utf8"), quoteSources);
+        return error ? { ...preflight, error } : preflight;
+      },
       prepareReportHtml: async () => {
         const snap = catalog.snapshot();
-        return materializeComparisonReportPreview({
+        const prepared = await materializeComparisonReportPreview({
           attemptRoot,
           media: snap.media,
           evidence: snap.links,
           catalogRevision: snap.revision,
         });
+        const error = await validateComparisonEvidenceQuotes(prepared.html, quoteSources);
+        if (error) throw new Error(error);
+        return prepared;
       },
     }),
   ]);
@@ -698,63 +791,19 @@ function comparisonAudit(
   deliveredImageContentHashes: Set<string>,
 ): AgentAuditSink {
   const sink = experimentAgentAuditSink(input.store, input.input.runId);
-  let hasRequestManifest = false;
+  const recordDelivery = createComparisonImageDeliveryRecorder(deliveredImageContentHashes);
   return {
     append: async (event) => {
       await sink.append({ ...event, payload: { attemptId, ...event.payload } });
-      if (event.type === 'agent.model_request' && Array.isArray(event.payload.images)) {
-        if (!hasRequestManifest) deliveredImageContentHashes.clear();
-        hasRequestManifest = true;
-        for (const image of event.payload.images) {
-          if (!Value.Check(AgentImageRefSchema, image)) throw new Error('Invalid actual image delivery manifest.');
-          deliveredImageContentHashes.add(image.contentHash);
-        }
-      } else if (!hasRequestManifest) recordDeliveredImageContentHashes(event, deliveredImageContentHashes);
+      recordDelivery(event);
     },
     ...(sink.commitModelInput ? { commitModelInput: (bytes) => sink.commitModelInput!(bytes) } : {}),
   };
 }
 
-function recordDeliveredImageContentHashes(
-  event: { type: string; payload: Record<string, unknown> },
-  delivered: Set<string>,
-): void {
-  if (event.type === "agent.message_appended") {
-    const images = event.payload.images;
-    if (!Array.isArray(images)) return;
-    for (const image of images) {
-      if (image && typeof image === "object" && typeof (image as { contentHash?: unknown }).contentHash === "string") {
-        delivered.add((image as { contentHash: string }).contentHash);
-      }
-    }
-    return;
-  }
-  if (event.type !== "agent.tool_completed") return;
-  const types = event.payload.contentTypes;
-  if (!Array.isArray(types) || !types.includes("image")) return;
-  const body = event.payload.body;
-  if (!body || typeof body !== "object" || (body as { encoding?: unknown }).encoding !== "inline") return;
-  const text = (body as { text?: unknown }).text;
-  if (typeof text !== "string") return;
-  try {
-    const parsed = JSON.parse(text) as unknown;
-    if (!Array.isArray(parsed)) return;
-    for (const block of parsed) {
-      if (
-        block
-        && typeof block === "object"
-        && (block as { type?: unknown }).type === "image"
-        && typeof (block as { contentHash?: unknown }).contentHash === "string"
-      ) {
-        delivered.add((block as { contentHash: string }).contentHash);
-      }
-    }
-  } catch {
-    // Tool body is not JSON image blocks; nothing to record for visual-claim delivery.
-  }
-}
-
-async function persistComparisonRequest(store: ExperimentStore, runId: string, attemptId: string, context: unknown): Promise<void> {
+async function persistComparisonRequest(store: ExperimentStore, runId: string, attemptId: string, context: unknown, reviewInspectionRequired = false): Promise<void> {
+  const reviewContract = reviewInspectionRequired ? { attemptId, reviewInspectionContractVersion: 2 as const } : undefined;
+  if (reviewContract && !Value.Check(ComparisonReviewRequestSchema, reviewContract)) throw new Error('Invalid Comparison review request contract.');
   const bytes = Buffer.from(JSON.stringify(context), "utf8");
   const truncated = bytes.byteLength > MAX_COMPARISON_INPUT_BYTES;
   const stored = truncated ? bytes.subarray(0, MAX_COMPARISON_INPUT_BYTES) : bytes;
@@ -772,6 +821,7 @@ async function persistComparisonRequest(store: ExperimentStore, runId: string, a
     operationId: `comparison-requested-${attemptId}`,
     payload: {
       schemaVersion: 1,
+      ...(reviewContract ?? {}),
       requestId: "comparison-requested",
       runId,
       inputDigest: digest,
@@ -835,6 +885,7 @@ async function writeComparisonFailurePage(input: {
   attemptId: string;
   attemptRoot: string;
   locale: AgentLocale;
+  recordedPhase?: ComparisonFailurePhase | undefined;
 }): Promise<void> {
   const reportPresent = await reportExists(input.attemptRoot, "report.html");
   const html = renderComparisonReportShell({
@@ -847,6 +898,7 @@ async function writeComparisonFailurePage(input: {
       result: input.result,
       facts: input.facts,
       reportPresent,
+      recordedPhase: input.recordedPhase,
       attemptId: input.attemptId,
       locale: input.locale,
     }),

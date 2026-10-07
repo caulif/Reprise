@@ -9,8 +9,10 @@ import {
   type ComparisonLinkRecord,
   type ComparisonMediaRecord,
   type ComparisonReportModel,
+  type EventEnvelope,
 } from "../core/schema.js";
 import { writeAtomic } from "../core/identity.js";
+import { record } from '../core/json.js';
 import { pathContainedBy } from "../core/paths.js";
 import { isMissing } from "./experiment-helpers.js";
 import type { AgentLocale } from "../agents/language.js";
@@ -32,8 +34,13 @@ import {
   type HostZoneSnapshot,
 } from "./comparison-report-shell.js";
 import { renderVisualEvidenceSeed } from "./comparison-visual-evidence.js";
+import { extractHostLimitations } from './comparison-host-limitations.js';
 import { extensionForMediaType, rewriteMediaHref, stagePublishedEvidence, stagePublishedHistoricalFinals } from "./comparison-publish-evidence.js";
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
+import type { ComparisonQuoteSourcePort } from "./comparison-source.js";
+import { validateComparisonEvidenceQuotes } from "./comparison-evidence-quotes.js";
+import { evidenceQuoteMarkupOnly, transformOutsideEvidenceQuotes } from "../core/comparison-html.js";
+import { invalidAgentReferences, unexpectedAgentZones } from "./comparison-reference-validation.js";
 
 export type ComparisonFailureClass =
   | "provider"
@@ -72,47 +79,57 @@ type VerificationInput = {
   locale?: AgentLocale;
   /** `data-claim="visual"` requires media content hashes delivered to the Session. */
   deliveredImageContentHashes?: ReadonlySet<string>;
+  quoteSources?: ComparisonQuoteSourcePort;
 };
 
 type VerificationFailure = { failureClass: ComparisonFailureClass; code: ComparisonPublishCode; message: string };
 
+export function comparisonRecordedFailurePhase(events: readonly EventEnvelope[], runId: string, attemptId: string): ComparisonFailurePhase | undefined {
+  const event = events.filter(item => item.runId === runId && item.type === 'comparison.phase_completed' && record(item.payload).attemptId === attemptId).at(-1);
+  const phase = record(event?.payload).phase;
+  return phase === 'understand' || phase === 'investigate' || phase === 'compose' || phase === 'review' ? phase : undefined;
+}
+
 export function classifyComparisonFailure(input: {
   result: StructuredAgentResult<unknown>;
   reportPresent: boolean;
+  recordedPhase?: ComparisonFailurePhase | undefined;
 }): { failureClass: ComparisonFailureClass; phase: ComparisonFailurePhase } {
   if (input.result.status === "cancelled") {
-    return { failureClass: "cancelled", phase: input.reportPresent ? "review" : "understand" };
+    return { failureClass: "cancelled", phase: input.recordedPhase ?? (input.reportPresent ? "review" : "understand") };
   }
   const failed = input.result.status === "failed" ? input.result.failure : undefined;
   const message = failed?.message ?? "";
   const kind = failed?.kind ?? "";
   const code = failed?.code ?? "";
   if (code === "provider_failure" || kind === "authentication" || kind === "rate_limited" || kind === "transient_network" || kind === "transient_upstream" || /\b529\b/.test(message)) {
-    return { failureClass: "provider", phase: input.reportPresent ? "review" : "compose" };
+    return { failureClass: "provider", phase: input.recordedPhase ?? (input.reportPresent ? "review" : "compose") };
   }
   if (code === "invalid_envelope" || message === "invalid JSON" || message.startsWith("schema validation failed") || message.includes("invalid JSON")) {
-    return { failureClass: "protocol", phase: "review" };
+    return { failureClass: "protocol", phase: input.recordedPhase ?? "review" };
   }
   if (code === "host_zone_modified" || message.includes("Host zone") || message.includes("Host metrics") || message.includes("Host status")) {
     const metrics = message.includes("metrics") || message.includes("Host metrics") || message.includes("Host status");
     return { failureClass: metrics ? "metrics" : "publication", phase: "publication" };
   }
   if (code === "evidence_unresolved" || message.includes("unknown evidence")) {
-    return { failureClass: "evidence", phase: "review" };
+    return { failureClass: "evidence", phase: input.recordedPhase ?? "review" };
   }
   if (code === "media_unavailable") {
     return { failureClass: "media", phase: "publication" };
   }
   if (code === "draft_invalid" || code === "report_incomplete" || code === "preview_failed" || code === "publication_failed" || message.includes("without writing report.html")) {
-    return { failureClass: "publication", phase: code === "preview_failed" ? "review" : code === "publication_failed" ? "publication" : "compose" };
+    return { failureClass: "publication", phase: code === "publication_failed" ? "publication" : input.recordedPhase ?? (code === "preview_failed" ? "review" : "compose") };
   }
-  return { failureClass: "unknown", phase: input.reportPresent ? "review" : "compose" };
+  return { failureClass: "unknown", phase: input.recordedPhase ?? (input.reportPresent ? "review" : "compose") };
 }
 
 export async function verifyAndRenderComparisonReport(input: VerificationInput): Promise<
   { html: string; model: ComparisonReportModel } | VerificationFailure
 > {
   const locale = input.locale ?? "zh";
+  const previous = extractHostLimitations(input.html);
+  input = { ...input, html: previous.html };
   if (input.hostTask === undefined) {
     const unsafeContent = agentUnsafeContentError(input.html);
     if (unsafeContent) return { failureClass: "publication", code: "report_incomplete", message: unsafeContent };
@@ -137,6 +154,8 @@ export async function verifyAndRenderComparisonReport(input: VerificationInput):
   }
   const invalidRef = rebuilt.agentHtml === undefined ? undefined : invalidAgentReferences(rebuilt.agentHtml, input.evidence ?? [], input.media);
   if (invalidRef) return invalidRef;
+  const quoteError = await validateComparisonEvidenceQuotes(html, input.quoteSources);
+  if (quoteError) return { failureClass: "evidence", code: "evidence_unresolved", message: quoteError };
   const structuredEvidence = claimsVerifiedWithoutResolvableEvidence(html, input.evidence ?? []);
   if (structuredEvidence) return { failureClass: "evidence", code: "evidence_unresolved", message: structuredEvidence };
   const structuredVisual = claimsVisualWithoutUsableMedia(html, input.media, input.deliveredImageContentHashes);
@@ -146,7 +165,7 @@ export async function verifyAndRenderComparisonReport(input: VerificationInput):
     return { failureClass: "publication", code: "publication_failed", message: "Comparison report contains external network resources." };
   }
   html = rewritten.html;
-  const limitations: ComparisonReportStringKey[] = [];
+  const limitations: ComparisonReportStringKey[] = [...previous.limitations];
   const visual = repairEmptyComparisonZone(html, input.media, locale);
   html = visual.html;
   const incomplete = repairIncompleteAboveTheFold(html, input.result.headline, locale);
@@ -163,9 +182,6 @@ export async function verifyAndRenderComparisonReport(input: VerificationInput):
   }
   if (wordlistVerifiedWithoutResolvableEvidence(html, input.evidence ?? [], locale)) {
     limitations.push("hostLimitationVerifiedWordlist");
-  }
-  if (claimsVisualWithoutMedia(html, input.media, locale)) {
-    limitations.push("hostLimitationVisualWordlist");
   }
   if (citedMediaAllUnresolved(html, rewritten.unresolvedMedia, locale)) {
     limitations.push("hostLimitationCitedMediaUnresolved");
@@ -185,6 +201,8 @@ export async function verifyAndRenderComparisonReport(input: VerificationInput):
       message: 'Agent comparison zone is empty; fill data-agent-zone="comparison" with the task comparison (comments alone do not count).',
     };
   }
+  const finalQuoteError = await validateComparisonEvidenceQuotes(html, input.quoteSources);
+  if (finalQuoteError) return { failureClass: "evidence", code: "evidence_unresolved", message: finalQuoteError };
   const model = comparisonReportModelFromHtml(html, input.facts, input.result, input.media, input.evidence, locale);
   return { html, model };
 }
@@ -211,22 +229,6 @@ function rebuildHostReport(
   };
 }
 
-function invalidAgentReferences(
-  html: string,
-  evidence: readonly ComparisonLinkRecord[],
-  media: readonly ComparisonMediaRecord[],
-): VerificationFailure | undefined {
-  const unknownEvidence = [...html.matchAll(/\bdata-evidence-ref\s*=\s*(["'])([^"']+)\1/gi)]
-    .map((match) => match[2] ?? "")
-    .find((ref) => !evidence.some((item) => item.shortRef === ref));
-  if (unknownEvidence) return { failureClass: "evidence", code: "evidence_unresolved", message: `Unknown evidence reference: ${unknownEvidence}.` };
-  const unknownMedia = [...html.matchAll(/\bdata-media-ref\s*=\s*(["'])([^"']+)\1/gi)]
-    .map((match) => match[2] ?? "")
-    .find((ref) => !media.some((item) => item.shortRef === ref && item.available));
-  if (unknownMedia) return { failureClass: "media", code: "media_unavailable", message: `Unavailable media reference: ${unknownMedia}.` };
-  return undefined;
-}
-
 export async function persistComparisonReportModel(root: string, model: ComparisonReportModel): Promise<void> {
   if (!Value.Check(ComparisonReportModelSchema, model)) throw new Error("Comparison report model does not satisfy ComparisonReportModelSchema.");
   await writeAtomic(join(root, "report-model.json"), `${JSON.stringify(model)}\n`);
@@ -239,6 +241,7 @@ export async function publishComparisonArtifacts(input: {
   media?: readonly ComparisonMediaRecord[];
   evidence?: readonly ComparisonLinkRecord[];
   model?: ComparisonReportModel;
+  quoteSources?: ComparisonQuoteSourcePort;
 }): Promise<{ html: string }> {
   const staged = await prepareComparisonArtifacts(input);
   if (staged.model) await persistComparisonReportModel(input.experimentRoot, staged.model);
@@ -253,6 +256,7 @@ export async function prepareComparisonArtifacts(input: {
   media?: readonly ComparisonMediaRecord[];
   evidence?: readonly ComparisonLinkRecord[];
   model?: ComparisonReportModel;
+  quoteSources?: ComparisonQuoteSourcePort;
 }): Promise<{ html: string; model?: ComparisonReportModel }> {
   const staged = await stagePublishedMedia({
     attemptRoot: input.attemptRoot,
@@ -272,6 +276,8 @@ export async function prepareComparisonArtifacts(input: {
     evidence: input.evidence ?? [],
   }, rewriteMediaHref);
   const hrefMap = new Map([...staged.hrefMap, ...evidenceStaged.hrefMap, ...historicalStaged.hrefMap]);
+  const quoteError = await validateComparisonEvidenceQuotes(historicalStaged.html, input.quoteSources);
+  if (quoteError) throw new Error(quoteError);
   return { html: historicalStaged.html, ...(input.model ? { model: rewriteReportModelMediaHrefs(input.model, hrefMap) } : {}) };
 }
 
@@ -366,7 +372,8 @@ export function comparisonReportModelFromHtml(
     const hit = evidence.find((item) => item.shortRef === short);
     return hit?.contentHash ? [{ shortRef: short, contentHash: hit.contentHash, sourceRefs: hit.sourceRefs ?? [] }] : [];
   });
-  const mediaRefs = media.filter((item) => html.includes(item.reportHref) || (item.shortRef && html.includes(item.shortRef))).map((item) => item.ref);
+  const markup = evidenceQuoteMarkupOnly(html);
+  const mediaRefs = media.filter((item) => markup.includes(item.reportHref) || (item.shortRef && markup.includes(item.shortRef))).map((item) => item.ref);
   const slotHeadline = oneLineFromHtml(extractInner(html, "data-agent-slot", "headline"));
   const headline = result.headline ?? (slotHeadline.length > 0 && slotHeadline.length <= 280 ? slotHeadline : undefined);
   return {
@@ -392,6 +399,7 @@ export function comparisonFailureDiagnostic(input: {
   result: StructuredAgentResult<unknown>;
   facts: ComparisonReportFacts;
   reportPresent: boolean;
+  recordedPhase?: ComparisonFailurePhase | undefined;
   attemptId: string;
   locale?: AgentLocale;
 }): ComparisonReportDiagnostic {
@@ -491,7 +499,7 @@ function rewriteAgentZones(html: string, rewrite: (inner: string) => string): st
     const outer = extractOuter(next, "data-agent-zone", zone);
     const inner = extractInner(next, "data-agent-zone", zone);
     if (!outer || !inner) continue;
-    next = next.replace(outer, outer.replace(inner, rewrite(inner)));
+    next = next.replace(outer, () => outer.replace(inner, () => rewrite(inner)));
   }
   return next;
 }
@@ -502,7 +510,7 @@ function replaceZoneInner(html: string, attr: string, name: string, nextInner: s
   const open = outer.match(new RegExp(`^<(${ZONE_TAG})\\b[^>]*>`, "i"));
   if (!open) return html;
   const tag = open[1] ?? "section";
-  return html.replace(outer, `${open[0]}${nextInner}</${tag}>`);
+  return html.replace(outer, () => `${open[0]}${nextInner}</${tag}>`);
 }
 
 const ZONE_TAG = "header|section|style|p|span";
@@ -512,8 +520,8 @@ function appendHostLimitations(html: string, locale: AgentLocale, keys: readonly
   if (uniqueKeys.length === 0) return html;
   const outer = extractOuter(html, "data-agent-zone", "comparison");
   if (!outer) return html;
-  const notes = uniqueKeys.map((key) => `<p data-host-limitation>${escapeText(reportString(locale, key))}</p>`).join("");
-  return html.replace(outer, outer.replace(/<\/section>\s*$/i, `${notes}</section>`));
+  const notes = uniqueKeys.map((key) => `<p data-host-limitation="${key}">${escapeText(reportString(locale, key))}</p>`).join("");
+  return html.replace(outer, () => outer.replace(/<\/section>\s*$/i, () => `${notes}</section>`));
 }
 
 function repairEmptyComparisonZone(
@@ -567,7 +575,7 @@ function repairLeakedInternalRunInfo(html: string): { html: string; limitations:
   ] as const) {
     const inner = extractInner(next, attr, name);
     if (!inner) continue;
-    const stripped = stripInternalRunTokens(inner);
+    const stripped = transformOutsideEvidenceQuotes(inner, stripInternalRunTokens);
     if (stripped !== inner) next = replaceZoneInner(next, attr, name, stripped);
   }
   return { html: next, limitations: leakedInternalRunInfo(next) ? ["hostLimitationLeakedInternal"] : [] };
@@ -589,13 +597,13 @@ function applyShareCardPresentationFixes(html: string, locale: AgentLocale): str
   }
   const share = shareArticleHtml(next);
   if (share) {
-    const shareFixed = share
+    const shareFixed = transformOutsideEvidenceQuotes(share, text => text
       .replace(/<u\b[^>]*>/gi, "")
-      .replace(/<\/u>/gi, "");
-    if (shareFixed !== share) next = next.replace(share, shareFixed);
+      .replace(/<\/u>/gi, ""));
+    if (shareFixed !== share) next = next.replace(share, () => shareFixed);
   }
-  next = next.replace(/<summary[^>]*>\s*(价格与证据|Prices and evidence)\s*<\/summary>/gi, "");
-  next = next.replace(/本卡由/g, "").replace(/Written by /gi, "");
+  next = transformOutsideEvidenceQuotes(next, text => text.replace(/<summary[^>]*>\s*(价格与证据|Prices and evidence)\s*<\/summary>/gi, "")
+    .replace(/本卡由/g, "").replace(/Written by /gi, ""));
   const historical = reportString(locale, "sessionHistorical");
   const current = reportString(locale, "sessionCurrent");
   for (const [attr, name] of [
@@ -604,7 +612,7 @@ function applyShareCardPresentationFixes(html: string, locale: AgentLocale): str
   ] as const) {
     const inner = extractInner(next, attr, name);
     if (!inner) continue;
-    const replaced = inner.replaceAll("历史侧", historical).replaceAll("候选侧", current);
+    const replaced = transformOutsideEvidenceQuotes(inner, text => text.replaceAll("历史侧", () => historical).replaceAll("候选侧", () => current));
     if (replaced !== inner) next = replaceZoneInner(next, attr, name, replaced);
   }
   return next;
@@ -617,14 +625,8 @@ function repairShareCardPresentation(html: string, locale: AgentLocale): { html:
   return { html: next, limitations: shareCardPresentationError(next, locale) ? ["hostLimitationShareCardPresentation"] : [] };
 }
 
-function unexpectedAgentZones(html: string): string | undefined {
-  const found = [...html.matchAll(/\bdata-agent-zone\s*=\s*(["'])([^"']+)\1/gi)].map((match) => match[2] ?? "");
-  const extra = found.find((zone) => zone && !(AGENT_ZONES as readonly string[]).includes(zone));
-  if (!extra) return undefined;
-  return `Comparison report contains unsupported data-agent-zone="${extra}".`;
-}
-
 function shareCardPresentationError(html: string, locale: AgentLocale): string | undefined {
+  html = transformOutsideEvidenceQuotes(html, text => text, true);
   const headline = extractInner(html, "data-agent-slot", "headline");
   if (/<strong\b/i.test(headline)) return "Headline must not contain <strong>.";
   const style = extractInner(html, "data-host-zone", "style");
@@ -658,7 +660,7 @@ function shareArticleHtml(html: string): string {
 }
 
 function leakedInternalRunInfo(html: string): string | undefined {
-  const fold = `${extractInner(html, "data-host-zone", "header")}${extractInner(html, "data-agent-slot", "headline")}${extractInner(html, "data-agent-zone", "comparison")}`;
+  const fold = transformOutsideEvidenceQuotes(`${extractInner(html, "data-host-zone", "header")}${extractInner(html, "data-agent-slot", "headline")}${extractInner(html, "data-agent-zone", "comparison")}`, text => text, true);
   if (/\battemptId\b|\brunId\b|comparison-attempts\/|\\runs\\/i.test(fold) || /attempt-[a-z0-9-]{8,}/i.test(fold)) {
     return "Comparison above-the-fold content contains internal run identifiers.";
   }
@@ -667,24 +669,12 @@ function leakedInternalRunInfo(html: string): string | undefined {
   return undefined;
 }
 
-function claimsVisualWithoutMedia(html: string, media: readonly ComparisonMediaRecord[], locale: AgentLocale): string | undefined {
-  if (media.some((item) => item.available)) return undefined;
-  const body = extractInner(html, "data-agent-zone", "comparison");
-  const pattern = locale === "en"
-    ? /(visual inspection|looked at (?:the )?(?:PPT|slides|page|UI)|completed visual)/i
-    : /(已完成视觉|看过(?:了)?(?:PPT|幻灯片|网页|UI)|视觉检查)/;
-  if (pattern.test(body)) {
-    return "Comparison claimed visual inspection without available media.";
-  }
-  return undefined;
-}
-
 function verifiedWordlist(locale: AgentLocale): RegExp {
   return locale === "en" ? /\bverified\b/i : /已核验|已经核验|\bverified\b/i;
 }
 
 function claimsVerifiedWithoutEvidence(html: string, unresolved: readonly string[], locale: AgentLocale): boolean {
-  const body = extractInner(html, "data-agent-zone", "comparison");
+  const body = evidenceQuoteMarkupOnly(extractInner(html, "data-agent-zone", "comparison"));
   if (!verifiedWordlist(locale).test(body)) return false;
   const cited = unique([...body.matchAll(/\bdata-evidence-ref="([^"]+)"/gi)].map((match) => match[1] ?? "").filter(Boolean));
   if (cited.length === 0) return false;
@@ -697,7 +687,7 @@ function wordlistVerifiedWithoutResolvableEvidence(
   evidence: readonly ComparisonLinkRecord[],
   locale: AgentLocale,
 ): boolean {
-  const body = extractInner(html, "data-agent-zone", "comparison");
+  const body = evidenceQuoteMarkupOnly(extractInner(html, "data-agent-zone", "comparison"));
   if (!verifiedWordlist(locale).test(body)) return false;
   const cited = unique([...body.matchAll(/\bdata-evidence-ref="([^"]+)"/gi)].map((match) => match[1] ?? "").filter(Boolean));
   const resolvable = new Set(evidence.filter((item) => item.shortRef && (item.reportHref || item.inspectPath)).map((item) => item.shortRef as string));
@@ -741,6 +731,7 @@ function claimMissingResolvedRef(
   attr: "data-evidence-ref" | "data-media-ref",
   resolve: (ref: string) => boolean,
 ): boolean {
+  html = evidenceQuoteMarkupOnly(html);
   const claimRe = new RegExp(`\\bdata-claim\\s*=\\s*(["'])${kind}\\1`, "gi");
   let match: RegExpExecArray | null;
   while ((match = claimRe.exec(html))) {
@@ -846,7 +837,7 @@ function unpairedShareCardImages(
   html: string,
   media: readonly ComparisonMediaRecord[],
 ): "one_sided" | "missing_note" | undefined {
-  const face = `${extractInner(html, "data-host-zone", "header")}${extractInner(html, "data-agent-slot", "headline")}${extractInner(html, "data-agent-zone", "comparison")}`;
+  const face = transformOutsideEvidenceQuotes(`${extractInner(html, "data-host-zone", "header")}${extractInner(html, "data-agent-slot", "headline")}${extractInner(html, "data-agent-zone", "comparison")}`, text => text, true);
   const imgs = [...face.matchAll(/<img\b[^>]*>/gi)].map((match) => match[0] ?? "");
   if (imgs.length === 0) return undefined;
   const byShort = new Map(media.filter((item) => item.shortRef).map((item) => [item.shortRef as string, item]));
@@ -867,7 +858,7 @@ function unpairedShareCardImages(
 
 function citedMediaAllUnresolved(html: string, unresolved: readonly string[], locale: AgentLocale): boolean {
   if (unresolved.length === 0) return false;
-  const body = extractInner(html, "data-agent-zone", "comparison");
+  const body = evidenceQuoteMarkupOnly(extractInner(html, "data-agent-zone", "comparison"));
   if (!verifiedWordlist(locale).test(body)) return false;
   const cited = unique([...body.matchAll(/\bdata-media-ref="([^"]+)"/gi)].map((match) => match[1] ?? "").filter(Boolean));
   if (cited.length === 0) return false;
@@ -882,7 +873,7 @@ function markUnresolvedInHostEvidence(html: string, unresolved: readonly string[
   if (outer.includes('data-host="unresolved-evidence"')) return html;
   const refs = unresolved.join(locale === "zh" ? "、" : ", ");
   const note = `<p data-host="unresolved-evidence">${escapeText(reportString(locale, "unresolvedEvidence", { refs }))}</p>`;
-  return html.replace(outer, outer.replace(/<\/section>\s*$/i, `${note}</section>`));
+  return html.replace(outer, () => outer.replace(/<\/section>\s*$/i, () => `${note}</section>`));
 }
 
 async function stripBrokenMedia(
@@ -948,12 +939,13 @@ function imgFallback(attrs: string): string {
 }
 
 function stripExternalAttributes(html: string): string {
-  return html
+  return transformOutsideEvidenceQuotes(html, text => text
     .replace(/\s(?:src|href)=["']https?:[^"']*["']/gi, "")
-    .replace(/\s(?:src|href)=["']\/\/[^"']*["']/gi, "");
+    .replace(/\s(?:src|href)=["']\/\/[^"']*["']/gi, ""));
 }
 
 function hasExternalNetwork(html: string): boolean {
+  html = evidenceQuoteMarkupOnly(html);
   return /<(?:img|script|link|iframe|source|video|audio)\b[^>]*(?:src|href)\s*=\s*["'](?:https?:|\/\/)/i.test(html)
     || /url\(\s*["']?https?:/i.test(html);
 }
@@ -975,6 +967,7 @@ function escapeRegExp(value: string): string {
 }
 
 export function comparisonMediaHrefs(html: string): string[] {
+  html = evidenceQuoteMarkupOnly(html);
   const found = new Set<string>();
   type MediaNode = { tagName?: string; attrs?: { name: string; value: string }[]; childNodes?: MediaNode[]; content?: MediaNode };
   const visit = (node: MediaNode): void => {

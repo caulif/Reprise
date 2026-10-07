@@ -1,3 +1,4 @@
+import type { ArtifactRenderer } from '../infrastructure/artifact-renderer.js';
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { ComparisonAgentPort, ComparisonResult } from "../agents/comparison-agent.js";
@@ -86,6 +87,7 @@ export type ExperimentInput = {
   expectedSourceFingerprint?: string;
   controller: ControllerPort;
   comparison: ComparisonAgentPort;
+  comparisonPreviewRenderer?: ArtifactRenderer;
   now: string;
   onEvent?: (event: EventEnvelope) => void;
   /** Optional Pack-bound historical deliverable extractor for old-case prepare. */

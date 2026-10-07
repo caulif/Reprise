@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { Type } from "@sinclair/typebox";
 import { writeAtomic } from "../core/identity.js";
+import { ToolPreconditionRejected } from "../core/tool-precondition-rejected.js";
 import { asPosixPath, isFsAbsolute, pathContainedBy, relativeInside, stripWindowsExtendedPrefix } from "../core/paths.js";
 import {
   journalControlledRecoveryWrite,
@@ -642,13 +643,13 @@ function looksLikeNetworkCommand(command: string): boolean {
 }
 
 function assertWritablePath(ctx: RecoveryToolContext, path: { relative: string; writable: boolean }): void {
-  if (!path.writable) throw new Error("write_denied: path is a read-only mount.");
+  if (!path.writable) throw new ToolPreconditionRejected("read_only_mount", "write_denied: path is a read-only mount.");
   if (ctx.options.allowWrite && !ctx.options.allowWrite(path.relative))
-    throw new Error("write_denied: path is outside the Host write policy.");
+    throw new ToolPreconditionRejected("host_write_policy", "write_denied: path is outside the Host write policy.");
 }
 
 function writeContainmentRoot(path: ResolvedWorkspacePath): string {
-  if (!path.containmentRoot) throw new Error("write_denied: path is outside the Host write policy.");
+  if (!path.containmentRoot) throw new ToolPreconditionRejected("host_write_policy", "write_denied: path is outside the Host write policy.");
   return path.containmentRoot;
 }
 
@@ -659,8 +660,10 @@ function assertShellDoesNotMutateReadonlyMount(ctx: RecoveryToolContext, command
     return;
   }
   for (const prefix of prefixes) {
-    if (command.includes(prefix) || command.includes(ctx.mounts[prefix] ?? "")) {
-      throw new Error(
+    const mount = ctx.mounts[prefix];
+    if (command.includes(prefix) || (mount && command.includes(mount))) {
+      throw new ToolPreconditionRejected(
+        "read_only_mount",
         "write_denied: shell_exec must not mutate a read-only mount. Keep source inspection and work-copy mutation in separate shell calls; use REPRISE_SOURCE_MOUNT for read-only source access, not a source/ directory under the work copy.",
       );
     }
@@ -711,10 +714,13 @@ type ResolvedWorkspacePath = {
 };
 
 function shellExecDescription(unrestrictedRead: boolean | undefined): string {
+  const syntax = process.platform === "win32"
+    ? "Commands use PowerShell syntax ($env:NAME for environment variables), not Bash."
+    : "Commands use POSIX shell syntax ($NAME for environment variables).";
   if (unrestrictedRead) {
-    return "Run one shell command with cwd already set to the isolated replica; use ./<path> for replica files, not project/<path>. Briefing and notes paths belong to the file-tool workspace, not shell cwd. The Host selects PowerShell or a POSIX shell. Reads may use any host-readable path; writes outside the replica are external, unobserved, and not Host-controlled. Network is open; credentials and global configuration are not provided. The command text is checked for sensitive file names.";
+    return `Run one shell command with cwd already set to the isolated replica; use ./<path> for replica files, not project/<path>. Briefing and notes paths belong to the file-tool workspace, not shell cwd. ${syntax} Reads may use any host-readable path; writes outside the replica are external, unobserved, and not Host-controlled. Network is open; credentials and global configuration are not provided. The command text is checked for sensitive file names.`;
   }
-  return "Run one shell command with cwd fixed to the writable copy; the Host selects PowerShell or a POSIX shell. For read-only source access use the REPRISE_SOURCE_MOUNT environment variable; source/ is a file-tool virtual prefix, not a directory under the work copy. Keep source inspection and work-copy mutation in separate shell calls. Network is open; credentials and global configuration are not provided. The command text is checked for sensitive file names. Read-only mounts cannot be written.";
+  return `Run one shell command with cwd fixed to the writable copy. ${syntax} For read-only source access use the documented REPRISE_* environment variables; source/ and other mount prefixes are file-tool virtual paths, not directories under shell cwd. Keep source inspection and work-copy mutation in separate shell calls. Network is open; credentials and global configuration are not provided. The command text is checked for sensitive file names. Read-only mounts cannot be written.`;
 }
 
 function workspaceRelative(input: string): string | { root: true } | undefined {
@@ -796,7 +802,7 @@ function readUnavailableReason(path: ResolvedWorkspacePath): "filesystem_error" 
 function pathIn(ctx: RecoveryToolContext, input: string): ResolvedWorkspacePath {
   const relativePath = workspaceRelative(input);
   if (relativePath === undefined)
-    throw new Error("Path must be a slash-separated relative path without .. or backslashes.");
+    throw new ToolPreconditionRejected("invalid_path", "Path must be a slash-separated relative path within the workspace without .. or an absolute prefix. Use the documented virtual mount paths.");
   if (typeof relativePath !== "string") return workspaceRootPath(ctx);
   const parts = relativePath.split("/");
   if (ctx.options.workspaceAlias && parts[0] === WORKSPACE_ALIAS) {

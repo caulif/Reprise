@@ -34,6 +34,7 @@ test("a devtools start timeout stays kind timeout when the process is still aliv
   assert.match(message, /process still alive/);
   assert.match(message, /port file absent/);
   assert.equal(classifyBrowserStartFailure(new AbortController().signal, new Error(message)).failure, "timeout");
+  assert.match(describeDevtoolsStartTimeout({ process: "still alive", profile: "present", portFile: "absent", stderr: "empty", executable: "/opt/google/chrome/chrome" }), /; executable: \/opt\/google\/chrome\/chrome$/);
   assert.equal(
     classifyBrowserStartFailure(new AbortController().signal, new Error("browser spawn failed: ENOENT spawn ENOENT")).failure,
     "capability_unavailable",
@@ -209,7 +210,7 @@ test("an empty stderr file with no port file still times out as a missing DevToo
   const child = aliveChild();
   t.after(() => child.kill("SIGKILL"));
   await assert.rejects(
-    () => waitForDevtoolsEndpoint(profile, child, new AbortController().signal, 180, undefined, stderrPath),
-    /timed out waiting for DevToolsActivePort: process still alive; profile present; port file absent; stderr: empty/,
+    () => waitForDevtoolsEndpoint(profile, child, new AbortController().signal, 180, undefined, stderrPath, "/opt/google/chrome/chrome"),
+    /timed out waiting for DevToolsActivePort: process still alive; profile present; port file absent; stderr: empty; executable: \/opt\/google\/chrome\/chrome/,
   );
 });

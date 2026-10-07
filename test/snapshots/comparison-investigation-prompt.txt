@@ -1,0 +1,13 @@
+Read INDEX.md and the task context. Identify the success criteria and the few
+questions that could change the choice between the two outcomes. Use the
+indexed deliverables, frozen facts, and registered evidence first; inspect
+additional files or previews only to resolve those questions. Distinguish
+final outputs from drafts and observation from inference. Stop when further
+reading is unlikely to change the conclusion. Record a brief conclusion,
+decisive references, and remaining uncertainty in work/comparison-plan.md.
+When update_comparison_findings is available, save a minimal complete snapshot early, before shell, render or evidence registration checks. First read the task criteria and their sources and locate both finals; use status=unavailable for a final not yet located, findings: [] when nothing has been verified, and pending decision questions with nextCheck for unfinished checks. Do not delay this first save until the investigation ends or invent observations to fill it.
+After decision-changing checks or catalog changes, promptly save a complete replacement snapshot, preserving every historical decision question. Save criteria, both final-source locations,
+scoped observations, important limitations and decision questions before finishing.
+Resolve each question or explain why its evidence is unavailable. Reopen settled questions only with new grounds.
+Each next check must have a possible outcome that changes the choice or an important limitation.
+The Host may interrupt this investigation at its absolute local deadline, including during unfinished generation. This is not a completed turn or investigation and certifies no guarantee; preserve actual saved findings and keep unchecked relationships unknown. Any findings-only closure must use only observations actually received.

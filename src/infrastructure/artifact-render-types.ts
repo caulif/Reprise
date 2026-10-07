@@ -1,3 +1,5 @@
+import type { RenderGeometryQuery, RenderGeometrySample } from "../core/schema.js";
+
 export const ARTIFACT_RENDERER_VERSION = "reprise-artifact-renderer/1";
 
 export type RenderViewport = {
@@ -14,6 +16,7 @@ export type RenderRequest = {
   outputRoot: string;
   signal: AbortSignal;
   layoutSelectors?: readonly { name: string; selector: string }[];
+  geometryQueries?: readonly RenderGeometryQuery[];
 };
 
 export type RenderLayout = {
@@ -32,6 +35,7 @@ export type RenderFrame = {
   pngPath: string;
   byteLength: number;
   contentHash: string;
+  geometrySample?: RenderGeometrySample;
 };
 
 export type RenderDiagnostic = {

@@ -4,7 +4,10 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { composeControllerSystemPrompt } from '../../src/agents/controller-agent.js';
-import { composeComparisonSystemPrompt } from '../../src/agents/comparison-agent.js';
+import { composeComparisonSystemPrompt, COMPARISON_DELIVERED_DRAFT_REVIEW_PROMPT, COMPARISON_DRAFT_INSPECTION_PROMPT, COMPARISON_FORMAL_DRAFT_REVIEW_PROMPT, COMPARISON_PREVIEW_CLOSURE_PROMPT, COMPARISON_SOURCE_REVIEW_PROMPT, COMPARISON_TURN_PROMPTS } from '../../src/agents/comparison-agent.js';
+import { COMPARISON_DIRECT_SOURCE_REVIEW_PROMPT, COMPARISON_REVIEW_FINDINGS_PROMPT, composeComparisonReviewerSystemPrompt } from '../../src/agents/comparison-review-findings.js';
+import { composeComparisonAuthorSystemPrompt, COMPARISON_AUTHOR_COMPOSE_PROMPT } from '../../src/agents/comparison-author-prompt.js';
+import { composeComparisonInvestigatorSystemPrompt, COMPARISON_INITIAL_FINDINGS_PROMPT } from '../../src/agents/comparison-initial-findings.js';
 import { composeRecoverySystemPrompt } from '../../src/agents/recovery-agent.js';
 import { workspaceTools } from '../../src/infrastructure/recovery-tools.js';
 import { buildComparisonContext, type RunInspection } from '../../src/application/comparison.js';
@@ -37,6 +40,21 @@ function toolCatalog(tools: readonly { name: string; description: string; parame
 test('agent system prompts match committed snapshots', async () => {
   await assertSnapshot('controller-system-prompt', `${composeControllerSystemPrompt('zh')}\n`);
   await assertSnapshot('comparison-system-prompt', `${composeComparisonSystemPrompt('zh')}\n`);
+  await assertSnapshot('comparison-author-system-prompt', `${composeComparisonAuthorSystemPrompt('zh')}\n`);
+  await assertSnapshot('comparison-author-compose-prompt', `${COMPARISON_AUTHOR_COMPOSE_PROMPT}\n`);
+  await assertSnapshot('comparison-investigator-system-prompt', `${composeComparisonInvestigatorSystemPrompt('zh')}\n`);
+  await assertSnapshot('comparison-reviewer-system-prompt', `${composeComparisonReviewerSystemPrompt('zh')}\n`);
+  await assertSnapshot('comparison-direct-source-review-prompt', `${COMPARISON_DIRECT_SOURCE_REVIEW_PROMPT}\n`);
+  await assertSnapshot('comparison-initial-findings-prompt', `${COMPARISON_INITIAL_FINDINGS_PROMPT}\n`);
+  await assertSnapshot('comparison-investigation-prompt', `${COMPARISON_TURN_PROMPTS.orientAndInvestigate}\n`);
+  await assertSnapshot('comparison-compose-prompt', `${COMPARISON_TURN_PROMPTS.compose}\n`);
+  await assertSnapshot('comparison-source-review-prompt', `${COMPARISON_SOURCE_REVIEW_PROMPT}\n`);
+  await assertSnapshot('comparison-draft-inspection-prompt', `${COMPARISON_DRAFT_INSPECTION_PROMPT}\n`);
+  await assertSnapshot('comparison-review-findings-prompt', `${COMPARISON_REVIEW_FINDINGS_PROMPT}\n`);
+  await assertSnapshot('comparison-review-prompt', `${COMPARISON_TURN_PROMPTS.review}\n`);
+  await assertSnapshot('comparison-delivered-draft-review-prompt', `${COMPARISON_DELIVERED_DRAFT_REVIEW_PROMPT}\n`);
+  await assertSnapshot('comparison-formal-draft-review-prompt', `${COMPARISON_FORMAL_DRAFT_REVIEW_PROMPT}\n`);
+  await assertSnapshot('comparison-preview-closure-prompt', `${COMPARISON_PREVIEW_CLOSURE_PROMPT}\n`);
   await assertSnapshot('recovery-system-prompt', `${composeRecoverySystemPrompt('zh')}\n`);
 });
 
@@ -79,5 +97,12 @@ test('comparison report shells match committed snapshots', async () => {
 });
 
 test('runtime-facing tool schemas match committed snapshots', async () => {
-  await assertSnapshot('recovery-tools', toolCatalog(workspaceTools('TMP', { allowShell: true })));
+  const tools = workspaceTools('TMP', { allowShell: true });
+  const syntax = process.platform === 'win32'
+    ? 'Commands use PowerShell syntax ($env:NAME for environment variables), not Bash.'
+    : 'Commands use POSIX shell syntax ($NAME for environment variables).';
+  assert.ok(tools.find((tool) => tool.name === 'shell_exec')?.description.includes(syntax));
+  await assertSnapshot('recovery-tools', toolCatalog(tools.map((tool) => ({
+    ...tool, description: tool.description.replace(syntax, '<host shell syntax>'),
+  }))));
 });

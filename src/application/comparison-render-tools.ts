@@ -1,15 +1,18 @@
+import { transformOutsideEvidenceQuotes } from '../core/comparison-html.js';
 import { mkdir, readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { parse } from "parse5";
-import type { ArtifactRenderer, RenderViewport } from "../infrastructure/artifact-render-types.js";
+import { RenderGeometryQueriesSchema, type RenderGeometryQuery, type RenderGeometrySample } from "../core/schema.js";
+import type { ArtifactRenderer, RenderFailureKind, RenderViewport, RenderFrame, RenderResult } from "../infrastructure/artifact-render-types.js";
 import { ARTIFACT_RENDERER_VERSION, DEFAULT_RENDER_VIEWPORT, RENDER_LIMITS } from "../infrastructure/artifact-render-types.js";
 import { renderFrozenArtifact } from "../infrastructure/artifact-renderer.js";
 import { sha256 } from "../core/identity.js";
 import { pathContainedBy } from "../core/paths.js";
 import type { AgentToolDefinition, AgentToolResult } from "../infrastructure/agent/host.js";
 import { attachComparisonImages } from './comparison-image-delivery.js';
+import { boundedRenderOutput } from './comparison-render-output.js';
 
 /** Narrow port owned by B3 catalog; B4 tools only call these methods. */
 export type ComparisonRenderCatalogPort = {
@@ -21,6 +24,7 @@ export type ComparisonRenderCatalogPort = {
    */
   registerDerivedMedia(input: RegisterDerivedMediaInput): Promise<RegisterDerivedMediaResult>;
   registerDerivedMediaBatch(inputs: readonly RegisterDerivedMediaInput[]): Promise<RegisterDerivedMediaBatchResult>;
+  registerAnalysisEvidence?(input: { relativePath: string; sourceRef: string }, signal: AbortSignal): Promise<{ shortRef?: string; code?: string; message?: string }>;
 };
 
 export type RegisterDerivedMediaBatchResult =
@@ -81,6 +85,7 @@ const RenderArtifactParamsSchema = Type.Object({
     maxItems: RENDER_LIMITS.maxFrames,
   })),
   includeImages: Type.Optional(Type.Boolean()),
+  geometryQueries: Type.Optional(RenderGeometryQueriesSchema),
 });
 export type RenderArtifactParams = Static<typeof RenderArtifactParamsSchema>;
 
@@ -96,6 +101,19 @@ export type ComparisonRenderToolBaseDeps = {
   render?: ArtifactRenderer;
   now?: () => Date;
   allowImages?: boolean;
+  onRenderedCheck?: (check: ComparisonRenderedCheck) => void | Promise<void>;
+};
+
+export type ComparisonRenderedCheck = {
+  sourceRef: string;
+  side: ComparisonRenderSource["side"];
+  sourceHash: string;
+  status: "ok" | "motion_not_proven" | RenderFailureKind["kind"];
+  requestedSampleTimesMs: readonly number[];
+  frames: readonly { sampleTimeMs: number; actualTimeMs: number; contentHash: string; geometrySample?: RenderGeometrySample; geometryUnavailable?: string }[];
+  viewport: RenderViewport;
+  geometryQueries?: readonly RenderGeometryQuery[];
+  geometryScope?: string;
 };
 
 export type PreviewReportOutcome = { status: string; message?: string };
@@ -131,11 +149,14 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
   return {
     name: "render_artifact",
     description:
-      "Derive preview frames from a registered sourceRef (HTML/SVG/raster). Returns media short refs and load diagnostics. Does not accept absolute paths or arbitrary URLs.",
+      "Derive preview frames from a registered sourceRef (HTML/SVG/raster). Optional geometryQueries measure uniquely selected elements in viewport CSS pixels, without requiring image sight. Returns media refs, load diagnostics and bounded Comparison-stage measurements; no arbitrary JavaScript or URLs.",
     parameters: RenderArtifactParamsSchema,
     async execute(params: unknown, signal: AbortSignal): Promise<AgentToolResult> {
       if (!Value.Check(RenderArtifactParamsSchema, params)) {
         return textResult({ status: "invalid_request", message: "parameters failed schema check" });
+      }
+      if (params.geometryQueries && new Set(params.geometryQueries.map(query => query.name)).size !== params.geometryQueries.length) {
+        return textResult({ status: "invalid_request", message: "geometry query names must be unique" });
       }
       const source = await deps.catalog.resolveSource(params.sourceRef);
       if (!source) {
@@ -144,6 +165,7 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
       const viewport = resolveViewport(params.viewport);
       const sampleTimesMs = params.sampleTimesMs ?? [0];
       const outputRoot = join(deps.attemptRoot, "scratch", "render", safeId(params.sourceRef));
+      if (signal.aborted) return textResult({ status: "cancelled", sourceRef: params.sourceRef });
       const rendered = await render({
         bundleRoot: source.bundleRoot,
         entryRelativePath: source.entryRelativePath,
@@ -151,9 +173,16 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
         sampleTimesMs,
         outputRoot,
         signal,
+        ...(params.geometryQueries ? { geometryQueries: params.geometryQueries } : {}),
       });
+      const finish = async (status: ComparisonRenderedCheck["status"], payload: Record<string, unknown>): Promise<AgentToolResult> => {
+        const renderedCheck = artifactRenderedCheck(source, rendered, status, sampleTimesMs, viewport, params.geometryQueries);
+        await deps.onRenderedCheck?.(structuredClone(renderedCheck));
+        const output = await boundedRenderOutput({ payload, check: renderedCheck, attemptRoot: deps.attemptRoot, catalog: deps.catalog, signal });
+        return { content: JSON.stringify(output), details: output };
+      };
       if (!rendered.ok) {
-        return textResult({
+        return finish(rendered.failure.kind, {
           status: rendered.failure.kind,
           sourceRef: params.sourceRef,
           revision: deps.catalog.revision(),
@@ -161,8 +190,12 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
           diagnostics: rendered.diagnostics,
         });
       }
+      if (signal.aborted) return finish("cancelled", { status: "cancelled", sourceRef: source.sourceRef, revision: deps.catalog.revision() });
+      if (!rendered.frames.length) return finish("capture_failed", {
+        status: "capture_failed", sourceRef: source.sourceRef, revision: deps.catalog.revision(), message: "Renderer returned no frames.",
+      });
       if (sampleTimesMs.length > 1 && new Set(rendered.frames.map((frame) => frame.contentHash)).size < 2) {
-        return textResult({
+        return finish("motion_not_proven", {
           status: "motion_not_proven",
           sourceRef: params.sourceRef,
           revision: deps.catalog.revision(),
@@ -172,42 +205,17 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
         });
       }
       const capturedAt = (deps.now ?? (() => new Date()))().toISOString();
-      const registrations = await deps.catalog.registerDerivedMediaBatch(rendered.frames.map((frame) => ({
-          side: source.side === "derived" ? "host" : source.side,
-          pngPath: frame.pngPath,
-          label: `${source.entryRelativePath}@${frame.sampleTimeMs}ms`,
-          sourceRef: source.sourceRef,
-          contentHash: frame.contentHash,
-          kind: "artifact_preview",
-          derivation: {
-            rendererVersion: ARTIFACT_RENDERER_VERSION,
-            viewport: rendered.measured.viewport,
-            sampleTimeMs: frame.sampleTimeMs,
-            actualTimeMs: frame.actualTimeMs,
-            capturedAt,
-          },
-        })));
-      if (!registrations.ok) return textResult({
+      const registrations = await deps.catalog.registerDerivedMediaBatch(
+        artifactFrameRegistrations(source, rendered.frames, rendered.measured.viewport, capturedAt));
+      if (!registrations.ok) return finish("capture_failed", {
         status: "capture_failed",
         sourceRef: params.sourceRef,
         revision: deps.catalog.revision(),
         code: registrations.code,
         message: registrations.message,
       });
-      const mediaRefs: { shortRef: string; mediaRef: string; sampleTimeMs: number; actualTimeMs: number; read?: { path: string; format: "image"; mimeType: "image/png" } }[] = [];
-      for (const [index, registered] of registrations.items.entries()) {
-        const frame = rendered.frames[index];
-        if (!frame) continue;
-        assertEvidenceShortRef(registered.shortRef, "artifact_preview");
-        mediaRefs.push({
-          shortRef: registered.shortRef,
-          mediaRef: registered.mediaRef,
-          ...(registered.readPath ? { read: { path: registered.readPath, format: "image" as const, mimeType: "image/png" as const } } : {}),
-          sampleTimeMs: frame.sampleTimeMs,
-          actualTimeMs: frame.actualTimeMs,
-        });
-      }
-      const result = textResult({
+      const mediaRefs = artifactMediaRefs(registrations.items, rendered.frames);
+      const result = await finish("ok", {
         status: "ok",
         sourceRef: params.sourceRef,
         sourceOrigin: source.origin,
@@ -225,6 +233,64 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
       return attachComparisonImages({ result, requested: params.includeImages === true, authorized: deps.allowImages === true, attemptRoot: deps.attemptRoot, signal, images: images.length === rendered.frames.length ? images : [] });
     },
   };
+}
+
+function artifactMediaRefs(registrations: Extract<RegisterDerivedMediaBatchResult, { ok: true }>["items"], frames: readonly RenderFrame[]) {
+  return registrations.flatMap((registered, index) => {
+    const frame = frames[index];
+    if (!frame) return [];
+    assertEvidenceShortRef(registered.shortRef, "artifact_preview");
+    return [{
+      shortRef: registered.shortRef,
+      mediaRef: registered.mediaRef,
+      ...(registered.readPath ? { read: { path: registered.readPath, format: "image" as const, mimeType: "image/png" as const } } : {}),
+      sampleTimeMs: frame.sampleTimeMs,
+      actualTimeMs: frame.actualTimeMs,
+    }];
+  });
+}
+
+function artifactRenderedCheck(source: ComparisonRenderSource, rendered: RenderResult, status: ComparisonRenderedCheck["status"], sampleTimesMs: readonly number[], viewport: RenderViewport, geometryQueries?: readonly RenderGeometryQuery[]): ComparisonRenderedCheck {
+  return {
+    sourceRef: source.sourceRef, side: source.side, sourceHash: source.contentHash, status,
+    requestedSampleTimesMs: [...sampleTimesMs],
+    frames: rendered.ok ? rendered.frames.map(frame => ({ sampleTimeMs: frame.sampleTimeMs, actualTimeMs: frame.actualTimeMs, contentHash: frame.contentHash,
+      ...(geometryQueries ? bindGeometrySample(frame, geometryQueries) : {}),
+    })) : [],
+    viewport: { ...(rendered.ok ? rendered.measured.viewport : viewport) },
+    ...(geometryQueries ? { geometryQueries: geometryQueries.map(query => ({ ...query })), geometryScope: "Comparison-stage observation of the sourceHash at the listed viewport. Coordinates share viewport CSS pixels. Collection windows are relative to load origin and precede PNG capture, not an exact screenshot instant. Measurements do not certify visual quality, task success or a complete animation cycle." } : {}),
+  };
+}
+
+function bindGeometrySample(frame: RenderFrame, queries: readonly RenderGeometryQuery[]): { geometrySample?: RenderGeometrySample; geometryUnavailable?: string } {
+  const sample = frame.geometrySample;
+  if (!sample) return { geometryUnavailable: "Renderer returned no geometry sample; no measurement is available." };
+  if (sample.observations.length !== queries.length || sample.observations.some((observation, index) => {
+    const query = queries[index]!;
+    return observation.name !== query.name || observation.selector !== query.selector || observation.kind !== query.kind;
+  })) return { geometryUnavailable: "Geometry observations do not match the requested queries; measurements were discarded." };
+  if (!Number.isFinite(sample.startedAtMs) || !Number.isFinite(sample.finishedAtMs) || sample.startedAtMs < frame.actualTimeMs || sample.finishedAtMs < sample.startedAtMs) {
+    return { geometryUnavailable: "Geometry collection window does not match the frame timing; measurements were discarded." };
+  }
+  return { geometrySample: structuredClone(sample) };
+}
+
+function artifactFrameRegistrations(source: ComparisonRenderSource, frames: readonly RenderFrame[], viewport: RenderViewport, capturedAt: string): RegisterDerivedMediaInput[] {
+  return frames.map((frame) => ({
+    side: source.side === "derived" ? "host" : source.side,
+    pngPath: frame.pngPath,
+    label: `${source.entryRelativePath}@${frame.sampleTimeMs}ms`,
+    sourceRef: source.sourceRef,
+    contentHash: frame.contentHash,
+    kind: "artifact_preview",
+    derivation: {
+      rendererVersion: ARTIFACT_RENDERER_VERSION,
+      viewport,
+      sampleTimeMs: frame.sampleTimeMs,
+      actualTimeMs: frame.actualTimeMs,
+      capturedAt,
+    },
+  }));
 }
 
 export function createPreviewReportTool(deps: ComparisonPreviewReportToolDeps): AgentToolDefinition {
@@ -428,9 +494,10 @@ function inspectPreparedReportMechanics(html: string): Record<string, unknown> {
     for (const child of node.childNodes ?? []) visit(child);
   };
   visit(parse(html) as Node);
+  const reportText = transformOutsideEvidenceQuotes(html, text => text, true);
   const modelLabels = {
-    hasHistorical: /历史会话|Historical/i.test(html),
-    hasCurrent: /当前会话|Current/i.test(html),
+    hasHistorical: /历史会话|Historical/i.test(reportText),
+    hasCurrent: /当前会话|Current/i.test(reportText),
   };
   return {
     ...active,

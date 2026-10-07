@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Comparison · gpt-5 vs unrecorded</title>
 <style data-host-zone="style" data-id="host-style">
 
@@ -18,7 +19,11 @@ h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; ma
 .task { margin:0 0 8px; font-size:16px; color:var(--soft); line-height:1.45; }
 .note,[data-agent-slot="headline"] { margin:0 0 18px; font-size:16px; line-height:1.5; }
 [data-agent-slot="headline"] strong,[data-component="diff-table"] strong,[data-claim] { font-weight:inherit; }
-.board { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin: 8px 0 0; }
+.board { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin: 8px 0 0; }
+.token-details { margin-top:10px; font-size:13px; }
+.token-details > summary { cursor:pointer; color:var(--accent); }
+.token-details .card { margin-top:8px; }
+.token-breakdown { margin-top:8px; }
 .card,.result-card,[data-host="diagnostic-card"],[data-component="difference-card"] { background:#f7f9f8; border-radius:8px; box-shadow:none; border:1px solid var(--line); padding:16px 16px 14px; min-width:0; }
 .card { min-height:0; }
 .card .label { font-family:"Segoe UI","PingFang SC",sans-serif; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); margin-bottom:12px; }
@@ -41,6 +46,9 @@ h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; ma
 [data-agent-zone="comparison"] [data-host="visual-unavailable"],[data-agent-zone="comparison"] [data-host="pairing-hint"] { margin:0 0 8px; font-size:14px; }
 [data-agent-zone="comparison"] table,[data-component="diff-table"] { width:100%; border-collapse:collapse; margin:8px 0; }
 [data-agent-zone="comparison"] { min-width:0; overflow-x:auto; }
+[data-component="evidence-quote"] { margin:12px 0; min-width:0; }
+[data-component="evidence-quote"] figcaption { color:var(--soft); font-size:12px; margin-bottom:6px; }
+[data-component="evidence-quote"] pre { margin:0; padding:10px 12px; border:1px solid var(--hair); border-radius:6px; max-width:100%; overflow-x:auto; font-size:12px; line-height:1.5; }
 [data-agent-zone="comparison"] th,[data-agent-zone="comparison"] td,[data-component="diff-table"] th,[data-component="diff-table"] td { overflow-wrap:anywhere; }
 [data-agent-zone="comparison"] th,[data-agent-zone="comparison"] td,[data-component="diff-table"] th,[data-component="diff-table"] td { border:none; padding:10px 8px; vertical-align:top; font-size:16px; font-weight:400; }
 .details { margin-top:20px; color:var(--soft); background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 18px 16px; overflow-wrap:anywhere; }
@@ -122,8 +130,8 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
   <p class="task" data-slot="task" data-agent-slot="task">Fix the report.</p></header>
     <p class="field-label">Main conclusion</p>
     <p class="note" data-agent-slot="headline">The candidate produced a usable file.</p>
-    <section class="slot" data-agent-zone="comparison" data-id="agent-comparison"><p>The candidate delivered a file; history did not.</p></section>
-    <section class="board" data-host-zone="metrics" data-id="host-metrics" data-host="metrics" data-fingerprint="{&quot;b&quot;:[null,null,null,&quot;not_collected&quot;],&quot;c&quot;:[4000,null,null,&quot;not_collected&quot;]}" aria-label="Time, Tokens, Cost">
+    <section data-host-zone="metrics" data-id="host-metrics" data-host="metrics" data-metrics-layout="compact" data-fingerprint="{&quot;b&quot;:[null,null,null,&quot;not_collected&quot;,null,null,null,null],&quot;c&quot;:[4000,null,null,&quot;not_collected&quot;,null,null,null,null]}" aria-label="Time, Tokens, Estimated cost">
+    <div class="board">
     <article class="card">
       <div class="label">Time</div>
       <div class="pair">
@@ -138,6 +146,21 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
       </div>
     </article>
     <article class="card">
+      <div class="label">Estimated cost</div>
+      <div class="pair">
+        <div class="col">
+          <div class="who">Historical session</div>
+          <div class="num miss">not collected</div>
+        </div>
+        <div class="col">
+          <div class="who">Current session</div>
+          <div class="num miss">not collected</div>
+        </div>
+      </div>
+    </article>
+    </div>
+    <details class="token-details"><summary>Token details</summary>
+      <article class="card">
       <div class="label">Tokens</div>
       <div class="pair">
         <div class="col">
@@ -150,25 +173,16 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
         </div>
       </div>
     </article>
-    <article class="card">
-      <div class="label">Cost</div>
-      <div class="pair">
-        <div class="col">
-          <div class="who">Historical session</div>
-          <div class="num miss">not collected</div>
-        </div>
-        <div class="col">
-          <div class="who">Current session</div>
-          <div class="num miss">not collected</div>
-        </div>
-      </div>
-    </article>
+      <div class="pair token-breakdown"><div class="col"><span class="who">Historical session</span><ul><li>Input: not collected</li><li>Output: not collected</li><li>Cached input: not collected</li><li>Reasoning: not collected</li></ul></div><div class="col"><span class="who">Current session</span><ul><li>Input: not collected</li><li>Output: not collected</li><li>Cached input: not collected</li><li>Reasoning: not collected</li></ul></div></div>
+      <p class="kicker">Categories may overlap or be unrecorded. Different runtime accounting is not a model efficiency score.</p>
+    </details>
   </section>
+    <p class="kicker cost-note" data-host-zone="cost-note" data-id="host-cost-note">Estimates use the pinned price snapshot, not a provider invoice; tool costs are excluded. Missing data stays unknown. Pricing details are expandable below.</p>
+    <section class="slot" data-agent-zone="comparison" data-id="agent-comparison"><p>The candidate delivered a file; history did not.</p></section>
   </article>
   <details class="details">
     <summary>Evidence and extras</summary>
     <section class="slot" data-agent-zone="details" data-id="agent-details"><!-- Optional longer methods, file listings, and investigation detail. Host evidence and process follow below. --></section>
-    <p class="kicker cost-note" data-host-zone="cost-note" data-id="host-cost-note">Cost uses the pinned price snapshot and excludes tool calls. No tokens shows &quot;not collected&quot;; tokens without a price shows &quot;no price configured&quot;. Price table 2026-09-19-cc-switch-seed.</p>
     <section class="slot" data-host-zone="evidence" data-id="host-evidence"><details class="evidence-expand" data-host="run-diagnostics"><summary>Run diagnostics</summary><ul class="kv-list">
     <li><span class="who">gpt-5</span> verifiable</li>
     <li><span class="who">unrecorded</span> incomplete · limit.turns · harness</li>

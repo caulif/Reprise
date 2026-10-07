@@ -1,9 +1,11 @@
 import { sha256 } from "../../core/identity.js";
+import { ToolPreconditionRejected } from "../../core/tool-precondition-rejected.js";
 import { inlineBody, redactToolResultForModel, toolResultBody } from "./model-input.js";
-import type { AgentAuditSink, AgentToolDefinition, AgentToolResult, InvocationCursor } from "./types.js";
+import type { AgentAuditEvent, AgentAuditSink, AgentToolDefinition, AgentToolResult, InvocationCursor } from "./types.js";
 import { recordedImageRefs } from './artifacts.js';
+import { preserveToolDelivery } from './tool-delivery.js';
 
-class AgentToolFailure extends Error {
+export class AgentToolFailure extends Error {
   constructor(role: string, cause: unknown) {
     super(`${role} agent tool execution failed.`, { cause });
     this.name = "AgentToolFailure";
@@ -28,7 +30,7 @@ export function instrumentTools(
       ...tool,
       async execute(params, signal) {
         const toolCallId = `${cursor.invocationId ?? sessionId}:tool:${cursor.toolSeq = (cursor.toolSeq ?? 0) + 1}`;
-        await audit?.append({
+        await appendToolAudit(audit, role, {
           type: "agent.tool_called",
           sessionId,
           role,
@@ -39,8 +41,12 @@ export function instrumentTools(
             ...(cursor.invocationId ? { invocationId: cursor.invocationId } : {}),
           },
         });
+        let rejection: ToolPreconditionRejected | undefined;
         try {
-          const raw = await tool.execute(params, signal);
+          const raw = await tool.execute(params, signal).catch((error: unknown) => {
+            if (error instanceof ToolPreconditionRejected && !signal.aborted) rejection = error;
+            throw error;
+          });
           const result = acceptsImage ? raw : stripImageBlocksForTextOnly(raw);
           const visible = redactToolResultForModel(result);
           signal.throwIfAborted();
@@ -48,7 +54,7 @@ export function instrumentTools(
           const refs = await recordedImageRefs(images, audit);
           let index = 0;
           const body = images?.length ? inlineBody(JSON.stringify(visible.contentBlocks!.map((block) => block.type === 'image' ? refs[index++] : block))) : toolResultBody(visible);
-          await audit?.append({
+          await appendToolAudit(audit, role, {
             type: "agent.tool_completed",
             sessionId,
             role,
@@ -68,21 +74,35 @@ export function instrumentTools(
           await tool.onCompleted?.(visible);
           return visible;
         } catch (error) {
-          await audit?.append({
+          await appendToolAudit(audit, role, {
             type: "agent.tool_failed",
             sessionId,
             role,
             payload: {
               tool: tool.name,
+              toolCallId,
               message: error instanceof Error ? error.message : String(error),
               ...(cursor.invocationId ? { invocationId: cursor.invocationId } : {}),
             },
           });
+          if (rejection) {
+            const wrapped = new ToolPreconditionRejected(rejection.reason, rejection.message, { cause: error });
+            wrapped.name = "AgentToolFailure";
+            throw wrapped;
+          }
           throw new AgentToolFailure(role, error);
         }
       },
     };
   });
+}
+
+async function appendToolAudit(audit: AgentAuditSink | undefined, role: string, event: AgentAuditEvent): Promise<void> {
+  try {
+    await audit?.append(event);
+  } catch (error) {
+    throw new AgentToolFailure(role, error);
+  }
 }
 
 const IMAGE_OMITTED_NOTE = "Image content omitted: this model session does not accept image input.";
@@ -100,11 +120,11 @@ function stripImageBlocksForTextOnly(result: AgentToolResult): AgentToolResult {
   };
   const textBlocks = result.contentBlocks.filter((block) => block.type === "text").map((block) => ({ ...block, text: deliveryText(block.text) }));
   const content = `${deliveryText(result.content)}\n${IMAGE_OMITTED_NOTE}`.trim();
-  return {
+  return preserveToolDelivery(result, {
     content,
     contentBlocks: [...textBlocks, { type: "text" as const, text: IMAGE_OMITTED_NOTE }],
     details: { ...(typeof result.details === 'object' && result.details !== null ? result.details : {}), imageDelivery: 'unsupported_model' },
-  };
+  });
 }
 
 function contentByteLength(result: AgentToolResult): number {

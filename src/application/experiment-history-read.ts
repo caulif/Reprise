@@ -23,6 +23,7 @@ export async function readCommittedExperimentHistory(experimentRoot: string, exp
       runStatus: log.runStatus,
       ...(log.diagnostic ? { diagnosticCode: log.diagnostic.code } : {}),
       incompleteModelInput: log.requests.some((request) => request.contentComplete === false)
+        || (log.compactionRequests?.some((request) => request.contentComplete === false) ?? false)
         || log.diagnostic?.code === 'missing_attachment' || log.diagnostic?.code === 'attachment_checksum',
       legacyRequestComplete: log.requests.some((request) => request.legacyRequestComplete === true),
     };

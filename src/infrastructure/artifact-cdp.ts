@@ -27,6 +27,7 @@ export async function openCdpBrowserSession(signal: AbortSignal): Promise<CdpSes
   const diagnostics: RenderDiagnostic[] = [];
   const browserPath = await resolveHeadlessBrowser();
   if (!browserPath) return { failure: "no_browser", message: "no headless browser", diagnostics };
+  diagnostics.push({ code: "browser_executable", message: browserPath });
   if (signal.aborted) {
     return { ...classifyBrowserStartFailure(signal), diagnostics };
   }
@@ -55,7 +56,7 @@ export async function openCdpBrowserSession(signal: AbortSignal): Promise<CdpSes
   signal.addEventListener("abort", abort, { once: true });
 
   try {
-    const endpoint = await waitForDevtoolsEndpoint(profileDir, child, signal, 15_000, watch, stderrLog.path);
+    const endpoint = await waitForDevtoolsEndpoint(profileDir, child, signal, 15_000, watch, stderrLog.path, browserPath);
     const session = await connectCdp(endpoint, cleanup, diagnostics, signal);
     signal.removeEventListener("abort", abort);
     signal.addEventListener("abort", () => {
@@ -142,8 +143,9 @@ export function describeDevtoolsStartTimeout(input: {
   profile: "present" | "missing";
   portFile: string;
   stderr: string;
+  executable?: string;
 }): string {
-  return `timed out waiting for DevToolsActivePort: process ${input.process}; profile ${input.profile}; port file ${input.portFile}; stderr: ${input.stderr}`;
+  return `timed out waiting for DevToolsActivePort: process ${input.process}; profile ${input.profile}; port file ${input.portFile}; stderr: ${input.stderr}${input.executable ? `; executable: ${input.executable}` : ""}`;
 }
 
 /** Spawn failures emit "error" and may leave exitCode negative without an "exit" event. */
@@ -263,6 +265,7 @@ export async function waitForDevtoolsEndpoint(
   timeoutMs: number,
   watch: BrowserProcessWatch = watchBrowserProcess(child),
   stderrPath?: string,
+  executable?: string,
 ): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   const portFile = join(profileDir, "DevToolsActivePort");
@@ -286,6 +289,7 @@ export async function waitForDevtoolsEndpoint(
     profile: await profilePresence(profileDir),
     portFile: portFileState,
     stderr: await stderrExcerpt(stderrPath),
+    ...(executable ? { executable } : {}),
   }));
 }
 
@@ -810,10 +814,10 @@ export async function capturePngBase64(session: CdpSession, pageSessionId: strin
   return result.data;
 }
 
-export async function evaluateJson<T>(session: CdpSession, pageSessionId: string, expression: string): Promise<T> {
+export async function evaluateJson<T>(session: CdpSession, pageSessionId: string, expression: string, contextId?: number): Promise<T> {
   const result = await session.send<{ result: { value?: T; subtype?: string; description?: string } }>(
     "Runtime.evaluate",
-    { expression, returnByValue: true, awaitPromise: true },
+    { expression, returnByValue: true, awaitPromise: true, ...(contextId === undefined ? {} : { contextId }) },
     pageSessionId,
   );
   if (result.result.subtype === "error") {

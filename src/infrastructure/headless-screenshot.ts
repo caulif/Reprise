@@ -61,6 +61,7 @@ function platformBrowserCandidates(): string[] {
     ];
   }
   return [
+    "/opt/google/chrome/chrome",
     "/usr/bin/google-chrome",
     "/usr/bin/chromium",
     "/usr/bin/chromium-browser",

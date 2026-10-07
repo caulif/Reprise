@@ -6,7 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { classifyAgentFailure } from "../../failure.js";
 import { contentText, isContextOverflow, type Api, type Model } from "@earendil-works/pi-ai";
 import { visibleAssistantText } from "../../assistant-visible.js";
-import type { AgentToolDefinition, ProviderAdapter, ProviderSession } from "../../types.js";
+import type { ProviderAdapter, ProviderSession } from "../../types.js";
 import {
   compactPiMessages,
   contextWindowOf,
@@ -18,8 +18,36 @@ import {
 import type { Models } from "@earendil-works/pi-ai";
 import { sha256 } from "../../../../core/identity.js";
 import type { HarnessModelConfig } from "../../../harness-model-config.js";
+import { piRequestUsage } from './request-usage.js';
+import { invocationToolExposure } from './tool-exposure.js';
+import { invocationYieldDeadline, observePiFailure } from './yield-deadline.js';
+import { piToolRejections } from './tool-rejections.js';
 
 export type PiModels = Pick<Models, "getProviders" | "getModels" | "getModel" | "getAuth" | "completeSimple" | "streamSimple">;
+
+type TurnYieldState = { policy: Parameters<ProviderSession['append']>[0]['yieldAfterTurn']; reason: string | undefined; failure: Error | undefined };
+function turnYieldPolicy(usage: { flush(): Promise<void> }, state: TurnYieldState): NonNullable<ConstructorParameters<typeof Agent>[0]['shouldStopAfterTurn']> {
+  return async ({ message }) => {
+    // Pi requires this hook not to throw. Surface audit/policy failures after its normal agent_end.
+    try {
+      await usage.flush();
+      if (message.stopReason === 'error' || message.stopReason === 'aborted') return false;
+      if (message.stopReason === 'length' && state.policy) { state.reason = 'output_limit'; return true; }
+      state.reason = await state.policy?.();
+      return state.reason !== undefined;
+    } catch (error) {
+      state.failure = error instanceof Error ? error : new Error('Provider turn yield policy failed.');
+      return true;
+    }
+  };
+}
+
+function yieldReasonAfterPrompt(agent: Agent, state: TurnYieldState, signal: AbortSignal): string | undefined {
+  if (state.failure) throw state.failure;
+  if (signal.aborted) throw abortError();
+  const ended = lastAssistant(agent.state.messages);
+  return ended?.stopReason === 'error' || ended?.stopReason === 'aborted' ? undefined : state.reason;
+}
 
 export class PiProviderAdapter implements ProviderAdapter {
   readonly #models: PiModels;
@@ -38,101 +66,143 @@ export class PiProviderAdapter implements ProviderAdapter {
 
   createSession(input: Parameters<ProviderAdapter["createSession"]>[0]): ProviderSession {
     const model = this.#model;
-    const models = this.#models;
+    let deadline: ReturnType<typeof invocationYieldDeadline> | undefined;
+    const recordFailure = (error: unknown) => deadline?.recordFailure(error);
+    const usage = piRequestUsage(this.#models, input, recordFailure, error => deadline?.recordProviderFailure(error));
+    const models = usage.models;
     const effort = this.#config.effort;
     let active = true;
     let toolsEnabled = true;
+    const registeredTools = input.tools.map(tool => toPiTool(tool, recordFailure, error => deadline?.recordToolFailure(error)));
+    const rejections = piToolRejections(input, recordFailure);
+    const turnYield: TurnYieldState = { policy: undefined, reason: undefined, failure: undefined };
     const fixedTokens = Math.ceil(Buffer.byteLength(input.systemPrompt + JSON.stringify(input.tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })))) / 3);
     const availableWindow = contextWindowOf(model) - fixedTokens - Math.max(1_024, model.maxTokens);
     const agent = createPiAgent({
       sessionId: input.sessionId,
-      streamFn: async (streamModel, context, options) => {
-        const notify = input.onModelRequest;
-        if (notify) {
-          const serialized = JSON.stringify({ model: streamModel, context });
-          const modelId = "id" in streamModel ? String(streamModel.id) : String(streamModel);
-          const messageCount = "messages" in context && Array.isArray(context.messages) ? context.messages.length : 0;
-          const images = context.messages.flatMap((message) => Array.isArray(message.content) ? message.content.filter((block) => block.type === 'image') : []);
-          await notify({ model: modelId, digest: sha256(serialized), messageCount, images });
-        }
-        return this.#models.streamSimple(streamModel, context, {
-          ...options,
-          maxRetries: 0,
-          maxRetryDelayMs: 8_000,
-        });
-      },
+      streamFn: usage.stream,
       convertToLlm,
       beforeToolCall: async ({ toolCall }) => {
+        rejections.before(toolCall.id);
         if (!active) return { block: true, reason: "Agent session is no longer active.", terminate: true };
         if (!toolsEnabled) return { block: true, reason: "Tools are disabled for this invocation.", terminate: true };
-        await input.onBeforeToolCall?.({ tool: toolCall.name });
+        if (!exposure.permits(toolCall.name)) return { block: true, reason: 'Tool is unavailable in this invocation.', terminate: true };
+        await usage.flush();
+        await observePiFailure(() => input.onBeforeToolCall?.({ tool: toolCall.name }), recordFailure);
         return undefined;
       },
       afterToolCall: async ({ toolCall, result, isError }) => {
         if (!Array.isArray(result.content)) throw new Error("Pi tool result content must be an array.");
-        await input.onAfterToolCall?.({
+        await observePiFailure(() => input.onAfterToolCall?.({
           tool: toolCall.name,
           isError,
           contentTypes: result.content.map((block) => block.type),
           byteLength: Buffer.byteLength(JSON.stringify(result.content)),
           contentDigest: sha256(JSON.stringify(result.content)),
-        });
+        }), recordFailure);
         return undefined;
       },
       maxRetryDelayMs: 8_000,
+      shouldStopAfterTurn: turnYieldPolicy(usage, turnYield),
       transformContext: async (messages, signal) => {
-        await compactInto(messages, agent, model, models, effort, signal, input.compactionInstructions, input.onContextCompact, availableWindow);
+        const combined = deadline ? AbortSignal.any([...(signal ? [signal] : []), deadline.signal]) : signal;
+        combined?.throwIfAborted();
+        await compactInto(messages, agent, model, models, effort, combined, input.compactionInstructions, input.onContextCompact, availableWindow).catch(error => { recordFailure(error); throw error; });
+        combined?.throwIfAborted();
         return messages;
       },
       initialState: {
         systemPrompt: input.systemPrompt,
         model,
         thinkingLevel: this.#config.effort,
-        tools: input.tools.map((tool: AgentToolDefinition) => toPiTool(tool)),
+        tools: registeredTools,
       },
     });
-    let visibleTurn = 0;
-    agent.subscribe(async (event) => {
-      const payload = "message" in event && event.message
-        ? { type: event.type, message: event.message }
-        : { type: event.type };
-      if (!isAssistantMessageEnd(payload)) return;
-      const message = payload.message as { role?: string; content?: readonly { type?: string; text?: string }[] };
-      const text = visibleAssistantText(message.content);
-      if (!text) return;
-      visibleTurn += 1;
-      await input.onAssistantVisible?.({ text, turn: visibleTurn });
-    });
+    const exposure = invocationToolExposure(agent, registeredTools);
+    rejections.subscribe(agent);
+    subscribeVisibleAssistant(agent, input.onAssistantVisible, recordFailure);
     return {
       inputCapabilities: [...model.input],
-      async append({ content, images, signal }): Promise<string> {
+      async append(request) {
+        const { signal, allowedToolNames, yieldDeadline } = request;
         if (signal.aborted) throw abortError();
-        const abort = () => agent.abort();
-        signal.addEventListener("abort", abort, { once: true });
+        exposure.enter(allowedToolNames);
+        deadline = invocationYieldDeadline(agent, signal, yieldDeadline);
         try {
-          const allowed = model.input.includes("image") ? images : undefined;
-          const prompt = toPiUserPrompt(content, allowed);
-          await agent.prompt(prompt.content, prompt.images);
-          await recoverAgentResponse(agent, model, models, effort, signal, input.compactionInstructions, input.onContextCompact, input.onRetry);
-          const message = lastAssistant(agent.state.messages);
-          if (!message || message.role !== "assistant") throw new Error("Pi Agent session ended without an assistant message.");
-          if (message.stopReason === "error" || message.stopReason === "aborted") {
-            throw new Error(message.errorMessage ?? `Pi Agent session stopped: ${message.stopReason}.`);
-          }
-          return contentText(message.content);
+          return await appendPiPrompt({ agent, model, models, effort, request, deadline, turnYield, usage, input });
         } finally {
-          signal.removeEventListener("abort", abort);
-          await agent.waitForIdle();
+          try { try { await agent.waitForIdle(); } finally { await usage.flush(); } }
+          finally { deadline.dispose(); deadline = undefined; turnYield.policy = undefined; exposure.restore(); }
         }
       },
       cancel(): void {
         active = false;
         agent.abort();
       },
-      waitForIdle: () => agent.waitForIdle(),
+      waitForIdle: async () => { try { await agent.waitForIdle(); } finally { await usage.flush(); } },
       setToolsEnabled(enabled: boolean): void { toolsEnabled = enabled; },
     };
   }
+}
+
+async function appendPiPrompt(args: {
+  agent: Agent; model: Model<Api>; models: PiModels; effort: HarnessModelConfig['effort'];
+  request: Parameters<ProviderSession['append']>[0]; deadline: ReturnType<typeof invocationYieldDeadline>;
+  turnYield: TurnYieldState; usage: ReturnType<typeof piRequestUsage>; input: Parameters<ProviderAdapter['createSession']>[0];
+}): ReturnType<ProviderSession['append']> {
+  const { agent, model, models, effort, request, deadline, turnYield, usage, input } = args;
+  turnYield.policy = request.yieldAfterTurn;
+  turnYield.reason = undefined;
+  turnYield.failure = undefined;
+  const localYield = () => {
+    if (turnYield.failure) throw turnYield.failure;
+    const reason = deadline.reason();
+    return reason === undefined ? undefined : { status: 'yielded' as const, reason };
+  };
+  try {
+    const initial = localYield();
+    if (initial) return initial;
+    const prompt = toPiUserPrompt(request.content, model.input.includes('image') ? request.images : undefined);
+    await agent.prompt(prompt.content, prompt.images);
+    await usage.flush();
+    const interrupted = localYield();
+    if (interrupted) return interrupted;
+    deadline.assertCanRecover();
+    const yieldedReason = yieldReasonAfterPrompt(agent, turnYield, deadline.signal);
+    if (yieldedReason !== undefined) { deadline.assertCanYield(); return { status: 'yielded', reason: yieldedReason }; }
+    await recoverAgentResponse(agent, model, models, effort, deadline.signal, input.compactionInstructions, input.onContextCompact, input.onRetry);
+    await usage.flush();
+    const recoveredMessage = lastAssistant(agent.state.messages);
+    if (recoveredMessage?.stopReason === 'stop' || (recoveredMessage?.stopReason === 'toolUse'
+      && turnYield.reason !== undefined && !turnYield.failure && !deadline.signal.aborted)) deadline.providerRecovered();
+    const afterRecovery = localYield();
+    if (afterRecovery) return afterRecovery;
+    deadline.assertCanComplete();
+    const recoveredYield = yieldReasonAfterPrompt(agent, turnYield, deadline.signal);
+    if (recoveredYield !== undefined) { deadline.assertCanYield(); return { status: 'yielded', reason: recoveredYield }; }
+    const message = lastAssistant(agent.state.messages);
+    if (!message || message.role !== 'assistant') throw new Error('Pi Agent session ended without an assistant message.');
+    if (message.stopReason === 'error' || message.stopReason === 'aborted') throw new Error(message.errorMessage ?? `Pi Agent session stopped: ${message.stopReason}.`);
+    return contentText(message.content);
+  } catch (error) {
+    deadline.recordFailure(error);
+    await agent.waitForIdle();
+    await usage.flush();
+    const interrupted = localYield();
+    if (interrupted) return interrupted;
+    throw error;
+  }
+}
+
+function subscribeVisibleAssistant(agent: Agent, onVisible: Parameters<ProviderAdapter['createSession']>[0]['onAssistantVisible'], recordFailure: (error: unknown) => void): void {
+  let turn = 0;
+  agent.subscribe(async event => {
+    const payload = 'message' in event && event.message ? { type: event.type, message: event.message } : { type: event.type };
+    if (!isAssistantMessageEnd(payload)) return;
+    const message = payload.message as { role?: string; content?: readonly { type?: string; text?: string }[] };
+    const text = visibleAssistantText(message.content);
+    if (text) await observePiFailure(() => onVisible?.({ text, turn: ++turn }), recordFailure);
+  });
 }
 
 async function compactInto(

@@ -1,7 +1,8 @@
-import { copyFile, mkdir, readFile, realpath, rm, stat } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { sha256, writeAtomic } from "../core/identity.js";
-import { isFsAbsolute, pathContainedBy } from "../core/paths.js";
+import { isFsAbsolute } from "../core/paths.js";
+import { locateRegisteredComparisonSource as locateRegisteredPath, normalizeComparisonSourcePath as normalizeRelativeInspectPath } from "./comparison-source.js";
 import type { ComparisonEvidenceOrigin, ComparisonLinkRecord, ComparisonMediaRecord } from "../core/schema.js";
 import type { ComparisonEvidenceCatalog, RegisterMediaInput } from "./comparison-evidence.js";
 import type {
@@ -34,6 +35,11 @@ export function createComparisonRenderCatalogPort(input: {
   return {
     revision: () => input.catalog.snapshot().revision,
     resolveSource: (sourceRef) => resolveRenderSource(input, sourceRef),
+    async registerAnalysisEvidence(entry, signal) {
+      const registered = await input.catalog.registerEvidence({ relativePath: entry.relativePath,
+        sourceRefs: [entry.sourceRef], label: 'Complete Comparison render measurements' }, signal);
+      return registered.status === 'registered' ? { shortRef: registered.shortRef } : { code: registered.code, message: registered.message };
+    },
     async registerDerivedMedia(entry) {
       if (entry.kind === "report_review") {
         return registerReviewMedia(
@@ -93,11 +99,12 @@ async function materializeLinkSource(
   link: ComparisonLinkRecord,
   sourceRef: string,
 ): Promise<ComparisonRenderSource | undefined> {
+  // Text projection mounts are quote/read sources, not document-render bundle roots.
+  const inspectPath = normalizeRelativeInspectPath(link.inspectPath);
+  if (!inspectPath || (!isMountScopedInspectPath(inspectPath) && !inspectPath.startsWith("media/") && !inspectPath.startsWith("review/"))) return undefined;
   const located = await locateRegisteredPath(input, link.inspectPath);
   if (!located) return undefined;
-  const contentHash = link.contentHash && /^[a-f0-9]{64}$/.test(link.contentHash)
-    ? link.contentHash
-    : sha256(await readFile(located.absoluteFile));
+  const contentHash = sha256(await readFile(located.absoluteFile));
   if (link.contentHash && link.contentHash !== contentHash) return undefined;
   return {
     sourceRef,
@@ -173,67 +180,6 @@ function isMountScopedInspectPath(inspectPath: string): boolean {
     || normalized.startsWith("evidence/");
 }
 
-async function locateRegisteredPath(
-  input: {
-    attemptRoot: string;
-    mounts: ComparisonRenderMountRoots;
-  },
-  inspectPath: string,
-): Promise<{ bundleRoot: string; entryRelativePath: string; absoluteFile: string } | undefined> {
-  const normalized = normalizeRelativeInspectPath(inspectPath);
-  if (!normalized) return undefined;
-
-  if (normalized.startsWith("finals/")) {
-    return locateUnderRoot(input.mounts.finals, normalized.slice("finals/".length));
-  }
-  if (normalized.startsWith("candidate/")) {
-    // Always the sealed candidate snapshot mount — never the mutable workspace.
-    return locateUnderRoot(input.mounts.candidate, normalized.slice("candidate/".length));
-  }
-  if (normalized.startsWith("history/")) {
-    return locateUnderRoot(input.mounts.history, normalized.slice("history/".length));
-  }
-  if (normalized.startsWith("evidence/")) {
-    return locateUnderRoot(input.mounts.evidence, normalized.slice("evidence/".length));
-  }
-  if (normalized.startsWith("media/")) {
-    // bundleRoot is attemptRoot/media so document renders cannot fetch sibling attempt paths.
-    return locateUnderRoot(join(input.attemptRoot, "media"), normalized.slice("media/".length));
-  }
-  if (normalized.startsWith("review/")) {
-    return locateUnderRoot(join(input.attemptRoot, "review"), normalized.slice("review/".length));
-  }
-  // turns/run and other controller projections are not render bundle roots.
-  return undefined;
-}
-
-async function locateUnderRoot(
-  root: string,
-  relativePath: string,
-): Promise<{ bundleRoot: string; entryRelativePath: string; absoluteFile: string } | undefined> {
-  const entryRelativePath = normalizeRelativeInspectPath(relativePath);
-  if (!entryRelativePath) return undefined;
-  let rootReal: string;
-  try {
-    rootReal = await realpath(root);
-  } catch {
-    // Missing mount root → unknown_source at the tool boundary.
-    return undefined;
-  }
-  const absolute = join(rootReal, ...entryRelativePath.split("/"));
-  if (!pathContainedBy(rootReal, absolute)) return undefined;
-  try {
-    const fileReal = await realpath(absolute);
-    if (!pathContainedBy(rootReal, fileReal)) return undefined;
-    const info = await stat(fileReal);
-    if (!info.isFile()) return undefined;
-    return { bundleRoot: rootReal, entryRelativePath, absoluteFile: fileReal };
-  } catch {
-    // Missing file, broken symlink, or non-resolvable intermediate → unknown_source.
-    return undefined;
-  }
-}
-
 async function fileMatchesContentHash(absoluteFile: string, expectedHash: string): Promise<boolean> {
   try {
     return sha256(await readFile(absoluteFile)) === expectedHash;
@@ -241,15 +187,6 @@ async function fileMatchesContentHash(absoluteFile: string, expectedHash: string
     // Unreadable source cannot be verified; treat as unavailable for render.
     return false;
   }
-}
-
-function normalizeRelativeInspectPath(value: string): string | undefined {
-  const normalized = value.replaceAll("\\", "/").replace(/^\/+/, "");
-  if (!normalized || normalized.includes("\0")) return undefined;
-  if (isFsAbsolute(normalized) || /^[a-z][a-z0-9+.-]*:/i.test(normalized)) return undefined;
-  const parts = normalized.split("/");
-  if (parts.some((part) => part === ".." || part === "")) return undefined;
-  return normalized;
 }
 
 function isSafeSourceRefToken(sourceRef: string): boolean {

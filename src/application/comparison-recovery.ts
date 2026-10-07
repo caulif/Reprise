@@ -12,7 +12,11 @@ import {
   type ComparisonReportModel, type EventEnvelope,
 } from '../core/schema.js';
 import { ExperimentStore } from '../infrastructure/store/experiment-store.js';
-import { persistComparisonReportModel, prepareComparisonArtifacts, verifyAndRenderComparisonReport } from './comparison-publication.js';
+import { comparisonReportModelFromHtml, persistComparisonReportModel, prepareComparisonArtifacts, verifyAndRenderComparisonReport } from './comparison-publication.js';
+import { recoveryFindingsBinding } from './comparison-recovery-discovery.js';
+import { recoveryComparisonQuoteSources } from './comparison-recovery-quotes.js';
+import { recoveryReviewBinding } from './comparison-recovery-review.js';
+import type { ComparisonQuoteSourcePort } from './comparison-source.js';
 
 const CatalogPointerSchema = Type.Object({
   schemaVersion: Type.Literal(1), revision: Type.Integer({ minimum: 0 }), attemptId: Type.String(),
@@ -58,6 +62,7 @@ async function deliveredImageHashes(
   const hashes = new Set<string>();
   const manifests = events.filter((event) => event.type === 'agent.model_request'
     && typeof event.payload === 'object' && event.payload !== null
+    && (!('scope' in event.payload) || event.payload.scope !== 'compaction')
     && 'attemptId' in event.payload && event.payload.attemptId === attemptId
     && 'sessionId' in event.payload && event.payload.sessionId === sessionId
     && 'images' in event.payload && Array.isArray(event.payload.images));
@@ -111,6 +116,7 @@ export async function inspectComparisonRecovery(input: {
   result: ComparisonResult; sessionId?: string; model?: ComparisonReportModel;
   media: import('../core/schema.js').ComparisonMediaRecord[];
   evidence: import('../core/schema.js').ComparisonLinkRecord[];
+  quoteSources?: ComparisonQuoteSourcePort;
 }> {
   if (!SAFE_ID.test(input.experimentId) || !SAFE_ID.test(input.attemptId)) throw new Error('Invalid experiment or attempt ID.');
   const dataRoot = await realpath(resolve(input.dataDir));
@@ -132,7 +138,10 @@ export async function inspectComparisonRecovery(input: {
   const result: ComparisonResult = { status: 'completed', reportPath: 'report.html', headline, evidenceRefs };
   const store = await ExperimentStore.open(experimentRoot, input.experimentId);
   const events = store.events();
-  const previewed = events.find((event) => event.type === 'agent.tool_completed'
+  const findings = await recoveryFindingsBinding({ store, events, attemptId: input.attemptId, draftDigest, catalogRevision: catalog.revision });
+  if (findings.error) return { ready: false, reason: findings.error, draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html, result, media, evidence: links };
+  const previewed = events.filter((event) => event.type === 'agent.tool_completed'
+    && event.sequence > (findings.previewAfterSequence ?? 0)
     && typeof event.payload === 'object' && event.payload !== null
     && (event.payload as Record<string, unknown>).attemptId === input.attemptId
     && (event.payload as Record<string, unknown>).tool === 'preview_report'
@@ -140,16 +149,24 @@ export async function inspectComparisonRecovery(input: {
     && ((event.payload as Record<string, unknown>).sessionId as string).length > 0
     && Value.Check(PreviewDetailsSchema, (event.payload as Record<string, unknown>).details)
     && ((event.payload as Record<string, unknown>).details as { draftDigest: string; revision: number }).draftDigest === draftDigest
-    && ((event.payload as Record<string, unknown>).details as { draftDigest: string; revision: number }).revision === catalog.revision);
+    && ((event.payload as Record<string, unknown>).details as { draftDigest: string; revision: number }).revision === catalog.revision).at(-1);
   if (!previewed) return { ready: false, reason: 'No successful preview with a session ID for this draft and catalog revision.', draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html, result, media, evidence: links };
   const sessionId = (previewed.payload as { sessionId: string }).sessionId;
+  const draftModel = comparisonReportModelFromHtml(html, context.reportFacts, result, media, links);
+  const reviewError = await recoveryReviewBinding({ store, events, attemptId: input.attemptId, draftDigest, catalogRevision: catalog.revision,
+    previewSessionId: sessionId, acceptedAfterSequence: findings.previewAfterSequence ?? 0,
+    content: { headline: draftModel.headline ?? '', comparisonHtml: draftModel.slots.comparison ?? '', detailsHtml: draftModel.slots.details ?? '' } });
+  if (reviewError) return { ready: false, reason: reviewError, draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html, result, media, evidence: links };
   const deliveredImageContentHashes = await deliveredImageHashes(store, events, input.attemptId, sessionId);
+  const quoteSources = recoveryComparisonQuoteSources({ experimentRoot, attemptRoot, runId: context.reportFacts.run.runId,
+    evidence: links, allowModelText: context.allowModelText });
   const verified = await verifyAndRenderComparisonReport({
     html, hostTask: context.task.summary, facts: context.reportFacts, result,
     attemptRoot, evidence: links, media, deliveredImageContentHashes,
+    quoteSources,
   });
   if ('failureClass' in verified) return { ready: false, reason: `${verified.code}: ${verified.message}`, draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html, result, media, evidence: links };
-  return { ready: true, draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html: verified.html, result, sessionId, model: verified.model, media, evidence: links };
+  return { ready: true, draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html: verified.html, result, sessionId, model: verified.model, media, evidence: links, quoteSources };
 }
 
 export async function publishRecoveredComparison(input: {
@@ -169,6 +186,7 @@ export async function publishRecoveredComparison(input: {
     const prepared = await prepareComparisonArtifacts({
       attemptRoot: checked.attemptRoot, experimentRoot: checked.experimentRoot,
       html: checked.html, media: checked.media, evidence: checked.evidence, ...(checked.model ? { model: checked.model } : {}),
+      ...(checked.quoteSources ? { quoteSources: checked.quoteSources } : {}),
     });
     const publishedDigest = sha256(prepared.html);
     const intent = {

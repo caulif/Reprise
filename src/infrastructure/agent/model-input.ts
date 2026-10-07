@@ -5,6 +5,9 @@ import {
   AgentTextBodySchema,
   ModelInputDiagnosticSchema,
   ReconstructedModelRequestSchema,
+  RecordedModelContextSchema,
+  ReconstructedCompactionRequestSchema,
+  type ReconstructedCompactionRequest,
   type AgentImageRef,
   type AgentTextBody,
   type ModelInputDiagnostic,
@@ -13,6 +16,7 @@ import {
 import { EventEnvelopeSchema, type EventEnvelope } from "../../core/schema.js";
 import { isRecord } from "../../core/json.js";
 import { eventEnvelopeChecksum, sha256 } from "../../core/identity.js";
+import { preserveToolDelivery } from './tool-delivery.js';
 
 export type RedactableToolResult = {
   content: string;
@@ -40,10 +44,24 @@ export type ModelInputResolver = ArtifactBodyResolver & {
 
 export function redactModelVisibleText(text: string): { text: string; redacted: boolean } {
   const next = text
+    .replace(/("(?:authorization|api[_-]?key|(?:access[_-]?|refresh[_-]?)?token|password|(?:client[_-]?)?secret)"\s*:\s*)"(?:\\.|[^"\\])*"/gi, '$1"[REDACTED]"')
+    .replace(/(\\"(?:authorization|api[_-]?key|(?:access[_-]?|refresh[_-]?)?token|password|(?:client[_-]?)?secret)\\"\s*:\s*)\\"[^\r\n]*?\\"/gi, '$1\\"[REDACTED]\\"')
     .replace(/(authorization\s*[=:]\s*)(?:"?)(?:Bearer\s+)?[^\s"]+/gi, "$1[REDACTED]")
     .replace(/((?:api[_-]?key|token|password|secret)\s*[=:]\s*)([^\s]+)/gi, "$1[REDACTED]")
     .replace(/(Bearer\s+)[^\s]+/gi, "$1[REDACTED]");
   return { text: next, redacted: next !== text };
+}
+
+export function redactModelVisibleValue<T>(value: T): T {
+  const visit = (entry: unknown): unknown => {
+    if (typeof entry === 'string') return redactModelVisibleText(entry).text;
+    if (Array.isArray(entry)) return entry.map(visit);
+    if (!isRecord(entry)) return entry;
+    return Object.fromEntries(Object.entries(entry).map(([key, item]) => [key,
+      typeof item === 'string' && /^(authorization|api[_-]?key|(?:access[_-]?|refresh[_-]?)?token|password|(?:client[_-]?)?secret)$/i.test(key)
+        ? '[REDACTED]' : entry.type === 'image' && key === 'data' ? item : visit(item)]));
+  };
+  return visit(value) as T;
 }
 
 export function inlineBody(text: string): AgentTextBody {
@@ -73,11 +91,11 @@ export function redactToolResultForModel(result: RedactableToolResult): Redactab
   const contentBlocks = result.contentBlocks?.map((block) => (
     block.type === "text" ? { ...block, text: redactModelVisibleText(block.text).text } : block
   ));
-  return {
+  return preserveToolDelivery(result, {
     content,
     ...(contentBlocks ? { contentBlocks } : {}),
     ...(result.details === undefined ? {} : { details: result.details }),
-  };
+  });
 }
 
 export function toolResultBody(result: RedactableToolResult): AgentTextBody {
@@ -136,9 +154,10 @@ export function parseCommittedEventLog(text: string): { events: EventEnvelope[];
 export async function reconstructModelRequests(
   events: readonly EventEnvelope[],
   resolveArtifact?: ModelInputResolver,
-): Promise<{ requests: ReconstructedModelRequest[]; diagnostic?: ModelInputDiagnostic }> {
+): Promise<{ requests: ReconstructedModelRequest[]; compactionRequests?: ReconstructedCompactionRequest[]; diagnostic?: ModelInputDiagnostic }> {
   const sessions = new Map<string, SessionReplay>();
   const requests: ReconstructedModelRequest[] = [];
+  const compactionRequests: ReconstructedCompactionRequest[] = [];
   try {
     for (const event of events) {
       const payload = isRecord(event.payload) ? event.payload : {};
@@ -157,7 +176,7 @@ export async function reconstructModelRequests(
       }
       const session = sessions.get(sessionId);
       if (!session) continue;
-      if (event.type === "agent.invocation_completed" || event.type === "agent.invocation_failed" || event.type === "agent.invocation_cancelled") {
+      if (event.type === "agent.invocation_completed" || event.type === "agent.invocation_failed" || event.type === "agent.invocation_cancelled" || event.type === "agent.invocation_yielded") {
         session.invocationTerminal = true;
         continue;
       }
@@ -173,29 +192,16 @@ export async function reconstructModelRequests(
         session.modelRequestSeen = false;
         continue;
       }
-      if (event.type === 'agent.model_request' && Array.isArray(payload.images)) {
+      if (event.type === 'agent.model_request' && payload.scope === 'compaction') {
+        compactionRequests.push(await replayCompactionRequest(session, payload, session.resolver));
+        continue;
+      }
+      if (event.type === 'agent.model_request' && (Array.isArray(payload.images) || payload.generationInput !== undefined)) {
         await replayRequestManifest(session, payload, requests, session.resolver);
         continue;
       }
       if (event.type === "agent.context_compacted") {
-        const summary = typeof payload.summary === "string" ? payload.summary : "";
-        let tail: unknown[] = [];
-        const inspected = inspectModelInputBody(payload.retainedTail);
-        if (!inspected.ok && inspected.diagnostic.code === "unsupported_schema") throw diagnosticError(inspected.diagnostic);
-        if (inspected.ok) {
-          tail = JSON.parse(await resolveTextBody(inspected.body, session.resolver)) as unknown[];
-        } else if (Array.isArray(payload.retainedTail)) {
-          tail = payload.retainedTail;
-        }
-        session.messages = [{ role: "compactionSummary", summary }, ...tail];
-        session.compacted = true;
-        if (requests.length > 0) {
-          const last = requests.at(-1);
-          if (last && !session.modelRequestSeen && last.sessionId === session.sessionId && last.invocationId === stringField(payload.invocationId, last.invocationId)) {
-            last.compacted = true;
-            last.messages = session.messages;
-          }
-        }
+        await replayCompactedContext(session, payload, requests);
         continue;
       }
       if (event.type === "agent.model_output") {
@@ -225,10 +231,53 @@ export async function reconstructModelRequests(
       }
     }
   } catch (error) {
-    if (isDiagnostic(error)) return { requests, diagnostic: error.diagnostic };
+    if (isDiagnostic(error)) return { requests, ...(compactionRequests.length ? { compactionRequests } : {}), diagnostic: error.diagnostic };
     throw error;
   }
-  return inspectReplayedRequests(requests, (request) => sessions.get(request.sessionId)?.resolver);
+  const inspected = await inspectReplayedRequests(requests, (request) => sessions.get(request.sessionId)?.resolver);
+  return { ...inspected, ...(compactionRequests.length ? { compactionRequests } : {}) };
+}
+
+async function replayCompactedContext(session: SessionReplay, payload: Record<string, unknown>, requests: ReconstructedModelRequest[]): Promise<void> {
+  const summary = typeof payload.summary === "string" ? payload.summary : "";
+  let tail: unknown[] = [];
+  const inspected = inspectModelInputBody(payload.retainedTail);
+  if (!inspected.ok && inspected.diagnostic.code === "unsupported_schema") throw diagnosticError(inspected.diagnostic);
+  if (inspected.ok) {
+    tail = JSON.parse(await resolveTextBody(inspected.body, session.resolver)) as unknown[];
+  } else if (Array.isArray(payload.retainedTail)) {
+    tail = payload.retainedTail;
+  }
+  session.messages = [{ role: "compactionSummary", summary }, ...tail];
+  session.compacted = true;
+  if (requests.length > 0) {
+    const last = requests.at(-1);
+    if (last && !session.modelRequestSeen && last.sessionId === session.sessionId && last.invocationId === stringField(payload.invocationId, last.invocationId)) {
+      last.compacted = true;
+      last.messages = session.messages;
+    }
+  }
+}
+
+async function replayCompactionRequest(session: SessionReplay, payload: Record<string, unknown>, resolver?: ModelInputResolver): Promise<ReconstructedCompactionRequest> {
+  const inspected = inspectModelInputBody(payload.compactionInput);
+  let context: ReconstructedCompactionRequest['context'];
+  let complete = false;
+  if (inspected.ok) {
+    const parsed: unknown = JSON.parse(await resolveTextBody(inspected.body, resolver));
+    if (!Value.Check(RecordedModelContextSchema, parsed)) throw diagnosticError({ code: 'schema', message: 'Compaction request context failed schema validation.' });
+    context = parsed;
+    const refs = parsed.messages.flatMap((message): unknown[] => isRecord(message) && Array.isArray(message.content)
+      ? (message.content as unknown[]).filter(block => isRecord(block) && block.type === 'image') : []);
+    complete = await checkRecordedImages(refs, resolver) && await checkRecordedImages(payload.images, resolver);
+  } else if (inspected.diagnostic.code === 'unsupported_schema') throw diagnosticError(inspected.diagnostic);
+  const request = { schemaVersion: 1 as const, scope: 'compaction' as const, sessionId: session.sessionId, role: session.role,
+    invocationId: stringField(payload.invocationId, 'unknown'), requestIndex: typeof payload.requestIndex === 'number' ? payload.requestIndex : 0,
+    model: stringField(payload.model, 'unknown'), contentComplete: complete,
+    ...(context ? { context } : {}), ...(typeof payload.digest === 'string' ? { modelRequestDigest: payload.digest } : {}),
+    ...(Array.isArray(payload.images) ? { nativeImages: payload.images as AgentImageRef[] } : {}) };
+  if (!Value.Check(ReconstructedCompactionRequestSchema, request)) throw diagnosticError({ code: 'schema', message: 'Compaction request audit failed schema validation.' });
+  return request;
 }
 
 async function inspectReplayedRequests(requests: ReconstructedModelRequest[], resolverForRequest: (request: ReconstructedModelRequest) => ModelInputResolver | undefined): Promise<{ requests: ReconstructedModelRequest[]; diagnostic?: ModelInputDiagnostic }> {
@@ -251,6 +300,11 @@ async function inspectReplayedRequests(requests: ReconstructedModelRequest[], re
 
 async function replayRequestManifest(session: SessionReplay, payload: Record<string, unknown>, requests: ReconstructedModelRequest[], resolver?: ModelInputResolver): Promise<void> {
   const previous = [...requests].reverse().find((item) => item.sessionId === session.sessionId);
+  if (payload.generationInput !== undefined) {
+    await replayGenerationSnapshot(session, payload, requests, previous, resolver);
+    session.modelRequestSeen = true;
+    return;
+  }
   const request = session.modelRequestSeen ? await snapshotRequest(session, { ...payload, repair: previous?.repair }, session.compacted ?? false, previous?.contentComplete ?? false) : previous;
   if (request && request.sessionId === session.sessionId) {
     request.messages = [...session.messages];
@@ -261,6 +315,27 @@ async function replayRequestManifest(session: SessionReplay, payload: Record<str
     if (session.modelRequestSeen) requests.push(request);
   }
   session.modelRequestSeen = true;
+}
+
+async function replayGenerationSnapshot(session: SessionReplay, payload: Record<string, unknown>, requests: ReconstructedModelRequest[], previous: ReconstructedModelRequest | undefined, resolver?: ModelInputResolver): Promise<void> {
+  const body = inspectModelInputBody(payload.generationInput);
+  if (!body.ok) throw diagnosticError(body.diagnostic);
+  const text = await resolveTextBody(body.body, resolver);
+  let context: unknown;
+  try { context = JSON.parse(text); }
+  catch { throw diagnosticError({ code: 'schema', message: 'Generation request context is not valid JSON.' }); }
+  if (!Value.Check(RecordedModelContextSchema, context)) throw diagnosticError({ code: 'schema', message: 'Generation request context failed schema validation.' });
+  const request = await snapshotRequest(session, { ...payload, repair: previous?.repair }, session.compacted ?? false, true);
+  request.systemPrompt = context.systemPrompt ?? '';
+  request.tools = (context.tools ?? []) as ReconstructedModelRequest['tools'];
+  request.messages = context.messages;
+  request.contextSource = 'generation_snapshot';
+  request.modelRequestDigest = stringField(payload.digest);
+  request.nativeImages = Array.isArray(payload.images) ? payload.images as AgentImageRef[] : [];
+  request.contentComplete = await checkRecordedImages(payload.images, resolver);
+  if (!Value.Check(ReconstructedModelRequestSchema, request)) throw diagnosticError({ code: 'schema', message: 'Generation snapshot request failed schema validation.' });
+  if (!session.modelRequestSeen && previous?.sessionId === session.sessionId) Object.assign(previous, request);
+  else requests.push(request);
 }
 
 export async function spillInlineBody(
@@ -386,6 +461,7 @@ async function snapshotRequest(session: SessionReplay, payload: Record<string, u
     repair: payload.repair === true,
     compacted,
     contentComplete,
+    contextSource: 'event_projection',
     systemPrompt: session.systemPrompt,
     tools: session.tools as ReconstructedModelRequest["tools"],
     messages: [...session.messages],

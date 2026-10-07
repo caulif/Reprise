@@ -12,6 +12,7 @@ import { renderComparisonReportShell } from "../../src/application/comparison-re
 import type { ComparisonReportFacts } from "../../src/agents/comparison-agent.js";
 import { imageContentHash } from "../../src/infrastructure/agent/model-input.js";
 import { sha256 } from "../../src/core/identity.js";
+import { createComparisonImageDeliveryRecorder } from "../../src/application/comparison-image-delivery-recorder.js";
 
 const stamp = "2026-09-01T00:00:00.000Z";
 const PNG_BYTES = Buffer.from([
@@ -150,6 +151,12 @@ test("materialized seed contentHash binds visual claim when Session delivered th
   assert.ok(contentHash);
   assert.equal(contentHash, imageContentHash(PNG_BYTES.toString("base64")));
 
+  const delivered = new Set<string>();
+  const recordDelivery = createComparisonImageDeliveryRecorder(delivered);
+  const manifest = { type: "image", mimeType: "image/png", contentHash, byteLength: PNG_BYTES.byteLength };
+  recordDelivery({ type: "agent.session_started", payload: { sessionId: "analysis" } });
+  recordDelivery({ type: "agent.model_request", payload: { images: [manifest] } });
+
   const verified = await verifyAndRenderComparisonReport({
     html: shell(
       `<p><span data-claim="visual" data-media-ref="${shortRef}">画面为红色。</span></p>`
@@ -159,7 +166,7 @@ test("materialized seed contentHash binds visual claim when Session delivered th
     result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
     attemptRoot,
     media,
-    deliveredImageContentHashes: new Set([contentHash]),
+    deliveredImageContentHashes: delivered,
   });
   assert.equal("html" in verified, true);
 
@@ -176,19 +183,32 @@ test("materialized seed contentHash binds visual claim when Session delivered th
   });
   assert.equal("html" in bareOk, true);
 
+  recordDelivery({ type: "agent.session_started", payload: { sessionId: "fresh-review" } });
+  recordDelivery({ type: "agent.model_request", payload: { scope: "compaction", images: [manifest] } });
+  const visualReport = shell(
+    `<p><span data-claim="visual" data-media-ref="${shortRef}">画面为红色。</span></p>`
+    + `<img data-media-ref="${shortRef}" alt="seed">`,
+  );
   const claimRejected = await verifyAndRenderComparisonReport({
-    html: shell(
-      `<p><span data-claim="visual" data-media-ref="${shortRef}">画面为红色。</span></p>`
-      + `<img data-media-ref="${shortRef}" alt="seed">`,
-    ),
+    html: visualReport,
     facts: facts(),
     result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
     attemptRoot,
     media,
-    deliveredImageContentHashes: new Set(),
+    deliveredImageContentHashes: delivered,
   });
   assert.equal("html" in claimRejected, false);
   if ("html" in claimRejected) return;
   assert.equal(claimRejected.code, "media_unavailable");
   assert.match(claimRejected.message, /session-delivered media/);
+  recordDelivery({ type: "agent.model_request", payload: { images: [manifest] } });
+  const reviewDelivered = await verifyAndRenderComparisonReport({
+    html: visualReport,
+    facts: facts(),
+    result: { status: "completed", reportPath: "report.html", evidenceRefs: [] },
+    attemptRoot,
+    media,
+    deliveredImageContentHashes: delivered,
+  });
+  assert.equal("html" in reviewDelivered, true);
 });

@@ -1,0 +1,4 @@
+This is the preview-only closure in the same independent review session after a real full draft audit turn and actual formal current inspection.
+The actual complete current inspection tool result is already in this session and must be present in this generation input. Call preview_report now for that exact current digest; do not reconstruct its text from intentions or author notes.
+Only preview_report is available. Do not investigate, update findings, submit, edit or repeat inspection here. If the binding changed or a current inspection is unavailable, the Host returns to formal draft audit; stale text cannot be published.
+Use the actual preview result for publication structure, identities, metrics visibility and layout. Successful preview is not semantic approval. When actual current inspection delivery and matching preview are ready, the Host ends at this completed tool turn without another generation.

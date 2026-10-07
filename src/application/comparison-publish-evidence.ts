@@ -1,3 +1,4 @@
+import { evidenceQuoteMarkupOnly, transformOutsideEvidenceQuotes } from '../core/comparison-html.js';
 import { createHash } from "node:crypto";
 import { mkdir, readFile, realpath } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
@@ -41,7 +42,7 @@ export async function stagePublishedEvidence(input: {
   let html = input.html;
   const hrefMap = new Map<string, string>();
   for (const link of input.evidence) {
-    if (link.origin !== "derived_analysis" || !link.contentHash || !link.reportHref || !html.includes(link.reportHref)) continue;
+    if (link.origin !== "derived_analysis" || !link.contentHash || !link.reportHref || !evidenceQuoteMarkupOnly(html).includes(link.reportHref)) continue;
     const { href, hash, bytes } = await loadDerivedEvidence(input.attemptRoot, link);
     const publishedHref = `evidence/${hash}${extname(href)}`;
     await mkdir(join(input.experimentRoot, "evidence"), { recursive: true });
@@ -112,6 +113,10 @@ export function comparisonAnchorHrefs(html: string): ReadonlySet<string> {
 }
 
 export function rewriteMediaHref(html: string, from: string, to: string): string {
+  return transformOutsideEvidenceQuotes(html, text => rewriteMarkupMediaHref(text, from, to));
+}
+
+function rewriteMarkupMediaHref(html: string, from: string, to: string): string {
   const edits: { start: number; end: number; replacement: string }[] = [];
   visitHtml(html, (node) => {
     for (const attr of node.attrs ?? []) {
@@ -125,7 +130,7 @@ export function rewriteMediaHref(html: string, from: string, to: string): string
     html = `${html.slice(0, edit.start)}${edit.replacement}${html.slice(edit.end)}`;
   }
   const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return html.replace(new RegExp(`url\\((['"]?)${escaped}\\1\\)`, "gi"), `url($1${to}$1)`);
+  return html.replace(new RegExp(`url\\((['"]?)${escaped}\\1\\)`, "gi"), (_all: string, quote: string) => `url(${quote}${to}${quote})`);
 }
 
 function visitHtml(html: string, visit: (node: HtmlNode) => void, tagName?: string): void {

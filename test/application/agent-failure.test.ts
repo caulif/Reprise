@@ -65,3 +65,22 @@ test('unknown failure kind is not recovery-retried', () => {
     failure: { code: 'agent_failure', message: 'HTTP 418', attempts: 1, kind: 'unknown' },
   } as never), undefined);
 });
+
+test('only known SDK missing terminal markers are classified as transient upstream failures', () => {
+  for (const message of ['Stream ended without finish_reason', 'Anthropic stream ended without a stop reason',
+    'Google stream ended without a finish reason', 'proxy stream ended without a terminal event']) {
+    assert.equal(classifyAgentFailure(new Error(message)), 'transient_upstream');
+  }
+  assert.equal(classifyAgentFailure(new Error('Stream ended without valid JSON: schema mismatch')), 'protocol');
+  assert.equal(classifyAgentFailure(new Error('Application ended without a terminal event')), 'unknown');
+  assert.equal(classifyAgentFailure(new Error('Missing finish_reason in a malformed response')), 'protocol');
+  assert.equal(classifyAgentFailure(Object.assign(new Error('Stream ended without finish_reason'), { status: 401 })), 'authentication');
+});
+
+test('exact provider EOF is transient while tool parsing and authentication retain priority', () => {
+  assert.equal(classifyAgentFailure(new Error('unexpected EOF')), 'transient_network');
+  assert.equal(classifyAgentFailure(Object.assign(new Error('unexpected EOF'), { name: 'AgentToolFailure' })), 'tool');
+  assert.equal(classifyAgentFailure(Object.assign(new Error('unexpected EOF'), { status: 401 })), 'authentication');
+  assert.equal(classifyAgentFailure(new Error('JSON schema parsing: unexpected EOF')), 'protocol');
+  assert.equal(classifyAgentFailure(new Error('Application parsing unexpected EOF')), 'unknown');
+});

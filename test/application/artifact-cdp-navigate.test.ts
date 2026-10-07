@@ -58,26 +58,39 @@ test("load timer starts after Page.navigate and does not reject unhandled", asyn
   }
 });
 
-test("loadEventFired during Page.navigate still counts", async () => {
+test("loadEventFired during Page.navigate still counts", { timeout: 2_000 }, async () => {
   let fire: (() => void) | undefined;
+  let navigateCalled = false, navigationSettled = false, detached = false;
+  let resolveResponse!: (value: unknown) => void;
+  const response = new Promise<unknown>(resolve => { resolveResponse = resolve; });
   const session = fakeSession(
-    async () => {
-      await new Promise((resolve) => setTimeout(resolve, 40));
-      return {};
+    (method) => {
+      assert.equal(method, "Page.navigate");
+      navigateCalled = true;
+      return response;
     },
     (method, handler) => {
       if (method === "Page.loadEventFired") {
         fire = () => handler({});
-        setTimeout(() => fire?.(), 10);
       }
       return () => {
         fire = undefined;
+        detached = true;
       };
     },
   );
-  const loadMs = await navigateAndWait(session, "page", "http://127.0.0.1/index.html", 500, new AbortController().signal);
-  assert.ok(loadMs >= 40);
-  assert.ok(loadMs < 400);
+  const navigation = navigateAndWait(session, "page", "http://127.0.0.1/index.html", 500, new AbortController().signal)
+    .then(loadMs => { navigationSettled = true; return loadMs; });
+  assert.equal(navigateCalled, true);
+  assert.ok(fire, "load listener must be installed before the navigation response");
+  fire();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(navigationSettled, false, "early load must not bypass the pending navigation response");
+  resolveResponse({});
+  const loadMs = await navigation;
+  assert.ok(Number.isFinite(loadMs));
+  assert.equal(detached, true);
+  assert.equal(fire, undefined);
 });
 
 test("session timeout aborts an in-flight navigate into a timeout RenderResult", { timeout: 2_000 }, async () => {

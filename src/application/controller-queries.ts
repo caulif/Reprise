@@ -76,7 +76,7 @@ export async function inspectRun(
     ? await readWorkspaceScope(store, record)
     : await inspectWorkspace(workspace);
   const wallClockMs = elapsedWallClock(events, settled);
-  const usage = aggregateEventUsage(events);
+  const usage = aggregateEventUsage(events.filter((event) => event.type.startsWith("runtime.")));
   const tokenUsage = factsFromUsage(usage);
   const tokenCount = tokenUsage?.total;
   const priced = priceRunUsage(usage, productId, replay);

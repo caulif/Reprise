@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { captureWorkspaceScope, inspectRun } from '../../src/application/controller-queries.js';
 import type { EventEnvelope, RunRecord } from '../../src/core/schema.js';
-import type { ExperimentStore } from '../../src/infrastructure/store/experiment-store.js';
+import { ExperimentStore } from '../../src/infrastructure/store/experiment-store.js';
 import type { LocalWorkspaceProvider, PreparedEnvironmentRef } from '../../src/environment/local-workspace-provider.js';
 
 function envelope(type: string, payload: unknown, sequence = 1): EventEnvelope {
@@ -86,6 +86,81 @@ test('inspectRun distinguishes workspace evidence that was not collected', async
   assert.equal(observation.workspaceEvidenceStatus, 'not_collected');
   assert.match(observation.currentSummary, /Read current-user-view.md/);
   assert.doesNotMatch(observation.currentSummary, /Workspace evidence/);
+});
+
+test('persisted Runtime metrics stay unchanged after repeated Harness agent usage and reopening', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-runtime-usage-attribution-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const record = { attempt: { runId: 'run-1' }, artifactRefs: [], outcome: { termination: { kind: 'completed', code: 'completed.controller_satisfied' } } } as unknown as RunRecord;
+  const replay = { sourceRootKind: 'operator_selected' as const, requestedModel: 'deepseek-v4.1-flash' };
+  let store = await ExperimentStore.open(root, 'experiment-usage');
+  try {
+    await store.acquireWriter();
+    for (const usage of [
+      { input_tokens: 10, output_tokens: 2, cache_read_input_tokens: 100, cache_creation_input_tokens: 4 },
+      { input_tokens: 20, output_tokens: 3, cache_read_input_tokens: 200, cache_creation_input_tokens: 6 },
+    ]) await store.append({ type: 'runtime.usage_reported', runId: 'run-1', payload: { usage } });
+    const before = await inspectRun(store, record, 'claude-code', undefined, replay);
+    assert.deepEqual(before.tokenUsage, { total: 345, input: 30, output: 5, cached: 300 });
+    assert.ok(before.costUsd !== undefined && before.costUsd > 0);
+    for (let repeat = 0; repeat < 3; repeat++) {
+      for (const role of ['comparison', 'controller', 'recovery', undefined]) {
+        await store.append({ type: 'agent.usage_reported', runId: 'run-1', payload: {
+          model: 'gpt-6-astra', scope: 'generation', ...(role ? { role } : {}),
+          usage: { input: 1_000_000, output: 1_000_000, cacheRead: 0, cacheWrite: 0, totalTokens: 2_000_000 },
+        } });
+      }
+      assert.deepEqual(await inspectRun(store, record, 'claude-code', undefined, replay), before);
+    }
+    assert.equal(store.events('run-1').filter((event) => event.type === 'agent.usage_reported').length, 12);
+    await store.close();
+    store = await ExperimentStore.open(root, 'experiment-usage');
+    assert.deepEqual(await inspectRun(store, record, 'claude-code', undefined, replay), before);
+    await store.acquireWriter();
+    await store.append({ type: 'agent.usage_reported', runId: 'run-1', payload: {
+      model: 'gpt-6-astra', scope: 'compaction', role: 'comparison',
+      usage: { input: 1_000_000, output: 1_000_000, cacheRead: 0, cacheWrite: 0, totalTokens: 2_000_000 },
+    } });
+    assert.deepEqual(await inspectRun(store, record, 'claude-code', undefined, replay), before);
+    assert.equal(store.events('run-1').filter((event) => event.type === 'agent.usage_reported').length, 13);
+  } finally {
+    await store.close();
+  }
+});
+
+test('Harness usage cannot turn missing Runtime telemetry into zero or priced candidate usage', async () => {
+  const events = [envelope('agent.usage_reported', {
+    model: 'deepseek-v4.1-flash', scope: 'generation',
+    usage: { input: 1_000_000, output: 1_000_000, cacheRead: 0, cacheWrite: 0, totalTokens: 2_000_000 },
+  })];
+  const store = { events: () => events } as unknown as ExperimentStore;
+  const record = { attempt: { runId: 'run-1' }, artifactRefs: [], outcome: { termination: { kind: 'completed', code: 'completed.controller_satisfied' } } } as unknown as RunRecord;
+  const observation = await inspectRun(store, record, 'claude-code', undefined,
+    { sourceRootKind: 'operator_selected', requestedModel: 'deepseek-v4.1-flash' });
+  assert.equal(observation.tokenUsage, undefined);
+  assert.equal(observation.tokenCount, undefined);
+  assert.equal(observation.costUsd, undefined);
+  assert.equal(observation.pricingLookup, undefined);
+});
+
+test('Runtime Codex watermarks and cache-inclusive deltas retain their original aggregation', async () => {
+  const events: EventEnvelope[] = [];
+  const store = { events: () => events } as unknown as ExperimentStore;
+  const record = { attempt: { runId: 'run-1' }, artifactRefs: [], outcome: { termination: { kind: 'completed', code: 'completed.controller_satisfied' } } } as unknown as RunRecord;
+  const replay = { sourceRootKind: 'operator_selected' as const, requestedModel: 'gpt-6-astra' };
+  for (const total of [128, 256]) events.push(envelope('runtime.usage_reported', {
+    info: { total_token_usage: { total_tokens: total } },
+  }));
+  assert.equal((await inspectRun(store, record, 'codex', undefined, replay)).tokenCount, 256);
+  for (const last of [
+    { input_tokens: 100, output_tokens: 10, cached_input_tokens: 20 },
+    { input_tokens: 80, output_tokens: 5, cached_input_tokens: 30 },
+  ]) events.push(envelope('runtime.usage_reported', {
+    info: { last_token_usage: last, total_token_usage: { total_tokens: 9000 } },
+  }));
+  const observation = await inspectRun(store, record, 'codex', undefined, replay);
+  assert.deepEqual(observation.tokenUsage, { total: 195, input: 130, output: 15, cached: 50 });
+  assert.equal(observation.costUsd, (130 * 10 + 15 * 50 + 50) / 1_000_000);
 });
 
 test('captureWorkspaceScope does not snapshot a sibling tree that shares a path prefix', async (t) => {

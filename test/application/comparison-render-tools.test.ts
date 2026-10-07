@@ -223,7 +223,7 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
   const draft = `<!doctype html><html><body>
 <article class="share">
 <section data-host-zone="metrics">metrics</section>
-<span>历史会话</span><span>当前会话</span>
+<figure data-component="evidence-quote"><pre><code>历史会话 当前会话 Historical Current</code></pre></figure>
 <template data-component-template="unused"><img></template>
 <section data-agent-zone="comparison"><img data-media-ref="media-01" alt=""></section>
 </article>
@@ -280,7 +280,7 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
     preparedDigest: string;
     previewDigest: string;
     previewMedia: { kind: string; shortRef: string };
-    mechanics: { imagesMissingSrc: number; hostMetricsPresent: boolean };
+    mechanics: { imagesMissingSrc: number; hostMetricsPresent: boolean; modelLabels: { hasHistorical: boolean; hasCurrent: boolean } };
     layout: { scrollWidth: number; elements: { metrics: { inViewport: boolean } } };
     note: string;
   };
@@ -290,14 +290,16 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
   assert.equal(first.previewMedia.kind, "report_review");
   assert.match(first.previewMedia.shortRef, /^review-\d{2}$/);
   assert.match(first.note, /review-\*|not baseline\/candidate/i);
+  assert.deepEqual(first.mechanics.modelLabels, { hasHistorical: false, hasCurrent: false });
   assert.equal(first.mechanics.hostMetricsPresent, true);
   assert.equal(first.mechanics.imagesMissingSrc, 0);
   assert.equal(first.layout.elements.metrics.inViewport, false);
 
-  await writeFile(join(root, "report.html"), `${draft}\n<!-- edited -->`, "utf8");
+  await writeFile(join(root, "report.html"), `${draft}\n<span>历史会话</span><span>当前会话</span><!-- edited -->`, "utf8");
   const second = JSON.parse((await tool.execute({}, new AbortController().signal)).content) as {
-    draftDigest: string;
+    draftDigest: string; mechanics: { modelLabels: { hasHistorical: boolean; hasCurrent: boolean } };
   };
+  assert.deepEqual(second.mechanics.modelLabels, { hasHistorical: true, hasCurrent: true });
   assert.notEqual(second.draftDigest, first.draftDigest);
   const attachedTool = createPreviewReportTool({
     catalog: { ...catalog, registerDerivedMedia: async (entry) => {

@@ -25,7 +25,12 @@ export class FakeProviderAdapter implements ProviderAdapter {
   createSession(): ProviderSession {
     return {
       inputCapabilities: [...this.inputCapabilities],
-      append: async ({ content }) => this.#reply(content),
+      append: async ({ content, signal, yieldAfterTurn }) => {
+        const reply = await this.#reply(content);
+        signal.throwIfAborted();
+        const reason = await yieldAfterTurn?.();
+        return reason === undefined ? reply : { status: 'yielded' as const, reason };
+      },
       cancel: () => {
         this.cancelled = true;
       },

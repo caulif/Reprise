@@ -99,7 +99,7 @@ test("Comparison enforces report-writing and preview stages", async () => {
         const previewResult = await preview?.execute({}, signal);
         const shellResult = await shell?.execute({}, signal);
         observed.push(`${writeResult?.content}|${previewResult?.content}|${shellResult?.content}`);
-        return content.includes("Review the actual draft")
+        return content.includes("Audit the report against the original requirements")
           ? JSON.stringify({ status: "completed", evidenceRefs: [] })
           : "done";
       },
@@ -131,7 +131,7 @@ test("Comparison repairs a structurally invalid draft before review and stops on
         append: async ({ content }) => {
           prompts.push(content);
           if (content.includes("cannot be published") && repairSucceeds) draft = { digest: "good" };
-          return content.includes("Review the actual draft")
+          return content.includes("Audit the report against the original requirements")
             ? JSON.stringify({ status: "completed", evidenceRefs: [] })
             : "done";
         },
@@ -155,12 +155,12 @@ test("Comparison rechecks the final draft after review edits", async () => {
     host: new AgentHost({ createSession: () => ({
       append: async ({ content }) => {
         prompts.push(content);
-        if (content.includes("Review the actual draft") && draft.digest === "composed") {
+        if (content.includes("Audit the report against the original requirements") && draft.digest === "composed") {
           draft = { digest: "broken-review", error: "Comparison report requires exactly one data-agent-slot:headline." };
         } else if (content.includes("cannot be published")) {
           draft = { digest: "repaired-review" };
         }
-        return content.includes("Review the actual draft")
+        return content.includes("Audit the report against the original requirements")
           ? JSON.stringify({ status: "completed", evidenceRefs: [] })
           : "done";
       },
@@ -171,7 +171,7 @@ test("Comparison rechecks the final draft after review edits", async () => {
   });
   const result = await agent.compare(context(), [], undefined, undefined, { preflightDraft: async () => draft });
   assert.equal(result.status, "completed");
-  assert.equal(prompts.filter((prompt) => prompt.includes("Review the actual draft")).length, 2);
+  assert.equal(prompts.filter((prompt) => prompt.includes("Audit the report against the original requirements")).length, 2);
   assert.equal(prompts.filter((prompt) => prompt.includes("cannot be published")).length, 1);
 });
 
@@ -189,7 +189,7 @@ test("Comparison repairs an invalid envelope after rechecking a repaired draft",
         append: async ({ content }) => {
           prompts.push(content);
           toolModes.push(toolsEnabled);
-          if (content.includes("Review the actual draft")) {
+        if (content.includes("Audit the report against the original requirements")) {
             reviewCount += 1;
             if (reviewCount === 1) {
               draft = { digest: "broken-review", error: "Comparison report requires exactly one data-agent-slot:headline." };
@@ -255,7 +255,7 @@ test("validated submitted draft survives an empty final model message", async ()
     getSubmittedResult: async () => ({ status: "completed", reportPath: "report.html", headline: "Verified draft.", evidenceRefs: [] }),
   });
   assert.equal(result.status, "completed");
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 4);
   assert.match(calls[0] ?? "", /questions that could change the choice/);
   assert.doesNotMatch(calls[2] ?? "", /Return only JSON/);
 });
@@ -968,7 +968,7 @@ test("B7 review: tool failure surfaces a concrete limitation without inventing o
     assert.equal(result.value.status, "insufficient_evidence");
     assert.match(result.value.headline ?? "", /no browser/i);
   }
-  assert.match(COMPARISON_TURN_PROMPTS.review, /record the specific\s+review limitation/);
+  assert.match(COMPARISON_TURN_PROMPTS.review, /Record unavailable rendering\/image inspection without invented observations/);
 });
 
 test("compose prompt uses the Host-owned draft tool", () => {

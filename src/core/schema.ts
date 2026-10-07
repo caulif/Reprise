@@ -1,5 +1,9 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { EvidenceRefSchema, Hash, Id } from "./schemas/ids.js";
+export { AgentUsageFactsSchema, type ComparisonResources, type AgentUsageFacts } from './comparison-resources-schema.js';
+export { ComparisonFindingsSubmissionSchema, ComparisonFindingsToolSubmissionSchema, ComparisonDiscoveryRecordSchema, type ComparisonSupportBoundary, type ComparisonFindingsSubmission, type ComparisonDiscoveryRecord } from './comparison-discovery-schema.js';
+export { ComparisonFindingsCompleteToolSubmissionSchema, ComparisonFindingsDeltaSchema, type ComparisonFindingsDelta } from './comparison-discovery-schema.js';
+export { ComparisonInvestigationClosedSchema, type ComparisonInvestigationClosure } from './comparison-discovery-schema.js';
 import {
   ComparisonBriefingContextSchema,
   ComparisonDraftSubmissionSchema,
@@ -14,6 +18,7 @@ export { EvidenceRefSchema, type EvidenceRef } from "./schemas/ids.js";
 export { SceneDescriptorSchema, type SceneDescriptor } from "./schemas/scene.js";
 export { RecoveryMarkerSchema } from "./schemas/recovery-marker.js";
 export { EventEnvelopeSchema, type EventEnvelope } from "./schemas/event.js";
+export { AgentInvocationYieldedSchema, AgentInvocationStartedSchema } from "./schemas/agent-invocation-yielded.js";
 export { ControllerDecisionSchema, type ControllerDecision, ComparisonResultSchema, type ComparisonAgentEnvelope } from "./schemas/agent-output.js";
 export { ArtifactManifestSchema, type ArtifactManifest } from "./schemas/artifact.js";
 export {
@@ -224,7 +229,7 @@ const ComparisonLinkSchema = Type.Object({
   label: Type.Optional(Type.String({ minLength: 1 })),
   origin: Type.Optional(ComparisonEvidenceOriginSchema),
   contentHash: Type.Optional(Hash),
-  sourceRefs: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 32 })),
+  sourceRefs: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 64 })),
 });
 export const ComparisonLinksSchema = Type.Array(ComparisonLinkSchema);
 export type ComparisonLinkRecord = Static<typeof ComparisonLinkSchema>;
@@ -270,9 +275,15 @@ export {
   ComparisonShortRefSchema,
 };
 export type { ComparisonDraftSubmission, ComparisonMediaDerivation, ComparisonMediaRecord, ComparisonMediaRef, ComparisonReportModel } from "./comparison-schema.js";
+export { ComparisonDecisionDraftSubmissionSchema, type ComparisonDecisionDraftSubmission } from './comparison-schema.js';
 export {
   type ModelInputCapabilities,
 } from "./schemas/model-input-capabilities.js";
+export { ComparisonEvidenceQuoteParamsSchema, ComparisonEvidenceQuoteSpecSchema } from "./schemas/comparison-evidence-quote.js";
+export type { ComparisonEvidenceQuoteParams, ComparisonEvidenceQuoteSpec } from "./schemas/comparison-evidence-quote.js";
+export { RenderGeometryQueriesSchema, RenderGeometrySampleSchema, RENDER_GEOMETRY_MAX_SAMPLE_BYTES } from "./schemas/render-geometry.js";
+export type { RenderGeometryQuery, RenderGeometrySample } from "./schemas/render-geometry.js";
+export { ComparisonRenderMeasurementDocumentSchema } from './comparison-render-check-schema.js';
 
 
 

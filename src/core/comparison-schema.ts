@@ -138,10 +138,32 @@ export const ComparisonDraftSubmissionSchema = Type.Object({
   status: Type.Union([Type.Literal("completed"), Type.Literal("insufficient_evidence")]),
   category: Type.String({ minLength: 1, maxLength: 200 }),
   headline: Type.String({ minLength: 1, maxLength: 280 }),
+  decisionSummary: Type.Optional(Type.String({ minLength: 1, maxLength: 1200, pattern: "\\S", description: "Plain text: this task's actual usability and user tradeoff, a conditional choice or inability to judge. Preserve task-critical branches, not only the strongest technical advantage." })),
+  decisionBoundary: Type.Optional(Type.String({ maxLength: 1200, description: "Plain text: important unknowns or counterevidence that could change this task decision, not a method inventory. Empty only when no such important boundary has been identified; that does not certify complete verification." })),
+  decisionBasis: Type.Optional(Type.Array(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" }), { maxItems: 12, uniqueItems: true, description: "Current finding IDs supporting this decision, exactly matching basis dispositions." })),
+  conclusionScope: Type.Optional(Type.Union([Type.Literal("supported_in_scope"), Type.Literal("conditional"), Type.Literal("undetermined")], { description: "A model declaration, not semantic certification. Incomplete basis or boundary observations require conditional or undetermined." })),
+  findingDispositions: Type.Optional(Type.Array(Type.Object({
+    findingId: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" }),
+    disposition: Type.Union([Type.Literal("basis"), Type.Literal("boundary"), Type.Literal("not_decisive")]),
+    explanation: Type.String({ minLength: 1, maxLength: 1200, pattern: "\\S" }),
+  }, { additionalProperties: false }), { maxItems: 12, description: "Cover every current finding exactly once and explain its decision role; explanations are unverified declarations." })),
+  scopeSummaries: Type.Optional(Type.Array(Type.Object({
+    findingId: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" }),
+    baseline: Type.String({ minLength: 1, maxLength: 1200, pattern: "\\S" }),
+    candidate: Type.String({ minLength: 1, maxLength: 1200, pattern: "\\S" }),
+  }, { additionalProperties: false }), { maxItems: 12, description: "One brief scope summary per relevant basis/boundary finding, including complete support. Preserve each side's decision-changing unchecked relationships and method limits. Summaries are unverified model declarations checked against full saved findings by independent review; they count toward the existing details budget. Use [] only when no relevant finding exists." })),
   comparisonHtml: Type.String({ minLength: 1, maxLength: 262_144 }),
   detailsHtml: Type.Optional(Type.String({ maxLength: 262_144 })),
+  decisionShape: Type.Optional(Type.Union([Type.Literal("single_difference"), Type.Literal("multiple_differences")], {
+    description: "Declare single_difference for one decision-changing difference; multiple_differences only for independent differences changing the choice, not separate evidence, consequences or caveats of one difference. This is a model declaration, not Host semantic validation.",
+  })),
 });
 export type ComparisonDraftSubmission = Static<typeof ComparisonDraftSubmissionSchema>;
+export const ComparisonDecisionDraftSubmissionSchema = Type.Object({
+  kind: Type.Literal('decision'),
+  ...Type.Required(Type.Omit(ComparisonDraftSubmissionSchema, ['comparisonHtml', 'detailsHtml', 'decisionBasis'])).properties,
+}, { additionalProperties: false, description: 'Plain decision variant. Host renders summary, boundary and provided scope summaries once and derives decisionBasis from basis dispositions. Independent review checks those scope summaries against the complete saved findings; structural acceptance is not semantic approval. Do not submit HTML or a second copy of basis IDs. All current findings and decisive unknowns remain mandatory; original report length and publication gates apply.' });
+export type ComparisonDecisionDraftSubmission = Static<typeof ComparisonDecisionDraftSubmissionSchema>;
 const ComparisonOutputSchema = Type.Object({
   status: Type.Union([Type.Literal("completed"), Type.Literal("insufficient_evidence")]),
   reportPath: Type.Literal("report.html"),

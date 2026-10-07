@@ -10,7 +10,9 @@ export async function runToollessCodexProbe(input: { model: string; effort: Code
   });
   const controller = new AbortController();
   try {
-    return await session.append({ content: JSON.stringify(input.context), signal: controller.signal });
+    const output = await session.append({ content: JSON.stringify(input.context), signal: controller.signal });
+    if (typeof output !== 'string') throw new Error('Tool-less Codex probe unexpectedly yielded.');
+    return output;
   } finally {
     controller.abort();
     session.cancel();

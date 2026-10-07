@@ -12,6 +12,7 @@ import { startExperiment } from '../../src/application/experiment.js';
 import { input, VerifiedRuntime } from '../codex-experiment-support.js';
 import type { ComparisonAgentPort } from '../../src/agents/comparison-agent.js';
 import type { RunRecord, TaskCase } from '../../src/core/schema.js';
+import { ToolPreconditionRejected } from '../../src/core/tool-precondition-rejected.js';
 
 const timestamp = '2026-08-15T00:00:00.000Z';
 function taskCase(): TaskCase { return { schemaVersion: 1, caseId: 'case-1', source: { productId: 'codex', sessionId: 'session-1' }, initialInput: { id: 'message-1', role: 'user', text: '修复报告。' }, transcript: [{ id: 'message-1', role: 'user', text: '修复报告。' }], historicalEvents: [], baseline: { status: 'available', finalMessage: 'Done.', artifactRefs: [], evidenceRefs: ['event:baseline-1'] }, sourceRuntimeEvidence: { productId: 'codex', artifactRefs: [] }, provenance: { packVersion: 'fixture', importedAt: timestamp, sourceHash: 'a'.repeat(64) }, privacy: { allowModelText: true, allowBinary: false, redactions: [] }, contentHash: 'b'.repeat(64) }; }
@@ -195,7 +196,7 @@ test('comparison prompt points workspace tools at the sealed snapshot mount', ()
   assert.match(COMPARISON_SYSTEM_PROMPT, /user browser profile/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /If a render tool fails, record the limitation/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /do not retry via equivalent browser shell commands/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /one continuing session/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /reviews in a fresh session without its earlier conversation/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /最后一轮不能使用工具/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /read_observation/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /live isolated replica/);
@@ -267,8 +268,8 @@ test('Host metrics shell matches the projected fingerprint and fails when number
   assert.match(html, /data-agent-zone="comparison"/);
   assert.match(html, /data-host-zone="metrics"/);
   assert.equal(hostMetricsMismatch(html, facts.metrics ?? {}), undefined);
-  assert.match(html, /2<span class="unit">min<\/span>/);
-  assert.match(html, /13<span class="unit">min<\/span>/);
+  assert.match(html, /2:00<span class="unit">分:秒<\/span>/);
+  assert.match(html, /13:00<span class="unit">分:秒<\/span>/);
   assert.match(html, /0\.49<span class="unit">\$/);
   assert.match(html, /钉住的价格快照/);
   assert.match(html, /\.num\.miss \{[^}]*white-space:nowrap/);
@@ -321,8 +322,8 @@ test('compose and review prompts require Host submission and real preview', () =
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /Images belong on the card only when both sides have a comparable final/);
   assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /The left side is the historical session/);
   assert.match(COMPARISON_TURN_PROMPTS.review, /preview_report/);
-  assert.match(COMPARISON_TURN_PROMPTS.review, /preview the revised digest/);
-  assert.match(COMPARISON_TURN_PROMPTS.review, /specific\s+review limitation/);
+  assert.match(COMPARISON_TURN_PROMPTS.review, /If corrected, repeat inspection and matching preview, then stop/);
+  assert.match(COMPARISON_TURN_PROMPTS.review, /Record unavailable rendering\/image inspection without invented observations/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /visual-evidence still immediately after the headline/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /reopen report\.html and review/);
   assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /已禁用工具/);
@@ -351,7 +352,8 @@ test('direct full-page edits cannot publish through the new Agent path', async (
             await assert.rejects(write!.execute({
               path: 'report.html',
               content: '<p>kept-page</p>',
-            }, new AbortController().signal), /comparison agent tool execution failed/);
+            }, new AbortController().signal), error => error instanceof ToolPreconditionRejected
+              && error.reason === 'host_write_policy' && error.message === 'write_denied: path is outside the Host write policy.');
           }
           return '';
         },
@@ -366,6 +368,9 @@ test('direct full-page edits cannot publish through the new Agent path', async (
   const dirs = await readdir(attempts);
   const draft = await readFile(join(attempts, dirs[0] ?? '', 'report.html'), 'utf8');
   assert.doesNotMatch(draft, /kept-page/);
+  const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { type: string; payload: Record<string, unknown> });
+  assert.ok(events.some(event => event.type === 'agent.tool_failed' && event.payload.tool === 'write' && event.payload.message === 'write_denied: path is outside the Host write policy.'));
+  assert.equal(events.some(event => event.type === 'agent.tool_completed' && event.payload.tool === 'write' && !event.payload.nativeHook), false);
 });
 
 

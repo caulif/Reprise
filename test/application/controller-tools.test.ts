@@ -16,7 +16,7 @@ import { toPiTool } from "../../src/infrastructure/agent/providers/pi/tool-adapt
 import type { ExperimentStore } from "../../src/infrastructure/store/experiment-store.js";
 import { workspaceTools } from "../../src/infrastructure/recovery-tools.js";
 import { sameLiveFsPath } from "../../src/core/paths.js";
-import { hostShellMissingExecutable, hostShellPwd, hostShellReadFile, hostShellSleep } from "../host-shell.js";
+import { hostShellMissingExecutable, hostShellPwd, hostShellReadFile, hostShellSleep, hostShellWriteFile } from "../host-shell.js";
 
 function toolBodyWithoutEvidenceFooter(content: string): string {
   const marker = "\n\nEvidence refs:";
@@ -293,23 +293,18 @@ test("shell external writes are audited as controller.external_write, not worksp
     const shell = ctx.tools.find((tool) => tool.name === "shell_exec");
     const write = ctx.tools.find((tool) => tool.name === "write");
     assert.ok(shell && write);
-    const escaped = outside.replaceAll("'", "''");
-    await assert.rejects(
-      () => shell.execute({ command: `Set-Content -LiteralPath '${escaped}' -Value 'external'` }, signal),
-      /read-only mount|write_denied/i,
-    );
+    await shell.execute({ command: hostShellWriteFile(outside, "external") }, signal);
+    assert.equal((await readFile(outside, "utf8")).trim(), "external");
     const types = ctx.events.map((event) => (event as { type?: string }).type);
-    assert.equal(types.includes("controller.external_write"), false);
+    assert.equal(types.includes("controller.external_write"), true);
     assert.equal(types.includes("controller.workspace_write"), false);
     await write.execute({ path: "project/from-host.txt", content: "host" }, signal);
     assert.equal(
       ctx.events.filter((event) => (event as { type?: string }).type === "controller.workspace_write").length,
       1,
     );
-    await assert.rejects(
-      () => shell.execute({ command: "Set-Content -LiteralPath replica-shell.txt -Value 'in-copy'" }, signal),
-      /read-only mount|write_denied/i,
-    );
+    await shell.execute({ command: hostShellWriteFile("replica-shell.txt", "in-copy") }, signal);
+    assert.equal((await readFile(join(ctx.replicaRoot, "replica-shell.txt"), "utf8")).trim(), "in-copy");
     assert.equal(
       ctx.events.filter((event) => (event as { type?: string }).type === "controller.workspace_write").length,
       1,
