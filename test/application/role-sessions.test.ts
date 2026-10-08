@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { RoleSessions } from "../../src/infrastructure/agent/role-sessions.js";
-import type { AgentSessionHost } from "../../src/infrastructure/agent/session.js";
+import { AgentSessionHost } from "../../src/infrastructure/agent/session.js";
 
 function session(id: string, close: () => Promise<void> = async () => {}): AgentSessionHost {
   return {
@@ -91,5 +91,36 @@ test("RoleSessions release waits for close and surfaces close failure", async ()
   }));
   await assert.rejects(sessions.release("a"), /close failed/);
   assert.equal(closed, true);
+  assert.deepEqual([...sessions.keys()], []);
+});
+
+test('RoleSessions cancel propagates callback failure and removes only that Session', async () => {
+  const sessions = new RoleSessions();
+  await sessions.get('keep', async () => session('keep'));
+  await sessions.get('drop', async () => session('drop'));
+  await assert.rejects(sessions.cancel('drop', async () => { throw new Error('cancel audit failure'); }), /cancel audit failure/);
+  assert.deepEqual([...sessions.keys()], ['keep']);
+});
+
+test('RoleSessions cancel ignores only a rejected creation already observed by get', async () => {
+  const sessions = new RoleSessions();
+  let reject!: (error: Error) => void;
+  const pending = sessions.get('drop', () => new Promise((_, fail) => { reject = fail; }));
+  const observed = assert.rejects(pending, /create failed/);
+  const cancelled = sessions.cancel('drop', async () => { assert.fail('failed creation must never run cancel callback'); });
+  reject(new Error('create failed'));
+  await Promise.all([observed, cancelled]);
+  await sessions.cancel('missing', async () => { assert.fail('missing Session'); });
+  assert.deepEqual([...sessions.keys()], []);
+});
+
+test('RoleSessions cancel exposes a real Session cancellation audit failure', async () => {
+  const sessions = new RoleSessions();
+  const item = new AgentSessionHost('audit', 'recovery', { append: async () => 'unused', cancel() {} }, {
+    append: async event => { if (event.type === 'agent.session_cancelled') throw new Error('audit unavailable'); },
+  });
+  await sessions.get('audit', async () => item);
+  await assert.rejects(sessions.cancel('audit', current => current.cancel()), /audit unavailable/);
+  await assert.rejects(item.close(), /audit unavailable/, 'later close observes the same rejected shutdown');
   assert.deepEqual([...sessions.keys()], []);
 });

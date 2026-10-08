@@ -252,3 +252,66 @@ for (const auditType of ['agent.tool_called', 'agent.tool_failed', 'agent.tool_c
   const result = await session.work({ promptContent: 'Inspect', timeoutMs: 2_000, yieldAfterTurn: () => ++turns === 2 ? 'reviewModelRequests' : undefined });
   assert.equal(result.status, 'failed'); assert.equal(events.some(event => event.type === 'agent.invocation_yielded'), false);
 });
+
+for (const mismatch of ['missing', 'ambiguous'] as const) test(`native edit ${mismatch} match can be corrected without failing the invocation`, async t => {
+  const f = await fixture(t); const contexts: Context[] = [], events: AgentAuditEvent[] = [];
+  await writeFile(join(f.work, 'edit.txt'), 'alpha alpha');
+  const responses = [turn('edit', { path: 'edit.txt', oldText: mismatch === 'missing' ? 'absent' : 'alpha', newText: 'wrong' }),
+    turn('edit', { path: 'edit.txt', oldText: 'alpha alpha', newText: 'beta' }), message([{ type: 'text', text: 'Done' }], 'stop')];
+  const session = await new AgentHost(new PiModelCaller(config, native(responses, contexts))).createSession({
+    role: 'recovery', systemPrompt: 'Edit precisely', tools: f.tools, audit: { append: async event => { events.push(event); } },
+  });
+  const result = await session.work({ promptContent: 'Edit the file', timeoutMs: 2_000 });
+  await session.close();
+  assert.equal(result.status, 'completed', JSON.stringify(result));
+  assert.equal(await readFile(join(f.work, 'edit.txt'), 'utf8'), 'beta');
+  assert.equal(f.counts().writes, 2, 'only the corrected edit reaches its before/after journal');
+  assert.ok(contexts[1]!.messages.some(item => item.role === 'toolResult' && 'isError' in item && item.isError));
+  assert.equal(events.filter(event => event.type === 'agent.tool_failed').length, 1);
+  assert.equal(events.some(event => event.type === 'agent.invocation_failed'), false);
+});
+
+for (const name of ['edit', 'write'] as const) test(`timeout then concurrent close drains a paused native ${name} without late writes`, async t => {
+  const f = await fixture(t); const events: AgentAuditEvent[] = [], phases: string[] = [];
+  await writeFile(join(f.work, 'edit.txt'), 'alpha');
+  let resume!: () => void, started!: () => void;
+  const paused = new Promise<void>(done => { started = done; });
+  const gate = new Promise<void>(done => { resume = done; });
+  const tools = workspaceTools(f.work, { onControlledWrite: async entry => {
+    phases.push(entry.phase);
+    if (entry.phase === 'before') { started(); await gate; }
+  } });
+  const args = name === 'edit' ? { path: 'edit.txt', oldText: 'alpha', newText: 'beta' } : { path: 'edit.txt', content: 'beta' };
+  const session = await new AgentHost(new PiModelCaller(config, native([turn(name, args)]))).createSession({
+    role: 'recovery', systemPrompt: 'Write', tools, audit: { append: async event => { events.push(event); } },
+  });
+  const pending = session.work({ promptContent: 'Write the file', timeoutMs: 100 });
+  await paused;
+  const result = await pending;
+  assert.equal(result.status, 'failed');
+  if (result.status === 'failed') assert.equal(result.failure.code, 'agent_timeout');
+  let closed = 0;
+  const first = session.close().then(() => { closed++; });
+  const second = session.close().then(() => { closed++; });
+  await new Promise(done => setImmediate(done));
+  assert.equal(closed, 0);
+  assert.equal(events.some(event => event.type === 'agent.session_completed'), false);
+  resume();
+  await Promise.all([first, second]);
+  assert.equal(closed, 2);
+  assert.equal(await readFile(join(f.work, 'edit.txt'), 'utf8'), 'alpha');
+  assert.deepEqual(phases, ['before', 'failed']);
+  assert.equal(events.at(-1)?.type, 'agent.session_completed');
+  assert.equal(events.filter(event => event.type === 'agent.session_completed').length, 1);
+});
+
+for (const name of ['edit', 'write'] as const) test(`already aborted ${name} never begins a controlled write`, async t => {
+  const f = await fixture(t);
+  await writeFile(join(f.work, 'edit.txt'), 'alpha');
+  const controller = new AbortController(); controller.abort();
+  const args = name === 'edit' ? { path: 'edit.txt', oldText: 'alpha', newText: 'beta' } : { path: 'new/nested.txt', content: 'beta' };
+  await assert.rejects(f.get(name).execute(args, controller.signal), { name: 'AbortError' });
+  assert.equal(f.counts().writes, 0);
+  assert.deepEqual(await readdir(f.work), ['edit.txt']);
+  assert.equal(await readFile(join(f.work, 'edit.txt'), 'utf8'), 'alpha');
+});

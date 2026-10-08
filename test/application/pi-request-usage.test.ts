@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Type } from '@sinclair/typebox';
 import { createAssistantMessageEventStream, type AssistantMessage, type Model } from '@earendil-works/pi-ai';
 import { PiProviderAdapter, type PiModels } from '../../src/infrastructure/agent/providers/pi/adapter.js';
+import { AgentHost } from '../../src/infrastructure/agent/host.js';
 import { piRequestUsage } from '../../src/infrastructure/agent/providers/pi/request-usage.js';
 import { summarizeComparisonEvaluationUsage } from '../../src/application/comparison-evaluation-usage.js';
 import type { EventEnvelope } from '../../src/core/schema.js';
@@ -145,7 +146,9 @@ test('usage persistence failure prevents tools and cannot be silently swallowed'
   ], onModelUsage: async () => { throw new Error('Usage store failed'); } });
   await assert.rejects(session.append({ content: 'go', signal: new AbortController().signal }), /Usage store failed/);
   assert.equal(writes, 0);
-  await assert.rejects(session.waitForIdle!(), /Usage store failed/);
+  await session.waitForIdle!();
+  await assert.rejects(session.append({ content: 'retry', signal: new AbortController().signal }), /Usage store failed/);
+  assert.equal(writes, 0, 'draining an already delivered error must not clear the next-request gate');
 });
 
 test('cancelled append waits for pending usage auditing before it settles', async () => {
@@ -161,4 +164,35 @@ test('cancelled append waits for pending usage auditing before it settles', asyn
   assert.equal(audited, true);
   session.cancel();
   await session.waitForIdle!();
+});
+
+test('idle usage drain skips only an already propagated failure with no new failed tasks', async () => {
+  const failure = new Error('actual audit failure');
+  const { models } = fixture([response('stop', [])]);
+  const usage = piRequestUsage(models, { onModelUsage: async () => { throw failure; } });
+  await usage.stream(model, { messages: [] });
+  await assert.rejects(usage.flush({ failure }), error => error === failure, 'new pending failure must propagate even with identical identity');
+  await usage.flush({ failure });
+  await assert.rejects(usage.flush({ failure: new Error('unrelated') }), error => error === failure);
+  await assert.rejects(usage.flush(), error => error === failure);
+  await assert.rejects(usage.stream(model, { messages: [] }), error => error === failure, 'sticky failure still blocks another model request');
+});
+
+test('close propagates a late usage audit failure after an invocation already timed out', async () => {
+  const { adapter } = fixture([response('stop', [{ type: 'text', text: 'Done' }])]);
+  const failure = new Error('late usage audit failure');
+  let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>(done => { release = done; });
+  const started = new Promise<void>(done => { entered = done; });
+  const session = await new AgentHost(adapter).createSession({ role: 'recovery', systemPrompt: 'Check', audit: {
+    append: async event => { if (event.type === 'agent.usage_reported') { entered(); await gate; throw failure; } },
+  } });
+  const pending = session.work({ promptContent: 'Check', timeoutMs: 100 });
+  await started;
+  const result = await pending;
+  assert.equal(result.status, 'failed');
+  if (result.status === 'failed') assert.equal(result.failure.code, 'agent_timeout');
+  const closed = assert.rejects(session.close(), error => error === failure);
+  release();
+  await closed;
 });

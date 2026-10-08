@@ -121,6 +121,7 @@ export class PiProviderAdapter implements ProviderAdapter {
     const exposure = invocationToolExposure(agent, registeredTools);
     rejections.subscribe(agent);
     subscribeVisibleAssistant(agent, input.onAssistantVisible, recordFailure);
+    let appendFailure: unknown;
     return {
       inputCapabilities: [...model.input],
       async append(request) {
@@ -128,18 +129,24 @@ export class PiProviderAdapter implements ProviderAdapter {
         if (signal.aborted) throw abortError();
         exposure.enter(allowedToolNames);
         deadline = invocationYieldDeadline(agent, signal, yieldDeadline);
+        appendFailure = undefined;
         try {
-          return await appendPiPrompt({ agent, model, models, effort, request, deadline, turnYield, usage, input });
-        } finally {
-          try { try { await agent.waitForIdle(); } finally { await usage.flush(); } }
-          finally { deadline.dispose(); deadline = undefined; turnYield.policy = undefined; exposure.restore(); }
+          try {
+            return await appendPiPrompt({ agent, model, models, effort, request, deadline, turnYield, usage, input });
+          } finally {
+            try { try { await agent.waitForIdle(); } finally { await usage.flush(); } }
+            finally { deadline.dispose(); deadline = undefined; turnYield.policy = undefined; exposure.restore(); }
+          }
+        } catch (error) {
+          appendFailure = error;
+          throw error;
         }
       },
       cancel(): void {
         active = false;
         agent.abort();
       },
-      waitForIdle: async () => { try { await agent.waitForIdle(); } finally { await usage.flush(); } },
+      waitForIdle: async () => { try { await agent.waitForIdle(); } finally { await usage.flush({ failure: appendFailure }); } },
       setToolsEnabled(enabled: boolean): void { toolsEnabled = enabled; },
     };
   }

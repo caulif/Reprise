@@ -28,6 +28,8 @@ Recovery 工具以工作副本为 cwd，受控文件写入限制在该根内。s
 
 本机 shell 隔离不是全局容器沙箱；凭据目录、全局配置和外部系统不在恢复能力内。Windows 11 是已验证平台，Recovery 工具自己的 shell 发现链不能与通用 Runtime spawn 规则混为一谈。
 
+受控 edit/write 在开始及原子提交前检查取消；Session close/cancel 等待 Provider 工具与审计收尾后才记录会话终态，工作区释放不得越过收尾边界。精确编辑原文缺失或不唯一仍作为工具错误审计并允许模型纠正；真实文件系统、journal 与审计故障保持调用失败。见[工具取消与编辑前置条件](../decisions/accepted/2026-10-08-agent-tool-cancellation-and-edit-preconditions.md)。
+
 ## 接受与 Git 安全
 
 [收尾流程](../../src/application/recovery/run-finalize.ts) 先验证 Provider 结果，再执行任务前 HEAD 检查；只有 ready 且未被该机械闸门阻挡才自动接受。blocked 保留为缺关键输入，任务前检查失败为 blocked_by_safety，二者不能混同。路径存在或测试通过不证明历史起点等价。

@@ -183,6 +183,7 @@ export interface ProviderSession {
   readonly inputCapabilities?: readonly string[];
   append(input: { content: string; images?: readonly ImageContent[]; signal: AbortSignal; yieldAfterTurn?: FreeformWorkRequest['yieldAfterTurn']; allowedToolNames?: readonly string[]; yieldDeadline?: FreeformWorkRequest['yieldDeadline'] }): Promise<string | { status: "yielded"; reason: string }>;
   cancel(): void;
+  /** Required when cancellation can leave tool execution or audit writes in flight. */
   waitForIdle?(): Promise<void>;
   setToolsEnabled?(enabled: boolean): void;
 }
