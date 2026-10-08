@@ -347,8 +347,8 @@ function editTool(ctx: RecoveryToolContext): AgentToolDefinition {
         await assertRegular(path.absolute);
         const current = await readFile(path.absolute, "utf8");
         const index = current.indexOf(oldText);
-        if (index < 0) throw new ToolPreconditionRejected("edit_match", "oldText was not found in the file.");
-        if (current.indexOf(oldText, index + 1) >= 0) throw new ToolPreconditionRejected("edit_match", "oldText matches more than once; make it unique.");
+        if (index < 0) throw new ToolPreconditionRejected("edit_text_mismatch", "oldText was not found in the file. Read the current file and retry with one exact text span.");
+        if (current.indexOf(oldText, index + 1) >= 0) throw new ToolPreconditionRejected("edit_text_mismatch", "oldText matches more than once; make it unique. Read the current file and retry with one exact text span.");
         const next = `${current.slice(0, index)}${newText}${current.slice(index + oldText.length)}`;
         if (Buffer.byteLength(next) > MAX_BYTES) throw new Error(`content exceeds ${MAX_BYTES} bytes.`);
         await journalControlledRecoveryWrite(

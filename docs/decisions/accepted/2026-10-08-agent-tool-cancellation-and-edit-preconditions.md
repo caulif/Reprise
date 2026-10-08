@@ -12,7 +12,7 @@ Session close 与 cancel 共用一次收尾 Promise，首次关闭决定唯一�
 
 workspace edit/write 在执行开始检查取消；原子写接受可选 AbortSignal，在临时写入前及目标 rename 前检查。journal before 已落盘后取消仍写 failed 配对；已开始的文件系统操作不能撤销，关闭等待真实 idle 后才能释放工作区。
 
-只有 edit 的 oldText 缺失与不唯一两种无副作用匹配前置失败使用既有 ToolPreconditionRejected 通道（edit_match）。错误仍审计并作为原生工具错误返回模型，后续纠正成功可正常完成调用。文件系统、journal、工具审计、完成回调等真实故障仍致命，不按消息文本或错误名称识别可恢复性。
+只有 edit 的 oldText 缺失与不唯一两种无副作用匹配前置失败使用既有 ToolPreconditionRejected 通道（edit_text_mismatch）。错误仍审计并作为原生工具错误返回模型，后续纠正成功可正常完成调用。文件系统、journal、工具审计、完成回调等真实故障仍致命，不按消息文本或错误名称识别可恢复性。
 
 RoleSessions.cancel 仅忽略已由 get 接收的创建失败；实际取消回调失败原样传播，同时移除该缓存项。
 
