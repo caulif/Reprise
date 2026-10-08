@@ -21,14 +21,16 @@ export class RoleSessions {
 
   async cancel(key: string, run: (session: AgentSessionHost) => Promise<void>): Promise<void> {
     const pending = this.#sessions.get(key);
-    if (pending) {
-      try {
-        await run(await pending);
-      } catch {
-        // Session creation failed; the in-flight request already surfaces that error.
-      }
-    }
     this.#sessions.delete(key);
+    if (!pending) return;
+    let session: AgentSessionHost;
+    try {
+      session = await pending;
+    } catch {
+      // Only Session creation failed; the in-flight get already surfaces that error.
+      return;
+    }
+    await run(session);
   }
 
   async release(key: string): Promise<void> {

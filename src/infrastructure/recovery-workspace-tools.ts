@@ -330,8 +330,9 @@ function editTool(ctx: RecoveryToolContext): AgentToolDefinition {
       oldText: Type.String({ minLength: 1, maxLength: MAX_BYTES }),
       newText: Type.String({ maxLength: MAX_BYTES }),
     }),
-    execute: async (params) =>
+    execute: async (params, signal) =>
       limit(async () => {
+        signal.throwIfAborted();
         const value = params as { path?: unknown; oldText?: unknown; newText?: unknown };
         const path = resolveWritePath(ctx, requiredString(value.path, "path"));
         assertWritablePath(ctx, path);
@@ -346,8 +347,8 @@ function editTool(ctx: RecoveryToolContext): AgentToolDefinition {
         await assertRegular(path.absolute);
         const current = await readFile(path.absolute, "utf8");
         const index = current.indexOf(oldText);
-        if (index < 0) throw new Error("oldText was not found in the file.");
-        if (current.indexOf(oldText, index + 1) >= 0) throw new Error("oldText matches more than once; make it unique.");
+        if (index < 0) throw new ToolPreconditionRejected("edit_match", "oldText was not found in the file.");
+        if (current.indexOf(oldText, index + 1) >= 0) throw new ToolPreconditionRejected("edit_match", "oldText matches more than once; make it unique.");
         const next = `${current.slice(0, index)}${newText}${current.slice(index + oldText.length)}`;
         if (Buffer.byteLength(next) > MAX_BYTES) throw new Error(`content exceeds ${MAX_BYTES} bytes.`);
         await journalControlledRecoveryWrite(
@@ -355,7 +356,7 @@ function editTool(ctx: RecoveryToolContext): AgentToolDefinition {
             tool: "edit",
             relativePath: path.relative,
             absolutePath: path.absolute,
-            write: () => writeAtomic(path.absolute, next),
+            write: () => writeAtomic(path.absolute, next, signal),
           },
           options.onControlledWrite,
         );
@@ -376,8 +377,9 @@ function writeTool(ctx: RecoveryToolContext): AgentToolDefinition {
       path: Type.String({ minLength: 1, maxLength: 512 }),
       content: Type.String({ maxLength: MAX_BYTES }),
     }),
-    execute: async (params) =>
+    execute: async (params, signal) =>
       limit(async () => {
+        signal.throwIfAborted();
         const value = params as { path?: unknown; content?: unknown };
         const path = resolveWritePath(ctx, requiredString(value.path, "path"));
         assertWritablePath(ctx, path);
@@ -391,13 +393,14 @@ function writeTool(ctx: RecoveryToolContext): AgentToolDefinition {
         const containmentRoot = writeContainmentRoot(path);
         await assertNoSymlinkAncestors(containmentRoot, path.absolute);
         await assertWritableFile(path.absolute);
+        signal.throwIfAborted();
         await mkdir(resolve(path.absolute, ".."), { recursive: true });
         await journalControlledRecoveryWrite(
           {
             tool: "write",
             relativePath: path.relative,
             absolutePath: path.absolute,
-            write: () => writeAtomic(path.absolute, content),
+            write: () => writeAtomic(path.absolute, content, signal),
           },
           options.onControlledWrite,
         );

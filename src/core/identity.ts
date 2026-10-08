@@ -40,11 +40,14 @@ export async function copyAtomic(from: string, to: string): Promise<void> {
 }
 
 /** Replaces a file through a temporary sibling, so a reader never observes a partial write. */
-export async function writeAtomic(path: string, value: string | Uint8Array): Promise<void> {
+export async function writeAtomic(path: string, value: string | Uint8Array, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.tmp-${process.pid}-${Math.random().toString(16).slice(2)}`;
-  await writeFile(temporary, value, { flag: 'wx' });
   try {
+    signal?.throwIfAborted();
+    await writeFile(temporary, value, { flag: 'wx', ...(signal ? { signal } : {}) });
+    signal?.throwIfAborted();
     await rename(temporary, path);
   } catch (error) {
     await unlink(temporary).catch(() => undefined);

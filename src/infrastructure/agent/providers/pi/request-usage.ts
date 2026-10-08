@@ -11,15 +11,19 @@ export function piRequestUsage(source: PiModels, input: Pick<Hooks, 'onModelUsag
   const pending: Promise<void>[] = [];
   let auditFailed = false;
   let auditFailure: unknown;
-  const flush = async () => {
-    const tasks = pending.splice(0);
+  const flush = async (alreadyReported?: { failure: unknown }) => {
+    const tasks = [...pending];
     const results = await Promise.allSettled(tasks);
+    for (const task of tasks) {
+      const index = pending.indexOf(task);
+      if (index >= 0) void pending.splice(index, 1);
+    }
     const failure = results.find((result) => result.status === 'rejected');
     if (failure?.status === 'rejected') {
       auditFailed = true;
       auditFailure = failure.reason;
     }
-    if (auditFailed) throw auditFailure;
+    if (failure?.status === 'rejected' || (auditFailed && (!alreadyReported || auditFailure !== alreadyReported.failure))) throw auditFailure;
   };
   const report = async (message: { model: string; usage: AgentUsageFacts['usage']; stopReason?: string; errorMessage?: string }, scope: AgentUsageFacts['scope'], signal?: AbortSignal) => {
     const responseFailure = scope === 'generation' ? onProviderFailure : onFailure;

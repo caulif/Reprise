@@ -32,6 +32,7 @@ export class AgentSessionHost {
   #cancelled = false;
   #closed = false;
   #busy = false;
+  #shutdown: Promise<void> | undefined;
   readonly #abort = new AbortController();
   #droppedRequestIds = new Set<string>();
 
@@ -70,42 +71,39 @@ export class AgentSessionHost {
 
   async cancel(factRef?: string, requestId?: string): Promise<void> {
     if (requestId) this.#droppedRequestIds.add(requestId);
-    if (this.#cancelled) return;
+    if (this.#shutdown) return this.#shutdown;
     this.#cancelled = true;
-    this.#closed = true;
-    this.#abort.abort();
-    this.#session?.cancel();
-    await this.#session?.waitForIdle?.();
-    const invocationId = this.#cursor.invocationId;
-    if (invocationId) {
-      await this.#audit?.append({
-        type: "agent.invocation_cancelled",
-        sessionId: this.#sessionId,
-        role: this.#role,
-        payload: { invocationId, ...(factRef ? { factRef } : {}) },
-      });
-    }
-    await this.#audit?.append({
-      type: "agent.session_cancelled",
-      sessionId: this.#sessionId,
-      role: this.#role,
-      payload: factRef ? { factRef } : {},
-    });
+    return this.#finish('agent.session_cancelled', factRef);
   }
 
   async close(): Promise<void> {
-    if (this.#closed || this.#cancelled) {
-      this.#closed = true;
-      return;
-    }
+    if (this.#shutdown) return this.#shutdown;
+    return this.#finish('agent.session_completed');
+  }
+
+  #finish(type: 'agent.session_cancelled' | 'agent.session_completed', factRef?: string): Promise<void> {
     this.#closed = true;
-    this.#session?.cancel();
-    await this.#audit?.append({
-      type: "agent.session_completed",
-      sessionId: this.#sessionId,
-      role: this.#role,
-      payload: {},
-    });
+    const invocationId = this.#cursor.invocationId;
+    this.#abort.abort();
+    this.#shutdown = (async () => {
+      this.#session?.cancel();
+      await this.#session?.waitForIdle?.();
+      if (type === 'agent.session_cancelled' && invocationId) {
+        await this.#audit?.append({
+          type: 'agent.invocation_cancelled',
+          sessionId: this.#sessionId,
+          role: this.#role,
+          payload: { invocationId, ...(factRef ? { factRef } : {}) },
+        });
+      }
+      await this.#audit?.append({
+        type,
+        sessionId: this.#sessionId,
+        role: this.#role,
+        payload: factRef ? { factRef } : {},
+      });
+    })();
+    return this.#shutdown;
   }
 
   work(request: FreeformWorkRequest & ({ yieldAfterTurn: NonNullable<FreeformWorkRequest['yieldAfterTurn']> } | { yieldDeadline: NonNullable<FreeformWorkRequest['yieldDeadline']> })): Promise<FreeformInvocation>;
