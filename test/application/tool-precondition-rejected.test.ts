@@ -13,6 +13,66 @@ import { PiProviderAdapter } from '../../src/infrastructure/agent/providers/pi/a
 
 const model: Model<'openai-completions'> = { id: 'fixture', name: 'fixture', api: 'openai-completions', provider: 'fixture', baseUrl: 'https://example.test', reasoning: false, input: ['text'], contextWindow: 128_000, maxTokens: 16_384, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 const config = { schemaVersion: 2 as const, provider: { kind: 'pi-catalog' as const, id: 'fixture' }, providerId: 'fixture', modelId: 'fixture', effort: 'low' as const };
+
+for (const oldText of ['absent', 'same']) test(`edit text precondition (${oldText}) rejects before journaling or mutation`, async t => {
+  const f = await fixture(t);
+  await writeFile(join(f.work, 'notes.md'), 'same first\nsame second');
+  await assert.rejects(f.get('edit').execute({ path: 'notes.md', oldText, newText: 'changed' }, new AbortController().signal),
+    error => error instanceof ToolPreconditionRejected && error.reason === 'edit_text_mismatch');
+  assert.equal(await readFile(join(f.work, 'notes.md'), 'utf8'), 'same first\nsame second');
+  assert.deepEqual(f.counts(), { spawns: 0, writes: 0 });
+});
+
+for (const role of ['recovery', 'comparison'] as const) for (const oldText of ['absent', 'same']) {
+  test(`${role} native edit (${oldText}) can read, correct and complete after text rejection`, async t => {
+    const f = await fixture(t); const contexts: Context[] = [], events: AgentAuditEvent[] = [];
+    await writeFile(join(f.work, 'notes.md'), 'same first\nsame second');
+    const responses = [turn('edit', { path: 'notes.md', oldText, newText: 'changed' }), turn('read', { path: 'notes.md' }),
+      turn('edit', { path: 'notes.md', oldText: 'same first', newText: 'changed first' }),
+      message([{ type: 'text', text: role === 'recovery' ? '{"status":"ready"}' : 'Done' }], 'stop')];
+    const session = await new AgentHost(new PiModelCaller(config, native(responses, contexts))).createSession({
+      role, systemPrompt: 'Correct edit inputs', tools: f.tools, audit: { append: async event => { events.push(event); } },
+    });
+    const result = role === 'recovery'
+      ? await session.request<{ status: 'ready' }>({ promptContent: 'Conclude recovery', schema: Type.Object({ status: Type.Literal('ready') }),
+        allowTools: true, timeoutMs: 2_000, maxRepairAttempts: 0 })
+      : await session.work({ promptContent: 'Update notes', timeoutMs: 2_000 });
+    assert.equal(result.status, 'completed', JSON.stringify(result));
+    assert.equal(await readFile(join(f.work, 'notes.md'), 'utf8'), 'changed first\nsame second');
+    assert.deepEqual(f.counts(), { spawns: 0, writes: 2 });
+    assert.ok(events.some(event => event.type === 'agent.tool_failed' && event.payload.tool === 'edit'));
+    const errorResult = contexts[1]!.messages.find(item => item.role === 'toolResult');
+    assert.ok(errorResult && 'isError' in errorResult && errorResult.isError);
+    assert.match(JSON.stringify(errorResult), /Read the current file and retry/);
+    assert.match(JSON.stringify(contexts[2]!.messages), /same first/);
+    assert.equal(events.some(event => event.type === 'agent.invocation_failed'), false);
+  });
+}
+
+for (const mode of ['audit', 'persist', 'read'] as const) test(`edit rejection does not hide actual ${mode} failure`, async t => {
+  const f = await fixture(t); const events: AgentAuditEvent[] = []; let failures = 0;
+  await writeFile(join(f.work, 'notes.md'), 'current');
+  const tools = workspaceTools(f.work, { onControlledWrite: async () => {
+    if (mode === 'persist') { failures++; throw new Error('Actual edit journal failure'); }
+  } });
+  const responses = [turn('edit', { path: 'notes.md', oldText: 'absent', newText: 'changed' }),
+    turn('edit', { path: mode === 'read' ? 'missing.md' : 'notes.md', oldText: 'current', newText: 'changed' }),
+    message([{ type: 'text', text: 'Done' }], 'stop')];
+  const session = await new AgentHost(new PiModelCaller(config, native(responses))).createSession({ role: 'recovery',
+    systemPrompt: 'Correct edits', tools, audit: { append: async event => {
+      events.push(event);
+      if (mode === 'audit' && event.type === 'agent.tool_failed' && !event.payload.nativeHook) {
+        failures++; throw new ToolPreconditionRejected('edit_text_mismatch', 'Actual edit failure audit failure');
+      }
+    } },
+  });
+  const result = await session.work({ promptContent: 'Update notes', timeoutMs: 2_000 });
+  assert.equal(result.status, 'failed', JSON.stringify(result));
+  if (mode !== 'read') assert.ok(failures > 0);
+  else assert.ok(events.some(event => event.type === 'agent.tool_failed' && /ENOENT/.test(String(event.payload.message))));
+  if (mode !== 'audit') assert.equal(await readFile(join(f.work, 'notes.md'), 'utf8'), 'current');
+  assert.equal(events.some(event => event.type === 'agent.invocation_completed'), false);
+});
 function message(content: AssistantMessage['content'], stopReason: AssistantMessage['stopReason'] = 'toolUse'): AssistantMessage {
   return { role: 'assistant', api: model.api, provider: model.provider, model: model.id, content, stopReason, timestamp: Date.now(), usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
 }

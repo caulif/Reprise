@@ -20,6 +20,8 @@ Host 的机械检查报告缺失文件、越界写入、source tripwire、schema
 
 `ready` 表示存在合理的可执行起点，非关键未知可以保留；`blocked` 表示继续需要猜测关键输入、任务条件或结果边界，且必须带 unresolved。Recovery 失败、取消、超时和无效输出都有 failure stage，但不应伪造为成功恢复。
 
+工具的确定性前置条件拒绝保留失败审计和模型可见错误，允许模型纠正后继续。同一 workspace broker 的 `edit` 在读取当前文件后，若 `oldText` 未命中或不唯一，会在 journal 和写入前以 `ToolPreconditionRejected(edit_text_mismatch)` 拒绝；不会因该拒绝锁存整轮致命失败。实际文件系统、symlink、受控写入、审计和完成回调失败仍终止 invocation，不把未知异常当作可恢复反馈。该规则也适用于使用同一 broker 的其他 Agent，详见[文本编辑前置条件决策](../decisions/accepted/2026-10-08-recoverable-edit-text-preconditions.md)。
+
 ## 隔离边界
 
 Recovery 工具以工作副本为 cwd，受控文件写入限制在该根内。source/、observations/、playbook 只读；Host 通过路径边界、source 写锁和 fingerprint 保护 source。候选运行随后从接受的 baseline 准备独立副本，Runtime 启动上下文声明 `workspace: isolated`。Git sink、捕获 artifacts 和 cleanup 都归 Harness 管理。
