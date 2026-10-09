@@ -26,11 +26,11 @@ History 从已校验的提交日志前缀构造只读附件读取器，每个 Se
 
 严格三会话路径向模型提供单一 schema 的 `update_comparison_findings_delta`，delta 的 `addedFindings` / `addedQuestions` 可新增观察或问题；已有每个 ID 仍须完整且恰好一次 retain/replace，新增不能覆盖旧身份。Host 根据真实当前记录合成 canonical submission，继续经过原 `Value.Check`、来源及 catalog/findings 绑定校验，不补造语义内容。完整工具保留兼容，两个名称在全部阶段、完成回调和副作用入口服从相同守卫。
 
-正常调查和独立来源审查每6次来源工具后在完整 turn 边界进入只准保存的窗口，禁止读取、渲染、登记和其他副作用。只有真实 accepted 且当前实际非空 saved state 匹配才可继续；pending 保存可回到下一来源批次，不能冒充 ready，ready 才可结束该调查。每个阶段最多5窗口，Session、累计资源和绝对截止不重置：调查仍共享120秒，独立来源初查及保存仍共享110秒并受审阅总截止限制。下述 `independent_findings_pending` 指来源完成边界，窗口内 accepted pending 本身不立即结束来源阶段。旧端口保持兼容，有限收尾、稿件失效和实际核稿/inspection/preview要求不放宽。见[有界审阅收敛](../decisions/accepted/2026-10-06-comparison-bounded-review-convergence.md)。
+正常调查和独立来源审查每6次来源工具后在完整 turn 边界进入只准保存的窗口，禁止读取、渲染、登记和其他副作用。只有真实 accepted 且当前实际非空 saved state 匹配才可继续；pending 保存可回到下一来源批次，不能冒充 ready，ready 才可结束该调查。每个阶段最多5窗口，Session、累计资源和绝对截止不重置：调查仍共享120秒；独立来源初查限110秒，复审保存使用独立且不重置的截止，并受整体收尾预留限制。下述 `independent_findings_pending` 指来源完成边界，窗口内 accepted pending 本身不立即结束来源阶段。旧端口保持兼容，有限收尾、稿件失效和实际核稿/inspection/preview要求不放宽。见[有界审阅收敛](../decisions/accepted/2026-10-06-comparison-bounded-review-convergence.md)。
 
 SDK 参数校验拒绝可能发生在 Host 应用工具入口前，仍通过既有安全 called/failed 工具事件计数；新审计只记录工具身份与拒绝类别，不复制整份无效参数或 SDK 回执。模型可见拒绝继续由脱敏 generation 快照复原。拒绝不代表应用工具执行成功；审计失败保持 fatal。增量保存及有界窗口不构成实际模型性能或稳定性验收。
 
-新草稿生产调查通过同进程 `hasSavedFindings` 读取 discovery 的真实接受状态。首次 snapshot 接受前，调查执行边界拒绝 shell/render/register，read 与导航按原预算开放，模型须先保存最小完整的任务标准、双侧 final（未知可 unavailable）、空或实际 findings、pending 问题与 nextCheck；非法更新与口头承诺不能解锁。接受仅解除首次检查点，pending 与旧 catalog 仍不能 compose；重要检查后提示要求完整替换并保留问题历史，不新增独立阶段、不重复扩大工具结果。closure 与独立 source pass 按后述严格路径共享阶段截止或旧端口兼容规则推进，整体硬保护和取消先检查，旧无 getter 端口保持兼容。见[首次 findings 检查点](../decisions/accepted/2026-10-05-comparison-first-findings-checkpoint.md)。
+新草稿生产调查通过同进程 `hasSavedFindings` 读取 discovery 的真实接受状态。首次 snapshot 接受前，调查执行边界拒绝 shell/render/register，read 与导航按原预算开放，模型须先保存最小完整的任务标准、双侧 final（未知可 unavailable）、空或实际 findings、pending 问题与 nextCheck；非法更新与口头承诺不能解锁。接受仅解除首次检查点，pending 与旧 catalog 仍不能 compose；重要检查后提示要求完整替换并保留问题历史，不新增独立阶段、不重复扩大工具结果。closure 与独立 source pass 按后述严格路径分配截止或旧端口兼容规则推进，整体硬保护和取消先检查，旧无 getter 端口保持兼容。见[首次 findings 检查点](../decisions/accepted/2026-10-05-comparison-first-findings-checkpoint.md)。
 
 Session 以有效 Provider 冻结身份、API、输入能力、声明来源与无凭据配置指纹，Session 声明冲突则取消。图片工具结果、压缩 retained tail 和最终 `agent.model_request.images` 保存不可变附件的 hash、长度与 artifactId，不存 base64。最终清单反映 Pi 转换后的实际图片；视觉声明和离线恢复优先依据这些实际清单，只有无清单的历史日志沿用旧交付事实。重建校验附件，无附件或二进制 resolver 时标记不完整，读取失败与 hash 错误有诊断。文本裁剪保留最近 12 个原生图片块，旧图片换成 hash 与重新读取提示。
 
@@ -108,7 +108,7 @@ Comparison 每次使用独立 attempt。严格三会话路径的调查、短作�
 
 严格三会话路径独立 reviewer 使用专用短系统提示，保留实际来源、输出链、反证、支持范围、问题历史、Host指标和版本发布约束；首次source输入隔离作者对话，但包含当前saved findings的绑定及待证假设，保存记录始终不作事实认证，优先绑定 delta 与紧凑 decision，减少重复输入和输出。旧端口保留通用提示，不调整模型参数。严格核稿仅 completed 或明确 final_inspection_ready 才进入预览，output_limit 或阶段截止不能凭旧 inspection 发布。
 
-严格三会话路径且配置 maxElapsedMs 时，初存、调查及 findings 收尾共享同一个调查绝对截止；作者、独立来源审阅（含正文检查点、findings闭合及唯一补查）、audit 和 preview 也各有一次共享绝对截止。600秒基准下阶段上限分别为120/90/150/90/90秒，后续预留分别为480/390/240/150/60秒；较小整体额度同比缩放，较大额度不扩大阶段上限。来源初查与保存合并窗口另限110秒、唯一补查另限30秒，两者不得越过共享审阅截止。更小 investigationMs 继续限制调查；严格调查已有实际保存且当前ready时，在完整工具turn提前findings_ready让出，不必须耗满上限。重复进入阶段、修复及 output_limit 续写不重置截止，过期不发新请求，修复工具也不豁免。阶段快照记录 workStage、workDeadlineAt、workRemainingMs，实际控制由 invocation-start 的 yieldDeadline 复原。截止是未完成过程，不认证语义；实际已保存观察及关键未知保留，真实错误、取消、持久化/审计和整体硬限优先。非严格端口保留原调查局部截止与 closure 兼容策略。见[有界审阅收敛](../decisions/accepted/2026-10-06-comparison-bounded-review-convergence.md)。
+严格三会话路径且配置 maxElapsedMs 时，初存、调查及 findings 收尾共享同一个调查绝对截止；作者、独立来源审阅（含唯一补查）、audit 和 preview 也各有一次共享绝对截止，复审保存/正文交付与最终发现闭合另按下述独立截止执行。600秒基准下调查、作者、来源审阅、audit、preview 上限分别为120/90/150/90/90秒，后续预留分别为480/390/240/150/60秒；较小整体额度同比缩放，较大额度不扩大阶段上限。来源初查另限110秒、唯一补查另限30秒，两者不得越过来源审阅截止。复审 source-save 和实际草稿交付 inspection 共享独立检查点截止，最终 review-findings 使用另一个独立截止，均为首次进入后最多90秒，保存窗口、inspection 或 closure 重试不重置；二者均受整体截止减240秒保护余量约束，仅利用前序省下的时间，不能挤占核稿、预览及持久化预留。见[复审保存独立截止](../decisions/accepted/2026-10-09-comparison-review-save-deadline.md)。更小 investigationMs 继续限制调查；严格调查已有实际保存且当前ready时，在完整工具turn提前findings_ready让出，不必须耗满上限。重复进入阶段、修复及 output_limit 续写不重置截止，过期不发新请求，修复工具也不豁免。阶段快照记录 workStage、workDeadlineAt、workRemainingMs，实际控制由 invocation-start 的 yieldDeadline 复原。截止是未完成过程，不认证语义；实际已保存观察及关键未知保留，真实错误、取消、持久化/审计和整体硬限优先。非严格端口保留原调查局部截止与 closure 兼容策略。见[有界审阅收敛](../decisions/accepted/2026-10-06-comparison-bounded-review-convergence.md)。
 
 显式启用 turn-yield 的 Pi 调用遇到输出截断 `length` 时返回 `output_limit`，不调用完成策略或认证该回合已完成。Comparison 在同 work/phase/pass 内最多续写一次，保留 Session、审计 epoch、已执行工具结果和首次局部绝对截止；两次请求都计原资源账本，第二次仍截断则失败。真实错误、审计错误、取消和硬限优先，不以纯推理耗完输出额度作为审稿通过。写稿和审阅输入同时呈现当前 Host 双侧指标，缺失为 unknown、零仍为零，避免继承旧报告价格结论；这些输入由原事件及 generation snapshot 复原，仍不能认证自然语言判断。见[有界截断续写](../decisions/accepted/2026-10-06-comparison-output-limit-continuation.md)。
 
@@ -142,7 +142,7 @@ Comparison 合成评估的新输入由每个隔离 row 的 `evaluation-inputs.js
 | `checksum` | string | 否 |
 <!-- END GENERATED event-catalog -->
 
-严格三会话路径所有审阅 work pass 使用共享阶段绝对截止；扩展调查在 attempt 剩余请求不超过4或工具不超过6时停止，为合法修稿、inspection 和 preview 留资源，任何工具均不能越过阶段截止。实际 findings更新只校验结构与来源，不自动回答未知问题；决定性 unavailable 必须使结论 conditional/undetermined 且边界可见。非严格路径继续原复审累计软额度，repair不重置，剩余不超过6请求、20工具或90秒时拒绝扩展检索/渲染/登记。各路径硬限与取消仍生效，工具回执附真实阶段、余额和绑定，经标准事件复原；不以旧预览兜底。空资源 override 保持兼容。
+严格三会话路径审阅 work pass 按来源、保存、最终发现、核稿及预览使用各自不重置的阶段绝对截止；扩展调查在 attempt 剩余请求不超过4或工具不超过6时停止，为合法修稿、inspection 和 preview 留资源，任何工具均不能越过阶段截止。实际 findings更新只校验结构与来源，不自动回答未知问题；决定性 unavailable 必须使结论 conditional/undetermined 且边界可见。非严格路径继续原复审累计软额度，repair不重置，剩余不超过6请求、20工具或90秒时拒绝扩展检索/渲染/登记。各路径硬限与取消仍生效，工具回执附真实阶段、余额和绑定，经标准事件复原；不以旧预览兜底。空资源 override 保持兼容。
 
 Comparison的read结果现在只将实际存在的available/truncated/offset/byteLength/returnedBytes/totalBytes/nextCursor白名单投影到模型可见hostProgress.readCoverage；类型不符或缺失不补造false/0，不透出物理路径/任意details。读取覆盖描述本次返回范围，不保证原运行完整记录；模型不能因正文很长猜测截断。该反馈与原工具结果一同审计/压缩/恢复，文本和原生图片工具实际块均可见，旧直接端口不受影响。
 
@@ -150,7 +150,7 @@ Comparison 的 `quote_evidence` 只读取当前 catalog 的已登记文本引用
 
 新生产独立复审须在最后一次接受修订后重新读取实际正文，绑定当前稿 digest/catalog/findings/声明；作者阶段读取不跨 Session 生效。预览仍负责布局，不返回全部解释正文，不能代替该读取。恢复对新启用契约的 attempt 校验当前 review Session 的读取记录，旧未启用报告保持兼容。主文250/600以外，单差异附属解释最多400、多差异1000字符，包括隐藏或折叠解释，排除已核验的固定原文引文。读取与篇幅门均不认证语义正确。
 
-独立复审在同一新 Session 内先审原任务与决定性原件，再核接受稿；严格来源初始输入将保存findings作为待证假设及绑定导航，旧端口不注入作者findings；取得实际正文后仍只将保存记录作为修复假设；严格路径共享审阅阶段截止，其他旧路径累计原 review 软额度，均累计同一 attempt 硬额度。来源审查优先追实际输出链并寻找决定性反例，不能把内部目标或作者自检当作最终输出验证。第一调用失败或取消不会进入核稿，稿件 inspection/submit/preview 在来源审查阶段拒绝；read/shell 未隔离作者文件，因此该顺序保护不是完全盲化。第二调用沿用自己的来源审查上下文，修订后仍须最终正文读取和当前版本预览；正常完成不认证语义。
+独立复审在同一新 Session 内先审原任务与决定性原件，再核接受稿；严格来源初始输入将保存findings作为待证假设及绑定导航，旧端口不注入作者findings；取得实际正文后仍只将保存记录作为修复假设；严格路径按上述来源、保存与最终发现截止推进，其他旧路径累计原 review 软额度，均累计同一 attempt 硬额度。来源审查优先追实际输出链并寻找决定性反例，不能把内部目标或作者自检当作最终输出验证。第一调用失败或取消不会进入核稿，稿件 inspection/submit/preview 在来源审查阶段拒绝；read/shell 未隔离作者文件，因此该顺序保护不是完全盲化。第二调用沿用自己的来源审查上下文，修订后仍须最终正文读取和当前版本预览；正常完成不认证语义。
 
 Comparison 紧凑 decision 的 Host 范围投影按精确相等共享字段，保留依据及双侧范围映射；不同范围和未知不合并，自动文字仍计入原详情篇幅。作者不得仅为满足篇幅改变 findings 的检查范围或 disposition。workspace 工具的纯非法路径前置拒绝允许模型纠正合法虚拟路径，仍审计实际失败；权限、真实文件系统、审计及持久化错误边界不变。见[收敛改造](../decisions/accepted/2026-10-06-comparison-bounded-review-convergence.md)。
 
