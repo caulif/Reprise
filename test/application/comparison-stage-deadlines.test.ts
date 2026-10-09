@@ -55,14 +55,14 @@ test('output-limit continuation uses the original deadline while time remains', 
   assert.equal(tracker.snapshot().workRemainingMs, 10_000);
 });
 
-test('source checkpoint, one supplement and findings share a single review budget', t => {
+test('source and supplement stay bounded while findings closure has a non-renewable allowance', t => {
   t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
   const tracker = bounded();
   const sources = comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline!;
   assert.equal(sources.at, 111_000);
   t.mock.timers.tick(110_000);
   assert.equal(tracker.beforeTool('read'), 'bounded_source_timeout');
-  assert.equal(comparisonWorkDeadline(tracker, 'review', 'inspection').yieldDeadline!.at, 151_000);
+  assert.equal(comparisonWorkDeadline(tracker, 'review', 'inspection').yieldDeadline!.at, 201_000);
   t.mock.timers.tick(20_000);
   const supplement = comparisonWorkDeadline(tracker, 'review', 'review-supplement').yieldDeadline!;
   assert.equal(supplement.at, 151_000, 'the 30-second supplement is clamped to the remaining 20 seconds of shared review');
@@ -72,9 +72,11 @@ test('source checkpoint, one supplement and findings share a single review budge
   assert.equal(tracker.beforeTool('read'), 'bounded_source_timeout');
   assert.deepEqual(comparisonWorkDeadline(tracker, 'review', 'review-supplement').yieldDeadline, supplement);
   const closure = comparisonWorkDeadline(tracker, 'review', 'review-findings').yieldDeadline!;
-  assert.equal(closure.at, 151_000);
+  assert.equal(closure.at, 241_000);
   t.mock.timers.tick(1);
   assert.deepEqual(comparisonWorkDeadline(tracker, 'review', 'review-findings').yieldDeadline, closure);
+  assert.equal(tracker.beforeTool('update_comparison_findings'), undefined);
+  t.mock.timers.tick(89_999);
   assert.equal(tracker.beforeTool('update_comparison_findings'), 'bounded_source_timeout');
   assert.equal(comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline!.at, sources.at);
 });
@@ -85,8 +87,10 @@ test('late stages preserve finishing time and the final sixty seconds of total b
   t.mock.timers.tick(120_000);
   assert.equal(comparisonWorkDeadline(tracker, 'compose').yieldDeadline!.at, 211_000);
   t.mock.timers.tick(90_000);
-  assert.equal(comparisonWorkDeadline(tracker, 'review', 'review-findings').yieldDeadline!.at, 361_000);
+  assert.equal(comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline!.at, 321_000);
   t.mock.timers.tick(150_000);
+  assert.equal(comparisonWorkDeadline(tracker, 'review', 'review-findings').yieldDeadline!.at, 361_000);
+  assert.equal(tracker.beforeTool('update_comparison_findings'), 'bounded_source_timeout', 'closure cannot borrow the finishing reserve');
   const audit = comparisonWorkDeadline(tracker, 'review', 'audit').yieldDeadline!;
   assert.equal(audit.at, 451_000);
   t.mock.timers.tick(90_000);
@@ -154,7 +158,7 @@ test('legacy findings/audit/preview deadlines retain their previous opt-out sema
   assert.equal(legacy.workDeadline(), undefined);
 });
 
-test('source-save checkpoints share the original investigation and source-window absolute deadlines', t => {
+test('source-save retains investigation cutoff but gets a non-renewable review save allowance', t => {
   t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
   const tracker = bounded();
   const investigation = comparisonWorkDeadline(tracker, 'investigate').yieldDeadline!;
@@ -165,8 +169,13 @@ test('source-save checkpoints share the original investigation and source-window
   const source = comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline!;
   assert.equal(source.at, 231_000);
   t.mock.timers.tick(80_000);
-  assert.deepEqual(comparisonWorkDeadline(tracker, 'review', 'source-save').yieldDeadline, source);
+  const save = comparisonWorkDeadline(tracker, 'review', 'source-save').yieldDeadline!;
+  assert.equal(save.at, 291_000);
   t.mock.timers.tick(30_000);
+  assert.equal(tracker.beforeTool('update_comparison_findings_delta'), undefined);
+  assert.deepEqual(comparisonWorkDeadline(tracker, 'review', 'source-save').yieldDeadline, save);
+  assert.deepEqual(comparisonWorkDeadline(tracker, 'review', 'inspection').yieldDeadline, save, 'draft delivery shares the checkpoint cutoff');
+  t.mock.timers.tick(60_000);
   assert.equal(tracker.beforeTool('update_comparison_findings_delta'), 'bounded_source_timeout');
   assert.deepEqual(comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline, source);
 });

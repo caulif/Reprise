@@ -2,6 +2,8 @@
 
 状态：accepted
 
+复审 source-save 与最终 findings closure 的共享截止条款由[复审保存独立截止](2026-10-09-comparison-review-save-deadline.md)局部替代；其他契约继续有效。
+
 ## 问题
 
 独立审阅可以从真实来源发现新的决定性问题，但原 findings-only closure 不允许查证。实际接受 pending 更新后仍留在同一窄工具调用，随后再次 retain pending，无法进入核稿。另有 findings 和 audit 生成仅受整体截止约束，调查软预算不能阻止这些回合耗尽发布余量。增加恢复次数或总预算不能解决该状态冲突。首版真实校准的交互例在来源窗口取得工具结果后，没有保存独立 findings；随后 closure 单次生成无工具执行即截止。第二版交互例在调查工具上限后才保存，SDK 拒绝缺字段和额外属性的工具参数，拒绝发生在 Host 工具入口前，因此原事件计数中的零工具并不表示没有尝试。公开 generation 快照保留该拒绝；问题是保存节奏与模型工具契约，不能根据私有推理归因。
