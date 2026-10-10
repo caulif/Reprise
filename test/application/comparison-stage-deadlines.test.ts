@@ -158,14 +158,17 @@ test('legacy findings/audit/preview deadlines retain their previous opt-out sema
   assert.equal(legacy.workDeadline(), undefined);
 });
 
-test('source-save retains investigation cutoff but gets a non-renewable review save allowance', t => {
+test('source-save has non-renewable persistence windows while source investigation retains its cutoff', t => {
   t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
   const tracker = bounded();
   const investigation = comparisonWorkDeadline(tracker, 'investigate').yieldDeadline!;
   t.mock.timers.tick(80_000);
-  assert.deepEqual(comparisonWorkDeadline(tracker, 'investigate', 'source-save').yieldDeadline, investigation);
+  const initialSave = comparisonWorkDeadline(tracker, 'investigate', 'source-save').yieldDeadline!;
+  assert.equal(initialSave.at, 171_000);
   t.mock.timers.tick(40_000);
-  assert.equal(tracker.beforeTool('update_comparison_findings_delta'), 'bounded_investigation_timeout');
+  assert.equal(tracker.beforeTool('update_comparison_findings_delta'), undefined);
+  assert.deepEqual(comparisonWorkDeadline(tracker, 'investigate').yieldDeadline, investigation);
+  assert.equal(tracker.beforeTool('read'), 'bounded_investigation_timeout');
   const source = comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline!;
   assert.equal(source.at, 231_000);
   t.mock.timers.tick(80_000);

@@ -5,15 +5,15 @@ import type { ComparisonWorkPass } from './comparison-invocation-boundaries.js';
 import type { AgentToolResult } from '../infrastructure/agent/host.js';
 import { withLanguageBlock, type AgentLocale } from './language.js';
 
-export const COMPARISON_INITIAL_FINDINGS_PROMPT = 'This is the initial findings persistence checkpoint, before investigation. Call update_comparison_findings now with a minimal complete snapshot of the supplied task: criteria, both finals unavailable if not yet located, findings: [], importantLimitations: [], and pending decision-changing questions with nextCheck. Do not invent observations, references, locations, resolved answers or a winner. An accepted saved snapshot allows investigation; it does not establish ready findings or task success.';
+export const COMPARISON_INITIAL_FINDINGS_PROMPT = 'This is the initial findings persistence checkpoint, before investigation. Call update_comparison_findings now with a minimal complete snapshot of the supplied task: criteria, both finals unavailable if not yet located, findings: [], importantLimitations: [], and a few pending decision-changing questions with nextCheck. Derive criteria from the requested observable result and relationships essential to it, not just file existence, format or implementation API. For a visual task, separate recognizable entities from the interactions/contact implied by the requested action; give each essential relationship its own concrete pending question rather than grouping all visual quality into one general scene question. For other tasks use their own observable success conditions. Do not invent observations, references, locations, resolved answers or a winner. An accepted saved snapshot allows investigation; it does not establish ready findings or task success.';
 
 export function composeComparisonInvestigatorSystemPrompt(locale: AgentLocale): string {
   return withLanguageBlock([
     COMPARISON_IMAGE_GUIDANCE,
-    'Investigate both actual deliveries for a concise Comparison. First save a minimal provisional snapshot; unknown finals and pending questions are valid.',
-    'Check consequential differences using registered refs with exact side ownership. State method and scope; source inference, rendered output and execution support different claims. Unknown stays unknown.',
-    'Save promptly with update_comparison_findings_delta when available: exact binding, retain/replace every old ID, new complete objects only in addedFindings/addedQuestions. Do not reconstruct the snapshot. Host source batches pause for save-only checkpoints; pending with nextCheck permits further checks.',
-    'Saved ready findings end investigation. Preserve question identity, history and decisionImpact; unsupported answers become unavailable when no necessary check remains. Follow schemas and rejection feedback. Deadline closure marks pending unavailable, never certifies answers. Do not author, inspect or preview; separate sessions do that.',
+    'Compare both deliveries. First save a minimal snapshot; unknown finals and pending questions are valid.',
+    'Use registered refs with exact side ownership. State method and scope. Self-reports and intermediate calculations do not prove final output.',
+    'Save promptly through delta: exact binding, retain/replace every old ID, add complete new objects. Source batches pause for save-only; pending with nextCheck permits further checks.',
+    'Ready ends investigation. Preserve question identity, history and decisionImpact. Unsupported answers become unavailable, never success. Follow schemas and feedback. Do not author, inspect or preview.',
   ].join('\n'), locale, 'comparison');
 }
 

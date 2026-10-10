@@ -130,11 +130,33 @@ test('expired deadline does not send a request; normal safe-turn yield clears it
 test('deadline control schema rejects malformed persisted control; unknown failures are not known local aborts', () => {
   assert.equal(Value.Check(AgentInvocationStartedSchema, { invocationId: 'legacy-record' }), true);
   assert.equal(Value.Check(AgentInvocationStartedSchema, { invocationId: 'new-record', yieldDeadline: { at: 1, reason } }), true);
+  assert.equal(Value.Check(AgentInvocationStartedSchema, { invocationId: 'closure', reasoningEffortCeiling: 'low' }), true);
+  assert.equal(Value.Check(AgentInvocationStartedSchema, { invocationId: 'invalid', reasoningEffortCeiling: 'high' }), false);
   for (const invalid of [{ at: -1, reason }, { at: 1.5, reason }, { at: 1, reason: '' }, { at: 1, reason, extra: true }]) assert.equal(Value.Check(AgentInvocationStartedSchema, { invocationId: 'external-record', yieldDeadline: invalid }), false);
   const deadline = invocationYieldDeadline({ abort() {} }, new AbortController().signal, { at: 0, reason });
   deadline.recordFailure(new Error('401 raw error hidden by SDK aborted response'));
   assert.throws(() => deadline.reason(), /401 raw error/);
   deadline.dispose();
+});
+
+for (const effort of ['medium', 'minimal'] as const) test(`native closure effort ceiling is audited, never raises ${effort} and restores configured effort after failure`, async () => {
+  const observed: (string | undefined)[] = [], events: AgentAuditEvent[] = [];
+  const models = { streamSimple: (_: unknown, _context: unknown, options: { reasoning?: string }) => {
+    observed.push(options.reasoning);
+    const stream = createAssistantMessageEventStream(); emit(stream, observed.length === 3 ? message('error', '401 Unauthorized') : message()); return stream;
+  } } as unknown as PiModels;
+  const session = await new AgentHost(new PiProviderAdapter({ models, model: { ...model, reasoning: true }, config: { ...config, effort } }))
+    .createSession({ role: 'comparison', systemPrompt: 'Closure fixture', audit: { append: async event => { events.push(event); } } });
+  for (const capped of [true, false, true, false]) {
+    const result = await session.work({ promptContent: 'Do current work', timeoutMs: 1_000, ...(capped ? { reasoningEffortCeiling: 'low' as const } : {}) });
+    assert.equal(result.status, observed.length === 3 ? 'failed' : 'completed');
+  }
+  assert.deepEqual(observed, [effort === 'minimal' ? effort : 'low', effort, effort === 'minimal' ? effort : 'low', effort]);
+  const starts = events.filter(event => event.type === 'agent.invocation_started');
+  assert.deepEqual(starts.map(event => event.payload.reasoningEffortCeiling), ['low', undefined, 'low', undefined]);
+  await assert.rejects(session.work({ promptContent: 'Invalid', timeoutMs: 1_000, reasoningEffortCeiling: 'high' as 'low' }), /Invalid reasoning effort ceiling/);
+  assert.equal(observed.length, 4);
+  await session.close();
 });
 
 test('failure to persist invocation control prevents any native upstream request', async () => {

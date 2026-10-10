@@ -1,4 +1,4 @@
-import { COMPARISON_SOURCE_TOOLS, isFindingsUpdate, comparisonProtocol } from './comparison-stage-policy.js';
+import { COMPARISON_SOURCE_TOOLS, isFindingsUpdate, isCheckpointSave, comparisonProtocol } from './comparison-stage-policy.js';
 import type { ComparisonCompareOptions } from './comparison-agent.js';
 import type { ComparisonWorkPass } from './comparison-invocation-boundaries.js';
 import type { AgentToolDefinition, AgentToolResult, FreeformInvocation } from '../infrastructure/agent/host.js';
@@ -21,6 +21,7 @@ type Phase = 'investigate' | 'review';
 
 export class ComparisonFindingsCheckpoints {
   readonly enabled: boolean;
+  readonly #compact: boolean;
   readonly #options: ComparisonCompareOptions | undefined;
   #phase: string = '';
   #source = false;
@@ -32,6 +33,7 @@ export class ComparisonFindingsCheckpoints {
   constructor(tools: readonly AgentToolDefinition[], options?: ComparisonCompareOptions,
     sourceDeadline?: () => { at: number } | undefined) {
     this.#options = options;
+    this.#compact = tools.some(tool => isCheckpointSave(tool.name));
     this.#sourceDeadline = sourceDeadline;
     this.enabled = comparisonProtocol(options).direct
       && typeof options?.getFindingsState === 'function' && tools.some(tool => tool.name === 'update_comparison_findings_delta');
@@ -54,7 +56,7 @@ export class ComparisonFindingsCheckpoints {
   observe(name: string, params: unknown, result: AgentToolResult): void {
     if (!this.enabled) return;
     if (this.#source && countsSourceObservation(name, params)) this.#checks++;
-    if (isFindingsUpdate(name) && /^status=accepted(?:\r?\n|$)/.test(result.content)) {
+    if ((isFindingsUpdate(name) || isCheckpointSave(name)) && /^status=accepted(?:\r?\n|$)/.test(result.content)) {
       this.#checks = 0;
       this.#batchStarted = Date.now();
       if (this.#saving) this.#acceptedState = this.#options?.getFindingsState?.();
@@ -63,12 +65,15 @@ export class ComparisonFindingsCheckpoints {
   async run<P extends Phase>(work: (phase: P, prompt: string, pass?: ComparisonWorkPass) => Promise<FreeformInvocation>, phase: P, prompt: string, pass?: 'sources'): Promise<FreeformInvocation> {
     let outcome = await work(phase, prompt, pass);
     for (let saves = 0; outcome.status === 'yielded' && outcome.reason === 'findings_checkpoint_required' && saves < 5; saves++) {
-      const saved = await work(phase, `Save the actual source observations just received now through update_comparison_findings_delta. Use the exact current binding, explicitly retain or replace every existing finding/question ID, and put only new complete objects in addedFindings/addedQuestions. Keep this update small; do not restate prior findings or copy the whole snapshot. Preserve every question identity and decisionImpact. Pending with an actual nextCheck is valid: this intermediate checkpoint does not require ready or certify success. Do not invent missing observations or resolve unchecked relationships. Current saved hypotheses and binding: ${this.#options?.getFindingsState?.() ?? 'unavailable'}`, 'source-save');
+      const prompt = this.#compact
+        ? `SAVE ONLY: call save_comparison_checkpoint now with binding and at most one concise finding (exactly two observations, one per side); include finals only if newly located. Omit finding if no supported difference is ready. Do not reconstruct history, resolve questions, investigate or call unavailable source tools. All other saved content is preserved unchanged, not approved. Actual observations remain in this session for resumed checks and mandatory final explicit review. Current hypotheses and binding: ${this.#options?.getFindingsState?.() ?? 'unavailable'}`
+        : `SAVE ONLY: read, shell_exec, view_image and all other source tools are unavailable in this invocation; do not call or retry them here. Call update_comparison_findings_delta immediately with already received observations, not the entire investigation. Save at most ONE new or corrected consequential finding now; exactly TWO observations, one per side, combining source and image support within each side. Keep each new text field to one short sentence and instance lists to only the relevant checks. Prioritize an observed output defect or decisive difference over a feature inventory. Include located finals if newly found; remove stale limitations contradicted by received evidence. Use the exact current binding, explicitly retain or replace every existing finding/question ID, and put only new complete objects in addedFindings/addedQuestions. Preserve every question identity and decisionImpact. Retain pending questions when further checking is needed; this checkpoint does not require ready or certify success. Do not invent missing observations. Other actual observations remain in this session for the next checkpoint or final closure. Current saved hypotheses and binding: ${this.#options?.getFindingsState?.() ?? 'unavailable'}`;
+      const saved = await work(phase, prompt, 'source-save');
       const completed = saved.status === 'completed' || (saved.status === 'yielded' && saved.reason === 'findings_checkpoint_saved');
       if (!completed) return saved;
       if (!this.saved()) return { status: 'failed', sessionId: saved.sessionId, failure: { code: 'draft_invalid', kind: 'protocol', attempts: saves + 1, message: 'The bounded source checkpoint did not save an accepted current findings state.' } };
-      if (this.#options?.findingsReady?.()) return { status: 'yielded', sessionId: saved.sessionId, reason: phase === 'investigate' ? 'findings_ready' : 'independent_findings_ready' };
-      outcome = await work(phase, 'Continue only the remaining decision-changing source questions after the actual saved checkpoint. Use the task, source material and saved question identities already delivered in this same session, including any audited compaction summary and retained tail. Do not repeat settled checks or reread navigation merely to reconstruct the briefing.', pass);
+      if (!this.#compact && this.#options?.findingsReady?.()) return { status: 'yielded', sessionId: saved.sessionId, reason: phase === 'investigate' ? 'findings_ready' : 'independent_findings_ready' };
+      outcome = await work(phase, 'Resume the remaining decision-changing source checks now, including previously deferred checks. findings_checkpoint_required was a temporary save boundary, not a capability failure or evidence of absence. Use the task, source material and saved question identities already delivered in this session. Do not repeat settled checks or reread navigation. Current saved pending checks and binding: ' + (this.#options?.getFindingsState?.() ?? 'unavailable'), pass);
     }
     return outcome;
   }

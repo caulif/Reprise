@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createAssistantMessageEventStream, type AssistantMessage, type Context, type Model } from '@earendil-works/pi-ai';
 import { ComparisonAgent, COMPARISON_TURN_PROMPTS } from '../../src/agents/comparison-agent.js';
-import { COMPARISON_DIRECT_SOURCE_REVIEW_PROMPT } from '../../src/agents/comparison-review-findings.js';
+import { COMPARISON_DIRECT_SOURCE_REVIEW_PROMPT, COMPARISON_DIRECT_AUDIT_PROMPT } from '../../src/agents/comparison-review-findings.js';
 import { COMPARISON_INITIAL_FINDINGS_PROMPT } from '../../src/agents/comparison-initial-findings.js';
 import { COMPARISON_AUTHOR_COMPOSE_PROMPT } from '../../src/agents/comparison-author-prompt.js';
 import { AgentHost } from '../../src/infrastructure/agent/host.js';
@@ -26,7 +26,7 @@ function response(content: AssistantMessage['content'], stopReason: AssistantMes
 const turn = (name: string, args: unknown) => response([{ type: 'toolCall', id: `${name}-${Math.random()}`, name, arguments: args as Record<string, unknown> }]);
 type Event = { sequence: number; type: string; payload: Record<string, unknown> };
 
-test('plain decision input traverses production native findings, audit, inspection, generation and preview publication', async t => {
+for (const revise of [false, true]) test(`plain decision traverses production publication with ${revise ? 'a revised audit and forced final inspection' : 'unchanged audit'}`, async t => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-decision-publication-'));
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
@@ -52,18 +52,28 @@ test('plain decision input traverses production native findings, audit, inspecti
           evidenceRefs: [], nextCheck: 'Inspect both final outputs' }] });
     } else if (prompt.includes(COMPARISON_TURN_PROMPTS.orientAndInvestigate)) {
       investigationRequests++; assert.equal(investigationRequests, 1, 'an actual ready saved snapshot ends strict investigation immediately');
-      message = turn('update_comparison_findings', findings);
+      const receiptMessage = context.messages.find(item => item.role === 'toolResult' && item.toolName === 'update_comparison_findings');
+      assert.ok(receiptMessage?.role === 'toolResult');
+      const receiptText = receiptMessage.content.filter(item => item.type === 'text').map(item => item.text).join('\n');
+      const saved = JSON.parse(receiptText.split('\n')[1]!) as { binding: { revision: number; digest: string; catalogRevision: number } };
+      message = turn('update_comparison_findings_delta', { kind: 'delta', binding: saved.binding, findingDecisions: [],
+        questionDecisions: [{ id: 'quality', action: 'replace', replacement: findings.decisionQuestions[0] }] });
     } else if (prompt.includes(COMPARISON_AUTHOR_COMPOSE_PROMPT)) {
       assert.deepEqual(context.tools?.map(tool => tool.name).sort(), ['submit_comparison_draft', 'update_comparison_findings']);
       message = turn('submit_comparison_draft', decision);
     }
     else if (prompt.includes(COMPARISON_DIRECT_SOURCE_REVIEW_PROMPT)) {
-      assert.ok(context.tools?.some(tool => tool.name === 'update_comparison_findings'));
+      assert.ok(context.tools?.some(tool => tool.name === 'update_comparison_findings_delta'));
       assert.ok(context.tools?.every(tool => !['write', 'submit_comparison_draft', 'preview_report'].includes(tool.name)));
       message = response([{ type: 'text', text: 'No final quality support.' }], 'stop');
     }
     else if (prompt.includes('This is the independent review findings closure')) message = turn('update_comparison_findings_delta', retainComparisonFindings(prompt));
-    else if (prompt.includes('This is the actual draft inspection checkpoint') || prompt.includes('The initial checkpoint is not formal certification: after this full audit')) message = turn('inspect_comparison_draft', {});
+    else if (prompt.includes('This is the actual draft inspection checkpoint')) message = turn('inspect_comparison_draft', {});
+    else if (prompt.includes(COMPARISON_DIRECT_AUDIT_PROMPT)) message = revise ? turn('submit_comparison_draft', { ...decision, headline: 'Still unverified' }) : turn('inspect_comparison_draft', {});
+    else if (prompt.includes('The completed independent audit turn submitted an accepted revision')) {
+      assert.deepEqual(context.tools?.map(tool => tool.name), ['inspect_comparison_draft']);
+      message = turn('inspect_comparison_draft', {});
+    }
     else if (prompt.includes('This is the preview-only closure')) {
       assert.match(JSON.stringify(context.messages), /Neither final output is confirmed usable/);
       assert.deepEqual(context.tools?.map(tool => tool.name), ['preview_report']); message = turn('preview_report', {});
@@ -87,11 +97,13 @@ test('plain decision input traverses production native findings, audit, inspecti
       diagnostics: [], measured: { loadMs: 1, viewport: request.viewport, origin: 'fixture://preview' } };
   };
   const result = await startExperiment({ ...base, comparison, comparisonPreviewRenderer }).result;
-  assert.equal(previewRenders, 1);
   assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result));
-  assert.equal(requests, 8);
+  assert.equal(previewRenders, 1);
+  assert.equal(requests, revise ? 9 : 8);
   assert.equal(investigationRequests, 1);
   const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as Event);
+  const cappedStarts = events.filter(event => event.type === 'agent.invocation_started' && event.payload.reasoningEffortCeiling === 'low');
+  assert.ok(cappedStarts.length >= 3, 'initial persistence, actual inspection and preview record their mechanical effort ceiling');
   const submit = events.find(event => event.type === 'agent.tool_called' && event.payload.tool === 'submit_comparison_draft' && !event.payload.nativeHook)!;
   const auditedParams = submit.payload.params as Record<string, unknown>;
   assert.equal(auditedParams.kind, 'string');

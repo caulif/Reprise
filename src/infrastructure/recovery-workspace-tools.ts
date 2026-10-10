@@ -190,7 +190,7 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
     parameters: Type.Object({
       path: Type.String({ minLength: 1, maxLength: pathMaxLength(ctx) }),
       offset: Type.Optional(Type.Integer({ minimum: 0 })),
-      maxBytes: Type.Optional(Type.Integer({ minimum: 1, maximum: IMAGE_LIMITS.bytes })),
+      maxBytes: Type.Optional(Type.Integer({ minimum: 1, maximum: IMAGE_LIMITS.bytes, description: 'Text reads: at most 262144 bytes (default 65536); image reads: at most 3145728 bytes and must include the whole image. Use text offset/nextCursor for pagination.' })),
       format: Type.Optional(Type.Union([Type.Literal("text"), Type.Literal("image")])),
       mimeType: Type.Optional(Type.String({ pattern: "^image/[A-Za-z0-9.+-]+$" })),
     }),
@@ -205,6 +205,9 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
         const offset = integer(value.offset, 0, "offset");
         const image = value.format === 'image';
         const ceiling = image ? IMAGE_LIMITS.bytes : MAX_BYTES;
+        if (value.maxBytes !== undefined && (typeof value.maxBytes !== 'number' || !Number.isInteger(value.maxBytes) || value.maxBytes < 1 || value.maxBytes > ceiling)) return {
+          content: JSON.stringify({ code: 'invalid_read_range', message: `maxBytes must be an integer from 1 to ${ceiling} for ${image ? 'image' : 'text'} reads. Use text offset/nextCursor to paginate; no file was read.` }),
+        };
         const maxBytes = value.maxBytes === undefined ? (image ? ceiling : DEFAULT_READ_BYTES)
           : integer(value.maxBytes, undefined, "maxBytes", 1, ceiling);
         const bytes = await boundedRead("file_read", async () => {

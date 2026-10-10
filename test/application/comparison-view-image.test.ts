@@ -46,9 +46,12 @@ test('registered large PNGs and legacy image reads deliver whole images without 
   assert.equal(stripped.contentBlocks?.some(block => block.type === 'image') ?? false, false);
   const events: string[] = [];
   const audited = instrumentTools([read], 'session', 'comparison', { requestIndex: 0 }, { append: async event => { events.push(event.type); } }, true);
+  for (const maxBytes of [262_145, 1_000_000, 0, 1.5, 'large']) {
+    assert.match((await audited[0]!.execute({ path: 'large.png', maxBytes }, signal)).content, /invalid_read_range/);
+  }
   await audited[0]!.execute({ path: 'large.png', format: 'image', mimeType: 'image/png', offset: 1 }, signal);
   await audited[0]!.execute({ path: 'large.png' }, signal);
-  assert.equal(events.filter(type => type === 'agent.tool_completed').length, 2);
+  assert.equal(events.filter(type => type === 'agent.tool_completed').length, 7);
   assert.equal(events.includes('agent.tool_failed'), false);
   await writeFile(join(root, 'large.png'), 'corrupted');
   assert.match((await read.execute({ path: 'large.png', format: 'image', mimeType: 'image/png' }, signal)).content, /invalid_image/);

@@ -4,8 +4,8 @@ const Coordinate = Type.Number({ minimum: -1e9, maximum: 1e9 });
 const Point = Type.Object({ name: Type.String({ minLength: 1, maxLength: 32 }), x: Coordinate, y: Coordinate }, { additionalProperties: false });
 const RenderGeometryQuerySchema = Type.Object({
   name: Type.String({ minLength: 1, maxLength: 32 }),
-  selector: Type.String({ minLength: 1, maxLength: 160 }),
-  kind: Type.Union([Type.Literal('svg_geometry'), Type.Literal('dom_rect')]),
+  selector: Type.String({ minLength: 1, maxLength: 160, description: 'CSS selector matching exactly one actual element. Identify the compared part from its source attributes; do not substitute its body, container or intended target. Missing/ambiguous selectors supply no measurement.' }),
+  kind: Type.Union([Type.Literal('svg_geometry'), Type.Literal('dom_rect')], { description: 'svg_geometry supports circle/ellipse centers and line/path endpoints only. For rect, group or other element bounds use dom_rect. All successful coordinates are actual viewport CSS pixels; unsupported is not evidence of absence or contact.' }),
 }, { additionalProperties: false });
 export const RenderGeometryQueriesSchema = Type.Array(RenderGeometryQuerySchema, { minItems: 1, maxItems: 8 });
 export type RenderGeometryQuery = Static<typeof RenderGeometryQuerySchema>;

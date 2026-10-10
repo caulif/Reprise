@@ -323,7 +323,7 @@ test("support boundary strings and instance lists are bounded plain declarations
   const { submission } = await fixture(t);
   for (const change of [
     (boundary: NonNullable<typeof submission.findings[number]["observations"][number]["supportBoundary"]>) => { boundary.relationship = " "; },
-    (boundary: NonNullable<typeof submission.findings[number]["observations"][number]["supportBoundary"]>) => { boundary.domain = "<b>output</b>"; },
+    (boundary: NonNullable<typeof submission.findings[number]["observations"][number]["supportBoundary"]>) => { boundary.domain = "output\nsecond line"; },
     (boundary: NonNullable<typeof submission.findings[number]["observations"][number]["supportBoundary"]>) => { boundary.uncheckedInstances = Array.from({ length: 13 }, (_, i) => `instance ${i}`); },
   ]) {
     const invalid = structuredClone(submission);

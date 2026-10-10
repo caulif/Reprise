@@ -7,6 +7,7 @@ const AgentYieldDeadlineSchema = Type.Object({
 export const AgentInvocationStartedSchema = Type.Object({
   invocationId: Type.String({ minLength: 1 }), requestId: Type.Optional(Type.String({ minLength: 1 })),
   yieldDeadline: Type.Optional(AgentYieldDeadlineSchema),
+  reasoningEffortCeiling: Type.Optional(Type.Literal('low')),
 }, { additionalProperties: false });
 
 export const AgentInvocationYieldedSchema = Type.Object({
