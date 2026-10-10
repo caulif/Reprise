@@ -174,9 +174,15 @@ test('source-save retains investigation cutoff but gets a non-renewable review s
   t.mock.timers.tick(30_000);
   assert.equal(tracker.beforeTool('update_comparison_findings_delta'), undefined);
   assert.deepEqual(comparisonWorkDeadline(tracker, 'review', 'source-save').yieldDeadline, save);
-  assert.deepEqual(comparisonWorkDeadline(tracker, 'review', 'inspection').yieldDeadline, save, 'draft delivery shares the checkpoint cutoff');
+  const inspection = comparisonWorkDeadline(tracker, 'review', 'inspection').yieldDeadline!;
+  assert.equal(inspection.at, 321_000, 'draft delivery has its own non-renewable cutoff');
+  comparisonWorkDeadline(tracker, 'review', 'source-save');
   t.mock.timers.tick(60_000);
   assert.equal(tracker.beforeTool('update_comparison_findings_delta'), 'bounded_source_timeout');
+  assert.deepEqual(comparisonWorkDeadline(tracker, 'review', 'inspection').yieldDeadline, inspection);
+  assert.equal(tracker.beforeTool('inspect_comparison_draft'), undefined, 'expired save does not expire draft delivery');
+  t.mock.timers.tick(30_000);
+  assert.equal(tracker.beforeTool('inspect_comparison_draft'), 'bounded_source_timeout');
   assert.deepEqual(comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline, source);
 });
 
