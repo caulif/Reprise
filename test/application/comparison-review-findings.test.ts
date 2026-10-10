@@ -8,6 +8,21 @@ import { AgentHost, type AgentAuditEvent } from '../../src/infrastructure/agent/
 import { PiModelCaller, type PiModels } from '../../src/infrastructure/agent/model-caller.js';
 import { ComparisonResourceTracker } from '../../src/agents/comparison-resources.js';
 import type { ComparisonWorkPass } from '../../src/agents/comparison-invocation-boundaries.js';
+import { reviewDraftInspectionCheckpoint } from '../../src/agents/comparison-review-findings.js';
+
+for (const delivered of [false, true]) test(`inspection timeout stops without retry or approval even when material delivered=${delivered}`, async () => {
+  let calls = 0, material = false;
+  const result = await reviewDraftInspectionCheckpoint({ hasReviewDraftMaterial: () => material }, async () => {
+    calls++; material = delivered;
+    return { status: 'yielded', sessionId: 'review', reason: 'bounded_source_timeout' };
+  }, true, 'review', 'Inspect the actual draft');
+  assert.equal(calls, 1);
+  assert.equal(result?.status, 'failed');
+  if (result?.status === 'failed') {
+    assert.equal(result.failure.kind, 'timeout');
+    assert.equal(result.failure.attempts, 0, 'do not invent a count of actual Provider retries');
+  }
+});
 
 test('expired findings closure stops once without inventing another actual model request or certifying saved readiness', async () => {
   let calls = 0;

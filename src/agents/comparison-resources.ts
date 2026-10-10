@@ -8,14 +8,14 @@ export const DEFAULT_COMPARISON_RESOURCES: Readonly<ComparisonResources> = Objec
 
 class ComparisonResourceLimit extends Error {}
 
-type WorkStage = 'investigate' | 'compose' | 'review' | 'review-checkpoint' | 'review-findings' | 'audit' | 'preview';
+type WorkStage = 'investigate' | 'compose' | 'review' | 'review-checkpoint' | 'review-inspection' | 'review-findings' | 'audit' | 'preview';
 const STAGE_BUDGETS: Readonly<Record<WorkStage, number>> = { investigate: 120_000, compose: 90_000, review: 150_000,
-  'review-checkpoint': 90_000, 'review-findings': 90_000, audit: 90_000, preview: 90_000 };
+  'review-checkpoint': 90_000, 'review-inspection': 90_000, 'review-findings': 90_000, audit: 90_000, preview: 90_000 };
 const FINISH_RESERVES: Readonly<Record<WorkStage, number>> = { investigate: 480_000, compose: 390_000, review: 240_000,
-  'review-checkpoint': 240_000, 'review-findings': 240_000, audit: 150_000, preview: 60_000 };
+  'review-checkpoint': 240_000, 'review-inspection': 240_000, 'review-findings': 240_000, audit: 150_000, preview: 60_000 };
 const STAGE_REASONS: Readonly<Record<WorkStage, string>> = {
   investigate: 'bounded_investigation_timeout', compose: 'bounded_compose_timeout', review: 'bounded_source_timeout',
-  'review-checkpoint': 'bounded_source_timeout', 'review-findings': 'bounded_source_timeout',
+  'review-checkpoint': 'bounded_source_timeout', 'review-inspection': 'bounded_source_timeout', 'review-findings': 'bounded_source_timeout',
   audit: 'bounded_audit_timeout', preview: 'bounded_preview_timeout',
 };
 
@@ -52,7 +52,7 @@ export class ComparisonResourceTracker {
     this.#workPass = pass;
     if (this.#boundedStages) this.#enterStage(phase === 'compose' ? 'compose' : phase === 'review'
       ? pass === 'audit' || pass === 'preview' || pass === 'review-findings' ? pass
-        : pass === 'source-save' || pass === 'inspection' ? 'review-checkpoint' : 'review' : 'investigate');
+        : pass === 'source-save' ? 'review-checkpoint' : pass === 'inspection' ? 'review-inspection' : 'review' : 'investigate');
     if (this.#boundedStages && (pass === 'sources' || pass === 'review-supplement') && !this.#sourceDeadlines.has(pass)) {
       const scale = Math.min(1, this.#limits.maxElapsedMs! / 600_000);
       this.#sourceDeadlines.set(pass, this.#deadline((pass === 'sources' ? 110_000 : 30_000) * scale));

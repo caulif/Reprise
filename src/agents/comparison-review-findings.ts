@@ -115,6 +115,10 @@ export async function reviewDraftInspectionCheckpoint(options: ComparisonCompare
   for (let call = 1; call <= 2 && !options.hasReviewDraftMaterial(); call++) {
     const inspected = await work('review', prompt, 'inspection');
     if (inspected.status !== 'completed' && inspected.status !== 'yielded') return inspected;
+    if (inspected.status === 'yielded' && inspected.reason === 'bounded_source_timeout') return {
+      status: 'failed', sessionId: inspected.sessionId, failure: { code: 'draft_invalid', kind: 'timeout', attempts: 0,
+        message: 'Review draft inspection exhausted its deadline before completing the checkpoint; no additional inspection request is started.' },
+    };
     sessionId = inspected.sessionId;
   }
   if (options.hasReviewDraftMaterial()) return undefined;
