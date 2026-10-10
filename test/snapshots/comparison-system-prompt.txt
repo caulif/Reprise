@@ -108,7 +108,7 @@ in scratch/; use the documented REPRISE_*_ROOT variables for physical source
 paths instead of treating virtual mounts as shell cwd.
 For analysis scripts that mention read-only mounts, create the script with write at scratch/<name>, then run that existing file from shell cwd. The conservative shell guard rejects mixed source references and file-creation commands, including source paths inside script text.
 
-Need screenshots or page views only through render_artifact and preview_report.
+View registered PNG media with view_image; derive new screenshots through render_artifact and report page views through preview_report.
 Do not run Chrome, Edge, or Firefox binaries; do not use --version, --dump-dom,
 or open a user browser profile. If a render tool fails, record the limitation and
 continue with text evidence; do not retry via equivalent browser shell commands.

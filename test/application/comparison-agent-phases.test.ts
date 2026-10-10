@@ -256,7 +256,7 @@ test("validated submitted draft survives an empty final model message", async ()
   });
   assert.equal(result.status, "completed");
   assert.equal(calls.length, 4);
-  assert.match(calls[0] ?? "", /questions that could change the choice/);
+  assert.match(calls[0] ?? "", /Stop when further checks cannot change the decision/);
   assert.doesNotMatch(calls[2] ?? "", /Return only JSON/);
 });
 

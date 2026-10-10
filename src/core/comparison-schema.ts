@@ -161,6 +161,10 @@ export const ComparisonDraftSubmissionSchema = Type.Object({
 export type ComparisonDraftSubmission = Static<typeof ComparisonDraftSubmissionSchema>;
 export const ComparisonDecisionDraftSubmissionSchema = Type.Object({
   kind: Type.Literal('decision'),
+  media: Type.Optional(Type.Array(Type.Object({
+    ref: ComparisonMediaShortRefSchema,
+    caption: Type.String({ minLength: 1, maxLength: 160, pattern: '\\S' }),
+  }, { additionalProperties: false }), { maxItems: 4, description: 'Optional registered screenshots that explain the decisive differences. Use matching conditions on both sides, concise captions and current media refs. Omit for nonvisual tasks. Captions count toward the main text budget and are unverified presentation, not certification.' })),
   ...Type.Required(Type.Omit(ComparisonDraftSubmissionSchema, ['comparisonHtml', 'detailsHtml', 'decisionBasis'])).properties,
 }, { additionalProperties: false, description: 'Plain decision variant. Host renders summary, boundary and provided scope summaries once and derives decisionBasis from basis dispositions. Independent review checks those scope summaries against the complete saved findings; structural acceptance is not semantic approval. Do not submit HTML or a second copy of basis IDs. All current findings and decisive unknowns remain mandatory; original report length and publication gates apply.' });
 export type ComparisonDecisionDraftSubmission = Static<typeof ComparisonDecisionDraftSubmissionSchema>;

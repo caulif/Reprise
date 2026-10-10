@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Type } from '@sinclair/typebox';
-import { createAssistantMessageEventStream, type AssistantMessage, type Model } from '@earendil-works/pi-ai';
+import { createAssistantMessageEventStream, type AssistantMessage, type Model, type Context } from '@earendil-works/pi-ai';
 import { AgentHost, type AgentAuditEvent } from '../../src/infrastructure/agent/host.js';
 import { PiModelCaller, type PiModels } from '../../src/infrastructure/agent/model-caller.js';
 import { ComparisonResourceTracker } from '../../src/agents/comparison-resources.js';
@@ -22,8 +22,14 @@ for (const mode of ['schema', 'duplicate_schema', 'unknown', 'audit_failure'] as
     response([{ type: 'text', text: 'Done' }], 'stop'),
   ];
   if (mode === 'duplicate_schema') messages[0]!.content.push({ type: 'toolCall', id: 'private-rejected-call-id', name: 'save', arguments: { value: { second: 'invalid-object' } } });
-  const models = { getModel: () => model, streamSimple: () => {
+  const models = { getModel: () => model, streamSimple: (_model: unknown, context: Context) => {
     generations++;
+    if (generations === 2 && mode !== 'unknown') {
+      const receipts = context.messages.filter(message => message.role === 'toolResult' && message.isError);
+      assert.ok(receipts.length > 0);
+      assert.match(JSON.stringify(receipts), /Validation failed for tool|value/);
+      assert.doesNotMatch(JSON.stringify(receipts), /Received arguments|private-received-argument|authorization/);
+    }
     const message = messages.shift(); assert.ok(message, 'rejection correction is bounded by this fixture');
     const stream = createAssistantMessageEventStream(); stream.push({ type: 'done', reason: message.stopReason as 'stop' | 'toolUse', message }); return stream;
   } } as unknown as PiModels;

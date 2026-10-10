@@ -37,7 +37,8 @@
         },
         "maxBytes": {
           "minimum": 1,
-          "maximum": 262144,
+          "maximum": 3145728,
+          "description": "Text reads: at most 262144 bytes (default 65536); image reads: at most 3145728 bytes and must include the whole image. Use text offset/nextCursor for pagination.",
           "type": "integer"
         },
         "format": {

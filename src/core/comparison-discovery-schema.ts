@@ -4,7 +4,7 @@ const text = Type.String({ minLength: 1, maxLength: 1200 });
 const id = Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" });
 const refs = Type.Array(Type.String({ pattern: "^(ev|media)-[0-9]{2,6}$" }), { maxItems: 16, uniqueItems: true });
 const side = Type.Union([Type.Literal("baseline"), Type.Literal("candidate")]);
-const boundaryText = Type.String({ minLength: 1, maxLength: 240, pattern: "^[^<>\\r\\n]*\\S[^<>\\r\\n]*$" });
+const boundaryText = Type.String({ minLength: 1, maxLength: 240, pattern: "^[^\\r\\n]*\\S[^\\r\\n]*$" });
 const instances = Type.Array(boundaryText, { maxItems: 12, uniqueItems: true });
 const boundary = { relationship: boundaryText, domain: boundaryText, uncheckedInstances: instances };
 const ComparisonSupportBoundarySchema = Type.Union([
@@ -86,6 +86,15 @@ export const ComparisonFindingsDeltaSchema = Type.Object({
   importantLimitations: Type.Optional(ComparisonFindingsSubmissionSchema.properties.importantLimitations),
 }, { additionalProperties: false, description: 'Bounded update against the exact saved revision/digest and current catalogRevision. Host materializes a complete record and runs all original validation. No implicit ID retention or deletion; new entries must be complete objects in addedFindings/addedQuestions, never extra retain/replace decisions. No semantic certification.' });
 export type ComparisonFindingsDelta = Static<typeof ComparisonFindingsDeltaSchema>;
+export const ComparisonFindingCheckpointSchema = Type.Object({
+  binding: ComparisonFindingsDeltaSchema.properties.binding,
+  finding: Type.Optional(strictFinding),
+  finals: Type.Optional(ComparisonFindingsSubmissionSchema.properties.finals),
+}, { additionalProperties: false, description: 'Save at most one observed finding and optional final locations against the exact current binding. Existing finding ID replaces that finding; new ID appends. All questions, criteria, limitations and other findings are preserved unchanged. This intermediate checkpoint cannot resolve questions or certify independent review.' });
+export const ComparisonFindingsDedicatedDeltaSchema = Type.Object({
+  ...ComparisonFindingsDeltaSchema.properties,
+  kind: Type.Optional(Type.Literal('delta')),
+}, { additionalProperties: false, description: 'Dedicated delta endpoint: kind is optional; all binding and explicit decision requirements remain unchanged.' });
 export const ComparisonFindingsToolSubmissionSchema = Type.Union([ComparisonFindingsCompleteToolSubmissionSchema, ComparisonFindingsDeltaSchema], { type: 'object' });
 
 export const ComparisonDiscoveryRecordSchema = Type.Object({

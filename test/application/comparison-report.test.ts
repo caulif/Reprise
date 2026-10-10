@@ -189,7 +189,7 @@ test('comparison prompt points workspace tools at the sealed snapshot mount', ()
   assert.match(COMPARISON_SYSTEM_PROMPT, /render_artifact/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /register_evidence/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /preview_report/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /Need screenshots or page views only through render_artifact and preview_report/);
+  assert.match(COMPARISON_SYSTEM_PROMPT, /View registered PNG media with view_image; derive new screenshots through render_artifact and report page views through preview_report/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /Do not run Chrome, Edge, or Firefox binaries/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /--version/);
   assert.match(COMPARISON_SYSTEM_PROMPT, /--dump-dom/);

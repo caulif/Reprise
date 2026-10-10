@@ -11,6 +11,7 @@ import { ComparisonDraft } from '../../src/application/comparison-draft.js';
 import { ComparisonDiscovery } from '../../src/application/comparison-discovery.js';
 import { ComparisonEvidenceCatalog } from '../../src/application/comparison-evidence.js';
 import { comparisonDetailsText, comparisonVisibleMainText } from '../../src/application/comparison-report-text.js';
+import { sha256 } from '../../src/core/identity.js';
 
 const base: ComparisonDecisionDraftSubmission = { kind: 'decision', status: 'insufficient_evidence', category: 'Results', headline: 'Unknown',
   decisionShape: 'single_difference', decisionSummary: 'Output quality remains unchecked.', decisionBoundary: 'Quality could change the choice.',
@@ -200,4 +201,30 @@ test('lean submissions cannot omit current findings or erase important boundarie
     assert.match((await f.tool.execute({ ...valid, decisionShape, decisionSummary: 'x'.repeat(limit) }, f.signal)).content, /draft_too_long/);
     assert.equal(await readFile(join(f.root, 'report.html'), 'utf8'), before);
   }
+});
+
+test('decision media uses registered image refs, escaped captions and the existing main budget', async t => {
+  const f = await fixture(t);
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==', 'base64');
+  await writeFile(join(f.root, 'sample.png'), png);
+  const catalog = await ComparisonEvidenceCatalog.create({ attemptRoot: f.root, attemptId: 'images', links: [], media: [
+    { ref: 'media:sample', side: 'baseline', inspectPath: 'sample.png', reportHref: 'sample.png', mediaType: 'image/png',
+      available: true, contentHash: sha256(png) },
+    { ref: 'media:missing', side: 'candidate', inspectPath: 'missing.png', reportHref: 'missing.png', mediaType: 'image/png', available: false },
+  ] });
+  const draft = new ComparisonDraft({ attemptRoot: f.root, task: 'Compare outputs', facts, locale: 'en', catalog, deliveredImages: new Set() });
+  const caption = 'Baseline <script> & "sample"';
+  const submission = { ...base, media: [{ ref: 'media-01', caption }] };
+  assert.match((await draft.tool().execute(submission, f.signal)).content, /status=accepted/);
+  const html = await readFile(join(f.root, 'report.html'), 'utf8');
+  assert.match(html, /data-media-ref="media-01"/);
+  assert.ok(comparisonVisibleMainText(html).includes(caption));
+  assert.doesNotMatch(materializeComparisonDecisionDraft(submission).comparisonHtml, /data-claim="visual"/);
+  for (const ref of ['media-02', 'media-99']) {
+    assert.match((await draft.tool().execute({ ...base, media: [{ ref, caption: 'Unavailable' }] }, f.signal)).content, /media_unavailable/);
+  }
+  assert.match((await draft.tool().execute({ ...base, media: [{ ref: 'media-01', caption: 'x'.repeat(160) },
+    { ref: 'media-01', caption: 'y'.repeat(160) }] }, f.signal)).content, /draft_too_long/);
+  assert.equal(await readFile(join(f.root, 'report.html'), 'utf8'), html);
+  assert.equal(Value.Check(ComparisonDecisionDraftSubmissionSchema, { ...base, media: [{ ref: '../sample.png', caption }] }), false);
 });

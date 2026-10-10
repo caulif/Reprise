@@ -273,3 +273,34 @@ test('fractionally scaled deadlines pass the real Session audit boundary without
   assert.equal(calls, 6);
   assert.equal(events.filter(event => event.type === 'agent.invocation_started').length, 6);
 });
+
+test('investigation saving gets a bounded persistence window without renewing source investigation', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const tracker = new ComparisonResourceTracker({ maxElapsedMs: 600_000, investigationMs: 120_000 }, { boundedStages: true });
+  const source = tracker.workDeadline()!;
+  t.mock.timers.tick(110_000);
+  tracker.phase('investigate', 'source-save');
+  const save = tracker.workDeadline()!;
+  assert.equal(save.at, Date.now() + 90_000);
+  t.mock.timers.tick(50_000);
+  tracker.phase('investigate'); assert.deepEqual(tracker.workDeadline(), source);
+  assert.ok(tracker.workDeadline()!.at < Date.now(), 'expired source work cannot restart');
+  tracker.phase('investigate', 'source-save'); assert.deepEqual(tracker.workDeadline(), save);
+  tracker.phase('compose'); assert.ok(tracker.workDeadline()!.at <= 1_000 + 210_000, 'compose finishing reserve remains protected');
+});
+
+test('investigation saves share ninety seconds of active saving and cannot borrow the final reserve', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const tracker = new ComparisonResourceTracker({ maxElapsedMs: 600_000 }, { boundedStages: true });
+  t.mock.timers.tick(30_000); tracker.phase('investigate', 'source-save');
+  const first = tracker.workDeadline()!;
+  t.mock.timers.tick(50_000); tracker.phase('investigate');
+  t.mock.timers.tick(20_000); tracker.phase('investigate', 'source-save');
+  assert.equal(tracker.workDeadline()!.at, Date.now() + 40_000, 'source time does not consume the remaining save allowance');
+  assert.equal(tracker.workDeadline()!.at, first.at + 20_000);
+  t.mock.timers.tick(40_000); tracker.phase('investigate'); tracker.phase('investigate', 'source-save');
+  assert.equal(tracker.beforeTool('update_comparison_findings_delta'), 'bounded_investigation_timeout', 'a third save cannot renew consumed saving time');
+  const late = new ComparisonResourceTracker({ maxElapsedMs: 600_000 }, { boundedStages: true });
+  t.mock.timers.tick(200_000); late.phase('investigate', 'source-save');
+  assert.equal(late.workDeadline()!.at, Date.now() + 10_000, 'all saving is still capped by the global finishing reserve');
+});

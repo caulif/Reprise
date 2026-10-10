@@ -6,8 +6,10 @@ import { tmpdir } from 'node:os';
 import { Value } from '@sinclair/typebox/value';
 import { ComparisonDiscovery } from '../../src/application/comparison-discovery.js';
 import { ComparisonEvidenceCatalog } from '../../src/application/comparison-evidence.js';
-import { ComparisonFindingsDeltaSchema, ComparisonFindingsToolSubmissionSchema, ComparisonDiscoveryRecordSchema, type ComparisonDiscoveryRecord, type ComparisonFindingsDelta, type ComparisonFindingsSubmission } from '../../src/core/schema.js';
+import { ComparisonFindingsDeltaSchema, ComparisonFindingsDedicatedDeltaSchema, ComparisonFindingsToolSubmissionSchema, ComparisonDiscoveryRecordSchema, type ComparisonDiscoveryRecord, type ComparisonFindingsDelta, type ComparisonFindingsSubmission } from '../../src/core/schema.js';
 import { ComparisonAgent } from '../../src/agents/comparison-agent.js';
+import { ComparisonResourceTracker } from '../../src/agents/comparison-resources.js';
+import { ComparisonStages } from '../../src/agents/comparison-stages.js';
 import { COMPARISON_INITIAL_FINDINGS_PROMPT } from '../../src/agents/comparison-initial-findings.js';
 import { COMPARISON_AUTHOR_COMPOSE_PROMPT } from '../../src/agents/comparison-author-prompt.js';
 import { AgentHost, type ProviderAdapter } from '../../src/infrastructure/agent/host.js';
@@ -48,6 +50,26 @@ function strictFindingFixture(submission: ComparisonFindingsSubmission) {
   return finding;
 }
 
+test('dedicated delta infers its discriminator but preserves binding and strict field validation', async t => {
+  const { discovery, submission, delta } = await fixture(t);
+  const signal = new AbortController().signal;
+  await discovery.tool().execute(submission, signal);
+  const { kind: _kind, ...change } = delta();
+  const tool = discovery.deltaTool();
+  assert.equal(Value.Check(tool.parameters, change), true);
+  assert.equal(Value.Check(ComparisonFindingsToolSubmissionSchema, change), false);
+  const replacement = strictFindingFixture(submission);
+  replacement.observations[0]!.supportBoundary.coveredInstances = ['Actual <script> element source'];
+  change.findingDecisions[0] = { id: replacement.id, action: 'replace', replacement };
+  assert.match((await tool.execute(change, signal)).content, /^status=accepted/);
+  assert.deepEqual(discovery.snapshot()!.submission.findings[0], replacement);
+  for (const invalid of [{ ...change, kind: 'snapshot' }, { ...change, extra: true }]) {
+    assert.equal(Value.Check(tool.parameters, invalid), false);
+    assert.match((await tool.execute(invalid, signal)).content, /invalid_findings/);
+  }
+  assert.match((await tool.execute(change, signal)).content, /delta_binding_stale/);
+});
+
 test('strict delta retains unchanged content explicitly and persists only model-supplied changes through the original full contract', async t => {
   const { discovery, submission, saved, delta } = await fixture(t); const signal = new AbortController().signal;
   await discovery.tool().execute(submission, signal); const before = discovery.snapshot()!;
@@ -79,7 +101,7 @@ for (const deltaOnly of [false, true]) test(`bound additions use ${deltaOnly ? '
     status: 'pending', evidenceRefs: [], nextCheck: 'Check the actual final under that input' }];
   const tool = deltaOnly ? discovery.deltaTool() : discovery.tool();
   assert.equal(tool.name, deltaOnly ? 'update_comparison_findings_delta' : 'update_comparison_findings');
-  if (deltaOnly) { assert.equal('anyOf' in tool.parameters, false); assert.equal(tool.parameters, ComparisonFindingsDeltaSchema); }
+  if (deltaOnly) { assert.equal('anyOf' in tool.parameters, false); assert.equal(tool.parameters, ComparisonFindingsDedicatedDeltaSchema); }
   assert.match((await tool.execute(change, signal)).content, /^status=accepted\n/);
   const after = discovery.snapshot()!;
   assert.equal(saved.length, 2); assert.equal(after.revision, 2); assert.ok(Value.Check(ComparisonDiscoveryRecordSchema, after));
@@ -295,4 +317,48 @@ for (const changed of [false, true]) test(`production ${changed ? 'replacement' 
   assert.ok(audit.sequence > closure.sequence && inspection.sequence > audit.sequence && preview.sequence > inspection.sequence);
   assert.ok(events.some(event => event.type === 'agent.model_request' && event.sequence > inspection.sequence && event.sequence < preview.sequence && 'generationInput' in event.payload));
   assert.match(await readFile(join(result.experimentRoot, 'report.html'), 'utf8'), /Quality remains unverified/);
+});
+
+
+test('small checkpoint preserves every question and non-target finding, rejects stale/foreign evidence, and cannot close independent review', async t => {
+  const f = await fixture(t), signal = new AbortController().signal;
+  const tool = f.discovery.checkpointTool();
+  assert.match((await tool.execute({ binding: { revision: 1, digest: 'a'.repeat(64), catalogRevision: 0 } }, signal)).content, /delta_snapshot_missing/);
+  await f.discovery.tool().execute(f.submission, signal);
+  const before = f.discovery.snapshot()!;
+  const binding = f.delta().binding;
+  const added = strictFindingFixture(f.submission); added.id = 'counterexample';
+  const params = { binding, finding: added };
+  assert.match((await tool.execute(params, signal)).content, /^status=accepted/);
+  const after = f.discovery.snapshot()!;
+  assert.deepEqual(after.submission.decisionQuestions, before.submission.decisionQuestions);
+  assert.deepEqual(after.submission.findings[0], before.submission.findings[0]);
+  assert.deepEqual(after.submission.importantLimitations, before.submission.importantLimitations);
+  assert.equal(f.discovery.readyToCompose(), false);
+  assert.match((await tool.execute(params, signal)).content, /delta_binding_stale/);
+  const replacement = structuredClone(added); replacement.difference = 'Corrected observed counterexample';
+  assert.match((await tool.execute({ binding: f.delta().binding, finding: replacement }, signal)).content, /^status=accepted/);
+  assert.equal(f.discovery.snapshot()!.submission.findings.length, 2);
+  assert.equal(f.discovery.snapshot()!.submission.findings[1]!.difference, replacement.difference);
+  const stable = f.discovery.snapshot()!;
+  replacement.observations[0]!.evidenceRefs = replacement.observations[1]!.evidenceRefs;
+  assert.match((await tool.execute({ binding: f.delta().binding, finding: replacement }, signal)).content, /observation_source_mismatch/);
+  assert.match((await tool.execute({ binding: f.delta().binding, questionDecisions: [] }, signal)).content, /invalid_checkpoint/);
+  assert.deepEqual(f.discovery.snapshot(), stable);
+  assert.match((await tool.execute({ binding: f.delta().binding, finals: stable.submission.finals }, signal)).content, /^status=accepted/);
+  await assert.rejects(tool.execute({ binding: f.delta().binding }, AbortSignal.abort()), { name: 'AbortError' });
+  const resources = new ComparisonResourceTracker({});
+  const stages = new ComparisonStages([tool, f.discovery.tool(), f.discovery.deltaTool()], resources, {
+    enforcePhaseBoundaries: true, reviewFindings: true, getSubmittedResult: async () => undefined,
+    getFindingsState: () => f.discovery.state(), findingsReady: () => f.discovery.readyToCompose(),
+  });
+  const bound = stages.bind([tool, f.discovery.tool(), f.discovery.deltaTool()]);
+  stages.begin('review', 'source-save');
+  assert.deepEqual(stages.toolNames(bound), ['save_comparison_checkpoint']);
+  assert.match((await bound[0]!.execute({ binding: f.delta().binding }, signal)).content, /^status=accepted/);
+  assert.equal(await stages.exit(), 'findings_checkpoint_saved');
+  assert.equal(stages.reviewFindings.sourceSaved(), false, 'intermediate preservation is not explicit independent review');
+  stages.begin('review', 'review-findings');
+  assert.deepEqual(stages.toolNames(bound), ['update_comparison_findings_delta']);
+  assert.match((await bound[0]!.execute({ binding: f.delta().binding }, signal)).content, /review_findings_only/);
 });

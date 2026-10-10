@@ -1,6 +1,6 @@
 import { Value } from "@sinclair/typebox/value";
 import {
-  ComparisonDiscoveryRecordSchema, ComparisonFindingsToolSubmissionSchema, ComparisonFindingsCompleteToolSubmissionSchema, ComparisonFindingsDeltaSchema,
+  ComparisonDiscoveryRecordSchema, ComparisonFindingsToolSubmissionSchema, ComparisonFindingsCompleteToolSubmissionSchema, ComparisonFindingsDedicatedDeltaSchema, ComparisonFindingsDeltaSchema, ComparisonFindingCheckpointSchema,
   type ComparisonDiscoveryRecord, type ComparisonFindingsSubmission, type ComparisonInvestigationClosure, type ComparisonFindingsDelta,
 } from "../core/schema.js";
 import { sha256 } from "../core/identity.js";
@@ -33,8 +33,33 @@ export class ComparisonDiscovery {
     return this.#tool(true);
   }
 
+  checkpointTool(): AgentToolDefinition {
+    return {
+      name: 'save_comparison_checkpoint',
+      description: 'Save one concise observed difference (exactly one observation per side) or located finals. Use the exact current binding. Omit finding if no supported difference is ready. Other findings and all questions remain unchanged, not approved. No question decisions, history reconstruction or final review here.',
+      parameters: ComparisonFindingCheckpointSchema,
+      execute: async (params, signal) => {
+        signal.throwIfAborted();
+        if (!Value.Check(ComparisonFindingCheckpointSchema, params)) return { content: 'status=rejected\ncode=invalid_checkpoint' };
+        const input = structuredClone(params);
+        return { content: await this.#enqueue(async () => {
+          const base = this.#accepted;
+          if (!base) return 'status=rejected\ncode=delta_snapshot_missing';
+          const existing = base.submission.findings.some(finding => finding.id === input.finding?.id);
+          return await this.#delta({ kind: 'delta', binding: input.binding,
+            findingDecisions: base.submission.findings.map(finding => input.finding && finding.id === input.finding.id
+              ? { id: finding.id, action: 'replace', replacement: input.finding } : { id: finding.id, action: 'retain' }),
+            questionDecisions: base.submission.decisionQuestions.map(question => ({ id: question.id, action: 'retain' })),
+            ...(input.finding && !existing ? { addedFindings: [input.finding] } : {}),
+            ...(input.finals ? { finals: input.finals } : {}),
+          }, signal);
+        }) };
+      },
+    };
+  }
+
   #tool(deltaOnly: boolean): AgentToolDefinition {
-    const parameters = deltaOnly ? ComparisonFindingsDeltaSchema : ComparisonFindingsToolSubmissionSchema;
+    const parameters = deltaOnly ? ComparisonFindingsDedicatedDeltaSchema : ComparisonFindingsToolSubmissionSchema;
     return {
       name: deltaOnly ? 'update_comparison_findings_delta' : 'update_comparison_findings',
       description: `${deltaOnly ? 'Submit only kind=delta against the actual current saved binding.' : 'Submit a complete initial snapshot, or prefer kind=delta with an existing binding.'} Delta requires one explicit retain/replace decision for every state.findingIds and state.questionIds; replacement objects are complete, existing IDs cannot be omitted or deleted, and retained objects are not implicit semantic approval. Add complete new entries through addedFindings/addedQuestions instead of repeating the saved snapshot; new IDs must be unique and cannot collide with existing IDs. Task criteria, final-source locations, scoped observations and question history remain mandatory in the materialized record. Each finding has exactly one baseline and one candidate observation; retain historical question and decisionImpact identity. References must be registered. Every observation needs supportBoundary with the same compared relationship, domain, coveredInstances and uncheckedInstances. delivered_output requires actual downstream drawn/written/returned output support and covered instances, not reconstructed targets or self-reports. Unknown checks remain unavailable or conditional with decisive limitations; retaining a pending question does not make findings ready. New grounds and reopenReason are required to reopen settled questions. Both tools use the same full validation and persistence queue; acceptance validates provenance and structure, never semantic truth.`,
@@ -45,8 +70,10 @@ export class ComparisonDiscovery {
           const errors = [...Value.Errors(parameters, params)].slice(0, 3).map(error => ({ path: error.path, message: error.message }));
           return { content: `status=rejected\ncode=invalid_findings\nerrors=${JSON.stringify(errors)}\nCorrect these fields and resubmit the complete snapshot or strictly bound delta.` };
         }
-        const input = structuredClone(params);
-        return { content: await this.#enqueue(() => 'kind' in input ? this.#delta(input, signal) : this.#update(input, signal)) };
+        const input = structuredClone(deltaOnly ? { ...params, kind: 'delta' } : params);
+        if (Value.Check(ComparisonFindingsDeltaSchema, input)) return { content: await this.#enqueue(() => this.#delta(input, signal)) };
+        if (Value.Check(ComparisonFindingsCompleteToolSubmissionSchema, input)) return { content: await this.#enqueue(() => this.#update(input, signal)) };
+        throw new Error('Validated findings tool input could not be canonicalized');
       },
     };
   }

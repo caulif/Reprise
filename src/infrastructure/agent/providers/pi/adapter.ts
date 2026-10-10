@@ -70,14 +70,13 @@ export class PiProviderAdapter implements ProviderAdapter {
     const recordFailure = (error: unknown) => deadline?.recordFailure(error);
     const usage = piRequestUsage(this.#models, input, recordFailure, error => deadline?.recordProviderFailure(error));
     const models = usage.models;
-    const effort = this.#config.effort;
+    const inputEffort = this.#config.effort;
+    let effort = inputEffort;
     let active = true;
     let toolsEnabled = true;
     const registeredTools = input.tools.map(tool => toPiTool(tool, recordFailure, error => deadline?.recordToolFailure(error)));
     const rejections = piToolRejections(input, recordFailure);
     const turnYield: TurnYieldState = { policy: undefined, reason: undefined, failure: undefined };
-    const fixedTokens = Math.ceil(Buffer.byteLength(input.systemPrompt + JSON.stringify(input.tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })))) / 3);
-    const availableWindow = contextWindowOf(model) - fixedTokens - Math.max(1_024, model.maxTokens);
     const agent = createPiAgent({
       sessionId: input.sessionId,
       streamFn: usage.stream,
@@ -107,6 +106,8 @@ export class PiProviderAdapter implements ProviderAdapter {
       transformContext: async (messages, signal) => {
         const combined = deadline ? AbortSignal.any([...(signal ? [signal] : []), deadline.signal]) : signal;
         combined?.throwIfAborted();
+        const fixedTokens = Math.ceil(Buffer.byteLength(input.systemPrompt + JSON.stringify(agent.state.tools.map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters as unknown })))) / 3);
+        const availableWindow = contextWindowOf(model) - fixedTokens - Math.max(1_024, model.maxTokens);
         await compactInto(messages, agent, model, models, effort, combined, input.compactionInstructions, input.onContextCompact, availableWindow).catch(error => { recordFailure(error); throw error; });
         combined?.throwIfAborted();
         return messages;
@@ -128,6 +129,8 @@ export class PiProviderAdapter implements ProviderAdapter {
         const { signal, allowedToolNames, yieldDeadline } = request;
         if (signal.aborted) throw abortError();
         exposure.enter(allowedToolNames);
+        effort = request.reasoningEffortCeiling === 'low' && inputEffort !== 'minimal' ? 'low' : inputEffort;
+        agent.state.thinkingLevel = effort;
         deadline = invocationYieldDeadline(agent, signal, yieldDeadline);
         appendFailure = undefined;
         try {
@@ -135,7 +138,7 @@ export class PiProviderAdapter implements ProviderAdapter {
             return await appendPiPrompt({ agent, model, models, effort, request, deadline, turnYield, usage, input });
           } finally {
             try { try { await agent.waitForIdle(); } finally { await usage.flush(); } }
-            finally { deadline.dispose(); deadline = undefined; turnYield.policy = undefined; exposure.restore(); }
+            finally { deadline.dispose(); deadline = undefined; turnYield.policy = undefined; exposure.restore(); effort = inputEffort; agent.state.thinkingLevel = inputEffort; }
           }
         } catch (error) {
           appendFailure = error;

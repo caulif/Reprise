@@ -220,10 +220,9 @@ test("large, binary, and credential files keep read boundaries", async () => {
     assert.ok(slicedDetails.evidenceRefs?.[0]?.startsWith("artifact:"));
     const binary = join(ctx.root, "blob.bin");
     await writeFile(binary, Buffer.from([0x00, 0x01, 0x02, 0xff]));
-    await assert.rejects(
-      () => read.execute({ path: binary, format: "image", mimeType: "image/png" }, signal),
-      /binary_read_denied/,
-    );
+    const deniedImage = await read.execute({ path: binary, format: "image", mimeType: "image/png" }, signal);
+    assert.match(deniedImage.content, /binary_read_denied/);
+    assert.equal(deniedImage.contentBlocks?.some(block => block.type === 'image') ?? false, false);
     const grepped = await grep.execute({ query: "nope", path: binary }, signal);
     assert.equal(grepped.content, "[]");
     const secret = join(ctx.root, ".env");

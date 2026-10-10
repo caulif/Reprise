@@ -81,6 +81,10 @@ for (const mode of ['repaired', 'unfinished'] as const) test(`production native 
           message = turn('inspect_comparison_draft', {});
         }
       }
+    } else if (prompt.includes('The completed independent audit turn submitted an accepted revision')) {
+      assert.equal(mode, 'repaired');
+      assert.deepEqual(context.tools?.map(tool => tool.name), ['inspect_comparison_draft']);
+      message = turn('inspect_comparison_draft', {});
     } else if (prompt.includes('The previous generation reached its output limit')) {
       assert.equal(mode, 'unfinished');
       message = response([{ type: 'text', text: 'Audit remains unfinished.' }], 'length');

@@ -8,13 +8,14 @@ export const DEFAULT_COMPARISON_RESOURCES: Readonly<ComparisonResources> = Objec
 
 class ComparisonResourceLimit extends Error {}
 
-type WorkStage = 'investigate' | 'compose' | 'review' | 'review-checkpoint' | 'review-inspection' | 'review-findings' | 'audit' | 'preview';
+type WorkStage = 'investigate' | 'investigation-checkpoint' | 'compose' | 'review' | 'review-checkpoint' | 'review-inspection' | 'review-findings' | 'audit' | 'preview';
 const STAGE_BUDGETS: Readonly<Record<WorkStage, number>> = { investigate: 120_000, compose: 90_000, review: 150_000,
-  'review-checkpoint': 90_000, 'review-inspection': 90_000, 'review-findings': 90_000, audit: 90_000, preview: 90_000 };
+  'investigation-checkpoint': 90_000, 'review-checkpoint': 90_000, 'review-inspection': 90_000, 'review-findings': 90_000, audit: 90_000, preview: 90_000 };
 const FINISH_RESERVES: Readonly<Record<WorkStage, number>> = { investigate: 480_000, compose: 390_000, review: 240_000,
-  'review-checkpoint': 240_000, 'review-inspection': 240_000, 'review-findings': 240_000, audit: 150_000, preview: 60_000 };
+  'investigation-checkpoint': 390_000, 'review-checkpoint': 240_000, 'review-inspection': 240_000, 'review-findings': 240_000, audit: 150_000, preview: 60_000 };
 const STAGE_REASONS: Readonly<Record<WorkStage, string>> = {
   investigate: 'bounded_investigation_timeout', compose: 'bounded_compose_timeout', review: 'bounded_source_timeout',
+  'investigation-checkpoint': 'bounded_investigation_timeout',
   'review-checkpoint': 'bounded_source_timeout', 'review-inspection': 'bounded_source_timeout', 'review-findings': 'bounded_source_timeout',
   audit: 'bounded_audit_timeout', preview: 'bounded_preview_timeout',
 };
@@ -41,6 +42,8 @@ export class ComparisonResourceTracker {
   readonly #sourceDeadlines = new Map<string, number>();
   #workStage: WorkStage = 'investigate';
   #workPass: string | undefined;
+  #investigationSaveSpent = 0;
+  #investigationSaveStarted: number | undefined;
 
   constructor(limits: ComparisonResources, options?: { boundedStages?: boolean }) {
     this.#limits = limits;
@@ -49,10 +52,16 @@ export class ComparisonResourceTracker {
   }
 
   phase(phase: string, pass?: string): void {
+    if (this.#investigationSaveStarted !== undefined && (phase !== 'investigate' || pass !== 'source-save')) {
+      this.#investigationSaveSpent += Date.now() - this.#investigationSaveStarted;
+      this.#investigationSaveStarted = undefined;
+      this.#stageDeadlines.delete('investigation-checkpoint');
+    }
     this.#workPass = pass;
     if (this.#boundedStages) this.#enterStage(phase === 'compose' ? 'compose' : phase === 'review'
-      ? pass === 'audit' || pass === 'preview' || pass === 'review-findings' ? pass
-        : pass === 'source-save' ? 'review-checkpoint' : pass === 'inspection' ? 'review-inspection' : 'review' : 'investigate');
+      ? pass === 'final-inspection' ? 'audit' : pass === 'audit' || pass === 'preview' || pass === 'review-findings' ? pass
+        : pass === 'source-save' ? 'review-checkpoint' : pass === 'inspection' ? 'review-inspection' : 'review'
+      : pass === 'source-save' ? 'investigation-checkpoint' : 'investigate');
     if (this.#boundedStages && (pass === 'sources' || pass === 'review-supplement') && !this.#sourceDeadlines.has(pass)) {
       const scale = Math.min(1, this.#limits.maxElapsedMs! / 600_000);
       this.#sourceDeadlines.set(pass, this.#deadline((pass === 'sources' ? 110_000 : 30_000) * scale));
@@ -68,8 +77,9 @@ export class ComparisonResourceTracker {
     this.#workStage = stage;
     if (this.#stageDeadlines.has(stage)) return;
     const scale = Math.min(1, this.#limits.maxElapsedMs! / 600_000);
-    const allowance = Math.min(STAGE_BUDGETS[stage] * scale,
+    const allowance = Math.min(STAGE_BUDGETS[stage] * scale - (stage === 'investigation-checkpoint' ? this.#investigationSaveSpent : 0),
       stage === 'investigate' ? this.#limits.investigationMs ?? Infinity : Infinity);
+    if (stage === 'investigation-checkpoint') this.#investigationSaveStarted = Date.now();
     const globalBoundary = this.#started + this.#limits.maxElapsedMs! - FINISH_RESERVES[stage] * scale;
     this.#stageDeadlines.set(stage, this.#deadline(allowance, globalBoundary));
   }
@@ -129,10 +139,10 @@ export class ComparisonResourceTracker {
     const deadline = this.workDeadline();
     if (deadline && Date.now() >= deadline.at) return deadline.reason;
     if (this.#phase === 'review') {
-      if (['inspect_comparison_draft', 'quote_evidence', 'update_comparison_findings', 'update_comparison_findings_delta', 'submit_comparison_draft', 'preview_report', 'write', 'edit'].includes(name)) return undefined;
+      if (['inspect_comparison_draft', 'quote_evidence', 'update_comparison_findings', 'update_comparison_findings_delta', 'save_comparison_checkpoint', 'submit_comparison_draft', 'preview_report', 'write', 'edit'].includes(name)) return undefined;
       return this.reviewReason();
     }
-    if (this.#phase !== 'investigate' || name === 'update_comparison_findings' || name === 'update_comparison_findings_delta') return undefined;
+    if (this.#phase !== 'investigate' || name === 'update_comparison_findings' || name === 'update_comparison_findings_delta' || name === 'save_comparison_checkpoint') return undefined;
     return this.softReason();
   }
 
