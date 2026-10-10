@@ -23,7 +23,7 @@ const stagesToTools: readonly [string, 'understand' | 'investigate' | 'compose' 
   ['decision author', 'compose', undefined, ['update_comparison_findings', 'submit_comparison_draft']],
   ['source review', 'review', 'sources', [...sources, ...updates]],
   ['source supplement', 'review', 'review-supplement', sources],
-  ['review findings', 'review', 'review-findings', ['read', ...updates]],
+  ['review findings', 'review', 'review-findings', ['read', updates[1]!]],
   ['draft inspection', 'review', 'inspection', ['inspect_comparison_draft']],
   ['draft audit', 'review', 'audit', names.filter(name => name !== 'preview_report')],
   ['preview closure', 'review', 'preview', ['preview_report']],
@@ -63,6 +63,17 @@ test('stage exits require actual observed accepted receipts and current state', 
   ready = true; assert.equal(await stages.exit(), 'independent_findings_ready');
   stages.begin('review', 'review-findings'); assert.equal(await stages.exit(), undefined);
   await bound[1]!.execute({}, signal); assert.equal(await stages.exit(), 'review_findings_ready');
+});
+
+test('review closure falls back to the full update tool when delta is unavailable', async () => {
+  const definitions: AgentToolDefinition[] = [{ name: 'update_comparison_findings', description: 'Save findings', parameters: Type.Object({}),
+    execute: async () => ({ content: 'status=accepted' }) }];
+  const stages = new ComparisonStages(definitions, new ComparisonResourceTracker({}), options);
+  const bound = stages.bind(definitions);
+  stages.begin('review', 'review-findings');
+  assert.deepEqual(stages.toolNames(bound), ['update_comparison_findings']);
+  await bound[0]!.execute({}, new AbortController().signal);
+  assert.equal(await stages.exit(), 'review_findings_ready');
 });
 
 test('parameter-dependent repair and preview guards also suppress completion callbacks', async () => {

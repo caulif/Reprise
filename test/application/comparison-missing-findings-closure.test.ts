@@ -15,6 +15,7 @@ import { PiModelCaller, type PiModels } from '../../src/infrastructure/agent/mod
 import type { ComparisonFindingsSubmission } from '../../src/core/schema.js';
 import { startExperiment } from '../../src/application/experiment.js';
 import { input, VerifiedRuntime } from '../codex-experiment-support.js';
+import { retainComparisonFindings } from '../comparison-findings-support.js';
 
 const deadline = { status: 'yielded' as const, sessionId: 'session', reason: 'bounded_investigation_timeout' };
 test('only an explicit missing-record getter preserves the real deadline outcome without Host synthesis', async () => {
@@ -92,7 +93,7 @@ for (const mode of ['success', 'save_fail', 'verbal', 'not_ready', 'cancel', 'ha
       assert.ok(context.tools?.every(tool => !['write', 'submit_comparison_draft', 'preview_report'].includes(tool.name)));
       message = response([{ type: 'text', text: 'No final quality check is supported; preserve the limitation.' }], 'stop');
     }
-    else if (prompt.includes('This is the independent review findings closure')) message = turn('update_comparison_findings', initial);
+    else if (prompt.includes('This is the independent review findings closure')) message = turn('update_comparison_findings_delta', retainComparisonFindings(prompt));
     else if (prompt.includes('This is the actual draft inspection checkpoint') || prompt.includes('The initial checkpoint is not formal certification: after this full audit')) message = turn('inspect_comparison_draft', {});
     else if (prompt.includes('This is the preview-only closure')) message = turn('preview_report', {});
     else throw new Error(`Unexpected production request ${requests}`);
@@ -112,7 +113,7 @@ for (const mode of ['success', 'save_fail', 'verbal', 'not_ready', 'cancel', 'ha
   assert.equal(initialRequests, 2); assert.equal(investigationRequests, 0);
   const boundary = events.find(event => event.type === 'agent.invocation_yielded' && event.payload.reason === 'bounded_investigation_timeout')!; assert.ok(boundary);
   assert.equal(events.some(event => event.type === 'comparison.investigation_closed'), false, 'Host cannot close or synthesize a record that never existed');
-  const saves = events.filter(event => event.type === 'agent.tool_completed' && event.payload.tool === 'update_comparison_findings' && !event.payload.nativeHook);
+  const saves = events.filter(event => event.type === 'agent.tool_completed' && ['update_comparison_findings', 'update_comparison_findings_delta'].includes(String(event.payload.tool)) && !event.payload.nativeHook);
   const rejectedInitial = saves.filter(event => event.sequence < boundary.sequence);
   assert.equal(rejectedInitial.length, 1, 'the real initial pass receives rejection without persisting a record');
   assert.match((rejectedInitial[0]!.payload.body as { text: string }).text, /status=rejected\ncode=final_source_mismatch/);

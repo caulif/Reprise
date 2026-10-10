@@ -16,6 +16,7 @@ import { ExperimentStore } from '../../src/infrastructure/store/experiment-store
 import { experimentModelInputResolver } from '../../src/application/experiment-helpers.js';
 import { startExperiment } from '../../src/application/experiment.js';
 import { input, VerifiedRuntime } from '../codex-experiment-support.js';
+import { retainComparisonFindings } from '../comparison-findings-support.js';
 
 const model: Model<'openai-completions'> = { id: 'fixture', name: 'fixture', api: 'openai-completions', provider: 'fixture', baseUrl: 'https://example.test',
   reasoning: false, input: ['text'], contextWindow: 128000, maxTokens: 16384, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
@@ -61,7 +62,7 @@ for (const mode of ['repaired', 'unfinished'] as const) test(`production native 
     else if (prompt.includes(COMPARISON_AUTHOR_COMPOSE_PROMPT)) message = turn('submit_comparison_draft', provisional);
     else if (prompt.includes(COMPARISON_DIRECT_SOURCE_REVIEW_PROMPT)) message = response([{ type: 'text', text: 'Output contact remains unavailable.' }], 'stop');
     else if (prompt.includes('This is the actual draft inspection checkpoint')) message = turn('inspect_comparison_draft', {});
-    else if (prompt.includes('This is the independent review findings closure')) message = turn('update_comparison_findings', findings);
+    else if (prompt.includes('This is the independent review findings closure')) message = turn('update_comparison_findings_delta', retainComparisonFindings(prompt));
     else if (prompt.includes('The initial checkpoint is not formal certification: after this full audit')) {
       auditRequests++;
       const fullState = JSON.parse(prompt.split('decision-changing uncertainty): ')[1]!.split('\n\nCurrent Host-owned metric pair:')[0]!) as { record: { submission: ComparisonFindingsSubmission } };

@@ -268,7 +268,7 @@ for (const changed of [false, true]) test(`production ${changed ? 'replacement' 
         assert.match(content, /Both arrays are required even when empty; their entries are objects, never strings/);
         const delta: ComparisonFindingsDelta = { kind: 'delta', binding: state.binding, findingDecisions: state.record.submission.findings.map(item => ({ id: item.id, action: 'retain' })),
           questionDecisions: state.record.submission.decisionQuestions.map(item => changed ? { id: item.id, action: 'replace', replacement: { ...item, resolution: 'Independent review still cannot establish final quality; retain its effect on preference.' } } : { id: item.id, action: 'retain' }) };
-        assert.ok(Value.Check(ComparisonFindingsDeltaSchema, delta)); assert.deepEqual(allowedToolNames, ['read', 'update_comparison_findings', 'update_comparison_findings_delta']);
+        assert.ok(Value.Check(ComparisonFindingsDeltaSchema, delta)); assert.deepEqual(allowedToolNames, ['read', 'update_comparison_findings_delta']);
         assert.match((await call('update_comparison_findings_delta', delta, signal)).content, /^status=accepted\n/); actualDelta = true;
       } else if (content.includes('The initial checkpoint is not formal certification: after this full audit')) {
         assert.ok(actualDelta); if (changed) assert.match((await call('submit_comparison_draft', draft, signal)).content, /^status=accepted\n/);

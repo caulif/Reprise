@@ -15,6 +15,7 @@ import { PiModelCaller, type PiModels } from '../../src/infrastructure/agent/mod
 import type { ComparisonFindingsSubmission } from '../../src/core/schema.js';
 import { startExperiment } from '../../src/application/experiment.js';
 import { input, VerifiedRuntime } from '../codex-experiment-support.js';
+import { retainComparisonFindings } from '../comparison-findings-support.js';
 
 const model: Model<'openai-completions'> = { id: 'fixture', name: 'fixture', api: 'openai-completions', provider: 'fixture', baseUrl: 'https://example.test',
   reasoning: false, input: ['text'], contextWindow: 128000, maxTokens: 16384, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
@@ -61,7 +62,7 @@ test('plain decision input traverses production native findings, audit, inspecti
       assert.ok(context.tools?.every(tool => !['write', 'submit_comparison_draft', 'preview_report'].includes(tool.name)));
       message = response([{ type: 'text', text: 'No final quality support.' }], 'stop');
     }
-    else if (prompt.includes('This is the independent review findings closure')) message = turn('update_comparison_findings', findings);
+    else if (prompt.includes('This is the independent review findings closure')) message = turn('update_comparison_findings_delta', retainComparisonFindings(prompt));
     else if (prompt.includes('This is the actual draft inspection checkpoint') || prompt.includes('The initial checkpoint is not formal certification: after this full audit')) message = turn('inspect_comparison_draft', {});
     else if (prompt.includes('This is the preview-only closure')) {
       assert.match(JSON.stringify(context.messages), /Neither final output is confirmed usable/);

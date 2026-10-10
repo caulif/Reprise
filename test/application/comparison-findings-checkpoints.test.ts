@@ -20,14 +20,14 @@ const signal = new AbortController().signal;
 const sourceNames = ['read', 'ls', 'grep', 'shell_exec', 'render_artifact', 'register_evidence', 'quote_evidence'];
 const yieldResult = (reason: string): FreeformInvocation => ({ status: 'yielded', sessionId: 'same-session', reason });
 
-function harness(receipt = 'status=accepted\nSaved current state') {
+function harness(receipt = 'status=accepted\nSaved current state', resources = new ComparisonResourceTracker({})) {
   let state = 'Actual current saved hypotheses', ready = false, effects = 0, completions = 0;
   const definitions: AgentToolDefinition[] = [...sourceNames, 'write', 'preview_report', 'update_comparison_findings', 'update_comparison_findings_delta'].map(name => ({
     name, description: name, parameters: name === 'update_comparison_findings_delta' ? ComparisonFindingsDeltaSchema : Type.Object({}),
     execute: async () => { effects++; return { content: name.startsWith('update_') ? receipt : 'Source boundary fixture result' }; },
     onCompleted: async () => { completions++; },
   }));
-  const stages = new ComparisonStages(definitions, new ComparisonResourceTracker({}), { getSubmittedResult: async () => undefined, enforcePhaseBoundaries: true,
+  const stages = new ComparisonStages(definitions, resources, { getSubmittedResult: async () => undefined, enforcePhaseBoundaries: true,
     reviewFindings: true, getFindingsState: () => state, findingsReady: () => ready });
   const checkpoints = stages.checkpoints;
   const tools = stages.bind(definitions);
@@ -45,6 +45,53 @@ test('six actual source effects force a checkpoint and execute/completion reject
   assert.equal(f.effects(), 6); assert.equal(f.completions(), 0);
 });
 
+for (const maxElapsedMs of [600_000, 60_000]) test(`slow source batches save before six checks with ${maxElapsedMs}ms total budget`, async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const resources = new ComparisonResourceTracker({ maxElapsedMs }, { boundedStages: true });
+  const f = harness(undefined, resources);
+  resources.phase('review', 'sources'); f.stages.begin('review', 'sources');
+  const deadline = resources.workDeadline()!;
+  const interval = Math.min(30_000, (deadline.at - Date.now()) / 3);
+  t.mock.timers.tick(Math.ceil(interval));
+  await f.tool('read').execute({ path: 'briefing/decision-map.md' }, signal);
+  assert.equal(await f.stages.exit(), undefined, 'navigation alone cannot create a save checkpoint');
+  await f.tool('read').execute({ path: 'candidate/final.html' }, signal);
+  assert.equal(await f.stages.exit(), 'findings_checkpoint_required');
+  f.stages.begin('review', 'sources');
+  assert.equal(f.checkpoints.due(), true, 'reentry cannot reset an unsaved batch timer');
+  const blocked = await f.tool('shell_exec').execute({}, signal);
+  await f.tool('shell_exec').onCompleted?.(blocked);
+  assert.match(blocked.content, /findings_checkpoint_required/);
+  assert.equal(f.effects(), 2); assert.equal(f.completions(), 0);
+  resources.phase('review', 'source-save'); f.stages.begin('review', 'source-save');
+  await f.tool('update_comparison_findings_delta').execute({}, signal);
+  assert.equal(await f.stages.exit(), 'findings_checkpoint_saved');
+  resources.phase('review', 'sources'); f.stages.begin('review', 'sources');
+  assert.deepEqual(resources.workDeadline(), deadline, 'saving cannot renew the original source deadline');
+  assert.equal(f.checkpoints.due(), false);
+  await f.tool('read').execute({ path: 'candidate/another.html' }, signal);
+  assert.equal(f.checkpoints.due(), false, 'an accepted update starts a fresh batch interval');
+  t.mock.timers.tick(Math.ceil(Math.min(30_000, (deadline.at - Date.now()) / 3)));
+  assert.equal(f.checkpoints.due(), true);
+  t.mock.timers.tick(deadline.at - Date.now());
+  assert.equal(f.checkpoints.due(), false, 'an expired source window cannot become a timed save checkpoint');
+  assert.equal(await f.stages.exit(), 'bounded_source_timeout');
+});
+
+test('unbounded sources do not gain a time checkpoint and rejected updates cannot reset a timed batch', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const legacy = harness(); legacy.stages.begin('review', 'sources');
+  await legacy.tool('read').execute({ path: 'candidate/final.html' }, signal);
+  t.mock.timers.tick(40_000); assert.equal(legacy.checkpoints.due(), false);
+  const resources = new ComparisonResourceTracker({ maxElapsedMs: 600_000 }, { boundedStages: true });
+  const f = harness('status=rejected', resources);
+  resources.phase('review', 'sources'); f.stages.begin('review', 'sources');
+  await f.tool('read').execute({ path: 'candidate/final.html' }, signal);
+  t.mock.timers.tick(30_000);
+  await f.tool('update_comparison_findings_delta').execute({}, signal);
+  assert.equal(f.checkpoints.due(), true);
+});
+
 test('save-only exposes the dedicated delta object schema and blocks original full-schema tool and effects', async () => {
   const f = harness(); f.stages.begin('investigate', 'source-save');
   assert.deepEqual(f.stages.toolNames(f.tools), ['update_comparison_findings_delta']);
@@ -57,7 +104,7 @@ test('save-only exposes the dedicated delta object schema and blocks original fu
   assert.equal(f.effects(), 0); assert.equal(f.completions(), 0); assert.equal(f.checkpoints.saved(), false);
 });
 
-async function productionFixture(t: { after: (callback: () => Promise<void>) => void }) {
+async function productionFixture(t: { after: (callback: () => Promise<void>) => void }, resources = new ComparisonResourceTracker({})) {
   const root = await mkdtemp(join(tmpdir(), 'reprise-source-checkpoint-')); t.after(() => rm(root, { recursive: true, force: true }));
   const catalog = await ComparisonEvidenceCatalog.create({ attemptRoot: root, attemptId: 'attempt', links: [], media: [] });
   const discovery = new ComparisonDiscovery({ catalog, attemptId: 'attempt', persist: async () => {} });
@@ -69,9 +116,8 @@ async function productionFixture(t: { after: (callback: () => Promise<void>) => 
   const definitions: AgentToolDefinition[] = [discovery.tool(), discovery.deltaTool(), {
     name: 'read', description: 'read', parameters: Type.Object({ path: Type.Optional(Type.String()) }), execute: async () => { reads++; return { content: 'Unverified boundary fixture input; no quality evidence.' }; },
   }];
-  const stages = new ComparisonStages(definitions, new ComparisonResourceTracker({}), { getSubmittedResult: async () => undefined, enforcePhaseBoundaries: true,
+  const stages = new ComparisonStages(definitions, resources, { getSubmittedResult: async () => undefined, enforcePhaseBoundaries: true,
     reviewFindings: true, getFindingsState: () => discovery.state(), findingsReady: () => discovery.readyToCompose() });
-  const resources = new ComparisonResourceTracker({});
   const checkpoints = stages.checkpoints;
   const tools = stages.bind(definitions);
   const delta = (): ComparisonFindingsDelta => {
@@ -82,8 +128,9 @@ async function productionFixture(t: { after: (callback: () => Promise<void>) => 
   return { discovery, stages, checkpoints, tools, delta, resources, reads: () => reads };
 }
 
-test('native production metadata navigation remains audited and counted without forcing a save before actual source observations', async t => {
-  const f = await productionFixture(t);
+for (const slow of [false, true]) test(`native metadata navigation stays audited and ${slow ? 'one slow source check' : 'six fast source checks'} leads to an actual save`, async t => {
+  if (slow) t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const f = await productionFixture(t, new ComparisonResourceTracker(slow ? { maxElapsedMs: 600_000 } : {}, { boundedStages: slow }));
   const metadata = ['briefing/decision-map.md', 'briefing/task/initial-input.txt', 'briefing/facts/context.json',
     'briefing/facts/comparison-links.json', 'briefing/facts/evidence-index.json', 'briefing/facts/media.json'];
   const model: Model<'openai-completions'> = { id: 'fixture', name: 'fixture', api: 'openai-completions', provider: 'fixture', baseUrl: 'https://example.test',
@@ -92,9 +139,11 @@ test('native production metadata navigation remains audited and counted without 
   const delta = f.delta();
   delta.questionDecisions[0] = { id: 'quality', action: 'replace', replacement: { ...f.discovery.snapshot()!.submission.decisionQuestions[0]!,
     status: 'unavailable', resolution: 'Actual source fixture cannot establish quality' } };
-  const turns: AssistantMessage['content'][] = [batch([...metadata, ...metadata]), batch(Array.from({ length: 6 }, (_, index) => `source/facts/context-${index}.json`)),
+  const sourceCount = slow ? 1 : 6;
+  const turns: AssistantMessage['content'][] = [batch([...metadata, ...metadata]), batch(Array.from({ length: sourceCount }, (_, index) => `source/facts/context-${index}.json`)),
     [{ type: 'toolCall', id: 'save', name: 'update_comparison_findings_delta', arguments: delta }]];
   const native = { getModel: () => model, streamSimple: () => {
+    if (slow && turns.length === 3) t.mock.timers.tick(30_000);
     const content = turns.shift(); assert.ok(content, 'no automatic request after accepted checkpoint');
     const message: AssistantMessage = { role: 'assistant', api: model.api, provider: model.provider, model: model.id, content,
       stopReason: 'toolUse', timestamp: Date.now(), usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
@@ -106,14 +155,14 @@ test('native production metadata navigation remains audited and counted without 
     tools: f.tools, audit: { append: async event => { f.resources.observe(event); } } });
   const passes: (ComparisonWorkPass | undefined)[] = [];
   const result = await f.checkpoints.run(async (phase, prompt, pass) => {
-    passes.push(pass); f.stages.begin(phase, pass);
+    passes.push(pass); f.resources.phase(phase, pass); f.stages.begin(phase, pass);
     return session.work({ promptContent: prompt, timeoutMs: 2_000,
       yieldAfterTurn: () => f.checkpoints.saved() ? 'findings_checkpoint_saved' : f.checkpoints.due() ? 'findings_checkpoint_required' : undefined });
   }, 'review', 'Inspect actual sources', 'sources');
   assert.deepEqual(result, { status: 'yielded', sessionId: session.sessionId, reason: 'independent_findings_ready' });
   assert.deepEqual(passes, ['sources', 'source-save']);
-  assert.equal(f.reads(), 18, 'all twelve metadata and six source reads actually execute');
-  assert.equal(f.resources.snapshot().toolCalls, 19, 'navigation remains part of actual resource accounting');
+  assert.equal(f.reads(), 12 + sourceCount, 'all metadata and actual source reads execute before saving');
+  assert.equal(f.resources.snapshot().toolCalls, 13 + sourceCount, 'navigation remains part of actual resource accounting');
   assert.equal(f.resources.snapshot().modelRequests, 3);
 });
 
