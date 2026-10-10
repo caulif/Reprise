@@ -28,6 +28,21 @@ function fixture(messages: AssistantMessage[], summaries: string[] = []) {
   return { models, adapter: new PiProviderAdapter({ models, model, config: { schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' }, providerId: 'fixture', modelId: 'fixture', effort: 'low' } }) };
 }
 
+test('generation ceiling cannot raise an existing limit or reduce the independent compaction budget', async () => {
+  const observed: (number | undefined)[] = [];
+  const models = { streamSimple: (_: unknown, _context: unknown, options: { maxTokens?: number }) => {
+    observed.push(options.maxTokens); const stream = createAssistantMessageEventStream();
+    stream.push({ type: 'done', reason: 'stop', message: response('stop', []) }); return stream;
+  }, completeSimple: async (_: unknown, _context: unknown, options: { maxTokens?: number }) => {
+    observed.push(options.maxTokens); return response('stop', []);
+  } } as unknown as PiModels;
+  const usage = piRequestUsage(models, {}, undefined, undefined, () => 4_096);
+  await usage.stream(model, { messages: [] }, { maxTokens: 1_024 });
+  await usage.models.completeSimple(model, { messages: [] }, { maxTokens: 8_192 });
+  await usage.flush();
+  assert.deepEqual(observed, [1_024, 8_192]);
+});
+
 test('compaction requests obey the same pre-call guard, including usage from preceding generation', async () => {
   const summaries: string[] = [];
   const order: string[] = [];

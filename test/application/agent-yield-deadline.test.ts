@@ -25,6 +25,28 @@ function emit(stream: ReturnType<typeof createAssistantMessageEventStream>, term
     : { type: 'done', reason: terminal.stopReason as 'stop' | 'toolUse', message: terminal });
 }
 
+test('output ceiling reaches native generation, is audited, and restores after provider failure', async () => {
+  const observed: (number | undefined)[] = [], events: AgentAuditEvent[] = [];
+  const models = { streamSimple: (_: unknown, _context: unknown, options: { maxTokens?: number }) => {
+    observed.push(options.maxTokens);
+    const stream = createAssistantMessageEventStream(); emit(stream, observed.length === 3 ? message('error', '401 Unauthorized') : message()); return stream;
+  } } as unknown as PiModels;
+  const session = await new AgentHost(new PiProviderAdapter({ models, model, config }))
+    .createSession({ role: 'comparison', systemPrompt: 'Output budget fixture', audit: { append: async event => { events.push(event); } } });
+  for (const ceiling of [4_096, undefined, 32_768, undefined]) {
+    const result = await session.work({ promptContent: 'Do current work', timeoutMs: 1_000, ...(ceiling ? { maxOutputTokens: ceiling } : {}) });
+    assert.equal(result.status, observed.length === 3 ? 'failed' : 'completed');
+  }
+  assert.deepEqual(observed, [4_096, undefined, 16_384, undefined]);
+  assert.deepEqual(events.filter(event => event.type === 'agent.invocation_started').map(event => event.payload.maxOutputTokens), [4_096, undefined, 32_768, undefined]);
+  for (const invalid of [0, -1, 1.5, 65_537, NaN]) {
+    assert.equal(Value.Check(AgentInvocationStartedSchema, { invocationId: 'invalid', maxOutputTokens: invalid }), false);
+    await assert.rejects(session.work({ promptContent: 'Invalid', timeoutMs: 1_000, maxOutputTokens: invalid }), /Invalid output token ceiling/);
+  }
+  assert.equal(observed.length, 4);
+  await session.close();
+});
+
 test('native deadline-only Host call yields after actual usage drain, records control and reuses the same idle session', async () => {
   const aborted = deferred(), draining = deferred(), release = deferred();
   const events: AgentAuditEvent[] = [], contexts: Context[] = [];
