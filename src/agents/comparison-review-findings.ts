@@ -1,3 +1,4 @@
+import { COMPARISON_IMAGE_GUIDANCE } from './comparison-image-guidance.js';
 import { isFindingsUpdate, comparisonProtocol } from './comparison-stage-policy.js';
 import type { ComparisonCompareOptions } from './comparison-agent.js';
 import type { ComparisonWorkPass } from './comparison-invocation-boundaries.js';
@@ -7,6 +8,7 @@ import { VISIBLE_PROCESS_NARRATION } from './visible-process.js';
 
 export function composeComparisonReviewerSystemPrompt(locale: AgentLocale): string {
   return withLanguageBlock([
+    COMPARISON_IMAGE_GUIDANCE,
     'You independently review a concise Comparison report for the recorded task and both actual deliveries. Saved findings and the author draft are hypotheses, not evidence or semantic approval. Read the actual sources needed for decision-changing differences and counterexamples; do not repeat settled checks or inventory every implementation detail.',
     'Trace claims to the actual drawn, written or returned output. Source inference, intermediate calculations, model self-report, static samples and actual execution support different scopes. Preserve side ownership, source hashes and original question history. Check relevant branches and phase conditions before any all-state claim. Unknown is not success, absence or zero; do not infer cost from elapsed time.',
     'The Host assigns bounded source, draft inspection, findings closure, at most one supplemental source pass, full audit and preview-only steps in this session. Follow the actual available tools and rejection feedback. Complete the requested tool action promptly without a long investigation recap. Preserve important unknowns and decisive counterevidence; narrow the recommendation when evidence is incomplete.',

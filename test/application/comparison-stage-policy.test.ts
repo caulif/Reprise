@@ -7,7 +7,7 @@ import type { ComparisonCompareOptions } from '../../src/agents/comparison-agent
 import type { ComparisonWorkPass } from '../../src/agents/comparison-invocation-boundaries.js';
 import type { AgentToolDefinition } from '../../src/infrastructure/agent/host.js';
 
-const sources = ['read', 'ls', 'grep', 'shell_exec', 'render_artifact', 'register_evidence', 'quote_evidence'];
+const sources = ['read', 'ls', 'grep', 'shell_exec', 'render_artifact', 'view_image', 'register_evidence', 'quote_evidence'];
 const updates = ['update_comparison_findings', 'update_comparison_findings_delta'];
 const names = [...sources, ...updates, 'write', 'edit', 'submit_comparison_draft', 'inspect_comparison_draft', 'preview_report', 'extension'];
 const options: ComparisonCompareOptions = { getSubmittedResult: async () => undefined, enforcePhaseBoundaries: true, reviewFindings: true,
@@ -15,7 +15,7 @@ const options: ComparisonCompareOptions = { getSubmittedResult: async () => unde
   hasReviewDraftMaterial: () => true, hasCurrentReviewInspection: () => true, isRepairRead: async () => true };
 
 const stagesToTools: readonly [string, 'understand' | 'investigate' | 'compose' | 'review', ComparisonWorkPass | undefined, readonly string[]][] = [
-  ['understand', 'understand', undefined, names.filter(name => !['shell_exec', 'render_artifact', 'register_evidence', 'submit_comparison_draft', 'preview_report'].includes(name))],
+  ['understand', 'understand', undefined, names.filter(name => !['shell_exec', 'render_artifact', 'view_image', 'register_evidence', 'submit_comparison_draft', 'preview_report'].includes(name))],
   ['investigate', 'investigate', undefined, names.filter(name => !['submit_comparison_draft', 'preview_report'].includes(name))],
   ['initial findings', 'investigate', 'initial-findings', [updates[0]!]],
   ['source checkpoint', 'investigate', 'source-save', [updates[1]!]],

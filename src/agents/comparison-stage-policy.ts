@@ -3,7 +3,7 @@ import type { AgentToolDefinition, AgentToolResult } from '../infrastructure/age
 
 export type ComparisonStage = 'understand' | 'investigate' | 'compose' | 'review' | 'initial-findings' | 'source-save'
   | 'sources' | 'findings' | 'inspection' | 'audit' | 'preview' | 'review-findings' | 'review-supplement';
-export const COMPARISON_SOURCE_TOOLS: ReadonlySet<string> = new Set(['read', 'ls', 'grep', 'shell_exec', 'render_artifact', 'register_evidence', 'quote_evidence']);
+export const COMPARISON_SOURCE_TOOLS: ReadonlySet<string> = new Set(['read', 'ls', 'grep', 'shell_exec', 'render_artifact', 'view_image', 'register_evidence', 'quote_evidence']);
 const findingsTools = ['update_comparison_findings', 'update_comparison_findings_delta'];
 export const isFindingsUpdate = (name: string): boolean => findingsTools.includes(name);
 
@@ -86,12 +86,12 @@ export function comparisonStagePolicy(stage: ComparisonStage, input: PolicyInput
       const exit = async () => stage !== 'investigate' ? undefined : input.checkpointDue?.() ? 'findings_checkpoint_required'
         : options?.enforcePhaseBoundaries && options.reviewFindings && options.hasSavedFindings?.() && options.findingsReady?.() ? 'findings_ready' : state?.softReason();
       return { ...base, exit, restricted: direct, denial: name => ({ currentPhase: stage, nextLegalPhase: name === 'preview_report' ? 'review' : 'compose' }),
-      allows: name => !options?.enforcePhaseBoundaries || !['submit_comparison_draft', 'preview_report', ...(stage === 'understand' ? ['shell_exec', 'render_artifact', 'register_evidence'] : [])].includes(name),
+      allows: name => !options?.enforcePhaseBoundaries || !['submit_comparison_draft', 'preview_report', ...(stage === 'understand' ? ['shell_exec', 'render_artifact', 'view_image', 'register_evidence'] : [])].includes(name),
       guard: (name, params) => {
         const path = params && typeof params === 'object' && 'path' in params ? String(params.path).replaceAll('\\', '/').replace(/^(\.\/)+/, '') : '';
         if (options?.enforcePhaseBoundaries && ['write', 'edit'].includes(name) && path === 'report.html') return false;
         if (stage === 'investigate' && ((input.checkpointDue?.() && COMPARISON_SOURCE_TOOLS.has(name))
-          || (['shell_exec', 'render_artifact', 'register_evidence'].includes(name) && options?.hasSavedFindings && !options.hasSavedFindings()))) return 'findings_checkpoint_required';
+          || (['shell_exec', 'render_artifact', 'view_image', 'register_evidence'].includes(name) && options?.hasSavedFindings && !options.hasSavedFindings()))) return 'findings_checkpoint_required';
         return true;
       } };
     }

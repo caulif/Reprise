@@ -1,0 +1,1 @@
+export const COMPARISON_IMAGE_GUIDANCE = 'For visual tasks, use view_image on registered PNG refs or render_artifact(includeImages=true) for new states. Compare matched animation samples. Claim observation only after actual image delivery; unavailable input leaves visual quality unknown. Samples and source intentions do not prove all-state behavior. Save promptly.';

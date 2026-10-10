@@ -39,6 +39,7 @@ import { ComparisonEvidenceCatalog, lookupCompletedToolCall } from "./comparison
 import type { ComparisonCatalogSnapshot } from "./comparison-evidence.js";
 import { createComparisonRenderCatalogPort } from "./comparison-render-catalog.js";
 import { createPreviewReportTool, createRenderArtifactTool, type ComparisonRenderedCheck } from "./comparison-render-tools.js";
+import { createComparisonViewImageTool } from './comparison-view-image.js';
 import { materializeComparisonReportPreview } from "./comparison-report-preview.js";
 import { ComparisonDraft } from "./comparison-draft.js";
 import { completedReviewedComparison } from './comparison-live-review.js';
@@ -698,6 +699,7 @@ function comparisonTools(
       },
       homeRoot: join(attemptRoot, ".home"),
     }),
+    createComparisonViewImageTool({ media: () => catalog.snapshot().media, attemptRoot, allowImages: input.taskCase.privacy.allowBinary }),
     registerEvidenceTool(catalog),
     draft.tool(),
     draft.inspectTool(),
