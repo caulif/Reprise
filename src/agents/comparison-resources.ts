@@ -2,17 +2,18 @@ import type { ComparisonResources } from '../core/schema.js';
 import type { AgentAuditEvent } from '../infrastructure/agent/host.js';
 
 export const DEFAULT_COMPARISON_RESOURCES: Readonly<ComparisonResources> = Object.freeze({
-  investigationModelRequests: 12, investigationToolCalls: 30, investigationMs: 120_000,
-  maxModelRequests: 40, maxToolCalls: 120, maxElapsedMs: 600_000,
+  investigationModelRequests: 12, investigationToolCalls: 30, investigationMs: 240_000,
+  maxModelRequests: 40, maxToolCalls: 120, maxElapsedMs: 1_200_000,
 });
 
 class ComparisonResourceLimit extends Error {}
 
 type WorkStage = 'investigate' | 'investigation-checkpoint' | 'compose' | 'review' | 'review-checkpoint' | 'review-inspection' | 'review-findings' | 'audit' | 'preview';
-const STAGE_BUDGETS: Readonly<Record<WorkStage, number>> = { investigate: 120_000, compose: 90_000, review: 150_000,
-  'investigation-checkpoint': 90_000, 'review-checkpoint': 90_000, 'review-inspection': 90_000, 'review-findings': 90_000, audit: 90_000, preview: 90_000 };
-const FINISH_RESERVES: Readonly<Record<WorkStage, number>> = { investigate: 480_000, compose: 390_000, review: 240_000,
-  'investigation-checkpoint': 390_000, 'review-checkpoint': 240_000, 'review-inspection': 240_000, 'review-findings': 240_000, audit: 150_000, preview: 60_000 };
+const STAGE_BUDGETS: Readonly<Record<WorkStage, number>> = { investigate: 240_000, compose: 180_000, review: 300_000,
+  'investigation-checkpoint': 120_000, 'review-checkpoint': 120_000, 'review-inspection': 120_000, 'review-findings': 120_000, audit: 180_000, preview: 120_000 };
+// Saving protects the complete author allowance in addition to the author's downstream reserve.
+const FINISH_RESERVES: Readonly<Record<WorkStage, number>> = { investigate: 780_000, compose: 480_000, review: 360_000,
+  'investigation-checkpoint': 660_000, 'review-checkpoint': 300_000, 'review-inspection': 270_000, 'review-findings': 210_000, audit: 90_000, preview: 30_000 };
 const STAGE_REASONS: Readonly<Record<WorkStage, string>> = {
   investigate: 'bounded_investigation_timeout', compose: 'bounded_compose_timeout', review: 'bounded_source_timeout',
   'investigation-checkpoint': 'bounded_investigation_timeout',
@@ -63,8 +64,8 @@ export class ComparisonResourceTracker {
         : pass === 'source-save' ? 'review-checkpoint' : pass === 'inspection' ? 'review-inspection' : 'review'
       : pass === 'source-save' ? 'investigation-checkpoint' : 'investigate');
     if (this.#boundedStages && (pass === 'sources' || pass === 'review-supplement') && !this.#sourceDeadlines.has(pass)) {
-      const scale = Math.min(1, this.#limits.maxElapsedMs! / 600_000);
-      this.#sourceDeadlines.set(pass, this.#deadline((pass === 'sources' ? 110_000 : 30_000) * scale));
+      const scale = this.#limits.maxElapsedMs! / 1_200_000;
+      this.#sourceDeadlines.set(pass, this.#deadline((pass === 'sources' ? 240_000 : 60_000) * scale));
     }
     if (phase === this.#phase) return;
     if (this.#phase === 'investigate') this.#investigationElapsed += Date.now() - this.#phaseStarted;
@@ -76,7 +77,7 @@ export class ComparisonResourceTracker {
   #enterStage(stage: WorkStage): void {
     this.#workStage = stage;
     if (this.#stageDeadlines.has(stage)) return;
-    const scale = Math.min(1, this.#limits.maxElapsedMs! / 600_000);
+    const scale = this.#limits.maxElapsedMs! / 1_200_000;
     const allowance = Math.min(STAGE_BUDGETS[stage] * scale - (stage === 'investigation-checkpoint' ? this.#investigationSaveSpent : 0),
       stage === 'investigate' ? this.#limits.investigationMs ?? Infinity : Infinity);
     if (stage === 'investigation-checkpoint') this.#investigationSaveStarted = Date.now();

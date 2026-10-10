@@ -15,6 +15,19 @@ const validSample = () => ({ schemaVersion: 1, coordinateDomain: 'viewport_css_p
     screenPoints: [{ name: 'start', x: 10, y: 20 }, { name: 'end', x: 16, y: 28 }],
     matrix: { a: 2, b: 0, c: 0, d: 2, e: 10, f: 20 } }] });
 
+test('selector diagnostics are bounded, bound to failure status and never treated as measurements', () => {
+  const candidate = { tagName: 'line', elementId: '<untrusted>', parentId: 'group' };
+  const sample = (status: string, matchCount: number, candidates: unknown[]) => ({ ...validSample(),
+    observations: [{ ...query, status, selectorDiagnostics: { matchCount, candidates } }] });
+  assert.equal(validateGeometrySample(sample('missing', 0, []), [query], 0).observations[0]!.status, 'missing');
+  assert.equal(validateGeometrySample(sample('ambiguous', 6, Array(4).fill(candidate)), [query], 0).observations[0]!.status, 'ambiguous');
+  for (const invalid of [sample('missing', 1, [candidate]), sample('ambiguous', 1, [candidate]),
+    sample('unsupported', 2, [candidate, candidate]), sample('ambiguous', 5, Array(5).fill(candidate)),
+    sample('ambiguous', 2, [{ ...candidate, elementId: 'x'.repeat(65) }, candidate]), sample('ambiguous', 2, [candidate])]) {
+    assert.throws(() => validateGeometrySample(invalid, [query], 0));
+  }
+});
+
 test('geometry sample rejects unbound queries, bad matrix mappings, timing and nonfinite values', () => {
   assert.equal(validateGeometrySample(validSample(), [query], 1).observations[0]!.status, 'ok');
   for (const mutate of [
@@ -87,6 +100,11 @@ test('opt-in geometry observes nested viewBox and parent transforms despite page
     assert.deepEqual(line.localPoints, [{ name: 'start', x: 1, y: 2 }, { name: 'end', x: 4, y: 6 }]);
     assert.deepEqual(line.screenPoints, [{ name: 'start', x: 46, y: 76 }, { name: 'end', x: 58, y: 92 }]);
     assert.deepEqual(sample.observations.slice(4).map(o => o.status), ['missing', 'ambiguous', 'invalid_selector', 'unavailable']);
+    const missing = sample.observations[4]!, ambiguous = sample.observations[5]!;
+    if (missing.status !== 'ok') assert.deepEqual(missing.selectorDiagnostics, { matchCount: 0, candidates: [] });
+    if (ambiguous.status !== 'ok') assert.deepEqual(ambiguous.selectorDiagnostics, { matchCount: 2, candidates: [
+      { tagName: 'line', elementId: '', parentId: '' }, { tagName: 'line', elementId: '', parentId: '' },
+    ] });
     const box = sample.observations[3]!;
     assert.equal(box.status, 'ok');
     if (box.status === 'ok') assert.deepEqual(box.bounds, { x: 7, y: 249, width: 20, height: 30 });

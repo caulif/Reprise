@@ -29,8 +29,8 @@ for (const mode of ['checkpoint', 'interrupted-source', 'closure-timeout', 'save
     } else if (content.includes('SAVE ONLY:') || content.includes('independent review findings closure')) {
       assert.deepEqual(allowedToolNames, ['update_comparison_findings_delta']);
       const saving = content.includes('SAVE ONLY:');
-      assert.equal(yieldDeadline?.at, saving ? saveTimeout ? 303_000 : 355_000 : 361_000);
-      const delay = mode === 'closure-timeout' || (saveTimeout && saving) ? 90_000 : saveTimeout ? 10_000 : 63_000;
+      assert.equal(yieldDeadline?.at, Date.now() + 60_000);
+      const delay = mode === 'closure-timeout' || (saveTimeout && saving) ? 90_000 : saveTimeout ? 10_000 : 43_000;
       if (Date.now() + delay >= yieldDeadline.at) {
         t.mock.timers.tick(yieldDeadline.at - Date.now());
         return { status: 'yielded', reason: yieldDeadline.reason };

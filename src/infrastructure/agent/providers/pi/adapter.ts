@@ -67,8 +67,9 @@ export class PiProviderAdapter implements ProviderAdapter {
   createSession(input: Parameters<ProviderAdapter["createSession"]>[0]): ProviderSession {
     const model = this.#model;
     let deadline: ReturnType<typeof invocationYieldDeadline> | undefined;
+    let maxOutputTokens: number | undefined;
     const recordFailure = (error: unknown) => deadline?.recordFailure(error);
-    const usage = piRequestUsage(this.#models, input, recordFailure, error => deadline?.recordProviderFailure(error));
+    const usage = piRequestUsage(this.#models, input, recordFailure, error => deadline?.recordProviderFailure(error), () => maxOutputTokens);
     const models = usage.models;
     const inputEffort = this.#config.effort;
     let effort = inputEffort;
@@ -129,6 +130,7 @@ export class PiProviderAdapter implements ProviderAdapter {
         const { signal, allowedToolNames, yieldDeadline } = request;
         if (signal.aborted) throw abortError();
         exposure.enter(allowedToolNames);
+        maxOutputTokens = request.maxOutputTokens;
         effort = request.reasoningEffortCeiling === 'low' && inputEffort !== 'minimal' ? 'low' : inputEffort;
         agent.state.thinkingLevel = effort;
         deadline = invocationYieldDeadline(agent, signal, yieldDeadline);
@@ -138,7 +140,7 @@ export class PiProviderAdapter implements ProviderAdapter {
             return await appendPiPrompt({ agent, model, models, effort, request, deadline, turnYield, usage, input });
           } finally {
             try { try { await agent.waitForIdle(); } finally { await usage.flush(); } }
-            finally { deadline.dispose(); deadline = undefined; turnYield.policy = undefined; exposure.restore(); effort = inputEffort; agent.state.thinkingLevel = inputEffort; }
+            finally { deadline.dispose(); deadline = undefined; maxOutputTokens = undefined; turnYield.policy = undefined; exposure.restore(); effort = inputEffort; agent.state.thinkingLevel = inputEffort; }
           }
         } catch (error) {
           appendFailure = error;

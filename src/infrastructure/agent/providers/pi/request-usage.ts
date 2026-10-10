@@ -7,7 +7,7 @@ import { observePiFailure } from './yield-deadline.js';
 
 type Hooks = Parameters<ProviderAdapter['createSession']>[0];
 
-export function piRequestUsage(source: PiModels, input: Pick<Hooks, 'onModelUsage' | 'onModelRequest'>, onFailure?: (error: unknown) => void, onProviderFailure = onFailure) {
+export function piRequestUsage(source: PiModels, input: Pick<Hooks, 'onModelUsage' | 'onModelRequest'>, onFailure?: (error: unknown) => void, onProviderFailure = onFailure, outputCeiling?: () => number | undefined) {
   const pending: Promise<void>[] = [];
   let auditFailed = false;
   let auditFailure: unknown;
@@ -67,11 +67,13 @@ export function piRequestUsage(source: PiModels, input: Pick<Hooks, 'onModelUsag
   };
   const stream = async (...args: Parameters<PiModels['streamSimple']>) => {
     args[2]?.signal?.throwIfAborted();
+    const ceiling = outputCeiling?.();
     const context = redactModelVisibleValue(args[1]);
     await notify(args[0], context, 'generation').catch(error => { onFailure?.(error); throw error; });
     args[2]?.signal?.throwIfAborted();
     let result: ReturnType<PiModels['streamSimple']>;
-    try { result = source.streamSimple(args[0], context, { ...args[2], maxRetries: 0, maxRetryDelayMs: 8_000 }); }
+    try { result = source.streamSimple(args[0], context, { ...args[2], maxRetries: 0, maxRetryDelayMs: 8_000,
+      ...(ceiling === undefined ? {} : { maxTokens: Math.min(ceiling, args[2]?.maxTokens ?? Infinity, args[0].maxTokens) }) }); }
     catch (error) { onProviderFailure?.(error); throw error; }
     const task = observePiFailure(() => result.result(), onProviderFailure).then((message) => report(message, 'generation', args[2]?.signal)).catch(error => { if (auditFailed) onFailure?.(error); else onProviderFailure?.(error); throw error; });
     // Lifecycle checkpoints await failures; attach a handler while the stream is still being consumed.

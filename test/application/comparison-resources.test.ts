@@ -262,8 +262,8 @@ test('fractionally scaled deadlines pass the real Session audit boundary without
   }) }).createSession({ role: 'comparison', systemPrompt: 'test', audit: { append: async event => { events.push(event); } } });
   for (const [phase, pass, allowance] of [
     ['investigate', undefined, 20_000], ['compose', undefined, 15_000],
-    ['review', 'sources', 110_000 / 6], ['review', 'review-supplement', 5_000],
-    ['review', 'audit', 15_000], ['review', 'preview', 15_000],
+    ['review', 'sources', 20_000], ['review', 'review-supplement', 5_000],
+    ['review', 'audit', 15_000], ['review', 'preview', 10_000],
   ] as const) {
     const deadline = comparisonWorkDeadline(tracker, phase, pass);
     const result = await session.work({ promptContent: 'test', timeoutMs: 1_000, ...deadline });
@@ -281,26 +281,26 @@ test('investigation saving gets a bounded persistence window without renewing so
   t.mock.timers.tick(110_000);
   tracker.phase('investigate', 'source-save');
   const save = tracker.workDeadline()!;
-  assert.equal(save.at, Date.now() + 90_000);
+  assert.equal(save.at, Date.now() + 60_000);
   t.mock.timers.tick(50_000);
   tracker.phase('investigate'); assert.deepEqual(tracker.workDeadline(), source);
   assert.ok(tracker.workDeadline()!.at < Date.now(), 'expired source work cannot restart');
   tracker.phase('investigate', 'source-save'); assert.deepEqual(tracker.workDeadline(), save);
-  tracker.phase('compose'); assert.ok(tracker.workDeadline()!.at <= 1_000 + 210_000, 'compose finishing reserve remains protected');
+  tracker.phase('compose'); assert.ok(tracker.workDeadline()!.at === Date.now() + 90_000, 'compose finishing reserve remains protected');
 });
 
-test('investigation saves share ninety seconds of active saving and cannot borrow the final reserve', t => {
+test('investigation saves share sixty seconds of active saving and cannot borrow the final reserve', t => {
   t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
   const tracker = new ComparisonResourceTracker({ maxElapsedMs: 600_000 }, { boundedStages: true });
   t.mock.timers.tick(30_000); tracker.phase('investigate', 'source-save');
   const first = tracker.workDeadline()!;
   t.mock.timers.tick(50_000); tracker.phase('investigate');
   t.mock.timers.tick(20_000); tracker.phase('investigate', 'source-save');
-  assert.equal(tracker.workDeadline()!.at, Date.now() + 40_000, 'source time does not consume the remaining save allowance');
+  assert.equal(tracker.workDeadline()!.at, Date.now() + 10_000, 'source time does not consume the remaining save allowance');
   assert.equal(tracker.workDeadline()!.at, first.at + 20_000);
-  t.mock.timers.tick(40_000); tracker.phase('investigate'); tracker.phase('investigate', 'source-save');
+  t.mock.timers.tick(10_000); tracker.phase('investigate'); tracker.phase('investigate', 'source-save');
   assert.equal(tracker.beforeTool('update_comparison_findings_delta'), 'bounded_investigation_timeout', 'a third save cannot renew consumed saving time');
   const late = new ComparisonResourceTracker({ maxElapsedMs: 600_000 }, { boundedStages: true });
-  t.mock.timers.tick(200_000); late.phase('investigate', 'source-save');
+  t.mock.timers.tick(260_000); late.phase('investigate', 'source-save');
   assert.equal(late.workDeadline()!.at, Date.now() + 10_000, 'all saving is still capped by the global finishing reserve');
 });

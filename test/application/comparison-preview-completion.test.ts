@@ -57,6 +57,11 @@ for (const reason of ['bounded_preview_timeout', 'output_limit', 'report_ready']
           ? { status: 'completed', reportPath: 'report.html', evidenceRefs: [] } : undefined,
       });
     assert.equal(result.status, reason === 'report_ready' ? 'completed' : 'failed', JSON.stringify(result));
+    if (result.status === 'failed' && reason === 'bounded_preview_timeout') {
+      assert.equal(result.failure.code, 'agent_timeout');
+      assert.equal(result.failure.kind, 'timeout');
+      assert.equal(result.failure.retryable, false);
+    }
     assert.equal(sourceUpdates, 1, 'a real current source save avoids duplicate findings closure');
     assert.equal(audits, 1, 'source acceptance still requires a new actual draft audit');
     assert.equal(previews, reason === 'output_limit' ? 2 : 1, 'output-limit continuation remains bounded within the preview pass');
