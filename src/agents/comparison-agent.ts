@@ -583,7 +583,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
           const next = await session.work({ promptContent: [comparisonDecisionMetrics(prompt, phase, context.reportFacts.metrics), stages.prompt()].filter(Boolean).join('\n\n'), timeoutMs: comparisonTimeout(resources, this.#resources, this.#timeoutMs),
             allowedToolNames: stages.toolNames(phasedTools), ...deadline,
             ...(boundedStages && reviewPass && ['initial-findings', 'source-save', 'findings', 'review-findings', 'inspection', 'final-inspection', 'preview'].includes(reviewPass)
-              ? { reasoningEffortCeiling: 'low' as const, ...(['source-save', 'inspection', 'final-inspection', 'preview'].includes(reviewPass) ? { maxOutputTokens: 4_096 } : {}) } : {}),
+              ? { reasoningEffortCeiling: 'low' as const, ...(['inspection', 'final-inspection', 'preview'].includes(reviewPass) ? { maxOutputTokens: 4_096 } : {}) } : {}),
             signal, yieldAfterTurn: () => stages.exit() });
           return comparisonYieldBoundary(next, resources, signal);
         };

@@ -18,13 +18,15 @@ for (const reason of ['bounded_preview_timeout', 'output_limit', 'report_ready']
   test(`strict preview ${reason} preserves the actual invocation completion boundary`, async () => {
     let material = false, formal = false, previews = 0, sourceUpdates = 0, audits = 0;
     const events: AgentAuditEvent[] = [];
-    const host = new AgentHost({ createSession: input => ({ append: async ({ content, allowedToolNames, signal }) => {
+    const host = new AgentHost({ createSession: input => ({ append: async ({ content, allowedToolNames, signal, maxOutputTokens }) => {
       const execute = async (name: string) => input.tools.find(tool => tool.name === name)!.execute({}, signal);
       if (allowedToolNames?.length === 1 && allowedToolNames[0] === 'preview_report') {
+        assert.equal(maxOutputTokens, 4_096);
         await execute('preview_report');
         return { status: 'yielded' as const, reason };
       }
       if (allowedToolNames?.length === 1 && allowedToolNames[0] === 'inspect_comparison_draft') {
+        assert.equal(maxOutputTokens, 4_096);
         await execute('inspect_comparison_draft');
         return { status: 'yielded' as const, reason: 'review_draft_material_ready' };
       }

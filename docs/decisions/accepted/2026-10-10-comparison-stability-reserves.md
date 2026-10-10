@@ -16,9 +16,9 @@
 
 宿主在已提交的每个来源工具完成回执后追加 comparison.evidence_checkpoint，引用调用身份、内容hash与字节数，明确 not_certified；不复制证据正文、不编造 finding、不证明工具检查成功（回执可能是拒绝或缺失），也不构成任意阶段续跑协议。语义发现保存与此进度索引分离；语义保存超时不撤销已提交的证据。
 
-Freeform Invocation 可指定 maxOutputTokens，先校验并写入 invocation-start 审计，再传给 Provider。Pi generation 取调用上限、已有上限和模型上限的较小值；compaction保持自己的额度，退出后恢复。严格 source-save/inspection/final-inspection/preview使用4096，沿用一次有界 output_limit 续写；不能接受截断参数或重复认证已完成副作用。此参数不保证兼容服务完全遵循，也不保证工具生成时间。
+Freeform Invocation 可指定 maxOutputTokens，先校验并写入 invocation-start 审计，再传给 Provider。Pi generation 取调用上限、已有上限和模型上限的较小值；compaction保持自己的额度，退出后恢复。严格 inspection/final-inspection/preview使用4096，沿用一次有界 output_limit 续写；不能接受截断参数或重复认证已完成副作用。语义source-save保留模型原有输出额度：真实验证中4096同时截断推理和工具参数，两次续写仍被SDK拒绝，不能把语义整理当机械动作压小。此参数不保证兼容服务完全遵循，也不保证工具生成时间。
 
-bounded阶段超时保留 agent_timeout/timeout及原阶段原因，并禁止自动重跑整个有副作用的attempt；其它让出仍是协议未完成。取消、真实Provider/工具/审计错误及整体硬限优先。
+未产出可发布检查点的bounded让出失败归为 agent_timeout/timeout及原阶段原因；专用闭合器已经处理的超时保留业务code和timeout类别，并禁止自动重跑整个有副作用的attempt；其它让出仍是协议未完成。取消、真实Provider/工具/审计错误及整体硬限优先。
 
 几何 missing/ambiguous 可附匹配数和前4个元素的tag/id/parentId（每项最多64字符）。结果过原schema、字节预算、查询绑定及状态一致性校验，已有无诊断记录兼容；元素身份是未可信来源提示，不是对象任务角色或测量值。不采集脚本、任意DOM正文，也不把失败检查认证为质量通过。
 

@@ -18,7 +18,7 @@ for (const mode of ['checkpoint', 'interrupted-source', 'closure-timeout', 'save
   const events: AgentAuditEvent[] = [];
   const saveTimeout = mode === 'save-timeout' || mode === 'save-timeout-no-update';
   const fails = mode === 'closure-timeout' || mode === 'inspection-timeout' || mode === 'save-timeout-no-update';
-  const host = new AgentHost({ createSession: input => ({ append: async ({ content, signal, yieldDeadline, allowedToolNames }) => {
+  const host = new AgentHost({ createSession: input => ({ append: async ({ content, signal, yieldDeadline, allowedToolNames, maxOutputTokens }) => {
     await input.onModelRequest?.({ model: 'fixture', digest: 'a'.repeat(64), messageCount: ++requests, images: [] });
     const tool = (name: string) => input.tools.find(tool => tool.name === name)!;
     if (requests === 1) t.mock.timers.tick(110_000);
@@ -29,6 +29,7 @@ for (const mode of ['checkpoint', 'interrupted-source', 'closure-timeout', 'save
     } else if (content.includes('SAVE ONLY:') || content.includes('independent review findings closure')) {
       assert.deepEqual(allowedToolNames, ['update_comparison_findings_delta']);
       const saving = content.includes('SAVE ONLY:');
+      assert.equal(maxOutputTokens, undefined, 'semantic findings must retain the model output allowance, including reasoning and complete tool arguments');
       assert.equal(yieldDeadline?.at, Date.now() + 60_000);
       const delay = mode === 'closure-timeout' || (saveTimeout && saving) ? 90_000 : saveTimeout ? 10_000 : 43_000;
       if (Date.now() + delay >= yieldDeadline.at) {
