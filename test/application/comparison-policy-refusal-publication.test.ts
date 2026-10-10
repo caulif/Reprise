@@ -65,7 +65,7 @@ for (const mode of ['success', 'cancel', 'hard'] as const) test(`production nati
       const state = JSON.parse(actualPrompt.split('Current saved findings (hypotheses only): ')[1]!.split('\n\nCurrent Host-owned metric pair:')[0]!) as { binding: ComparisonFindingsDelta['binding']; questionIds: string[]; findingIds: string[] };
       const delta: ComparisonFindingsDelta = { kind: 'delta', binding: state.binding,
         findingDecisions: state.findingIds.map(id => ({ id, action: 'retain' })), questionDecisions: state.questionIds.map(id => ({ id, action: 'retain' })) };
-      assert.ok(Value.Check(ComparisonFindingsDeltaSchema, delta)); actualDelta = true; response = turn('update_comparison_findings', delta);
+      assert.ok(Value.Check(ComparisonFindingsDeltaSchema, delta)); actualDelta = true; response = turn('update_comparison_findings_delta', delta);
     } else if (actualPrompt.includes('The initial checkpoint is not formal certification: after this full audit')) {
       assert.ok(actualDelta); response = turn('inspect_comparison_draft', {});
     } else if (actualPrompt.includes('This is the preview-only closure')) {
@@ -117,7 +117,7 @@ for (const mode of ['success', 'cancel', 'hard'] as const) test(`production nati
   const denied = events.find(event => event.type === 'agent.tool_failed' && String(event.payload.message).includes('write_denied'))!;
   const correction = events.find(event => event.type === 'agent.tool_completed' && event.payload.tool === 'shell_exec' && !event.payload.nativeHook && event.sequence > denied.sequence)!;
   assert.ok(correction.sequence < source.sequence);
-  const update = events.filter(event => event.type === 'agent.tool_completed' && event.payload.tool === 'update_comparison_findings' && !event.payload.nativeHook).at(-1)!;
+  const update = events.filter(event => event.type === 'agent.tool_completed' && event.payload.tool === 'update_comparison_findings_delta' && !event.payload.nativeHook).at(-1)!;
   const closure = events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'review-findings')!;
   const audit = events.find(event => event.type === 'comparison.draft_audit_started')!;
   const inspection = events.filter(event => event.type === 'agent.tool_completed' && event.payload.tool === 'inspect_comparison_draft' && !event.payload.nativeHook).at(-1)!;

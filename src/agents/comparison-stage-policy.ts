@@ -29,7 +29,7 @@ export type ComparisonStagePolicy = {
 };
 
 type PolicyInput = {
-  strict: boolean; direct: boolean; initial: boolean; checkpointDue?: () => boolean;
+  strict: boolean; direct: boolean; initial: boolean; preferFindingsDelta?: boolean; checkpointDue?: () => boolean;
   options?: ComparisonCompareOptions | undefined;
   state?: {
     initialSaved: () => boolean; checkpointSaved: () => boolean;
@@ -57,7 +57,7 @@ export function comparisonStagePolicy(stage: ComparisonStage, input: PolicyInput
       'Call inspect_comparison_draft to receive the actual full accepted text. Delivery does not approve publication.', undefined, async () => options?.hasReviewDraftMaterial?.() ? 'review_draft_material_ready' : undefined);
     case 'preview': return only(['preview_report'], 'preview_closure_only',
       'Only preview_report after actual formal inspection of the current binding is permitted.', () => options?.hasCurrentReviewInspection?.() === true, async () => await options?.getSubmittedResult?.() ? 'report_ready' : undefined);
-    case 'review-findings': return only([...findingsTools, ...(options?.isRepairRead ? ['read'] : [])], 'review_findings_only',
+    case 'review-findings': return only([...(input.preferFindingsDelta ? ['update_comparison_findings_delta'] : findingsTools), ...(options?.isRepairRead ? ['read'] : [])], 'review_findings_only',
       'Only an actual findings update or registered repair read may execute in this closure.',
       async (name, params) => name !== 'read' || await options?.isRepairRead?.(params) === true, async () => state?.reviewReady() ? 'review_findings_ready' : state?.reviewPending() ? 'review_findings_pending' : undefined);
     case 'review-supplement': return only([...COMPARISON_SOURCE_TOOLS], 'review_supplement_only',

@@ -26,25 +26,37 @@ export class ComparisonFindingsCheckpoints {
   #source = false;
   #saving = false;
   #checks = 0;
+  #batchStarted = Date.now();
   #acceptedState: string | undefined;
-  constructor(tools: readonly AgentToolDefinition[], options?: ComparisonCompareOptions) {
+  readonly #sourceDeadline: (() => { at: number } | undefined) | undefined;
+  constructor(tools: readonly AgentToolDefinition[], options?: ComparisonCompareOptions,
+    sourceDeadline?: () => { at: number } | undefined) {
     this.#options = options;
+    this.#sourceDeadline = sourceDeadline;
     this.enabled = comparisonProtocol(options).direct
       && typeof options?.getFindingsState === 'function' && tools.some(tool => tool.name === 'update_comparison_findings_delta');
   }
   begin(phase: string, pass?: ComparisonWorkPass): void {
-    if (phase !== this.#phase) this.#checks = 0;
+    if (phase !== this.#phase) { this.#checks = 0; this.#batchStarted = Date.now(); }
     this.#phase = phase; this.#saving = this.enabled && pass === 'source-save';
     this.#source = this.enabled && ((phase === 'investigate' && pass === undefined) || pass === 'sources');
     if (this.#saving) this.#acceptedState = undefined;
   }
-  due(): boolean { return this.#source && this.#checks >= 6; }
+  due(): boolean {
+    if (!this.#source || this.#checks === 0) return false;
+    if (this.#checks >= 6) return true;
+    const deadline = this.#sourceDeadline?.();
+    if (!deadline || Date.now() >= deadline.at) return false;
+    const interval = Math.min(30_000, (deadline.at - this.#batchStarted) / 3);
+    return Date.now() - this.#batchStarted >= interval;
+  }
   saved(): boolean { return this.#saving && !!this.#acceptedState && this.#acceptedState === this.#options?.getFindingsState?.(); }
   observe(name: string, params: unknown, result: AgentToolResult): void {
     if (!this.enabled) return;
     if (this.#source && countsSourceObservation(name, params)) this.#checks++;
     if (isFindingsUpdate(name) && /^status=accepted(?:\r?\n|$)/.test(result.content)) {
       this.#checks = 0;
+      this.#batchStarted = Date.now();
       if (this.#saving) this.#acceptedState = this.#options?.getFindingsState?.();
     }
   }

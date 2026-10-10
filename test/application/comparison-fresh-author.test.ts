@@ -70,7 +70,7 @@ test('production fresh author submits recorded hypotheses then independently upd
     } else if (prompt.includes('This is the actual draft inspection checkpoint')) turn = call('inspect_comparison_draft', {});
     else if (prompt.includes('This is the independent review findings closure')) {
       const state = JSON.parse(prompt.split('Current saved findings (hypotheses only): ')[1]!.split('\n\nCurrent Host-owned metric pair:')[0]!) as { binding: ComparisonFindingsDelta['binding']; findingIds: string[]; questionIds: string[] };
-      turn = call('update_comparison_findings', { kind: 'delta', binding: state.binding, findingDecisions: state.findingIds.map(id => ({ id, action: 'retain' })), questionDecisions: state.questionIds.map(id => ({ id, action: 'retain' })) });
+      turn = call('update_comparison_findings_delta', { kind: 'delta', binding: state.binding, findingDecisions: state.findingIds.map(id => ({ id, action: 'retain' })), questionDecisions: state.questionIds.map(id => ({ id, action: 'retain' })) });
     } else if (prompt.includes('The initial checkpoint is not formal certification: after this full audit')) turn = call('inspect_comparison_draft', {});
     else if (prompt.includes('This is the preview-only closure')) { assert.deepEqual(actual.tools?.map(t => t.name), ['preview_report']); turn = call('preview_report', {}); }
     else throw Error('Unexpected production author isolation request');

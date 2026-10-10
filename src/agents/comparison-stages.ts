@@ -22,6 +22,7 @@ export class ComparisonStages {
   readonly #resources: ComparisonResourceTracker;
   readonly #options: ComparisonCompareOptions | undefined;
   readonly #strict: boolean;
+  readonly #hasDelta: boolean;
   #phase: Phase = 'investigate';
   #stage: ComparisonStage = 'investigate';
   #policy: ComparisonStagePolicy;
@@ -29,9 +30,10 @@ export class ComparisonStages {
   constructor(tools: readonly AgentToolDefinition[], resources: ComparisonResourceTracker, options?: ComparisonCompareOptions) {
     this.#resources = resources; this.#options = options;
     this.#strict = comparisonProtocol(options).strict;
+    this.#hasDelta = tools.some(tool => tool.name === 'update_comparison_findings_delta');
     this.bounded = comparisonProtocol(options).direct;
     this.initialFindings = new ComparisonInitialFindings(options);
-    this.checkpoints = new ComparisonFindingsCheckpoints(tools, options);
+    this.checkpoints = new ComparisonFindingsCheckpoints(tools, options, () => resources.workDeadline());
     this.reviewFindings = new ComparisonReviewFindingsClosure(options);
     this.#composition = new ComparisonCompositionTools(options, () => this.#phase);
     this.#policy = this.#select();
@@ -53,7 +55,7 @@ export class ComparisonStages {
   }
   #select(): ComparisonStagePolicy {
     const policy = comparisonStagePolicy(this.#stage, { strict: this.#strict, direct: this.bounded, initial: this.initialFindings.enabled,
-      options: this.#options, checkpointDue: () => this.checkpoints.due(), state: {
+      options: this.#options, preferFindingsDelta: this.#hasDelta, checkpointDue: () => this.checkpoints.due(), state: {
         initialSaved: () => this.initialFindings.saved(), checkpointSaved: () => this.checkpoints.saved(),
         reviewReady: () => this.reviewFindings.ready(), reviewPending: () => this.reviewFindings.pending(),
         sourceReady: () => this.reviewFindings.sourceReady(), sourcePending: () => this.reviewFindings.sourcePending(),

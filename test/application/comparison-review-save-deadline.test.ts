@@ -27,8 +27,7 @@ for (const mode of ['checkpoint', 'interrupted-source', 'closure-timeout', 'save
       t.mock.timers.tick(mode === 'checkpoint' ? 94_000 : saveTimeout ? 76_000 : 110_000);
       return { status: 'yielded', reason: mode === 'checkpoint' || saveTimeout ? 'findings_checkpoint_required' : 'bounded_source_timeout' };
     } else if (content.includes('Save the actual source observations') || content.includes('independent review findings closure')) {
-      assert.deepEqual(allowedToolNames, content.includes('Save the actual source observations')
-        ? ['update_comparison_findings_delta'] : ['update_comparison_findings', 'update_comparison_findings_delta']);
+      assert.deepEqual(allowedToolNames, ['update_comparison_findings_delta']);
       const saving = content.includes('Save the actual source observations');
       assert.equal(yieldDeadline?.at, saving ? saveTimeout ? 303_000 : 355_000 : 361_000);
       const delay = mode === 'closure-timeout' || (saveTimeout && saving) ? 90_000 : saveTimeout ? 10_000 : 63_000;

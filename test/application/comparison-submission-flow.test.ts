@@ -9,6 +9,7 @@ import { COMPARISON_AUTHOR_COMPOSE_PROMPT } from '../../src/agents/comparison-au
 import { startExperiment } from '../../src/application/experiment.js';
 import { AgentHost, type ProviderAdapter } from '../../src/infrastructure/agent/host.js';
 import { input, VerifiedRuntime } from '../codex-experiment-support.js';
+import { retainComparisonFindings } from '../comparison-findings-support.js';
 import { sha256 } from '../../src/core/identity.js';
 import { Value } from '@sinclair/typebox/value';
 import { ComparisonDiscoveryRecordSchema, type ComparisonDiscoveryRecord, type ComparisonFindingsSubmission } from '../../src/core/schema.js';
@@ -208,8 +209,8 @@ for (const bounded of [false, true]) test(`production requireFindings ${bounded 
         }
         else if (content.includes('This is the actual draft inspection checkpoint') || content.includes('The initial checkpoint is not formal certification: after this full audit')) await call('inspect_comparison_draft', {}, signal);
         else if (content.includes('This is the independent review findings closure')) {
-          reviewUpdates++; assert.deepEqual(allowedToolNames, ['read', 'update_comparison_findings', 'update_comparison_findings_delta']);
-          assert.match((await call('update_comparison_findings', reviewFindings, signal)).content, /^status=accepted/);
+          reviewUpdates++; assert.deepEqual(allowedToolNames, ['read', 'update_comparison_findings_delta']);
+          assert.match((await call('update_comparison_findings_delta', retainComparisonFindings(content), signal)).content, /^status=accepted/);
         } else if (content.includes('This is the preview-only closure')) {
           assert.deepEqual(allowedToolNames, ['preview_report']);
           const receipt = JSON.parse((await call('preview_report', {}, signal)).content) as { status: string }; assert.equal(receipt.status, 'ok');
@@ -240,7 +241,7 @@ for (const bounded of [false, true]) test(`production requireFindings ${bounded 
     assert.ok(acceptedUpdates[1]!.sequence < hostClosure[0]!.sequence);
     assert.equal(events.filter(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'findings').length, 0, 'Host deadline closure does not create paid snapshot calls');
   }
-  const actualUpdates = events.filter(event => event.type === 'agent.tool_completed' && event.payload.tool === 'update_comparison_findings');
+  const actualUpdates = events.filter(event => event.type === 'agent.tool_completed' && ['update_comparison_findings', 'update_comparison_findings_delta'].includes(String(event.payload.tool)));
   assert.equal(actualUpdates.length, 2, 'author and independent review both actually execute the update tool');
   assert.ok(actualUpdates[1]!.sequence < closure.sequence);
   const audit = events.find(event => event.type === 'comparison.draft_audit_started'); assert.ok(audit && audit.sequence > closure.sequence);

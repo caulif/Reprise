@@ -154,7 +154,7 @@ Comparison 的 `quote_evidence` 只读取当前 catalog 的已登记文本引用
 
 Comparison 紧凑 decision 的 Host 范围投影按精确相等共享字段，保留依据及双侧范围映射；不同范围和未知不合并，自动文字仍计入原详情篇幅。作者不得仅为满足篇幅改变 findings 的检查范围或 disposition。workspace 工具的纯非法路径前置拒绝允许模型纠正合法虚拟路径，仍审计实际失败；权限、真实文件系统、审计及持久化错误边界不变。见[收敛改造](../decisions/accepted/2026-10-06-comparison-bounded-review-convergence.md)。
 
-紧凑 decision 的 scopeSummaries 是报告展示层：每项 basis/boundary 对应一个 findingId 及历史/当前双侧简短范围，非空白并精确覆盖当前ID。Host 转义展示且计入原详情预算；完整supportBoundary保留于findings，既有legacy稿无此字段仍完整投影。独立正式audit每轮收到当前完整saved state与实际稿件，真实消息和generation snapshot保留revision/binding和全部范围；摘要的语义仍须独审，结构通过不认证它。固定Host导航不触发6次实际来源检查后的保存点，资源与审计照常计入；恢复不重复整份briefing。闭包截止立即失败，避免记录不存在的额外模型请求。
+紧凑 decision 的 scopeSummaries 是报告展示层：每项 basis/boundary 对应一个 findingId 及历史/当前双侧简短范围，非空白并精确覆盖当前ID。Host 转义展示且计入原详情预算；完整supportBoundary保留于findings，既有legacy稿无此字段仍完整投影。独立正式audit每轮收到当前完整saved state与实际稿件，真实消息和generation snapshot保留revision/binding和全部范围；摘要的语义仍须独审，结构通过不认证它。固定Host导航不计入实际来源检查次数，资源与审计照常计入；严格有界阶段已有实际观察时，在完成边界按6次检查或本批次最多30秒（不超过其剩余来源窗口三分之一）触发实际保存，纯导航及已过期窗口不触发时间保存点。只有接受的更新重置批次计时，同阶段重入及拒绝不重置，原来源截止与保存上限不变；恢复不重复整份briefing。最终发现关闭有delta工具时只开放delta及原受限修复读取，缺少delta的旧调用方保留完整更新。参见[按时间保存来源观察](../decisions/accepted/2026-10-10-comparison-timed-source-checkpoints.md)。闭包截止立即失败，避免记录不存在的额外模型请求。
 
 来源窗口因 bounded_source_timeout 中断后，只进入一次实际最终 findings 关闭，不再补查；旧保存状态不能替代该完整动作。未知仍由模型显式处置，随后实际核稿和版本匹配的发布门禁继续执行。原始生成是否截断只能依据原事件明确字段；完整读回执不能证明生成完整，无关导航库存不进入任务取舍。
 
