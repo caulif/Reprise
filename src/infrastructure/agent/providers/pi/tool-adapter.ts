@@ -5,9 +5,7 @@ import type { AgentToolDefinition } from "../../types.js";
 import { AgentToolFailure } from '../../tools.js';
 import { observePiFailure } from './yield-deadline.js';
 
-const WRITE_TOOLS = new Set(["edit", "write", "shell_exec"]);
-
-const PI_TOOL_EXECUTION = "sequential" as const;
+const PI_TOOL_EXECUTION = "parallel" as const;
 
 export function toPiTool(tool: AgentToolDefinition, onFailure?: (error: unknown) => void, onRecoverableFailure = onFailure): AgentTool {
   const parameters = JSON.parse(JSON.stringify(tool.parameters)) as AgentTool['parameters'];
@@ -28,8 +26,9 @@ export function toPiTool(tool: AgentToolDefinition, onFailure?: (error: unknown)
         throw error;
       }
     },
-    ...(WRITE_TOOLS.has(tool.name) ? { executionMode: "sequential" as const } : {}),
+    executionMode: tool.executionMode ?? "sequential",
     async execute(_toolCallId, params, signal) {
+      signal?.throwIfAborted();
       const result = await observePiFailure(() => tool.execute(params, signal ?? new AbortController().signal), (error) => {
         if (error instanceof AgentToolFailure) onFailure?.(error);
         else if (!(error instanceof ToolPreconditionRejected)) onRecoverableFailure?.(error);

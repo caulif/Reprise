@@ -5,7 +5,7 @@ import { hostname } from 'node:os';
 import { Value } from '@sinclair/typebox/value';
 import { ComparisonFindingsUpdatedSchema, ComparisonDraftAcceptedSchema, ComparisonInvestigationClosedSchema } from '../../core/comparison-discovery-schema.js';
 import { AgentUsageFactsSchema } from '../../core/schema.js';
-import { ComparisonResourceSummarySchema } from '../../core/comparison-resources-schema.js';
+import { ComparisonResourceSummarySchema, ComparisonSourceContinuationSchema, AgentModelStreamSchema } from '../../core/comparison-resources-schema.js';
 import { SAFE_ID, sha256, eventEnvelopeChecksum, runOperationId, writeAtomic } from '../../core/identity.js';
 import {
   ArtifactRefSchema,
@@ -368,6 +368,8 @@ export class ExperimentStore {
     if (event.type === 'comparison.investigation_closed' && !Value.Check(ComparisonInvestigationClosedSchema, event.payload)) throw new Error('comparison.investigation_closed payload does not satisfy its schema.');
     if (event.type === 'comparison.draft_accepted' && !Value.Check(ComparisonDraftAcceptedSchema, event.payload)) throw new Error('comparison.draft_accepted payload does not satisfy its schema.');
     if (event.type === 'agent.usage_reported' && !Value.Check(AgentUsageFactsSchema, event.payload)) throw new Error('agent.usage_reported payload does not satisfy its schema.');
+    if (event.type === 'agent.model_stream_completed' && !Value.Check(AgentModelStreamSchema, event.payload)) throw new Error('agent.model_stream_completed payload does not satisfy its schema.');
+    if (event.type === 'comparison.sources_continued' && !Value.Check(ComparisonSourceContinuationSchema, event.payload)) throw new Error('comparison.sources_continued payload does not satisfy its schema.');
     if (event.type === 'comparison.resources_completed' && !Value.Check(ComparisonResourceSummarySchema, event.payload)) throw new Error('comparison.resources_completed payload does not satisfy its schema.');
     if ((event.type === 'comparison.plan_requested' || event.type === 'comparison.report_requested') && !Value.Check(ComparisonPhaseRequestedPayloadSchema, event.payload)) throw new Error(`${event.type} payload does not satisfy its schema.`);
     if (event.type === 'candidate.user_view_persisted' && !Value.Check(UserVisibleTurnSchema, event.payload)) throw new Error('candidate.user_view_persisted payload does not satisfy its schema.');

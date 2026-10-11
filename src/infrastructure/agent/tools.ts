@@ -29,20 +29,24 @@ export function instrumentTools(
     return {
       ...tool,
       async execute(params, signal) {
+        signal.throwIfAborted();
+        const startedAt = Date.now();
+        const requestIndex = cursor.requestIndex;
         const toolCallId = `${cursor.invocationId ?? sessionId}:tool:${cursor.toolSeq = (cursor.toolSeq ?? 0) + 1}`;
-        await appendToolAudit(audit, role, {
-          type: "agent.tool_called",
-          sessionId,
-          role,
-          payload: {
-            tool: tool.name,
-            toolCallId,
-            params: safeParams(params),
-            ...(cursor.invocationId ? { invocationId: cursor.invocationId } : {}),
-          },
-        });
         let rejection: ToolPreconditionRejected | undefined;
         try {
+          await appendToolAudit(audit, role, {
+            type: "agent.tool_called",
+            sessionId,
+            role,
+            payload: {
+              tool: tool.name,
+              toolCallId,
+              params: safeParams(params),
+              startedAt, requestIndex, executionMode: tool.executionMode ?? "sequential",
+              ...(cursor.invocationId ? { invocationId: cursor.invocationId } : {}),
+            },
+          });
           const raw = await tool.execute(params, signal).catch((error: unknown) => {
             if (error instanceof ToolPreconditionRejected && !signal.aborted) rejection = error;
             throw error;
@@ -61,6 +65,7 @@ export function instrumentTools(
             payload: {
               tool: tool.name,
               toolCallId,
+              startedAt, finishedAt: Date.now(), elapsedMs: Date.now() - startedAt, requestIndex,
               byteLength: contentByteLength(visible),
               contentTypes: contentTypes(visible),
               contentDigest: contentDigest(visible),
@@ -81,7 +86,8 @@ export function instrumentTools(
             payload: {
               tool: tool.name,
               toolCallId,
-              message: error instanceof Error ? error.message : String(error),
+              startedAt, finishedAt: Date.now(), elapsedMs: Date.now() - startedAt, requestIndex,
+              message: error instanceof AgentToolFailure && error.cause instanceof Error ? error.cause.message : error instanceof Error ? error.message : String(error),
               ...(cursor.invocationId ? { invocationId: cursor.invocationId } : {}),
             },
           });

@@ -164,10 +164,17 @@ Comparison 紧凑 decision 的 Host 范围投影按精确相等共享字段，�
 
 紧凑 decision 的 scopeSummaries 是报告展示层：每项 basis/boundary 对应一个 findingId 及历史/当前双侧简短范围，非空白并精确覆盖当前ID。Host 转义展示且计入原详情预算；完整supportBoundary保留于findings，既有legacy稿无此字段仍完整投影。独立正式audit每轮收到当前完整saved state与实际稿件，真实消息和generation snapshot保留revision/binding和全部范围；摘要的语义仍须独审，结构通过不认证它。固定Host导航不计入实际来源检查次数，资源与审计照常计入；严格有界阶段已有实际观察时，在完成边界按6次检查或本批次最多30秒（不超过其剩余来源窗口三分之一）触发实际保存，纯导航及已过期窗口不触发时间保存点。只有接受的更新重置批次计时，同阶段重入及拒绝不重置，原来源截止与保存上限不变；恢复不重复整份briefing。最终发现关闭有delta工具时只开放delta及原受限修复读取，缺少delta的旧调用方保留完整更新。参见[按时间保存来源观察](../decisions/accepted/2026-10-10-comparison-timed-source-checkpoints.md)。闭包截止立即失败，避免记录不存在的额外模型请求。
 
-来源窗口因 bounded_source_timeout 中断后，只进入一次实际最终 findings 关闭，不再补查；旧保存状态不能替代该完整动作。未知仍由模型显式处置，随后实际核稿和版本匹配的发布门禁继续执行。原始生成是否截断只能依据原事件明确字段；完整读回执不能证明生成完整，无关导航库存不进入任务取舍。
+来源窗口因 bounded_source_timeout 中断后，在整体收尾资源充足时可有界续查，最多两次；拒绝后才进入实际最终 findings 关闭。旧保存状态不能替代该完整动作。未知仍由模型显式处置，随后实际核稿和版本匹配的发布门禁继续执行。原始生成是否截断只能依据原事件明确字段；完整读回执不能证明生成完整，无关导航库存不进入任务取舍。
 
 报告结构检查从实际 DOM 元素属性读取 Host 区数量、顺序、必需槽位、组件模板及布局声明；转义的精确引文正文不能补足缺失结构或制造额外 Host 区。核验措辞诊断、媒体引用投影、派生证据暂存、单侧图片缺失说明及预览会话标签检查复用同一引文保护，原文字节仍在提交、发布和恢复时验证。阶段 helper 只持有观察状态、提示词和收尾，权限测试直接使用 ComparisonStages 或统一阶段策略。实验端口可注入 Comparison 预览 renderer，用于固定请求序列的测试；默认继续使用真实浏览器，预览工具、版本绑定和发布校验保持原流程。
 
 Comparison 的 `view_image({ref})` 只观察当前 catalog 注册的 PNG 媒体，复用原生图片授权、hash、真实路径和交付预算。每图最多 3 MiB、9,216,000 像素，每次附件最多4图及8 MiB；非 PNG 来源须先渲染。工具纳入来源检查与保存计数，在理解、纯保存、作者和纯预览阶段不新增权限。旧 `read(format=image)` 保留，默认图片上限独立于文本64 KiB分页，文本最大256 KiB不变；PNG检查限于头部和像素，不代表完整解码。普通图片参数、大小、授权拒绝返回可修正反馈；注册图片完整性、审计与取消仍终止。实际模型输入manifest才认证图片送达，静态截图不认证整个动画或模型判断。理由见[图片工具决策](../decisions/accepted/2026-10-10-comparison-image-tools.md)。
 
 严格中途 source-save 优先只开放 `save_comparison_checkpoint`：输入精确当前 binding、最多一条完整 finding 和可选 finals。Host 保留全部问题、criteria、limitations 和其它 findings，通过原 delta 校验及持久化队列保存；接受不计作独立来源显式复审，不提前结束来源查证。最终 review-findings 仍须显式处置每个历史 ID。无新工具的旧调用方继续专用 delta。见[中途单条保存](../decisions/accepted/2026-10-10-comparison-batch-and-audit-closure.md#中途单条保存)。
+
+
+## Comparison 并行与阶段续查
+
+Comparison 的独立 read/ls/grep/view_image/render_artifact 使用 Pi 原生并行批次；其它工具省略执行模式时保持串行，混合批整体串行。渲染采用独立输出目录、最多两路并发，媒体登记沿用有序队列。整体请求、工具、费用与时间上限不变；保存等待暂停来源活动时间；调查和复审的保存窗口各累计实际保存耗时，来源工作不占用保存额度，累计额度不续期。局部来源时间截止在收尾资源充足时可提供最多两次有界续查，模型选择是否继续，不由 Host 判断任务语义。授予及拒绝都进入 comparison.sources_continued。
+
+transform_image 裁剪/缩放已有冻结 PNG，使用原图像素坐标并记录父 hash 和变换顺序；返回派生 media ref，再由 view_image 交付图片。工具不重新渲染来源，不证明视觉理解。source-save 的 evidence 投影保留全部 user 材料、工具结果与调用配对，仅省略 assistant 叙述，实际输入仍按 generation 快照恢复。首流事件、首文本 delta 与工具执行计时用于诊断，不把首 SDK 事件当网络 TTFT。详见[并行与续查决定](../decisions/accepted/2026-10-11-comparison-parallel-continuation.md)。

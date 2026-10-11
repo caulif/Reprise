@@ -16,8 +16,8 @@ const FINISH_RESERVES: Readonly<Record<WorkStage, number>> = { investigate: 780_
   'investigation-checkpoint': 660_000, 'review-checkpoint': 300_000, 'review-inspection': 270_000, 'review-findings': 210_000, audit: 90_000, preview: 30_000 };
 const STAGE_REASONS: Readonly<Record<WorkStage, string>> = {
   investigate: 'bounded_investigation_timeout', compose: 'bounded_compose_timeout', review: 'bounded_source_timeout',
-  'investigation-checkpoint': 'bounded_investigation_timeout',
-  'review-checkpoint': 'bounded_source_timeout', 'review-inspection': 'bounded_source_timeout', 'review-findings': 'bounded_source_timeout',
+  'investigation-checkpoint': 'bounded_investigation_save_timeout',
+  'review-checkpoint': 'bounded_source_save_timeout', 'review-inspection': 'bounded_source_timeout', 'review-findings': 'bounded_source_timeout',
   audit: 'bounded_audit_timeout', preview: 'bounded_preview_timeout',
 };
 
@@ -29,6 +29,7 @@ export class ComparisonResourceTracker {
   #reviewElapsed = 0;
   #requests = 0;
   #tools = 0;
+  #toolLimitReached = false;
   #investigationRequests = 0;
   #investigationTools = 0;
   #reviewRequests = 0;
@@ -43,8 +44,10 @@ export class ComparisonResourceTracker {
   readonly #sourceDeadlines = new Map<string, number>();
   #workStage: WorkStage = 'investigate';
   #workPass: string | undefined;
-  #investigationSaveSpent = 0;
-  #investigationSaveStarted: number | undefined;
+  readonly #extensions = new Map<string, number>();
+  #sourcePausedAt: number | undefined;
+  readonly #saveSpent = new Map<string, number>();
+  #saveStarted: { phase: string; at: number } | undefined;
 
   constructor(limits: ComparisonResources, options?: { boundedStages?: boolean }) {
     this.#limits = limits;
@@ -53,10 +56,20 @@ export class ComparisonResourceTracker {
   }
 
   phase(phase: string, pass?: string): void {
-    if (this.#investigationSaveStarted !== undefined && (phase !== 'investigate' || pass !== 'source-save')) {
-      this.#investigationSaveSpent += Date.now() - this.#investigationSaveStarted;
-      this.#investigationSaveStarted = undefined;
-      this.#stageDeadlines.delete('investigation-checkpoint');
+    if (this.#boundedStages && this.#sourcePausedAt !== undefined && pass !== 'source-save') {
+      const paused = Date.now() - this.#sourcePausedAt;
+      const sourceStage = this.#phase === 'investigate' ? 'investigate' : 'review';
+      const old = this.#stageDeadlines.get(sourceStage);
+      if (old !== undefined) this.#stageDeadlines.set(sourceStage, old + paused);
+      if (sourceStage === 'review') for (const [key, at] of this.#sourceDeadlines) this.#sourceDeadlines.set(key, at + paused);
+      this.#sourcePausedAt = undefined;
+    }
+    if (this.#boundedStages && pass === 'source-save' && this.#sourcePausedAt === undefined) this.#sourcePausedAt = Date.now();
+    if (this.#saveStarted && (phase !== this.#saveStarted.phase || pass !== 'source-save')) {
+      const saving = this.#saveStarted;
+      this.#saveSpent.set(saving.phase, (this.#saveSpent.get(saving.phase) ?? 0) + Date.now() - saving.at);
+      this.#saveStarted = undefined;
+      this.#stageDeadlines.delete(saving.phase === 'investigate' ? 'investigation-checkpoint' : 'review-checkpoint');
     }
     this.#workPass = pass;
     if (this.#boundedStages) this.#enterStage(phase === 'compose' ? 'compose' : phase === 'review'
@@ -78,9 +91,10 @@ export class ComparisonResourceTracker {
     this.#workStage = stage;
     if (this.#stageDeadlines.has(stage)) return;
     const scale = this.#limits.maxElapsedMs! / 1_200_000;
-    const allowance = Math.min(STAGE_BUDGETS[stage] * scale - (stage === 'investigation-checkpoint' ? this.#investigationSaveSpent : 0),
+    const savePhase = stage === 'investigation-checkpoint' ? 'investigate' : stage === 'review-checkpoint' ? 'review' : undefined;
+    const allowance = Math.min(STAGE_BUDGETS[stage] * scale - (savePhase ? this.#saveSpent.get(savePhase) ?? 0 : 0),
       stage === 'investigate' ? this.#limits.investigationMs ?? Infinity : Infinity);
-    if (stage === 'investigation-checkpoint') this.#investigationSaveStarted = Date.now();
+    if (savePhase) this.#saveStarted = { phase: savePhase, at: Date.now() };
     const globalBoundary = this.#started + this.#limits.maxElapsedMs! - FINISH_RESERVES[stage] * scale;
     this.#stageDeadlines.set(stage, this.#deadline(allowance, globalBoundary));
   }
@@ -92,7 +106,30 @@ export class ComparisonResourceTracker {
   workDeadline(): { at: number; reason: string } | undefined {
     const at = this.#stageDeadlines.get(this.#workStage);
     const source = this.#workPass === undefined ? undefined : this.#sourceDeadlines.get(this.#workPass);
-    return at === undefined ? undefined : { at: Math.min(at, source ?? Infinity), reason: STAGE_REASONS[this.#workStage] };
+    const scale = this.#limits.maxElapsedMs! / 1_200_000;
+    const boundary = this.#started + this.#limits.maxElapsedMs! - FINISH_RESERVES[this.#workStage] * scale;
+    return at === undefined ? undefined : { at: Math.floor(Math.min(at, source ?? Infinity, boundary)), reason: STAGE_REASONS[this.#workStage] };
+  }
+
+  continueSources(): { granted: boolean; reason: string; oldDeadline: number | null; newDeadline: number | null; remainingMs: number; extension: number } {
+    this.checkHard('source continuation');
+    const key = this.#phase === 'investigate' ? 'investigate' : 'sources';
+    const extension = this.#extensions.get(key) ?? 0;
+    const oldDeadline = this.workDeadline()?.at ?? null;
+    const remainingMs = this.#limits.maxElapsedMs === undefined ? 0 : this.#limits.maxElapsedMs - (Date.now() - this.#started);
+    const scale = (this.#limits.maxElapsedMs ?? 0) / 1_200_000;
+    const reserve = FINISH_RESERVES[key === 'investigate' ? 'investigate' : 'review'] * scale;
+    const allowance = Math.min(60_000 * scale, remainingMs - reserve);
+    const reason = !this.#boundedStages ? 'unbounded_policy' : extension >= 2 ? 'extension_limit'
+      : this.#limits.investigationMs !== undefined && this.#limits.investigationMs < STAGE_BUDGETS.investigate ? 'explicit_source_limit'
+      : (this.#limits.maxModelRequests ?? Infinity) - this.#requests <= 6 || (this.#limits.maxToolCalls ?? Infinity) - this.#tools <= 8 ? 'reserve_calls'
+      : allowance < 1 ? 'reserve_time' : 'granted';
+    if (reason !== 'granted') return { granted: false, reason, oldDeadline, newDeadline: null, remainingMs, extension };
+    const newDeadline = Math.floor(Date.now() + allowance);
+    this.#extensions.set(key, extension + 1);
+    this.#stageDeadlines.set(key === 'investigate' ? 'investigate' : 'review', newDeadline);
+    if (key === 'sources') this.#sourceDeadlines.set('sources', newDeadline);
+    return { granted: true, reason, oldDeadline, newDeadline, remainingMs, extension: extension + 1 };
   }
 
   observe(event: AgentAuditEvent): void {
@@ -108,20 +145,24 @@ export class ComparisonResourceTracker {
         throw new ComparisonResourceLimit('Comparison resource limit: maxModelRequests.');
       }
       this.#requests++;
-      if (this.#phase === 'investigate') this.#investigationRequests++;
-      if (this.#phase === 'review') this.#reviewRequests++;
+      if (this.#phase === 'investigate' && this.#workPass === undefined) this.#investigationRequests++;
+      if (this.#phase === 'review' && ['sources', 'review-supplement'].includes(this.#workPass ?? 'sources')) this.#reviewRequests++;
     }
     if (event.type === 'agent.tool_called' && typeof event.payload.toolCallId === 'string' && !this.#toolIds.has(event.payload.toolCallId)) {
+      if (this.#limits.maxToolCalls !== undefined && this.#tools >= this.#limits.maxToolCalls) {
+        this.#toolLimitReached = true;
+        throw new ComparisonResourceLimit('Comparison resource limit: maxToolCalls before tool admission.');
+      }
       this.#toolIds.add(event.payload.toolCallId);
       this.#tools++;
-      if (this.#phase === 'investigate') this.#investigationTools++;
-      if (this.#phase === 'review') this.#reviewTools++;
+      if (this.#phase === 'investigate' && this.#workPass === undefined) this.#investigationTools++;
+      if (this.#phase === 'review' && ['sources', 'review-supplement'].includes(this.#workPass ?? 'sources')) this.#reviewTools++;
     }
   }
 
   checkHard(action: string): void {
     const limits = this.#limits;
-    if (limits.maxToolCalls !== undefined && this.#tools > limits.maxToolCalls) {
+    if (this.#toolLimitReached || (limits.maxToolCalls !== undefined && this.#tools > limits.maxToolCalls)) {
       throw new ComparisonResourceLimit('Comparison resource limit: maxToolCalls.');
     }
     if (limits.maxElapsedMs !== undefined && Date.now() - this.#started >= limits.maxElapsedMs) {
@@ -149,10 +190,12 @@ export class ComparisonResourceTracker {
 
   softReason(): string | undefined {
     const limits = this.#limits;
-    if (limits.investigationModelRequests !== undefined && this.#investigationRequests >= limits.investigationModelRequests) return 'investigationModelRequests';
-    if (limits.investigationToolCalls !== undefined && this.#investigationTools >= limits.investigationToolCalls) return 'investigationToolCalls';
+    if (limits.investigationModelRequests !== undefined && this.#investigationRequests >= limits.investigationModelRequests + (this.#extensions.get('investigate') ?? 0) * 2) return 'investigationModelRequests';
+    if (limits.investigationToolCalls !== undefined && this.#investigationTools >= limits.investigationToolCalls + (this.#extensions.get('investigate') ?? 0) * 6) return 'investigationToolCalls';
     const elapsed = this.#investigationElapsed + (this.#phase === 'investigate' ? Date.now() - this.#phaseStarted : 0);
-    if (limits.investigationMs !== undefined && elapsed >= limits.investigationMs) return 'investigationMs';
+    const paused = this.#boundedStages ? (this.#saveSpent.get('investigate') ?? 0) + (this.#saveStarted?.phase === 'investigate' ? Date.now() - this.#saveStarted.at : 0) : 0;
+    const extension = (this.#extensions.get('investigate') ?? 0) * 60_000 * (this.#limits.maxElapsedMs ?? 0) / 1_200_000;
+    if (limits.investigationMs !== undefined && elapsed - paused >= limits.investigationMs + extension) return 'investigationMs';
     return undefined;
   }
 

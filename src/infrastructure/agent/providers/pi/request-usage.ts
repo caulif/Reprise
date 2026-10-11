@@ -7,7 +7,7 @@ import { observePiFailure } from './yield-deadline.js';
 
 type Hooks = Parameters<ProviderAdapter['createSession']>[0];
 
-export function piRequestUsage(source: PiModels, input: Pick<Hooks, 'onModelUsage' | 'onModelRequest'>, onFailure?: (error: unknown) => void, onProviderFailure = onFailure, outputCeiling?: () => number | undefined) {
+export function piRequestUsage(source: PiModels, input: Pick<Hooks, 'onModelUsage' | 'onModelRequest' | 'onModelStream'>, onFailure?: (error: unknown) => void, onProviderFailure = onFailure, outputCeiling?: () => number | undefined) {
   const pending: Promise<void>[] = [];
   let auditFailed = false;
   let auditFailure: unknown;
@@ -68,6 +68,7 @@ export function piRequestUsage(source: PiModels, input: Pick<Hooks, 'onModelUsag
   const stream = async (...args: Parameters<PiModels['streamSimple']>) => {
     args[2]?.signal?.throwIfAborted();
     const ceiling = outputCeiling?.();
+    const startedAt = Date.now();
     const context = redactModelVisibleValue(args[1]);
     await notify(args[0], context, 'generation').catch(error => { onFailure?.(error); throw error; });
     args[2]?.signal?.throwIfAborted();
@@ -79,7 +80,27 @@ export function piRequestUsage(source: PiModels, input: Pick<Hooks, 'onModelUsag
     // Lifecycle checkpoints await failures; attach a handler while the stream is still being consumed.
     void task.catch(() => undefined);
     pending.push(task);
-    return result;
+    if (!input.onModelStream) return result;
+    return new Proxy(result, {
+      get(target, property) {
+        if (property !== Symbol.asyncIterator) {
+          const value: unknown = Reflect.get(target, property, target);
+          return typeof value === 'function' ? value.bind(target) as unknown : value;
+        }
+        return async function* () {
+          let firstEventAt: number | null = null, firstTextAt: number | null = null, events = 0;
+          try {
+            for await (const event of target) {
+              firstEventAt ??= Date.now(); events++;
+              if (event.type === 'text_delta') firstTextAt ??= Date.now();
+              yield event;
+            }
+          } finally {
+            await observePiFailure(() => input.onModelStream!({ startedAt, firstEventAt, firstTextAt, finishedAt: Date.now(), events }), onFailure);
+          }
+        };
+      },
+    });
   };
   return { models, stream, flush };
 }

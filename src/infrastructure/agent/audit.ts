@@ -12,9 +12,13 @@ export function callerLoopHooks(
   audit: AgentAuditSink | undefined,
 ): Pick<
   Parameters<ProviderAdapter["createSession"]>[0],
-  "onContextCompact" | "onAssistantVisible" | "onRetry" | "onBeforeToolCall" | "onToolRejected" | "onAfterToolCall" | "onModelRequest" | "onModelUsage"
+  "onContextCompact" | "onAssistantVisible" | "onRetry" | "onBeforeToolCall" | "onToolRejected" | "onAfterToolCall" | "onModelRequest" | "onModelUsage" | "onModelStream"
 > {
   return {
+    onModelStream: async payload => {
+      await audit?.append({ type: 'agent.model_stream_completed', sessionId, role,
+        payload: { schemaVersion: 1, invocationId: cursor.invocationId, requestIndex: cursor.requestIndex, ...payload } });
+    },
     onModelUsage: async (payload) => {
       if (!Value.Check(AgentUsageFactsSchema, payload)) throw new Error('Model usage facts failed schema validation.');
       await audit?.append({ type: 'agent.usage_reported', sessionId, role,

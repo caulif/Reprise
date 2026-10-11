@@ -1,4 +1,6 @@
 import { transformOutsideEvidenceQuotes } from '../core/comparison-html.js';
+import { randomUUID } from "node:crypto";
+import { AsyncCapacity } from "../infrastructure/async-capacity.js";
 import { mkdir, readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
@@ -146,8 +148,10 @@ type PreviewCacheEntry = {
 
 export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): AgentToolDefinition {
   const render = deps.render ?? renderFrozenArtifact;
+  const capacity = new AsyncCapacity(2);
   return {
     name: "render_artifact",
+    executionMode: "parallel",
     description:
       "Derive preview frames from a registered sourceRef (HTML/SVG/raster). Optional geometryQueries measure uniquely selected elements in viewport CSS pixels, without requiring image sight. Returns media refs, load diagnostics and bounded Comparison-stage measurements; no arbitrary JavaScript or URLs.",
     parameters: RenderArtifactParamsSchema,
@@ -164,9 +168,9 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
       }
       const viewport = resolveViewport(params.viewport);
       const sampleTimesMs = params.sampleTimesMs ?? [0];
-      const outputRoot = join(deps.attemptRoot, "scratch", "render", safeId(params.sourceRef));
+      const outputRoot = join(deps.attemptRoot, "scratch", "render", safeId(params.sourceRef), randomUUID());
       if (signal.aborted) return textResult({ status: "cancelled", sourceRef: params.sourceRef });
-      const rendered = await render({
+      const rendered = await capacity.run(signal, () => render({
         bundleRoot: source.bundleRoot,
         entryRelativePath: source.entryRelativePath,
         viewport,
@@ -174,7 +178,7 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
         outputRoot,
         signal,
         ...(params.geometryQueries ? { geometryQueries: params.geometryQueries } : {}),
-      });
+      }));
       const finish = async (status: ComparisonRenderedCheck["status"], payload: Record<string, unknown>): Promise<AgentToolResult> => {
         const renderedCheck = artifactRenderedCheck(source, rendered, status, sampleTimesMs, viewport, params.geometryQueries);
         await deps.onRenderedCheck?.(structuredClone(renderedCheck));

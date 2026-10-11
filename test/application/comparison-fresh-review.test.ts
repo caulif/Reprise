@@ -104,7 +104,7 @@ test('fresh review does not reset the attempt tool budget', async () => {
   assert.equal(executed, 2);
   if (result.status === 'failed') assert.equal(result.failure.kind, 'tool');
   assert.match(String(f.events.find(event => event.type === 'agent.tool_failed')?.payload.message), /maxToolCalls/);
-  assert.equal(f.events.find(event => event.type === 'comparison.resources_completed')!.payload.toolCalls, 3);
+  assert.equal(f.events.find(event => event.type === 'comparison.resources_completed')!.payload.toolCalls, 2);
 });
 
 test('compose spending and elapsed time remain charged before fresh review', async t => {
@@ -214,7 +214,7 @@ test('source and draft passes share the same request and tool limits', async () 
     execute: async () => { reads++; return { content: 'source' }; } }], toolFixture.audit, undefined, { getSubmittedResult: async () => value });
   assert.equal(toolResult.status, 'failed');
   assert.equal(reads, 3);
-  assert.equal(toolFixture.events.find(event => event.type === 'comparison.resources_completed')!.payload.toolCalls, 4);
+  assert.equal(toolFixture.events.find(event => event.type === 'comparison.resources_completed')!.payload.toolCalls, 3);
 });
 
 test('a source-pass time limit asks for a scoped return before the Host enables draft audit', async t => {

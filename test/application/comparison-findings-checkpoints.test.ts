@@ -11,7 +11,7 @@ import { ComparisonDiscovery } from '../../src/application/comparison-discovery.
 import { ComparisonEvidenceCatalog } from '../../src/application/comparison-evidence.js';
 import { ComparisonFindingsDeltaSchema, type ComparisonFindingsDelta, type ComparisonFindingsSubmission } from '../../src/core/schema.js';
 import type { AgentToolDefinition, FreeformInvocation } from '../../src/infrastructure/agent/host.js';
-import { AgentHost } from '../../src/infrastructure/agent/host.js';
+import { AgentHost, FakeProviderAdapter, type AgentAuditEvent } from '../../src/infrastructure/agent/host.js';
 import { PiModelCaller, type PiModels } from '../../src/infrastructure/agent/model-caller.js';
 import { ComparisonResourceTracker } from '../../src/agents/comparison-resources.js';
 import type { ComparisonWorkPass } from '../../src/agents/comparison-invocation-boundaries.js';
@@ -277,4 +277,47 @@ test('compact intermediate save resumes sources even when previously saved quest
   }, 'review', 'Review actual sources', 'sources');
   assert.deepEqual(passes, ['sources', 'source-save', 'sources']);
   assert.equal(result.status, 'completed');
+});
+
+
+test('semantic save timeout with an actual saved snapshot resumes sources without certifying unsaved findings', async () => {
+  const state = 'previous actual snapshot';
+  const checkpoints = new ComparisonFindingsCheckpoints([{ name: 'update_comparison_findings_delta', description: 'delta', parameters: Type.Object({}), execute: async () => ({ content: '' }) }], {
+    getSubmittedResult: async () => undefined, enforcePhaseBoundaries: true, reviewFindings: true,
+    getFindingsState: () => state, hasSavedFindings: () => true,
+  });
+  const passes: (ComparisonWorkPass | undefined)[] = [];
+  const outcome = await checkpoints.run(async (phase, prompt, pass) => {
+    passes.push(pass); checkpoints.begin(phase, pass);
+    if (passes.length === 1) return yieldResult('findings_checkpoint_required');
+    if (pass === 'source-save') return yieldResult('bounded_investigation_save_timeout');
+    assert.match(prompt, /not a completed source investigation/);
+    assert.equal(checkpoints.due(), false);
+    assert.equal(state, 'previous actual snapshot');
+    return { status: 'completed', sessionId: 'same-session', value: {} };
+  }, 'investigate', 'task');
+  assert.equal(outcome.status, 'completed');
+  assert.deepEqual(passes, [undefined, 'source-save', undefined]);
+});
+
+
+test('continuation audit follows the actual Host session after fresh review replacement', async () => {
+  const events: AgentAuditEvent[] = [];
+  const audit = { append: async (event: AgentAuditEvent) => { events.push(event); } };
+  const host = new AgentHost(new FakeProviderAdapter());
+  let session = await host.createSession({ role: 'comparison', systemPrompt: 'Investigate.', audit });
+  const firstSession = session.sessionId;
+  const resources = new ComparisonResourceTracker({ maxElapsedMs: 1_200_000 }, { boundedStages: true });
+  const checkpoints = new ComparisonFindingsCheckpoints([]);
+  checkpoints.configureContinuation(resources, audit, new AbortController().signal, () => session.sessionId);
+  assert.equal(await checkpoints.continueSources!(), true);
+  await session.close();
+  session = await host.createSession({ role: 'comparison', systemPrompt: 'Independently review.', audit });
+  resources.phase('review', 'sources');
+  assert.equal(await checkpoints.continueSources!(), true);
+  const continued = events.filter(event => event.type === 'comparison.sources_continued');
+  assert.notEqual(firstSession, session.sessionId);
+  assert.deepEqual(continued.map(event => event.sessionId), [firstSession, session.sessionId]);
+  assert.deepEqual(continued.map(event => event.sessionId), events.filter(event => event.type === 'agent.session_started').map(event => event.sessionId));
+  await session.close();
 });

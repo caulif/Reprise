@@ -30,3 +30,19 @@ export const ComparisonResourceSummarySchema = Type.Object({
   knownEstimatedCostUsd: Type.Number({ minimum: 0 }), pricingIncomplete: Type.Boolean(),
   investigationLimit: Type.Union([Type.String(), Type.Null()]),
 });
+
+export const ComparisonSourceContinuationSchema = Type.Object({
+  role: Type.Optional(Type.String()), sessionId: Type.Optional(Type.String()), attemptId: Type.Optional(Type.String()),
+  schemaVersion: Type.Literal(1), phase: Type.String(), granted: Type.Boolean(), reason: Type.String(),
+  oldDeadline: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+  newDeadline: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+  remainingMs: Type.Number({ minimum: 0 }), extension: Type.Integer({ minimum: 0, maximum: 2 }),
+}, { additionalProperties: false });
+
+export const AgentModelStreamSchema = Type.Object({
+  role: Type.Optional(Type.String()), sessionId: Type.Optional(Type.String()), attemptId: Type.Optional(Type.String()),
+  schemaVersion: Type.Literal(1), invocationId: Type.Optional(Type.String()), requestIndex: Type.Integer({ minimum: 0 }),
+  startedAt: Type.Integer({ minimum: 0 }), finishedAt: Type.Integer({ minimum: 0 }),
+  firstEventAt: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+  firstTextAt: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]), events: Type.Integer({ minimum: 0 }),
+}, { additionalProperties: false });

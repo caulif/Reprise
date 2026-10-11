@@ -1,5 +1,5 @@
 import type { ComparisonResources } from '../core/schema.js';
-import type { FreeformInvocation } from '../infrastructure/agent/host.js';
+import type { FreeformInvocation, FreeformWorkRequest } from '../infrastructure/agent/host.js';
 import type { ComparisonResourceTracker } from './comparison-resources.js';
 import type { ComparisonReportFacts } from './comparison-agent.js';
 
@@ -54,4 +54,12 @@ export function comparisonDecisionMetrics(prompt: string, phase: string, metrics
     pricingVersion: value?.pricingVersion ?? 'unknown',
   });
   return `${prompt}\n\nCurrent Host-owned metric pair: ${JSON.stringify({ baseline: side(metrics?.baseline), candidate: side(metrics?.candidate) })}\nCheck comparison direction against each current side; do not infer cost from elapsed time or reuse a historical report's price claim. These recorded estimates are not invoices or semantic approval; unknown is not zero.`;
+}
+
+export function comparisonInvocationControls(bounded: boolean, pass?: ComparisonWorkPass): Partial<FreeformWorkRequest> {
+  if (!bounded || !pass || !['initial-findings', 'source-save', 'findings', 'review-findings', 'inspection', 'final-inspection', 'preview'].includes(pass)) return {};
+  return { reasoningEffortCeiling: 'low',
+    ...(pass === 'source-save' ? { contextMode: 'evidence' as const } : {}),
+    ...(['inspection', 'final-inspection', 'preview'].includes(pass) ? { maxOutputTokens: 4_096 } : {}),
+  };
 }

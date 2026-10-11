@@ -26,6 +26,7 @@ function providerWorkControls(request: FreeformWorkRequest): Partial<Parameters<
     ...(request.allowedToolNames !== undefined ? { allowedToolNames: request.allowedToolNames } : {}),
     ...(request.yieldDeadline ? { yieldDeadline: request.yieldDeadline } : {}),
     ...(request.reasoningEffortCeiling ? { reasoningEffortCeiling: request.reasoningEffortCeiling } : {}),
+    ...(request.contextMode ? { contextMode: request.contextMode } : {}),
     ...(request.maxOutputTokens ? { maxOutputTokens: request.maxOutputTokens } : {}),
     ...(request.yieldAfterTurn ? { yieldAfterTurn: request.yieldAfterTurn } : {}),
   };
@@ -168,9 +169,10 @@ export class AgentSessionHost {
     try {
       const yieldDeadline = request.kind === 'freeform' ? request.yieldDeadline : undefined;
       const reasoningEffortCeiling = request.kind === 'freeform' ? request.reasoningEffortCeiling : undefined;
+      const contextMode = request.kind === 'freeform' ? request.contextMode : undefined;
       const maxOutputTokens = request.kind === 'freeform' ? request.maxOutputTokens : undefined;
       const payload = { invocationId, ...(request.requestId ? { requestId: request.requestId } : {}), ...(yieldDeadline ? { yieldDeadline } : {}),
-        ...(reasoningEffortCeiling ? { reasoningEffortCeiling } : {}), ...(maxOutputTokens ? { maxOutputTokens } : {}) };
+        ...(contextMode ? { contextMode } : {}), ...(reasoningEffortCeiling ? { reasoningEffortCeiling } : {}), ...(maxOutputTokens ? { maxOutputTokens } : {}) };
       if (this.#audit && !Value.Check(AgentInvocationStartedSchema, payload)) throw new Error('Invalid invocation started audit payload.');
       await this.#audit?.append({
         type: "agent.invocation_started",
@@ -377,6 +379,7 @@ function assertRequest<T>(request: InternalSessionRequest<T>): void {
     throw new Error("Agent request limits are invalid.");
   }
   if (request.kind === "freeform") {
+    if (request.contextMode !== undefined && request.contextMode !== 'evidence') throw new Error('Invalid context mode.');
     if (request.reasoningEffortCeiling !== undefined && request.reasoningEffortCeiling !== 'low') throw new Error('Invalid reasoning effort ceiling.');
     if (request.maxOutputTokens !== undefined && (!Number.isInteger(request.maxOutputTokens) || request.maxOutputTokens < 1 || request.maxOutputTokens > 65_536)) throw new Error('Invalid output token ceiling.');
     if (!request.promptContent.trim()) throw new Error("Freeform work requests require promptContent.");

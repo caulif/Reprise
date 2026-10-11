@@ -71,7 +71,8 @@ export class ComparisonStages {
   bind(tools: readonly AgentToolDefinition[]): AgentToolDefinition[] {
     const metered = resourceBoundTools(tools, this.#resources, this.#options, () => this.#policy.repairReads !== false, reason => this.#policy.limitFeedback?.(reason));
     const guarded = bindComparisonStageTools(metered, () => this.#policy, name => this.#resources.checkHard(name));
-    return guarded.map(tool => ({ ...tool, execute: async (params: unknown, signal: AbortSignal) => {
+    return guarded.map(tool => ({ ...tool,
+      executionMode: ['read', 'ls', 'grep', 'view_image', 'render_artifact'].includes(tool.name) ? 'parallel' as const : 'sequential' as const, execute: async (params: unknown, signal: AbortSignal) => {
       let result = await tool.execute(params, signal);
       if (this.#options?.enforcePhaseBoundaries) result = this.#phaseFeedback(tool.name, result);
       return this.#options?.getSubmittedResult ? comparisonToolFeedback(result, this.#resources, this.#options.getSubmissionState?.(), tool.name) : result;
