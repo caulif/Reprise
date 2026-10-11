@@ -1,4 +1,4 @@
-import { ComparisonAgent } from '../agents/comparison-agent.js';
+import { AutonomousComparisonAgent } from '../agents/comparison-autonomous.js';
 import { DEFAULT_COMPARISON_RESOURCES } from '../agents/comparison-resources.js';
 import { RecoveryAgent } from '../agents/recovery-agent.js';
 import { ControllerAgent } from '../agents/controller-agent.js';
@@ -10,7 +10,7 @@ import type { AgentBudget } from '../core/schema.js';
 
 export type HarnessAgents = {
   readonly controller: ControllerAgent;
-  readonly comparison: ComparisonAgent;
+  readonly comparison: AutonomousComparisonAgent;
   readonly recovery: RecoveryAgent;
   readonly config: {
     readonly providerId: string;
@@ -38,12 +38,10 @@ export function createHarnessAgents(
   const recoveryBudget = limits.recoveryBudget ?? limits.budget ?? DEFAULT_BUDGET;
   const locale = options.locale ?? 'zh';
   return {
-    comparison: new ComparisonAgent({
+    comparison: new AutonomousComparisonAgent({
       host,
       timeoutMs: budget.callTimeoutMs,
-      maxRepairAttempts: budget.maxStructuredRepairAttempts,
       locale,
-      requireFindings: true,
       ...(budget.comparisonResources ? { resources: budget.comparisonResources } : {}),
     }),
     controller: new ControllerAgent({ host, timeoutMs: 0, maxRepairAttempts: budget.maxStructuredRepairAttempts, locale }),

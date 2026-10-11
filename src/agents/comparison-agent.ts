@@ -75,6 +75,7 @@ export type ComparisonMetricSide = {
 };
 
 export interface ComparisonAgentPort {
+  readonly workflow?: 'autonomous';
   /** Opts into bound findings tools, draft binding and persisted independent review. */
   readonly requireFindings?: boolean;
   /** Requires actual draft inspection even when using the legacy findings protocol. */

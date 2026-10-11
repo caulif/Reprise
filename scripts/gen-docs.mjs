@@ -70,7 +70,7 @@ function formatRunPolicy(policy) {
     `| \`turnTimeoutMs\` | ${policy.turnTimeoutMs}（${hours(policy.turnTimeoutMs)} 小时） |`,
     `| \`maxConsecutiveNoProgress\` | ${policy.maxConsecutiveNoProgress} |`,
     '',
-    'token 与成本上限默认不启用。Controller 单次 `timeoutMs` 为 0；Comparison 使用 harness `budget.callTimeoutMs`（默认 24 小时）。',
+    'token 与成本上限默认不启用。Controller 单次 `timeoutMs` 为 0；Comparison 默认单个自主 Session，整体最多 30 分钟，单次调用还受 harness `budget.callTimeoutMs` 约束（默认 24 小时）。',
   ].join('\n');
 }
 
@@ -95,8 +95,8 @@ function selfTest() {
   if (!policyBody.includes('99') || !policyBody.includes('11') || !policyBody.includes('22') || !policyBody.includes('4')) {
     throw new Error('gen-docs self-test: formatRunPolicy ignored DEFAULT_RUN_POLICY fields');
   }
-  if (policyBody.includes('30 分钟') || policyBody.includes('始终有限')) {
-    throw new Error('gen-docs self-test: formatRunPolicy leaked superseded timeout wording');
+  if (!policyBody.includes('Comparison 默认单个自主 Session，整体最多 30 分钟') || policyBody.includes('始终有限')) {
+    throw new Error('gen-docs self-test: formatRunPolicy lost the autonomous Comparison deadline');
   }
   console.log('gen-docs self-test: replaceRegion updates marked regions');
 }

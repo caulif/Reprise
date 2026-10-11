@@ -24,7 +24,13 @@ History 从已校验的提交日志前缀构造只读附件读取器，每个 Se
 
 ## Comparison attempt
 
-默认 Comparison 仅有整体 30 分钟预算，不默认限制请求数、工具数、费用、来源阶段时间、保存累计耗时或续查次数。仅包含 maxElapsedMs 的生产配置不启用局部截止与提前收尾保留；每次调用使用整体实际剩余时间。下文旧有配额与阶段截止描述仅适用于显式包含其它资源字段的兼容配置，空 override 保留旧语义。取消、数据授权、工具大小和并发容量、独立审核及发布完整性检查仍有效。详见[整体时间预算](../decisions/accepted/2026-10-11-comparison-total-time-budget.md)。
+默认由 [`AutonomousComparisonAgent`](../../src/agents/comparison-autonomous.ts) 执行单个自主 Session、一个初始任务 prompt。模型自主调查、验证、编写、预览及修订；read/search、write/edit、shell、受控渲染、图片读取/变换及证据登记工具全程可用，独立只读工具仍按已有声明并行。没有强制 understand/investigate/compose/review 阶段、周期语义保存、独立 reviewer 或 findings/disposition 提交要求；原始交付只读，工作文件写入 scratch/。模型选择证据与判断，Host 不对任务语义增加专用判题规则。
+
+`submit_report` 从 scratch/ 读取 UTF-8 HTML fragment 及可选详情，复用安全 shell 和原有证据、图片声明及来源验证；不是任意可执行整页 HTML。没有旧 decisionShape 的固定字数限制，简洁与重要差异由 prompt 指导。接受后必须 `preview_report` 当前 digest/catalog，且实际预览回执进入同 Session 后续 generation 快照，调用正常完成后才可发布。live 与离线恢复共用此检查；这证明版本和输入完整性，不认证模型判断或审美。新 `comparison.requested` 明确记录 `autonomousContractVersion=1`，不得与独立复审标记并存。详见[单 Session 决策](../decisions/accepted/2026-10-11-comparison-autonomous-session.md)。
+
+下文关于多阶段、独立审阅、findings、inspection、decisionSummary/disposition、周期 source-save 与字符配额的规则只描述旧 `ComparisonAgent` 兼容端口及历史恢复契约，不再是默认生产流程。旧请求仍按原标记验证，不自动降级成自主模式。共享的授权、证据、原生图片、审计、安全 shell 和原子发布规则继续适用。
+
+默认 Comparison 仅有整体 30 分钟预算，不默认限制请求数、工具数、费用、来源阶段时间、保存累计耗时或续查次数。自主模式的空资源 override 也保留默认整体截止；显式请求/工具/费用限制仍执行，但不引入阶段截止。每次调用使用整体实际剩余时间与单次调用 timeout 的较小值。取消、数据授权、工具大小和并发容量及发布完整性检查继续有效。详见[整体时间预算](../decisions/accepted/2026-10-11-comparison-total-time-budget.md)。
 
 严格三会话路径向模型提供单一 schema 的 `update_comparison_findings_delta`，专用端点允许省略重复 `kind`，由 Host 补为 delta 并校验；通用工具仍要求原判别字段。范围字段允许字面标签名且在报告中转义，仍限制非空单行、长度及数量。delta 的 `addedFindings` / `addedQuestions` 可新增观察或问题；已有每个 ID 仍须完整且恰好一次 retain/replace，新增不能覆盖旧身份。Host 根据真实当前记录合成 canonical submission，继续经过原 `Value.Check`、来源及 catalog/findings 绑定校验，不补造语义内容。完整工具保留兼容，两个名称在全部阶段、完成回调和副作用入口服从相同守卫。
 

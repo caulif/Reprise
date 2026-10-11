@@ -9,6 +9,7 @@ import type { ComparisonDraft } from './comparison-draft.js';
 import type { ComparisonEvidenceCatalog } from './comparison-evidence.js';
 import { comparisonReportModelFromHtml } from './comparison-publication.js';
 import { recoveryReviewBinding } from './comparison-recovery-review.js';
+import { autonomousComparisonBinding, autonomousComparisonRequested } from './comparison-autonomous-binding.js';
 
 const PreviewReceiptSchema = Type.Object({
   status: Type.Literal('ok'), draftDigest: Type.String(), revision: Type.Integer(),
@@ -22,6 +23,11 @@ export async function completedReviewedComparison(input: {
   const result = await input.draft.completedResult();
   if (!result) return undefined;
   const events = input.store.events();
+  if (autonomousComparisonRequested(events, input.attemptId)) {
+    const error = await autonomousComparisonBinding({ events, attemptId: input.attemptId, store: input.store,
+      draftDigest: sha256(await readFile(join(input.attemptRoot, 'report.html'), 'utf8')), catalogRevision: input.catalog.snapshot().revision });
+    return error ? undefined : result;
+  }
   const belongs = (payload: unknown): payload is Record<string, unknown> => typeof payload === 'object'
     && payload !== null && 'attemptId' in payload && payload.attemptId === input.attemptId;
   if (!events.some(event => belongs(event.payload) && (event.type === 'comparison.review_started'

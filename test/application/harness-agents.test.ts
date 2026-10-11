@@ -55,7 +55,7 @@ test('Comparison resource overrides are preserved in the run budget', () => {
     createSession: () => ({ append: async () => 'done', cancel() {} }),
   }, { budget });
   assert.deepEqual(agents.config.budget, budget);
-  assert.equal(agents.comparison.requireFindings, true);
+  assert.equal(agents.comparison.workflow, 'autonomous');
 });
 
 test('locale en system prompt contains English; locale zh contains Simplified Chinese', async () => {

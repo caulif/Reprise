@@ -76,3 +76,9 @@ test('live completion rejects summarized inspection and a required review that n
   f.events.splice(3, 1);
   assert.deepEqual(await completedReviewedComparison(f.input), result);
 });
+
+test('live autonomous completion never falls through to legacy unreviewed publication', async t => {
+  const f = await fixture(t);
+  f.events.splice(0, f.events.length, event(1, 'comparison.requested', { attemptId: 'attempt', autonomousContractVersion: 1 }));
+  assert.equal(await completedReviewedComparison(f.input), undefined);
+});

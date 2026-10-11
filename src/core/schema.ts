@@ -1,4 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
+export { ComparisonAutonomousContractSchema } from './comparison-review-schema.js';
 import { EvidenceRefSchema, Hash, Id } from "./schemas/ids.js";
 export { AgentUsageFactsSchema, type ComparisonResources, type AgentUsageFacts } from './comparison-resources-schema.js';
 export { ComparisonFindingsSubmissionSchema, ComparisonFindingsToolSubmissionSchema, ComparisonDiscoveryRecordSchema, type ComparisonSupportBoundary, type ComparisonFindingsSubmission, type ComparisonDiscoveryRecord } from './comparison-discovery-schema.js';

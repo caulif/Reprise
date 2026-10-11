@@ -44,6 +44,8 @@ import { createComparisonViewImageTool } from './comparison-view-image.js';
 import { materializeComparisonReportPreview } from "./comparison-report-preview.js";
 import { ComparisonDraft } from "./comparison-draft.js";
 import { completedReviewedComparison } from './comparison-live-review.js';
+import { createAutonomousReportTool } from './comparison-autonomous-tools.js';
+import { ComparisonAutonomousContractSchema } from '../core/schema.js';
 import { persistComparisonDraftAcceptance } from './comparison-recovery-discovery.js';
 import { ComparisonDiscovery } from './comparison-discovery.js';
 import { AgentUsageFactsSchema, ComparisonInvestigationClosedSchema } from '../core/schema.js';
@@ -307,7 +309,7 @@ async function compareExperimentOutcome(
       shortEvidenceRefs: briefing.links.flatMap((link) => link.shortRef ? [link.shortRef] : []),
       ...(hostZoneSnapshot ? { hostZoneSnapshot } : {}),
     };
-    await persistComparisonRequest(input.store, input.input.runId, attemptId, { ...briefingContext, media: briefing.media }, input.input.comparison.requireFindings === true || input.input.comparison.reviewInspectionRequired === true);
+    await persistComparisonRequest(input.store, input.input.runId, attemptId, { ...briefingContext, media: briefing.media }, input.input.comparison.requireFindings === true || input.input.comparison.reviewInspectionRequired === true, input.input.comparison.workflow);
     comparisonResult = await runComparisonAttempt({
       host: input, attemptId, attemptRoot, briefing, compareFacts, reportShellHtml, locale,
     });
@@ -683,10 +685,10 @@ function comparisonTools(
       role: "comparison",
       allowBinary: input.taskCase.privacy.allowBinary,
       mounts,
-      allowWrite: (input.input.comparison.requireFindings === true || input.input.comparison.reviewInspectionRequired === true)
+      allowWrite: (input.input.comparison.workflow === 'autonomous' || input.input.comparison.requireFindings === true || input.input.comparison.reviewInspectionRequired === true)
         ? comparisonAttemptWriteAllowed
         : (path) => path === "report.html" || comparisonAttemptWriteAllowed(path),
-      completionPaths: new Set((input.input.comparison.requireFindings === true || input.input.comparison.reviewInspectionRequired === true)
+      completionPaths: new Set((input.input.comparison.workflow === 'autonomous' || input.input.comparison.requireFindings === true || input.input.comparison.reviewInspectionRequired === true)
         ? ["work/comparison-plan.md"] : ["work/comparison-plan.md", "report.html"]),
       denyDestructiveOnPrefix: ["candidate", "evidence", "history", "finals", "turns", "run", "observations"],
       allowShell: true,
@@ -703,8 +705,7 @@ function comparisonTools(
     createComparisonViewImageTool({ media: () => catalog.snapshot().media, attemptRoot, allowImages: input.taskCase.privacy.allowBinary }),
     createComparisonTransformImageTool({ catalog, attemptRoot, allowImages: input.taskCase.privacy.allowBinary }),
     registerEvidenceTool(catalog),
-    draft.tool(),
-    draft.inspectTool(),
+    ...(input.input.comparison.workflow === 'autonomous' ? [createAutonomousReportTool(draft, attemptRoot)] : [draft.tool(), draft.inspectTool()]),
     createQuoteEvidenceTool({ sources: quoteSources }),
     createRenderArtifactTool({
       catalog: renderCatalog,
@@ -805,8 +806,10 @@ function comparisonAudit(
   };
 }
 
-async function persistComparisonRequest(store: ExperimentStore, runId: string, attemptId: string, context: unknown, reviewInspectionRequired = false): Promise<void> {
+async function persistComparisonRequest(store: ExperimentStore, runId: string, attemptId: string, context: unknown, reviewInspectionRequired = false, workflow?: 'autonomous'): Promise<void> {
   const reviewContract = reviewInspectionRequired ? { attemptId, reviewInspectionContractVersion: 2 as const } : undefined;
+  const autonomousContract = workflow === 'autonomous' ? { attemptId, autonomousContractVersion: 1 as const } : undefined;
+  if (autonomousContract && (!Value.Check(ComparisonAutonomousContractSchema, autonomousContract) || reviewContract)) throw new Error('Invalid autonomous Comparison request contract.');
   if (reviewContract && !Value.Check(ComparisonReviewRequestSchema, reviewContract)) throw new Error('Invalid Comparison review request contract.');
   const bytes = Buffer.from(JSON.stringify(context), "utf8");
   const truncated = bytes.byteLength > MAX_COMPARISON_INPUT_BYTES;
@@ -825,7 +828,7 @@ async function persistComparisonRequest(store: ExperimentStore, runId: string, a
     operationId: `comparison-requested-${attemptId}`,
     payload: {
       schemaVersion: 1,
-      ...(reviewContract ?? {}),
+      ...(autonomousContract ?? reviewContract ?? {}),
       requestId: "comparison-requested",
       runId,
       inputDigest: digest,
