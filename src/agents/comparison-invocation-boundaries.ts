@@ -3,7 +3,7 @@ import type { FreeformInvocation } from '../infrastructure/agent/host.js';
 import type { ComparisonResourceTracker } from './comparison-resources.js';
 import type { ComparisonReportFacts } from './comparison-agent.js';
 
-export type ComparisonWorkPass = 'sources' | 'source-save' | 'review-supplement' | 'initial-findings' | 'findings' | 'review-findings' | 'inspection' | 'audit' | 'preview';
+export type ComparisonWorkPass = 'sources' | 'source-save' | 'review-supplement' | 'initial-findings' | 'findings' | 'review-findings' | 'inspection' | 'audit' | 'final-inspection' | 'preview';
 
 export function comparisonTimeout(resources: ComparisonResourceTracker, limits: ComparisonResources, callTimeoutMs: number): number {
   resources.checkHard('phase invocation');

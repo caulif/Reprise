@@ -35,14 +35,23 @@ function harness(receipt = 'status=accepted\nSaved current state', resources = n
     state: (value: string) => { state = value; }, ready: () => { ready = true; }, effects: () => effects, completions: () => completions };
 }
 
-test('six actual source effects force a checkpoint and execute/completion reject the next check', async () => {
+test('checkpoint finishes the requested batch and rejects source effects only on unsaved reentry', async () => {
   const f = harness(); f.stages.begin('investigate');
   for (const name of sourceNames.slice(0, 6)) await f.tool(name).execute({}, signal);
   assert.equal(f.checkpoints.due(), true); assert.equal(f.effects(), 6);
   const seventh = await f.tool('quote_evidence').execute({}, signal);
-  assert.match(seventh.content, /findings_checkpoint_required/);
   await f.tool('quote_evidence').onCompleted?.(seventh);
-  assert.equal(f.effects(), 6); assert.equal(f.completions(), 0);
+  assert.equal(f.effects(), 7); assert.equal(f.completions(), 1);
+  assert.equal(await f.stages.exit(), 'findings_checkpoint_required');
+  f.stages.begin('investigate');
+  const blocked = await f.tool('render_artifact').execute({}, signal);
+  await f.tool('render_artifact').onCompleted?.(blocked);
+  const denial = JSON.parse(blocked.content) as { code: string; retryable: boolean; effect: string; nextAction: string; meaning: string };
+  assert.equal(denial.code, 'findings_checkpoint_required');
+  assert.equal(denial.retryable, true); assert.equal(denial.effect, 'not_executed');
+  assert.equal(denial.nextAction, 'save_findings_then_resume_sources');
+  assert.match(denial.meaning, /Temporary save checkpoint, not missing capability/);
+  assert.equal(f.effects(), 7); assert.equal(f.completions(), 1);
 });
 
 for (const maxElapsedMs of [600_000, 60_000]) test(`slow source batches save before six checks with ${maxElapsedMs}ms total budget`, async t => {
@@ -104,7 +113,7 @@ test('save-only exposes the dedicated delta object schema and blocks original fu
   assert.equal(f.effects(), 0); assert.equal(f.completions(), 0); assert.equal(f.checkpoints.saved(), false);
 });
 
-async function productionFixture(t: { after: (callback: () => Promise<void>) => void }, resources = new ComparisonResourceTracker({})) {
+async function productionFixture(t: { after: (callback: () => Promise<void>) => void }, resources = new ComparisonResourceTracker({}), compact = false) {
   const root = await mkdtemp(join(tmpdir(), 'reprise-source-checkpoint-')); t.after(() => rm(root, { recursive: true, force: true }));
   const catalog = await ComparisonEvidenceCatalog.create({ attemptRoot: root, attemptId: 'attempt', links: [], media: [] });
   const discovery = new ComparisonDiscovery({ catalog, attemptId: 'attempt', persist: async () => {} });
@@ -113,7 +122,7 @@ async function productionFixture(t: { after: (callback: () => Promise<void>) => 
     decisionQuestions: [{ id: 'quality', question: 'Is the actual final useful?', decisionImpact: 'Could reverse preference', status: 'pending', evidenceRefs: [], nextCheck: 'Inspect the actual final' }] };
   assert.match((await discovery.tool().execute(initial, signal)).content, /^status=accepted\n/);
   let reads = 0;
-  const definitions: AgentToolDefinition[] = [discovery.tool(), discovery.deltaTool(), {
+  const definitions: AgentToolDefinition[] = [discovery.tool(), discovery.deltaTool(), ...(compact ? [discovery.checkpointTool()] : []), {
     name: 'read', description: 'read', parameters: Type.Object({ path: Type.Optional(Type.String()) }), execute: async () => { reads++; return { content: 'Unverified boundary fixture input; no quality evidence.' }; },
   }];
   const stages = new ComparisonStages(definitions, resources, { getSubmittedResult: async () => undefined, enforcePhaseBoundaries: true,
@@ -139,7 +148,7 @@ for (const slow of [false, true]) test(`native metadata navigation stays audited
   const delta = f.delta();
   delta.questionDecisions[0] = { id: 'quality', action: 'replace', replacement: { ...f.discovery.snapshot()!.submission.decisionQuestions[0]!,
     status: 'unavailable', resolution: 'Actual source fixture cannot establish quality' } };
-  const sourceCount = slow ? 1 : 6;
+  const sourceCount = slow ? 3 : 8;
   const turns: AssistantMessage['content'][] = [batch([...metadata, ...metadata]), batch(Array.from({ length: sourceCount }, (_, index) => `source/facts/context-${index}.json`)),
     [{ type: 'toolCall', id: 'save', name: 'update_comparison_findings_delta', arguments: delta }]];
   const native = { getModel: () => model, streamSimple: () => {
@@ -186,7 +195,7 @@ for (const phase of ['investigate', 'review'] as const) for (const ready of [fal
   const outcome = await f.checkpoints.run(async (currentPhase, prompt, pass) => {
     assert.equal(currentPhase, phase); passes.push(pass); f.stages.begin(currentPhase, pass);
     if (pass === 'source-save') {
-      assert.match(prompt, /addedFindings\/addedQuestions[\s\S]*Pending with an actual nextCheck is valid/);
+      assert.match(prompt, /addedFindings\/addedQuestions[\s\S]*Retain pending questions/);
       const change = f.delta();
       if (ready) change.questionDecisions[0] = { id: 'quality', action: 'replace', replacement: { ...f.discovery.snapshot()!.submission.decisionQuestions[0]!,
         status: 'unavailable', resolution: 'The fixture did not check actual quality; this could reverse preference' } };
@@ -197,7 +206,8 @@ for (const phase of ['investigate', 'review'] as const) for (const ready of [fal
       for (let i = 0; i < 6; i++) await f.tools.find(tool => tool.name === 'read')!.execute({}, signal);
       assert.equal(f.checkpoints.due(), true); return yieldResult('findings_checkpoint_required');
     }
-    assert.match(prompt, /Continue only the remaining decision-changing source questions/);
+    assert.match(prompt, /Resume the remaining decision-changing source checks/);
+    assert.match(prompt, /temporary save boundary, not a capability failure/);
     assert.ok(!prompt.includes('Source task'), 'same-session continuation must not repeat its initial briefing');
     assert.equal(f.checkpoints.due(), false);
     await f.tools.find(tool => tool.name === 'read')!.execute({}, signal);
@@ -243,4 +253,28 @@ test('checkpoint is opt-in and missing current state or delta tool preserves exi
   });
   assert.equal(old.enabled, false);
   old.begin('investigate', 'source-save'); assert.equal(old.due(), false);
+});
+
+
+test('compact intermediate save resumes sources even when previously saved questions are settled', async t => {
+  const f = await productionFixture(t, undefined, true), passes: (ComparisonWorkPass | undefined)[] = [];
+  const saved = f.discovery.snapshot()!;
+  saved.submission.decisionQuestions[0]!.status = 'unavailable';
+  saved.submission.decisionQuestions[0]!.resolution = 'Previously unchecked quality remains unknown';
+  await f.discovery.update(saved.submission);
+  assert.equal(f.discovery.readyToCompose(), true);
+  const result = await f.checkpoints.run(async (phase, prompt, pass) => {
+    passes.push(pass); f.stages.begin(phase, pass);
+    if (pass === 'source-save') {
+      assert.match(prompt, /save_comparison_checkpoint/);
+      assert.match((await f.tools.find(tool => tool.name === 'save_comparison_checkpoint')!.execute({ binding: f.delta().binding }, signal)).content, /^status=accepted/);
+      assert.equal(f.stages.reviewFindings.sourceSaved(), false);
+      return yieldResult('findings_checkpoint_saved');
+    }
+    if (passes.length === 1) return yieldResult('findings_checkpoint_required');
+    assert.match(prompt, /Resume the remaining decision-changing source checks/);
+    return { status: 'completed', sessionId: 'same-session', value: {} };
+  }, 'review', 'Review actual sources', 'sources');
+  assert.deepEqual(passes, ['sources', 'source-save', 'sources']);
+  assert.equal(result.status, 'completed');
 });

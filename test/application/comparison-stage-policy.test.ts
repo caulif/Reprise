@@ -7,7 +7,7 @@ import type { ComparisonCompareOptions } from '../../src/agents/comparison-agent
 import type { ComparisonWorkPass } from '../../src/agents/comparison-invocation-boundaries.js';
 import type { AgentToolDefinition } from '../../src/infrastructure/agent/host.js';
 
-const sources = ['read', 'ls', 'grep', 'shell_exec', 'render_artifact', 'register_evidence', 'quote_evidence'];
+const sources = ['read', 'ls', 'grep', 'shell_exec', 'render_artifact', 'view_image', 'register_evidence', 'quote_evidence'];
 const updates = ['update_comparison_findings', 'update_comparison_findings_delta'];
 const names = [...sources, ...updates, 'write', 'edit', 'submit_comparison_draft', 'inspect_comparison_draft', 'preview_report', 'extension'];
 const options: ComparisonCompareOptions = { getSubmittedResult: async () => undefined, enforcePhaseBoundaries: true, reviewFindings: true,
@@ -15,17 +15,18 @@ const options: ComparisonCompareOptions = { getSubmittedResult: async () => unde
   hasReviewDraftMaterial: () => true, hasCurrentReviewInspection: () => true, isRepairRead: async () => true };
 
 const stagesToTools: readonly [string, 'understand' | 'investigate' | 'compose' | 'review', ComparisonWorkPass | undefined, readonly string[]][] = [
-  ['understand', 'understand', undefined, names.filter(name => !['shell_exec', 'render_artifact', 'register_evidence', 'submit_comparison_draft', 'preview_report'].includes(name))],
-  ['investigate', 'investigate', undefined, names.filter(name => !['submit_comparison_draft', 'preview_report'].includes(name))],
+  ['understand', 'understand', undefined, names.filter(name => !['shell_exec', 'render_artifact', 'view_image', 'register_evidence', 'submit_comparison_draft', 'preview_report'].includes(name))],
+  ['investigate', 'investigate', undefined, [...sources, ...updates, 'write', 'edit']],
   ['initial findings', 'investigate', 'initial-findings', [updates[0]!]],
   ['source checkpoint', 'investigate', 'source-save', [updates[1]!]],
-  ['findings closure', 'investigate', 'findings', updates],
+  ['findings closure', 'investigate', 'findings', [updates[1]!]],
   ['decision author', 'compose', undefined, ['update_comparison_findings', 'submit_comparison_draft']],
   ['source review', 'review', 'sources', [...sources, ...updates]],
   ['source supplement', 'review', 'review-supplement', sources],
   ['review findings', 'review', 'review-findings', ['read', updates[1]!]],
   ['draft inspection', 'review', 'inspection', ['inspect_comparison_draft']],
-  ['draft audit', 'review', 'audit', names.filter(name => name !== 'preview_report')],
+  ['draft audit', 'review', 'audit', ['read', 'quote_evidence', 'view_image', 'submit_comparison_draft', 'inspect_comparison_draft', updates[1]!]],
+  ['final inspection', 'review', 'final-inspection', ['inspect_comparison_draft']],
   ['preview closure', 'review', 'preview', ['preview_report']],
   ['ordinary review', 'review', undefined, names],
 ];
@@ -87,4 +88,23 @@ test('parameter-dependent repair and preview guards also suppress completion cal
     const result = await bound[index]!.execute({}, new AbortController().signal); await bound[index]!.onCompleted?.(result);
   }
   assert.equal(effects, 0); assert.equal(callbacks, 0);
+});
+
+test('audit yields only an accepted revision and final inspection shares the original audit deadline', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  let accepted = false, inspected = false;
+  const definitions: AgentToolDefinition[] = [{ name: 'submit_comparison_draft', description: 'Submit', parameters: Type.Object({}),
+    execute: async () => ({ content: accepted ? 'status=accepted\nrevision=2' : 'status=rejected' }) }];
+  const resources = new ComparisonResourceTracker({ maxElapsedMs: 600_000 }, { boundedStages: true });
+  const stages = new ComparisonStages(definitions, resources, { ...options, hasCurrentReviewInspection: () => inspected });
+  const bound = stages.bind(definitions), signal = new AbortController().signal;
+  resources.phase('review', 'audit'); stages.begin('review', 'audit');
+  const deadline = resources.workDeadline();
+  await bound[0]!.execute({}, signal); assert.equal(await stages.exit(), undefined);
+  accepted = true; await bound[0]!.execute({}, signal); assert.equal(await stages.exit(), 'audit_revision_saved');
+  t.mock.timers.tick(60_000);
+  resources.phase('review', 'final-inspection'); stages.begin('review', 'final-inspection');
+  assert.deepEqual(resources.workDeadline(), deadline);
+  assert.equal(await stages.exit(), undefined);
+  inspected = true; assert.equal(await stages.exit(), 'final_inspection_ready');
 });

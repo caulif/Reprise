@@ -10,7 +10,7 @@ import type { ComparisonResources } from '../core/schema.js';
 import { ComparisonResourceTracker } from './comparison-resources.js';
 import { closeBoundedInvestigation } from './comparison-investigation-closure.js';
 import { comparisonDecisionMetrics, comparisonOutputContinuation, comparisonTimeout, comparisonWorkDeadline, comparisonYieldBoundary, type ComparisonWorkPass } from './comparison-invocation-boundaries.js';
-import { ComparisonReviewFindingsClosure, comparisonSourceReviewPrompt, composeComparisonReviewerSystemPrompt, reviewDraftInspectionCheckpoint } from './comparison-review-findings.js';
+import { ComparisonReviewFindingsClosure, comparisonSourceReviewPrompt, composeComparisonReviewerSystemPrompt, reviewDraftInspectionCheckpoint, COMPARISON_DIRECT_AUDIT_PROMPT } from './comparison-review-findings.js';
 import { ComparisonFindingsCheckpoints } from './comparison-findings-checkpoints.js';
 import { composeComparisonAuthorSystemPrompt, COMPARISON_AUTHOR_COMPOSE_PROMPT } from './comparison-author-prompt.js';
 import { comparisonProtocol } from './comparison-stage-policy.js';
@@ -278,7 +278,7 @@ export const COMPARISON_SYSTEM_PROMPT = [
   'paths instead of treating virtual mounts as shell cwd.',
   'For analysis scripts that mention read-only mounts, create the script with write at scratch/<name>, then run that existing file from shell cwd. The conservative shell guard rejects mixed source references and file-creation commands, including source paths inside script text.',
   '',
-  'Need screenshots or page views only through render_artifact and preview_report.',
+  'View registered PNG media with view_image; derive new screenshots through render_artifact and report page views through preview_report.',
   'Do not run Chrome, Edge, or Firefox binaries; do not use --version, --dump-dom,',
   'or open a user browser profile. If a render tool fails, record the limitation and',
   'continue with text evidence; do not retry via equivalent browser shell commands.',
@@ -358,19 +358,10 @@ const COMPARISON_REVIEW_VARIANTS = {
 
 export const COMPARISON_TURN_PROMPTS = {
   orientAndInvestigate: [
-    'Read INDEX.md and the task context. Identify the success criteria and the few',
-    'questions that could change the choice between the two outcomes. Use the',
-    'indexed deliverables, frozen facts, and registered evidence first; inspect',
-    'additional files or previews only to resolve those questions. Distinguish',
-    'final outputs from drafts and observation from inference. Stop when further',
-    'reading is unlikely to change the conclusion. Record a brief conclusion,',
-    'decisive references, and remaining uncertainty in work/comparison-plan.md.',
-    'When update_comparison_findings is available, save a minimal complete snapshot early, before shell, render or evidence registration checks. First read the task criteria and their sources and locate both finals; use status=unavailable for a final not yet located, findings: [] when nothing has been verified, and pending decision questions with nextCheck for unfinished checks. Do not delay this first save until the investigation ends or invent observations to fill it.',
-    'After decision-changing checks or catalog changes, promptly save a complete replacement snapshot, preserving every historical decision question. Save criteria, both final-source locations,',
-    'scoped observations, important limitations and decision questions before finishing.',
-    'Resolve each question or explain why its evidence is unavailable. Reopen settled questions only with new grounds.',
-    'Each next check must have a possible outcome that changes the choice or an important limitation.',
-    'The Host may interrupt this investigation at its absolute local deadline, including during unfinished generation. This is not a completed turn or investigation and certifies no guarantee; preserve actual saved findings and keep unchecked relationships unknown. Any findings-only closure must use only observations actually received.',
+    'Compare the actual deliveries against the recorded task. Use the provided briefing leads to open both final outputs promptly; avoid repeating navigation or metadata checks.',
+    'For visual work, view both registered outputs early, then check consequential defects and relevant motion samples with controlled render tools. For other tasks, choose the evidence form matching the success criteria. Source mechanisms explain observed impact; they do not certify rendered quality.',
+    'If no accepted findings exist, save a minimal initial snapshot before checks. Otherwise use the current saved binding and prefer delta updates: retain unchanged IDs, replace changed objects, add only concise new consequential findings. Do not rebuild the snapshot or write a method diary.',
+    'Save actual observations and scoped uncertainty promptly. Preserve question identity and history. Resolve with evidence, keep necessary checks pending with nextCheck, or mark genuinely unchecked questions unavailable. A deadline is a process boundary, not evidence of absence or success. Stop when further checks cannot change the decision.',
   ].join('\n'),
   understand: [
     'Understand the user\'s task and the final outcome they wanted. Read the user-input',
@@ -585,6 +576,8 @@ export class ComparisonAgent implements ComparisonAgentPort {
           if (boundedStages && deadline.yieldDeadline && Date.now() >= deadline.yieldDeadline.at) return { status: 'yielded', sessionId: session.sessionId, reason: deadline.yieldDeadline.reason };
           const next = await session.work({ promptContent: [comparisonDecisionMetrics(prompt, phase, context.reportFacts.metrics), stages.prompt()].filter(Boolean).join('\n\n'), timeoutMs: comparisonTimeout(resources, this.#resources, this.#timeoutMs),
             allowedToolNames: stages.toolNames(phasedTools), ...deadline,
+            ...(boundedStages && reviewPass && ['initial-findings', 'source-save', 'findings', 'review-findings', 'inspection', 'final-inspection', 'preview'].includes(reviewPass)
+              ? { reasoningEffortCeiling: 'low' as const } : {}),
             signal, yieldAfterTurn: () => stages.exit() });
           return comparisonYieldBoundary(next, resources, signal);
         };
@@ -647,7 +640,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
           failure: { code: 'draft_invalid', message: 'Comparison findings are missing or decision questions remain pending after two actual closure calls.', attempts: closureCalls, kind: 'protocol' } };
       }
       closureCalls++;
-      investigated = await measuredWork('investigate', `${investigationBoundary} Use this bounded closure turn only to submit update_comparison_findings from already received observations. ${closureCalls === 2 ? 'The previous closure call did not produce an actually accepted ready findings update. Call update_comparison_findings now; do not give another verbal promise to save it. ' : ''}Do not run more investigation or repeat settled checks. Resolve questions only with existing supporting evidence; otherwise mark unavailable with the decisive uncertainty and limitation. Preserve actual saved findings and the complete question history. Current findings: ${state}`, 'findings');
+      investigated = await measuredWork('investigate', `${investigationBoundary} Use this bounded closure turn only to submit update_comparison_findings: prefer the available delta with an existing saved binding; use a full snapshot if no saved record exists. Save only already received observations. ${closureCalls === 2 ? 'The previous closure call did not produce an actually accepted ready findings update. Call the available update tool now; do not give another verbal promise. ' : ''}Do not investigate or repeat settled checks. Resolve questions only with actual support; otherwise mark unavailable with decisive uncertainty. Preserve actual saved findings and question history; retain unchanged entries explicitly. Current findings: ${state}`, 'findings');
       investigated = await closeBoundedInvestigation(options, investigated, resources, signal);
     }
     const findings = options.getFindingsState?.();
@@ -694,7 +687,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
       options.hasReviewDraftMaterial
         ? 'Now audit the actual accepted draft already delivered in this same session; correct unsupported claims and decisive omissions using retained source observations.'
         : 'Now inspect the current accepted draft with inspect_comparison_draft when available (otherwise read report.html).',
-      options.hasCurrentReviewInspection ? COMPARISON_FORMAL_DRAFT_REVIEW_PROMPT
+      options.enforcePhaseBoundaries && options.reviewFindings ? COMPARISON_DIRECT_AUDIT_PROMPT : options.hasCurrentReviewInspection ? COMPARISON_FORMAL_DRAFT_REVIEW_PROMPT
         : options.hasReviewDraftMaterial ? COMPARISON_DELIVERED_DRAFT_REVIEW_PROMPT : COMPARISON_TURN_PROMPTS.review,
     ].join('\n\n');
     const seen = new Set<string>();
@@ -703,6 +696,8 @@ export class ComparisonAgent implements ComparisonAgentPort {
       const currentFindings = options.enforcePhaseBoundaries && options.reviewFindings ? options.getFindingsState?.() : undefined;
       let reviewed = await work('review', currentFindings ? `${prompt}\n\nCurrent complete findings for audit (model declarations, not certified facts; compare report scope summaries with every actual side, domain, covered and unchecked instance, and preserve decision-changing uncertainty): ${currentFindings}` : prompt,
         options.hasCurrentReviewInspection ? 'audit' : undefined);
+      if (reviewed.status === 'yielded' && reviewed.reason === 'audit_revision_saved') reviewed = await work('review',
+        'The completed independent audit turn submitted an accepted revision. Call inspect_comparison_draft now to receive the complete actual current text. Only inspection is available; do not restart investigation, findings or authoring. The next preview generation must receive this exact current inspection.', 'final-inspection');
       if (options.enforcePhaseBoundaries && options.reviewFindings && reviewed.status === 'yielded' && reviewed.reason !== 'final_inspection_ready') return comparisonProviderFailure(reviewed);
       if ((reviewed.status === 'completed' || reviewed.status === 'yielded') && options.hasCurrentReviewInspection?.()) {
         for (let closure = 0; closure < 2 && options.hasCurrentReviewInspection(); closure++) {

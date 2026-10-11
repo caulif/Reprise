@@ -109,10 +109,10 @@ test("shell_exec is registered only when allowShell is true", async (t) => {
 test("workspace read returns native image blocks only when binary access is authorized", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-image-read-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+  const bytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
   await writeFile(join(root, "result.png"), bytes);
   const denied = tool(root, "read", { allowBinary: false });
-  await assert.rejects(denied.execute({ path: "result.png", format: "image", mimeType: "image/png" }, new AbortController().signal), /binary_read_denied/);
+  assert.match((await denied.execute({ path: "result.png", format: "image", mimeType: "image/png" }, new AbortController().signal)).content, /binary_read_denied/);
   const result = await tool(root, "read", { allowBinary: true }).execute(
     { path: "result.png", format: "image", mimeType: "image/png" },
     new AbortController().signal,

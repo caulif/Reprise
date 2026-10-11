@@ -3,9 +3,9 @@ import { resolve } from 'node:path';
 import { sha256 } from '../core/identity.js';
 import { pathContainedBy } from '../core/paths.js';
 import type { AgentToolResult } from '../infrastructure/agent/host.js';
+import { boundedPng, IMAGE_LIMITS } from '../infrastructure/image-limits.js';
 
 type PreviewImage = { path: string; contentHash: string; shortRef: string };
-const IMAGE_LIMITS = { count: 4, bytes: 3 * 1024 * 1024, totalBytes: 8 * 1024 * 1024, pixels: 9_216_000 };
 
 export async function attachComparisonImages(input: {
   result: AgentToolResult; requested: boolean; authorized: boolean; attemptRoot: string;
@@ -35,12 +35,6 @@ export async function attachComparisonImages(input: {
   input.signal.throwIfAborted();
   const result = deliveryResult(payload, 'attached');
   return { ...result, contentBlocks: [{ type: 'text', text: result.content }, ...blocks] };
-}
-
-function boundedPng(bytes: Buffer): boolean {
-  if (bytes.length < 33 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) || bytes.toString('ascii', 12, 16) !== 'IHDR') return false;
-  const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20);
-  return width > 0 && height > 0 && width * height <= IMAGE_LIMITS.pixels;
 }
 
 function deliveryResult(payload: Record<string, unknown>, imageDelivery: string): AgentToolResult {

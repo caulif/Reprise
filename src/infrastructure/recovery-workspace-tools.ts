@@ -15,6 +15,7 @@ import type { AgentToolDefinition } from "./agent/host.js";
 import { ProcessBoundaryError, runProcess, type ProcessSpawner } from "./process-runner.js";
 import { shellExecutableAvailable, shellInvocation } from "./platform.js";
 import { integer, requiredString } from "./recovery-tools.js";
+import { boundedPng, IMAGE_LIMITS } from './image-limits.js';
 
 const MAX_BYTES = 262_144;
 const DEFAULT_READ_BYTES = 65_536;
@@ -189,7 +190,7 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
     parameters: Type.Object({
       path: Type.String({ minLength: 1, maxLength: pathMaxLength(ctx) }),
       offset: Type.Optional(Type.Integer({ minimum: 0 })),
-      maxBytes: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_BYTES })),
+      maxBytes: Type.Optional(Type.Integer({ minimum: 1, maximum: IMAGE_LIMITS.bytes, description: 'Text reads: at most 262144 bytes (default 65536); image reads: at most 3145728 bytes and must include the whole image. Use text offset/nextCursor for pagination.' })),
       format: Type.Optional(Type.Union([Type.Literal("text"), Type.Literal("image")])),
       mimeType: Type.Optional(Type.String({ pattern: "^image/[A-Za-z0-9.+-]+$" })),
     }),
@@ -202,8 +203,13 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
             path: "<credential-file>",
           });
         const offset = integer(value.offset, 0, "offset");
-        const maxBytes =
-          value.maxBytes === undefined ? DEFAULT_READ_BYTES : integer(value.maxBytes, undefined, "maxBytes", 1, MAX_BYTES);
+        const image = value.format === 'image';
+        const ceiling = image ? IMAGE_LIMITS.bytes : MAX_BYTES;
+        if (value.maxBytes !== undefined && (typeof value.maxBytes !== 'number' || !Number.isInteger(value.maxBytes) || value.maxBytes < 1 || value.maxBytes > ceiling)) return {
+          content: JSON.stringify({ code: 'invalid_read_range', message: `maxBytes must be an integer from 1 to ${ceiling} for ${image ? 'image' : 'text'} reads. Use text offset/nextCursor to paginate; no file was read.` }),
+        };
+        const maxBytes = value.maxBytes === undefined ? (image ? ceiling : DEFAULT_READ_BYTES)
+          : integer(value.maxBytes, undefined, "maxBytes", 1, ceiling);
         const bytes = await boundedRead("file_read", async () => {
           await assertReadSymlinkPolicy(path);
           await assertRegular(path.absolute);
@@ -211,10 +217,12 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
         });
         if (!bytes) return unavailableFileReadResult(path.relative, offset, readUnavailableReason(path));
         if (value.format === "image") {
-          if (!ctx.options.allowBinary) throw new Error("binary_read_denied: image content is not authorized for this task.");
-          if (offset !== 0 || bytes.length > maxBytes) throw new Error(`image_read_requires_whole_file: image must fit within ${maxBytes} bytes.`);
-          const mimeType = requiredString(value.mimeType, "mimeType");
-          if (!/^image\/[A-Za-z0-9.+-]+$/.test(mimeType)) throw new Error("mimeType must be an image media type.");
+          const reject = (code: string, message: string) => ({ content: JSON.stringify({ code, message, imageDelivery: 'unavailable' }) });
+          if (!ctx.options.allowBinary) return reject('binary_read_denied', 'Image content is not authorized for this task; continue with text evidence.');
+          if (offset !== 0 || bytes.length > maxBytes) return reject('image_read_requires_whole_file', `Use offset=0 and a whole image within ${maxBytes} bytes; render a smaller preview if necessary.`);
+          const mimeType = value.mimeType;
+          if (typeof mimeType !== 'string' || !/^image\/[A-Za-z0-9.+-]+$/.test(mimeType)) return reject('invalid_image_mime_type', 'Supply an image MIME type; registered Comparison images can use view_image instead.');
+          if (mimeType === 'image/png' && !boundedPng(bytes)) return reject('invalid_image', 'PNG header or pixel budget is invalid; render a bounded PNG preview instead.');
           return {
             content: `Image ${path.relative} (${mimeType}, ${bytes.length} bytes).`,
             contentBlocks: [{ type: "text" as const, text: `Image ${path.relative}.` }, { type: "image" as const, data: bytes.toString("base64"), mimeType }],

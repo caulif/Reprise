@@ -157,7 +157,9 @@ export class AgentSessionHost {
     this.#cursor.requestIndex = 0;
     try {
       const yieldDeadline = request.kind === 'freeform' ? request.yieldDeadline : undefined;
-      const payload = { invocationId, ...(request.requestId ? { requestId: request.requestId } : {}), ...(yieldDeadline ? { yieldDeadline } : {}) };
+      const reasoningEffortCeiling = request.kind === 'freeform' ? request.reasoningEffortCeiling : undefined;
+      const payload = { invocationId, ...(request.requestId ? { requestId: request.requestId } : {}), ...(yieldDeadline ? { yieldDeadline } : {}),
+        ...(reasoningEffortCeiling ? { reasoningEffortCeiling } : {}) };
       if (this.#audit && !Value.Check(AgentInvocationStartedSchema, payload)) throw new Error('Invalid invocation started audit payload.');
       await this.#audit?.append({
         type: "agent.invocation_started",
@@ -255,6 +257,7 @@ export class AgentSessionHost {
         this.#session!.append({ content, ...(outboundImages?.length ? { images: outboundImages } : {}), signal,
           ...(request.kind === 'freeform' && request.allowedToolNames !== undefined ? { allowedToolNames: request.allowedToolNames } : {}),
           ...(request.kind === 'freeform' && request.yieldDeadline ? { yieldDeadline: request.yieldDeadline } : {}),
+          ...(request.kind === 'freeform' && request.reasoningEffortCeiling ? { reasoningEffortCeiling: request.reasoningEffortCeiling } : {}),
           ...(request.kind === 'freeform' && request.yieldAfterTurn ? { yieldAfterTurn: request.yieldAfterTurn } : {}) }),
         signal,
       );
@@ -366,6 +369,7 @@ function assertRequest<T>(request: InternalSessionRequest<T>): void {
     throw new Error("Agent request limits are invalid.");
   }
   if (request.kind === "freeform") {
+    if (request.reasoningEffortCeiling !== undefined && request.reasoningEffortCeiling !== 'low') throw new Error('Invalid reasoning effort ceiling.');
     if (!request.promptContent.trim()) throw new Error("Freeform work requests require promptContent.");
     if (request.maxRepairAttempts !== undefined && request.maxRepairAttempts !== 0) {
       throw new Error("Freeform work requests cannot run JSON repair.");

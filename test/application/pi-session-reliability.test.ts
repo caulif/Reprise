@@ -26,6 +26,21 @@ function caller(responses: AssistantMessage[], seen: string[], summarize?: () =>
   return new PiModelCaller({ schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' }, providerId: 'fixture', modelId: 'fixture', effort: 'low' }, models);
 }
 
+test('context reserve uses current exposure and restores full tool budgeting on later invocations', async () => {
+  const seen: string[] = [];
+  const session = caller([response('stop', [{ type: 'text', text: 'inspected' }])], seen).createSession({
+    sessionId: 'narrow-exposure-budget', systemPrompt: 'Inspect the current draft.', tools: [
+      { name: 'inspect', description: 'Inspect', parameters: Type.Object({}), execute: async () => ({ content: 'draft' }) },
+      { name: 'large', description: 'x'.repeat(400_000), parameters: Type.Object({}), execute: async () => ({ content: 'large' }) },
+    ],
+  });
+  const signal = new AbortController().signal;
+  assert.equal(await session.append({ content: 'Inspect.', signal, allowedToolNames: ['inspect'] }), 'inspected');
+  assert.doesNotMatch(seen[0]!, /"name":"large"/);
+  await assert.rejects(session.append({ content: 'Use all tools.', signal }), /system prompt, tools and output reserve exceed/);
+  assert.equal(seen.length, 1, 'an oversized exposed schema fails before any upstream request');
+});
+
 test('transient continuation keeps tool results and never repeats the prompt or side effects', async () => {
   const seen: string[] = [];
   const retries: number[] = [];

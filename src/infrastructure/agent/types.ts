@@ -135,6 +135,8 @@ export type FreeformWorkRequest = {
   maxRepairAttempts?: number;
   /** Optional model-visible subset of this session's registered tools; execution guards still apply. */
   allowedToolNames?: readonly string[] | undefined;
+  /** Optional ceiling for mechanical closure; never raises the configured reasoning effort. */
+  reasoningEffortCeiling?: 'low';
   /** Optional invocation-local interrupt; Provider must settle idle and usage before yielding. */
   yieldDeadline?: { at: number; reason: string };
   /** Checked at a completed provider turn; yielding preserves the live transcript and never certifies completion. */
@@ -181,7 +183,7 @@ export interface AgentHost {
 
 export interface ProviderSession {
   readonly inputCapabilities?: readonly string[];
-  append(input: { content: string; images?: readonly ImageContent[]; signal: AbortSignal; yieldAfterTurn?: FreeformWorkRequest['yieldAfterTurn']; allowedToolNames?: readonly string[]; yieldDeadline?: FreeformWorkRequest['yieldDeadline'] }): Promise<string | { status: "yielded"; reason: string }>;
+  append(input: { content: string; images?: readonly ImageContent[]; signal: AbortSignal; yieldAfterTurn?: FreeformWorkRequest['yieldAfterTurn']; allowedToolNames?: readonly string[]; yieldDeadline?: FreeformWorkRequest['yieldDeadline']; reasoningEffortCeiling?: FreeformWorkRequest['reasoningEffortCeiling'] }): Promise<string | { status: "yielded"; reason: string }>;
   cancel(): void;
   /** Required when cancellation can leave tool execution or audit writes in flight. */
   waitForIdle?(): Promise<void>;
