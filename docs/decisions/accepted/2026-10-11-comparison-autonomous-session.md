@@ -14,7 +14,7 @@
 
 参考固定版本 [Codex 工具装配](https://github.com/openai/codex/blob/8c0f7011674145da7e10627769fb221c74fbf7a0/codex-rs/core/src/tools/spec_plan.rs)，复用的是按能力提供工具、允许自主执行和图片观察的原则。此变更未实现 Codex 全部工具名或 PTY/resumable shell；现有 shell_exec、write/edit 等承担对应能力，不声称完整复制。
 
-工作 HTML fragment 写入 scratch/，submit_report 读取后经既有草稿验证生成 Host shell；可选 detailsPath 提供必要支持。保留原始来源只读、真实路径检查、UTF-8 与大小边界、脚本/外链禁用、引用完整性、原生视觉声明证明。模型不能覆盖 Host report.html。无需 findings/disposition、独立 inspection 或固定 decisionShape 字符额度；简洁及任务相关性由一个 prompt 指导，Host 不制造结论。
+工作 HTML fragment 写入 scratch/，submit_report 读取后经既有草稿验证生成 Host shell；可选 detailsPath 提供必要支持。保留文件工具的原始来源只读、真实路径检查、UTF-8 与大小边界、脚本/外链禁用、引用完整性、原生视觉声明证明。write/edit 工具不能覆盖 Host report.html；既有 shell 的命令策略不是操作系统沙箱，不新增其隔离保证。直接改写报告仍会使接受 digest 失效而无法发布。无需 findings/disposition、独立 inspection 或固定 decisionShape 字符额度；简洁及任务相关性由一个 prompt 指导，Host 不制造结论。
 
 请求事件新增显式 autonomousContractVersion=1，与 reviewInspectionContractVersion 互斥。接受工具回执绑定 digest/catalog；之后同 Session 成功预览当前版本，实际 generationInput 含对应预览回执，最后 invocation_completed，才允许发布或离线恢复。任何改稿/目录变化使旧绑定无效，失败、取消、仅工具执行成功或预览摘要不足以发布。该规则是输入及版本完整性检查，不是独立审查或语义正确性证明。
 
