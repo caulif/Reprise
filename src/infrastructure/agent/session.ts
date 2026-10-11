@@ -21,6 +21,16 @@ type InternalSessionRequest<T> =
   | ({ kind: "freeform" } & FreeformWorkRequest)
   | ({ kind: "structured" } & StructuredWorkRequest<T>);
 
+function providerWorkControls(request: FreeformWorkRequest): Partial<Parameters<ProviderSession['append']>[0]> {
+  return {
+    ...(request.allowedToolNames !== undefined ? { allowedToolNames: request.allowedToolNames } : {}),
+    ...(request.yieldDeadline ? { yieldDeadline: request.yieldDeadline } : {}),
+    ...(request.reasoningEffortCeiling ? { reasoningEffortCeiling: request.reasoningEffortCeiling } : {}),
+    ...(request.maxOutputTokens ? { maxOutputTokens: request.maxOutputTokens } : {}),
+    ...(request.yieldAfterTurn ? { yieldAfterTurn: request.yieldAfterTurn } : {}),
+  };
+}
+
 export class AgentSessionHost {
   readonly #sessionId: string;
   readonly #role: string;
@@ -158,8 +168,9 @@ export class AgentSessionHost {
     try {
       const yieldDeadline = request.kind === 'freeform' ? request.yieldDeadline : undefined;
       const reasoningEffortCeiling = request.kind === 'freeform' ? request.reasoningEffortCeiling : undefined;
+      const maxOutputTokens = request.kind === 'freeform' ? request.maxOutputTokens : undefined;
       const payload = { invocationId, ...(request.requestId ? { requestId: request.requestId } : {}), ...(yieldDeadline ? { yieldDeadline } : {}),
-        ...(reasoningEffortCeiling ? { reasoningEffortCeiling } : {}) };
+        ...(reasoningEffortCeiling ? { reasoningEffortCeiling } : {}), ...(maxOutputTokens ? { maxOutputTokens } : {}) };
       if (this.#audit && !Value.Check(AgentInvocationStartedSchema, payload)) throw new Error('Invalid invocation started audit payload.');
       await this.#audit?.append({
         type: "agent.invocation_started",
@@ -255,10 +266,7 @@ export class AgentSessionHost {
       if (cancelled()) return { done: true, result: { status: "cancelled", sessionId: this.#sessionId, invocationId } };
       const output = await abortable(
         this.#session!.append({ content, ...(outboundImages?.length ? { images: outboundImages } : {}), signal,
-          ...(request.kind === 'freeform' && request.allowedToolNames !== undefined ? { allowedToolNames: request.allowedToolNames } : {}),
-          ...(request.kind === 'freeform' && request.yieldDeadline ? { yieldDeadline: request.yieldDeadline } : {}),
-          ...(request.kind === 'freeform' && request.reasoningEffortCeiling ? { reasoningEffortCeiling: request.reasoningEffortCeiling } : {}),
-          ...(request.kind === 'freeform' && request.yieldAfterTurn ? { yieldAfterTurn: request.yieldAfterTurn } : {}) }),
+          ...(request.kind === 'freeform' ? providerWorkControls(request) : {}) }),
         signal,
       );
       if (controller.signal.aborted) throw timeoutError();
@@ -370,6 +378,7 @@ function assertRequest<T>(request: InternalSessionRequest<T>): void {
   }
   if (request.kind === "freeform") {
     if (request.reasoningEffortCeiling !== undefined && request.reasoningEffortCeiling !== 'low') throw new Error('Invalid reasoning effort ceiling.');
+    if (request.maxOutputTokens !== undefined && (!Number.isInteger(request.maxOutputTokens) || request.maxOutputTokens < 1 || request.maxOutputTokens > 65_536)) throw new Error('Invalid output token ceiling.');
     if (!request.promptContent.trim()) throw new Error("Freeform work requests require promptContent.");
     if (request.maxRepairAttempts !== undefined && request.maxRepairAttempts !== 0) {
       throw new Error("Freeform work requests cannot run JSON repair.");

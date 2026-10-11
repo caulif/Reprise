@@ -19,6 +19,7 @@ export { SceneDescriptorSchema, type SceneDescriptor } from "./schemas/scene.js"
 export { RecoveryMarkerSchema } from "./schemas/recovery-marker.js";
 export { EventEnvelopeSchema, type EventEnvelope } from "./schemas/event.js";
 export { AgentInvocationYieldedSchema, AgentInvocationStartedSchema } from "./schemas/agent-invocation-yielded.js";
+export { ComparisonEvidenceProgressSchema } from './schemas/comparison-evidence-progress.js';
 export { ControllerDecisionSchema, type ControllerDecision, ComparisonResultSchema, type ComparisonAgentEnvelope } from "./schemas/agent-output.js";
 export { ArtifactManifestSchema, type ArtifactManifest } from "./schemas/artifact.js";
 export {

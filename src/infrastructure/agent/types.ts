@@ -57,6 +57,7 @@ export type AgentToolDefinition = {
 };
 
 export type AgentAuditEventType =
+  | "comparison.evidence_checkpoint"
   | "comparison.phase_completed"
   | "comparison.resources_completed"
   | "agent.usage_reported"
@@ -137,6 +138,8 @@ export type FreeformWorkRequest = {
   allowedToolNames?: readonly string[] | undefined;
   /** Optional ceiling for mechanical closure; never raises the configured reasoning effort. */
   reasoningEffortCeiling?: 'low';
+  /** Invocation-local generation output ceiling; compaction keeps its own independent limit. */
+  maxOutputTokens?: number;
   /** Optional invocation-local interrupt; Provider must settle idle and usage before yielding. */
   yieldDeadline?: { at: number; reason: string };
   /** Checked at a completed provider turn; yielding preserves the live transcript and never certifies completion. */
@@ -183,7 +186,7 @@ export interface AgentHost {
 
 export interface ProviderSession {
   readonly inputCapabilities?: readonly string[];
-  append(input: { content: string; images?: readonly ImageContent[]; signal: AbortSignal; yieldAfterTurn?: FreeformWorkRequest['yieldAfterTurn']; allowedToolNames?: readonly string[]; yieldDeadline?: FreeformWorkRequest['yieldDeadline']; reasoningEffortCeiling?: FreeformWorkRequest['reasoningEffortCeiling'] }): Promise<string | { status: "yielded"; reason: string }>;
+  append(input: { content: string; images?: readonly ImageContent[]; signal: AbortSignal; yieldAfterTurn?: FreeformWorkRequest['yieldAfterTurn']; allowedToolNames?: readonly string[]; yieldDeadline?: FreeformWorkRequest['yieldDeadline']; reasoningEffortCeiling?: FreeformWorkRequest['reasoningEffortCeiling']; maxOutputTokens?: number }): Promise<string | { status: "yielded"; reason: string }>;
   cancel(): void;
   /** Required when cancellation can leave tool execution or audit writes in flight. */
   waitForIdle?(): Promise<void>;

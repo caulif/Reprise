@@ -12,6 +12,7 @@ import { closeBoundedInvestigation } from './comparison-investigation-closure.js
 import { comparisonDecisionMetrics, comparisonOutputContinuation, comparisonTimeout, comparisonWorkDeadline, comparisonYieldBoundary, type ComparisonWorkPass } from './comparison-invocation-boundaries.js';
 import { ComparisonReviewFindingsClosure, comparisonSourceReviewPrompt, composeComparisonReviewerSystemPrompt, reviewDraftInspectionCheckpoint, COMPARISON_DIRECT_AUDIT_PROMPT } from './comparison-review-findings.js';
 import { ComparisonFindingsCheckpoints } from './comparison-findings-checkpoints.js';
+import { checkpointComparisonEvidence } from './comparison-evidence-progress.js';
 import { composeComparisonAuthorSystemPrompt, COMPARISON_AUTHOR_COMPOSE_PROMPT } from './comparison-author-prompt.js';
 import { comparisonProtocol } from './comparison-stage-policy.js';
 import { ComparisonStages } from './comparison-stages.js';
@@ -451,7 +452,11 @@ const JSON_ONLY_REPAIR_PROMPT = [
 const COMPARISON_REPAIR_INSTRUCTION = 'Return only the JSON object; do not rewrite report.html. Use short refs from the current catalog for evidenceRefs, or [].';
 
 function comparisonProviderFailure<T>(result: AgentInvocation<T> | Extract<FreeformInvocation, { status: 'yielded' }>): AgentInvocation<T> {
-  if (result.status === 'yielded') return { status: 'failed', sessionId: result.sessionId, failure: { code: 'draft_invalid', kind: 'protocol', message: `Comparison phase yielded without a publishable checkpoint: ${result.reason}.`, attempts: 0 } };
+  if (result.status === 'yielded') {
+    const timedOut = /^bounded_[a-z_]+_timeout$/.test(result.reason);
+    return { status: 'failed', sessionId: result.sessionId, failure: { code: timedOut ? 'agent_timeout' : 'draft_invalid', kind: timedOut ? 'timeout' : 'protocol', retryable: false,
+      message: `Comparison phase yielded without a publishable checkpoint: ${result.reason}.`, attempts: 0 } };
+  }
   if (result.status !== 'failed') return result;
   const kind = result.failure.kind;
   if (kind !== 'authentication' && kind !== 'rate_limited' && kind !== 'transient_network' && kind !== 'transient_upstream') return result;
@@ -545,6 +550,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
           if (event.type === 'agent.context_compacted') counts.compactions++;
         }
         await audit?.append(event);
+        await checkpointComparisonEvidence(audit, event, activePhase);
       },
       ...(audit?.commitModelInput ? { commitModelInput: (bytes: Uint8Array) => audit.commitModelInput!(bytes) } : {}),
     };
@@ -577,7 +583,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
           const next = await session.work({ promptContent: [comparisonDecisionMetrics(prompt, phase, context.reportFacts.metrics), stages.prompt()].filter(Boolean).join('\n\n'), timeoutMs: comparisonTimeout(resources, this.#resources, this.#timeoutMs),
             allowedToolNames: stages.toolNames(phasedTools), ...deadline,
             ...(boundedStages && reviewPass && ['initial-findings', 'source-save', 'findings', 'review-findings', 'inspection', 'final-inspection', 'preview'].includes(reviewPass)
-              ? { reasoningEffortCeiling: 'low' as const } : {}),
+              ? { reasoningEffortCeiling: 'low' as const, ...(['inspection', 'final-inspection', 'preview'].includes(reviewPass) ? { maxOutputTokens: 4_096 } : {}) } : {}),
             signal, yieldAfterTurn: () => stages.exit() });
           return comparisonYieldBoundary(next, resources, signal);
         };

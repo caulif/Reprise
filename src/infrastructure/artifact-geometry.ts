@@ -23,7 +23,13 @@ export function validateGeometrySample(value: unknown, queries: readonly RenderG
   value.observations.forEach((observation, index) => {
     const query = queries[index]!;
     if (observation.name !== query.name || observation.selector !== query.selector || observation.kind !== query.kind) throw new Error('geometry query binding mismatch');
-    if (observation.status !== 'ok') return;
+    if (observation.status !== 'ok') {
+      const diagnostic = observation.selectorDiagnostics;
+      if (diagnostic && ((observation.status !== 'missing' && observation.status !== 'ambiguous')
+        || (observation.status === 'missing' ? diagnostic.matchCount !== 0 : diagnostic.matchCount < 2)
+        || diagnostic.candidates.length !== Math.min(4, diagnostic.matchCount))) throw new Error('geometry selector diagnostic mismatch');
+      return;
+    }
     const names = observation.kind === 'dom_rect' ? ['top_left', 'top_right', 'bottom_right', 'bottom_left']
       : observation.tagName === 'line' || observation.tagName === 'path' ? ['start', 'end']
       : observation.tagName === 'circle' || observation.tagName === 'ellipse' ? ['center', 'x_radius', 'y_radius'] : [];
@@ -64,8 +70,8 @@ function geometryExpression(queries: readonly RenderGeometryQuery[], originMs: n
       let nodes;
       try { nodes = document.querySelectorAll(query.selector); }
       catch { return {...query,status:'invalid_selector'}; }
-      if (!nodes.length) return {...query,status:'missing'};
-      if (nodes.length !== 1) return {...query,status:'ambiguous'};
+      if (nodes.length !== 1) return {...query,status:nodes.length ? 'ambiguous' : 'missing',selectorDiagnostics:{
+        matchCount:nodes.length,candidates:Array.from({length:Math.min(nodes.length,4)},(_,i) => nodes[i]).map(node => ({tagName:node.localName.slice(0,64),elementId:node.id.slice(0,64),parentId:(node.parentElement?.id ?? '').slice(0,64)}))}};
       const node = nodes[0];
       const base = {...query,tagName:node.localName.slice(0,64),elementId:node.id.slice(0,64),parentId:(node.parentElement?.id ?? '').slice(0,64)};
       try {

@@ -4,7 +4,7 @@ const Coordinate = Type.Number({ minimum: -1e9, maximum: 1e9 });
 const Point = Type.Object({ name: Type.String({ minLength: 1, maxLength: 32 }), x: Coordinate, y: Coordinate }, { additionalProperties: false });
 const RenderGeometryQuerySchema = Type.Object({
   name: Type.String({ minLength: 1, maxLength: 32 }),
-  selector: Type.String({ minLength: 1, maxLength: 160, description: 'CSS selector matching exactly one actual element. Identify the compared part from its source attributes; do not substitute its body, container or intended target. Missing/ambiguous selectors supply no measurement.' }),
+  selector: Type.String({ minLength: 1, maxLength: 160, description: 'CSS selector matching exactly one actual element. Identify the compared part from source and actual view; do not substitute its body, container or intended target. Missing/ambiguous supplies no measurement; use its bounded matchCount/candidate identities and relevant source to repair the selector for a decision-changing check. Candidate identity alone does not establish task role.' }),
   kind: Type.Union([Type.Literal('svg_geometry'), Type.Literal('dom_rect')], { description: 'svg_geometry supports circle/ellipse centers and line/path endpoints only. For rect, group or other element bounds use dom_rect. All successful coordinates are actual viewport CSS pixels; unsupported is not evidence of absence or contact.' }),
 }, { additionalProperties: false });
 export const RenderGeometryQueriesSchema = Type.Array(RenderGeometryQuerySchema, { minItems: 1, maxItems: 8 });
@@ -23,7 +23,12 @@ const Observation = Type.Union([
     matrix: Type.Object({ a: Coordinate, b: Coordinate, c: Coordinate, d: Coordinate, e: Coordinate, f: Coordinate }, { additionalProperties: false }),
   }, { additionalProperties: false }),
   Type.Object({ ...Identity, kind: Type.Literal('dom_rect'), status: Type.Literal('ok'), bounds: Bounds, screenPoints: Points }, { additionalProperties: false }),
-  Type.Object({ ...Identity, status: Type.Union((['missing', 'ambiguous', 'invalid_selector', 'unsupported', 'unavailable'] as const).map(value => Type.Literal(value))) }, { additionalProperties: false }),
+  Type.Object({ ...Identity, status: Type.Union((['missing', 'ambiguous', 'invalid_selector', 'unsupported', 'unavailable'] as const).map(value => Type.Literal(value))),
+    selectorDiagnostics: Type.Optional(Type.Object({
+      matchCount: Type.Integer({ minimum: 0, maximum: 1e9 }),
+      candidates: Type.Array(Type.Object({ tagName: Type.String({ minLength: 1, maxLength: 64 }), elementId: Type.String({ maxLength: 64 }), parentId: Type.String({ maxLength: 64 }) }, { additionalProperties: false }), { maxItems: 4 }),
+    }, { additionalProperties: false })),
+  }, { additionalProperties: false }),
 ]);
 export const RenderGeometrySampleSchema = Type.Object({
   schemaVersion: Type.Literal(1), coordinateDomain: Type.Literal('viewport_css_pixels'),

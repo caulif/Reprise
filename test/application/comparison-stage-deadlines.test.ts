@@ -7,6 +7,55 @@ function bounded(maxElapsedMs = 600_000) {
   return new ComparisonResourceTracker({ ...DEFAULT_COMPARISON_RESOURCES, maxElapsedMs }, { boundedStages: true });
 }
 
+test('slow investigation/save no longer compresses author work to nine seconds', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const tracker = bounded();
+  t.mock.timers.tick(111_000);
+  tracker.phase('investigate', 'source-save');
+  t.mock.timers.tick(90_000);
+  tracker.phase('compose');
+  assert.equal(tracker.workDeadline()!.at - Date.now(), 90_000);
+  assert.equal(tracker.snapshot().remainingMs, 399_000);
+  assert.equal(tracker.beforeTool('submit_comparison_draft'), undefined);
+});
+
+test('larger budgets expand actual stage windows and saving protects a complete author window', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  assert.equal(DEFAULT_COMPARISON_RESOURCES.maxElapsedMs, 1_200_000);
+  for (const total of [60_000, 1_200_000, 2_400_000]) {
+    const tracker = bounded(total), scale = total / 1_200_000;
+    assert.equal(tracker.investigationRemainingMs(), Math.min(240_000 * scale, 240_000));
+    t.mock.timers.tick(530_000 * scale);
+    tracker.phase('investigate', 'source-save');
+    const save = tracker.workDeadline()!;
+    assert.equal(save.at - Date.now(), 10_000 * scale);
+    t.mock.timers.tick(save.at - Date.now());
+    tracker.phase('compose');
+    assert.equal(tracker.workDeadline()!.at - Date.now(), 180_000 * scale);
+    tracker.phase('review', 'sources');
+    assert.equal(tracker.workDeadline()!.at - Date.now(), 240_000 * scale);
+  }
+});
+
+test('latest legal entries retain time for every mandatory downstream stage', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  for (const total of [60_000, 1_200_000]) {
+    const tracker = bounded(total), scale = total / 1_200_000;
+    t.mock.timers.tick(530_000 * scale);
+    for (const [phase, pass, minimum] of [
+      ['investigate', 'source-save', 10_000], ['compose', undefined, 180_000], ['review', 'sources', 120_000],
+      ['review', 'source-save', 60_000], ['review', 'inspection', 30_000], ['review', 'review-findings', 60_000],
+      ['review', 'audit', 120_000], ['review', 'preview', 60_000],
+    ] as const) {
+      tracker.phase(phase, pass);
+      const remaining = tracker.workDeadline()!.at - Date.now();
+      assert.equal(remaining, minimum * scale, `${phase}/${pass} must not share its predecessor's deadline`);
+      t.mock.timers.tick(remaining);
+    }
+    assert.equal(tracker.snapshot().remainingMs, 30_000 * scale);
+  }
+});
+
 test('initial findings and final findings share the investigation absolute cutoff', t => {
   t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
   const tracker = bounded();
@@ -59,45 +108,46 @@ test('source and supplement stay bounded while findings closure has a non-renewa
   t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
   const tracker = bounded();
   const sources = comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline!;
-  assert.equal(sources.at, 111_000);
-  t.mock.timers.tick(110_000);
+  assert.equal(sources.at, 121_000);
+  t.mock.timers.tick(120_000);
   assert.equal(tracker.beforeTool('read'), 'bounded_source_timeout');
-  assert.equal(comparisonWorkDeadline(tracker, 'review', 'inspection').yieldDeadline!.at, 201_000);
+  assert.equal(comparisonWorkDeadline(tracker, 'review', 'inspection').yieldDeadline!.at, 181_000);
   t.mock.timers.tick(20_000);
   const supplement = comparisonWorkDeadline(tracker, 'review', 'review-supplement').yieldDeadline!;
-  assert.equal(supplement.at, 151_000, 'the 30-second supplement is clamped to the remaining 20 seconds of shared review');
+  assert.equal(supplement.at, 151_000, 'the supplement is clamped to the remaining shared source allowance');
   for (let i = 0; i < 13; i++) tracker.observe({ type: 'agent.model_request', role: 'comparison', sessionId: 'review', payload: {} });
   assert.equal(tracker.beforeTool('read'), undefined, 'old investigation request allowance must not block the legal supplement');
-  t.mock.timers.tick(20_000);
+  t.mock.timers.tick(10_000);
   assert.equal(tracker.beforeTool('read'), 'bounded_source_timeout');
   assert.deepEqual(comparisonWorkDeadline(tracker, 'review', 'review-supplement').yieldDeadline, supplement);
   const closure = comparisonWorkDeadline(tracker, 'review', 'review-findings').yieldDeadline!;
-  assert.equal(closure.at, 241_000);
+  assert.equal(closure.at, 211_000);
   t.mock.timers.tick(1);
   assert.deepEqual(comparisonWorkDeadline(tracker, 'review', 'review-findings').yieldDeadline, closure);
   assert.equal(tracker.beforeTool('update_comparison_findings'), undefined);
-  t.mock.timers.tick(89_999);
+  t.mock.timers.tick(59_999);
   assert.equal(tracker.beforeTool('update_comparison_findings'), 'bounded_source_timeout');
   assert.equal(comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline!.at, sources.at);
 });
 
-test('late stages preserve finishing time and the final sixty seconds of total budget', t => {
+test('late stages borrow unused time while preserving audit and publication reserves', t => {
   t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
   const tracker = bounded();
   t.mock.timers.tick(120_000);
   assert.equal(comparisonWorkDeadline(tracker, 'compose').yieldDeadline!.at, 211_000);
   t.mock.timers.tick(90_000);
-  assert.equal(comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline!.at, 321_000);
-  t.mock.timers.tick(150_000);
-  assert.equal(comparisonWorkDeadline(tracker, 'review', 'review-findings').yieldDeadline!.at, 361_000);
+  assert.equal(comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline!.at, 331_000);
+  t.mock.timers.tick(270_000);
+  assert.equal(comparisonWorkDeadline(tracker, 'review', 'review-findings').yieldDeadline!.at, 496_000);
+  t.mock.timers.tick(15_000);
   assert.equal(tracker.beforeTool('update_comparison_findings'), 'bounded_source_timeout', 'closure cannot borrow the finishing reserve');
   const audit = comparisonWorkDeadline(tracker, 'review', 'audit').yieldDeadline!;
-  assert.equal(audit.at, 451_000);
-  t.mock.timers.tick(90_000);
+  assert.equal(audit.at, 556_000);
+  t.mock.timers.tick(60_000);
   const preview = comparisonWorkDeadline(tracker, 'review', 'preview').yieldDeadline!;
-  assert.equal(preview.at, 541_000);
-  t.mock.timers.tick(90_000);
-  assert.equal(tracker.snapshot().remainingMs, 60_000);
+  assert.equal(preview.at, 586_000);
+  t.mock.timers.tick(30_000);
+  assert.equal(tracker.snapshot().remainingMs, 15_000);
   assert.equal(tracker.beforeTool('preview_report'), 'bounded_preview_timeout');
   tracker.checkHard('persist publication');
   assert.equal(comparisonWorkDeadline(tracker, 'review', 'audit').yieldDeadline!.at, audit.at, 'returning to audit cannot borrow publication time');
@@ -110,30 +160,30 @@ test('small total budgets scale all allocations rather than consuming the finish
   t.mock.timers.tick(12_000);
   assert.equal(comparisonWorkDeadline(tracker, 'compose').yieldDeadline!.at, 22_000);
   t.mock.timers.tick(9_000);
-  assert.equal(comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline!.at, 33_000);
-  t.mock.timers.tick(11_000);
-  assert.equal(comparisonWorkDeadline(tracker, 'review', 'review-supplement').yieldDeadline!.at, 36_000);
+  assert.equal(comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline!.at, 34_000);
+  t.mock.timers.tick(12_000);
+  assert.equal(comparisonWorkDeadline(tracker, 'review', 'review-supplement').yieldDeadline!.at, 37_000);
   t.mock.timers.tick(3_000);
-  assert.equal(comparisonWorkDeadline(tracker, 'review', 'review-findings').yieldDeadline!.at, 37_000);
-  t.mock.timers.tick(1_000);
-  assert.equal(comparisonWorkDeadline(tracker, 'review', 'audit').yieldDeadline!.at, 46_000);
+  assert.equal(comparisonWorkDeadline(tracker, 'review', 'review-findings').yieldDeadline!.at, 43_000);
+  t.mock.timers.tick(6_000);
+  assert.equal(comparisonWorkDeadline(tracker, 'review', 'audit').yieldDeadline!.at, 52_000);
   t.mock.timers.tick(9_000);
-  assert.equal(comparisonWorkDeadline(tracker, 'review', 'preview').yieldDeadline!.at, 55_000);
-  t.mock.timers.tick(9_000);
-  assert.equal(tracker.snapshot().remainingMs, 6_000);
+  assert.equal(comparisonWorkDeadline(tracker, 'review', 'preview').yieldDeadline!.at, 58_000);
+  t.mock.timers.tick(6_000);
+  assert.equal(tracker.snapshot().remainingMs, 3_000);
 });
 
 test('late stage entry cannot borrow reserved audit or publication time', t => {
   t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
   const tracker = bounded();
-  t.mock.timers.tick(400_000);
+  t.mock.timers.tick(530_000);
   const review = comparisonWorkDeadline(tracker, 'review', 'review-findings').yieldDeadline!;
-  assert.equal(review.at, 361_000, 'the global boundary is already past; do not grant a fresh 150 seconds');
+  assert.equal(review.at, 496_000, 'the global boundary is already past');
   assert.equal(tracker.beforeTool('update_comparison_findings'), 'bounded_source_timeout');
   const audit = comparisonWorkDeadline(tracker, 'review', 'audit').yieldDeadline!;
-  assert.equal(audit.at, 451_000);
+  assert.equal(audit.at, 556_000);
   const preview = comparisonWorkDeadline(tracker, 'review', 'preview').yieldDeadline!;
-  assert.equal(preview.at, 491_000);
+  assert.equal(preview.at, 586_000);
 });
 
 test('a shorter investigation override remains binding and an explicit empty override remains unlimited', t => {
@@ -164,23 +214,23 @@ test('source-save has non-renewable persistence windows while source investigati
   const investigation = comparisonWorkDeadline(tracker, 'investigate').yieldDeadline!;
   t.mock.timers.tick(80_000);
   const initialSave = comparisonWorkDeadline(tracker, 'investigate', 'source-save').yieldDeadline!;
-  assert.equal(initialSave.at, 171_000);
+  assert.equal(initialSave.at, 141_000);
   t.mock.timers.tick(40_000);
   assert.equal(tracker.beforeTool('update_comparison_findings_delta'), undefined);
   assert.deepEqual(comparisonWorkDeadline(tracker, 'investigate').yieldDeadline, investigation);
   assert.equal(tracker.beforeTool('read'), 'bounded_investigation_timeout');
   const source = comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline!;
-  assert.equal(source.at, 231_000);
+  assert.equal(source.at, 241_000);
   t.mock.timers.tick(80_000);
   const save = comparisonWorkDeadline(tracker, 'review', 'source-save').yieldDeadline!;
-  assert.equal(save.at, 291_000);
+  assert.equal(save.at, 261_000);
   t.mock.timers.tick(30_000);
   assert.equal(tracker.beforeTool('update_comparison_findings_delta'), undefined);
   assert.deepEqual(comparisonWorkDeadline(tracker, 'review', 'source-save').yieldDeadline, save);
   const inspection = comparisonWorkDeadline(tracker, 'review', 'inspection').yieldDeadline!;
-  assert.equal(inspection.at, 321_000, 'draft delivery has its own non-renewable cutoff');
+  assert.equal(inspection.at, 291_000, 'draft delivery has its own non-renewable cutoff');
   comparisonWorkDeadline(tracker, 'review', 'source-save');
-  t.mock.timers.tick(60_000);
+  t.mock.timers.tick(30_000);
   assert.equal(tracker.beforeTool('update_comparison_findings_delta'), 'bounded_source_timeout');
   assert.deepEqual(comparisonWorkDeadline(tracker, 'review', 'inspection').yieldDeadline, inspection);
   assert.equal(tracker.beforeTool('inspect_comparison_draft'), undefined, 'expired save does not expire draft delivery');
