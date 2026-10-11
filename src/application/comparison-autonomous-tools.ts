@@ -16,9 +16,10 @@ const ReportFileSchema = Type.Object({
 
 export function createAutonomousReportTool(draft: ComparisonDraft, attemptRoot: string): AgentToolDefinition {
   const readFragment = async (path: string): Promise<string> => {
-    const scratch = await realpath(join(attemptRoot, 'scratch'));
-    if (!pathContainedBy(await realpath(attemptRoot), scratch)) throw new Error('Scratch directory escapes the attempt.');
-    const requested = resolve(attemptRoot, path);
+    const root = await realpath(attemptRoot);
+    const scratch = await realpath(join(root, 'scratch'));
+    if (!pathContainedBy(root, scratch)) throw new Error('Scratch directory escapes the attempt.');
+    const requested = resolve(root, path);
     if (isAbsolute(path) || !pathContainedBy(scratch, requested)) throw new ToolPreconditionRejected('invalid_path', 'Report fragments must be inside scratch/.');
     const actual = await realpath(requested);
     if (!pathContainedBy(scratch, actual)) throw new Error('Report fragment escapes scratch/.');

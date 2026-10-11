@@ -30,6 +30,10 @@ test('file report submission shares draft validation, accepts semantic HTML and 
   const response = await f.tool.execute({ ...params, detailsPath: 'scratch/details.html' }, signal);
   assert.match(response.content, /"status":"accepted"/);
   assert.ok(response.details);
+  const alias = join(f.root, 'alias');
+  await symlink(f.root, alias, 'junction');
+  assert.match((await createAutonomousReportTool(f.draft, alias).execute(params, signal)).content, /"status":"accepted"/);
+  await rm(alias);
   const html = await readFile(join(f.root, 'report.html'), 'utf8');
   const accepted = f.draft.acceptedReceipt();
   f.draft.recordPreview({ htmlPath: 'preview.html', html, draftDigest: accepted.draftDigest, preparedDigest: accepted.draftDigest,
