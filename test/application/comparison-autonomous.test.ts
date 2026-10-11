@@ -28,9 +28,12 @@ test('autonomous Comparison uses one prompt and leaves all tools available witho
     return { append: async ({ content, signal }) => {
       calls++;
       assert.match(content, /Compare text deliveries/);
+      assert.match(content, /Total remaining session budget: \d+ ms/);
       for (const name of names) {
         const tool = input.tools.find(item => item.name === name)!;
-        assert.equal((await tool.execute({}, signal)).content, name);
+        const result = await tool.execute({}, signal);
+        assert.equal(result.content, name);
+        assert.match(JSON.stringify(result.contentBlocks), /Host total-time budget remaining: \d+ ms/);
       }
       return '';
     }, cancel() {} };
@@ -44,6 +47,7 @@ test('autonomous Comparison uses one prompt and leaves all tools available witho
   assert.equal(calls, 1);
   assert.deepEqual(used, names);
   assert.equal(events.at(-1)?.type, 'comparison.resources_completed');
+  assert.ok(events.some(event => event.type === 'agent.tool_completed' && JSON.stringify(event.payload.body).includes('Host total-time budget remaining')));
   await agent.release('attempt');
 });
 

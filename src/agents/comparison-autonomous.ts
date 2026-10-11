@@ -53,7 +53,11 @@ export class AutonomousComparisonAgent implements ComparisonAgentPort {
         tools: tools.map(tool => ({ ...tool, execute: async (params, toolSignal) => {
           resources.checkHard(tool.name);
           combined.throwIfAborted();
-          return tool.execute(params, toolSignal);
+          const result = await tool.execute(params, toolSignal);
+          return { ...result, contentBlocks: [
+            ...(result.contentBlocks ?? [{ type: 'text' as const, text: result.content }]),
+            { type: 'text' as const, text: `Host total-time budget remaining: ${String(resources.snapshot().remainingMs)} ms. Plan investigation, reporting and revision within this remaining time; no separate stage allowance is reserved.` },
+          ] };
         } })), audit: measured,
       }));
       sessionId = session.sessionId;
@@ -65,7 +69,7 @@ export class AutonomousComparisonAgent implements ComparisonAgentPort {
         return session.work({ promptContent, timeoutMs, signal: combined, yieldAfterTurn: () => undefined });
       };
       const outcome = await comparisonOutputContinuation(invoke,
-        `${context.promptContent ?? ''}\n\nTask: ${context.task.summary}\nHost metrics: ${JSON.stringify(context.reportFacts.metrics ?? {})}\nComplete the comparison and report autonomously.`, undefined, true);
+        `${context.promptContent ?? ''}\n\nTask: ${context.task.summary}\nHost metrics: ${JSON.stringify(context.reportFacts.metrics ?? {})}\nTotal remaining session budget: ${String(resources.snapshot().remainingMs)} ms. Complete investigation, writing, preview and any revision within this total time. Choose a useful scope and finish a valid report before it expires; do not treat an unfinished investigation as a completed report.`, undefined, true);
       if (combined.aborted) return { status: 'cancelled', sessionId };
       if (outcome.status !== 'completed') return outcome.status === 'yielded'
         ? { status: 'failed', sessionId, failure: { code: 'report_incomplete', message: `Unfinished autonomous session: ${outcome.reason}`, attempts: 0 } } : outcome;
