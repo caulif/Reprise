@@ -218,6 +218,7 @@ test('decision media uses registered image refs, escaped captions and the existi
   assert.match((await draft.tool().execute(submission, f.signal)).content, /status=accepted/);
   const html = await readFile(join(f.root, 'report.html'), 'utf8');
   assert.match(html, /data-media-ref="media-01"/);
+  assert.doesNotMatch(materializeComparisonDecisionDraft(base).comparisonHtml, /img|figure|page-row/);
   assert.ok(comparisonVisibleMainText(html).includes(caption));
   assert.doesNotMatch(materializeComparisonDecisionDraft(submission).comparisonHtml, /data-claim="visual"/);
   for (const ref of ['media-02', 'media-99']) {

@@ -51,8 +51,9 @@ export function decisionContractError(draft: ComparisonDraftSubmission, findings
 
 export function decisionTextHtml(draft: ComparisonDraftSubmission, findings?: ComparisonFindingsSubmission, locale: AgentLocale = 'zh'): string {
   const relevant = new Set(draft.findingDispositions?.filter(item => item.disposition !== 'not_decisive').map(item => item.findingId));
-  const boundaries = draft.decisionSummary === undefined ? [] : (findings?.findings ?? []).flatMap((finding, index) => {
-    if (!relevant.has(finding.id)) return [];
+  const coverageGroups = new Map<string, number[]>();
+  if (draft.decisionSummary !== undefined) (findings?.findings ?? []).forEach((finding, index) => {
+    if (!relevant.has(finding.id)) return;
     const observations = finding.observations.filter(observation => incomplete(observation.supportBoundary));
     const groups = [true, false].flatMap(partial => {
       const sides = observations.filter(observation => (observation.supportBoundary?.supportStage === 'delivered_output') === partial)
@@ -61,8 +62,13 @@ export function decisionTextHtml(draft: ComparisonDraftSubmission, findings?: Co
       return locale === 'en' ? [`${sides.join(' and ')}: ${partial ? 'limited delivered-output coverage' : 'delivered-output support unverified'}`]
         : [`${sides.join('、')}${partial ? '仅有局部交付支持' : '交付结果未确认'}`];
     });
-    return groups.length ? [locale === 'en' ? `Basis ${index + 1}: ${groups.join('; ')}.` : `依据${index + 1}：${groups.join('；')}。`] : [];
+    if (groups.length) {
+      const text = groups.join(locale === 'en' ? '; ' : '；');
+      coverageGroups.set(text, [...(coverageGroups.get(text) ?? []), index + 1]);
+    }
   });
+  const boundaries = [...coverageGroups].map(([text, indices]) => locale === 'en'
+    ? `Basis ${indices.join(', ')}: ${text}.` : `依据${indices.join('、')}：${text}。`);
   return `${paragraph(draft.decisionSummary)}${paragraph(draft.decisionBoundary)}${boundaries.map(paragraph).join('')}${draft.comparisonHtml}`;
 }
 

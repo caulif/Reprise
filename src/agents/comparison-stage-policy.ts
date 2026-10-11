@@ -2,7 +2,7 @@ import type { ComparisonCompareOptions } from './comparison-agent.js';
 import type { AgentToolDefinition, AgentToolResult } from '../infrastructure/agent/host.js';
 
 export type ComparisonStage = 'understand' | 'investigate' | 'compose' | 'review' | 'initial-findings' | 'source-save'
-  | 'sources' | 'findings' | 'inspection' | 'audit' | 'final-inspection' | 'preview' | 'review-findings' | 'review-supplement';
+  | 'sources' | 'findings' | 'inspection' | 'audit' | 'final-inspection' | 'preview' | 'presentation-review' | 'review-findings' | 'review-supplement';
 export const COMPARISON_SOURCE_TOOLS: ReadonlySet<string> = new Set(['read', 'ls', 'grep', 'shell_exec', 'render_artifact', 'view_image', 'transform_image', 'register_evidence', 'quote_evidence']);
 const findingsTools = ['update_comparison_findings', 'update_comparison_findings_delta'];
 export const isCheckpointSave = (name: string): boolean => name === 'save_comparison_checkpoint';
@@ -52,6 +52,11 @@ export function comparisonStagePolicy(stage: ComparisonStage, input: PolicyInput
   const only = (names: readonly string[], code: string, message: string, guard?: Guard, exit: ComparisonStagePolicy['exit'] = base.exit): ComparisonStagePolicy => ({ ...base,
     allows: name => names.includes(name), names, restricted: true, code, message, exit, ...(guard ? { guard } : {}) });
   switch (stage) {
+    case 'presentation-review': return { ...base, restricted: true,
+      allows: name => ['submit_comparison_draft', 'read', 'view_image'].includes(name),
+      code: 'presentation_review_only', message: 'Review the delivered preview and current draft; revise presentation without inventing evidence or restarting investigation.',
+      observed: (name, params, result) => { base.observed?.(name, params, result); if (name === 'submit_comparison_draft' && /^status=accepted(?:\r?\n|$)/.test(result.content)) auditRevisionSaved = true; },
+      exit: async () => auditRevisionSaved ? 'presentation_revision_saved' : undefined };
     case 'initial-findings': return input.initial ? only(['update_comparison_findings'], 'initial_findings_only',
       'Save a minimal actual findings snapshot first. Reading, checks and report tools are unavailable at this checkpoint.', undefined, async () => state?.initialSaved() ? 'initial_findings_saved' : state?.softReason()) : base;
     case 'source-save': return only([input.preferCheckpoint ? 'save_comparison_checkpoint' : 'update_comparison_findings_delta'], 'findings_checkpoint_required',

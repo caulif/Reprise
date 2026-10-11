@@ -92,7 +92,8 @@ for (const mode of ['repaired', 'unfinished'] as const) test(`production native 
       assert.equal(mode, 'repaired');
       assert.match(JSON.stringify(context.messages), new RegExp(candidateUnknown));
       message = turn('preview_report', {});
-    } else throw new Error('Unexpected production scope-summary generation');
+    } else if (prompt.includes('Review the actual preview_report result now')) message = response([{ type: 'text', text: 'Actual preview reviewed.' }], 'stop');
+    else throw new Error('Unexpected production scope-summary generation');
     const stream = createAssistantMessageEventStream(); stream.push({ type: 'done', reason: message.stopReason as 'stop' | 'toolUse', message }); return stream;
   } } as unknown as PiModels;
   const comparison = new ComparisonAgent({ requireFindings: true, timeoutMs: 0, maxRepairAttempts: 0,

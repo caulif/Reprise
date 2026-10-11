@@ -303,7 +303,7 @@ for (const changed of [false, true]) test(`production ${changed ? 'replacement' 
     }, cancel() {} };
   } }) });
   const result = await startExperiment({ ...base, comparison }).result;
-  assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result)); assert.equal(turns, 8); assert.ok(actualDelta);
+  assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result)); assert.equal(turns, 9); assert.ok(actualDelta);
   const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { sequence: number; type: string; payload: Record<string, unknown> });
   assert.equal(events.filter(event => event.type === 'comparison.findings_updated').length, changed ? 2 : 1);
   const updates = events.filter(event => event.type === 'agent.tool_completed' && ['update_comparison_findings', 'update_comparison_findings_delta'].includes(String(event.payload.tool)) && !event.payload.nativeHook);

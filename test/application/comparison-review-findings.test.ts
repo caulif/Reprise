@@ -90,7 +90,7 @@ for (const sourcePending of [false, true]) test(`direct independent source save 
   const events: AgentAuditEvent[] = [], inputs: { tools: { name: string }[]; messages: unknown[] }[] = [];
   const responses = [stop(), stop(), calls('write', 'preview_report', 'read', 'update_comparison_findings'), calls('inspect_comparison_draft'),
     ...(sourcePending ? [calls('read'), stop(), calls('update_comparison_findings')] : []),
-    calls('inspect_comparison_draft'), calls('preview_report')];
+    calls('inspect_comparison_draft'), calls('preview_report'), stop()];
   const models = { getModel: () => model, streamSimple: (_model: unknown, actual: unknown) => {
     const input = actual as typeof inputs[number]; inputs.push({ tools: input.tools.map(tool => ({ name: tool.name })), messages: structuredClone(input.messages) });
     const next = responses.shift(); assert.ok(next, 'direct source save must not open an unnecessary closure or extra supplement');
@@ -166,7 +166,7 @@ for (const finalPending of [false, true]) test(`strict independent review opens 
   let ready = true, updates = 0, material = false, formal = false, previewed = false, checks = 0, forbidden = 0;
   const events: AgentAuditEvent[] = [], inputs: { tools: { name: string }[]; messages: unknown[] }[] = [];
   const responses = [stop(), stop(), stop(), calls('inspect_comparison_draft'), calls('update_comparison_findings'),
-    calls('read', 'write', 'preview_report'), stop(), calls('update_comparison_findings'), calls('inspect_comparison_draft'), calls('preview_report')];
+    calls('read', 'write', 'preview_report'), stop(), calls('update_comparison_findings'), calls('inspect_comparison_draft'), calls('preview_report'), stop()];
   const models = { getModel: () => model, streamSimple: (_model: unknown, actual: unknown) => {
     const current = actual as typeof inputs[number]; inputs.push({ tools: current.tools.map(tool => ({ name: tool.name })), messages: structuredClone(current.messages) });
     const next = responses.shift(); assert.ok(next, 'no extra model recovery is permitted');
@@ -263,7 +263,7 @@ for (const mode of ['success', 'late', 'length', 'repeat_length', 'length_after_
     : mode === 'verbal' || mode === 'late' ? [stop(), ...(mode === 'late' ? [calls('update_comparison_findings')] : [stop()])]
     : mode === 'rejected' || mode === 'malformed' ? [calls('update_comparison_findings'), stop(), calls('update_comparison_findings'), stop()]
     : mode === 'legacy' ? [] : [calls('read', 'read', 'update_comparison_findings', 'shell_exec', 'submit_comparison_draft', 'inspect_comparison_draft', 'preview_report')];
-  const responses = [stop(), stop(), stop(), calls('inspect_comparison_draft'), ...closure, calls('inspect_comparison_draft'), calls('preview_report')];
+  const responses = [stop(), stop(), stop(), calls('inspect_comparison_draft'), ...closure, calls('inspect_comparison_draft'), calls('preview_report'), stop()];
   const models = { getModel: () => model, streamSimple: (_model: unknown, actual: unknown) => {
     const current = actual as typeof inputs[number]; inputs.push({ tools: current.tools.map(tool => ({ name: tool.name })), messages: structuredClone(current.messages) });
     if (inputs.length === 5 && mode === 'provider') throw Object.assign(new Error('Actual closure upstream failure'), { status: 503 });

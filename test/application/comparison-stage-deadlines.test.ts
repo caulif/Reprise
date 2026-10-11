@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { ComparisonResourceTracker, DEFAULT_COMPARISON_RESOURCES } from '../../src/agents/comparison-resources.js';
 import { comparisonOutputContinuation, comparisonWorkDeadline } from '../../src/agents/comparison-invocation-boundaries.js';
 
+const LEGACY_RESOURCES = { investigationModelRequests: 12, investigationToolCalls: 30, investigationMs: 240_000, maxModelRequests: 40, maxToolCalls: 120, maxElapsedMs: 1_200_000 };
+
 function bounded(maxElapsedMs = 600_000) {
-  return new ComparisonResourceTracker({ ...DEFAULT_COMPARISON_RESOURCES, maxElapsedMs }, { boundedStages: true });
+  return new ComparisonResourceTracker({ ...LEGACY_RESOURCES, maxElapsedMs }, { boundedStages: true });
 }
 
 test('slow investigation/save no longer compresses author work to nine seconds', t => {
@@ -21,7 +23,7 @@ test('slow investigation/save no longer compresses author work to nine seconds',
 
 test('larger budgets expand actual stage windows and saving protects a complete author window', t => {
   t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
-  assert.equal(DEFAULT_COMPARISON_RESOURCES.maxElapsedMs, 1_200_000);
+  assert.equal(DEFAULT_COMPARISON_RESOURCES.maxElapsedMs, 1_800_000);
   for (const total of [60_000, 1_200_000, 2_400_000]) {
     const tracker = bounded(total), scale = total / 1_200_000;
     assert.equal(tracker.investigationRemainingMs(), Math.min(240_000 * scale, 240_000));
@@ -201,7 +203,7 @@ test('a shorter investigation override remains binding and an explicit empty ove
 });
 
 test('legacy findings/audit/preview deadlines retain their previous opt-out semantics', () => {
-  const legacy = new ComparisonResourceTracker(DEFAULT_COMPARISON_RESOURCES);
+  const legacy = new ComparisonResourceTracker(LEGACY_RESOURCES);
   assert.deepEqual(comparisonWorkDeadline(legacy, 'investigate', 'findings'), {});
   assert.deepEqual(comparisonWorkDeadline(legacy, 'review', 'audit'), {});
   assert.deepEqual(comparisonWorkDeadline(legacy, 'review', 'preview'), {});
@@ -263,7 +265,7 @@ test('bounded review protects finishing requests and tools without blocking find
 
 for (const phase of ['investigate', 'review'] as const) test(`${phase} save allowance counts actual saving across separated source batches`, t => {
   t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
-  const tracker = new ComparisonResourceTracker({ ...DEFAULT_COMPARISON_RESOURCES }, { boundedStages: true });
+  const tracker = new ComparisonResourceTracker({ ...LEGACY_RESOURCES }, { boundedStages: true });
   tracker.phase(phase, phase === 'review' ? 'sources' : undefined);
   tracker.phase(phase, 'source-save');
   t.mock.timers.tick(34_000);

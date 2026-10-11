@@ -26,10 +26,11 @@ function response(content: AssistantMessage['content'], stopReason: AssistantMes
 const turn = (name: string, args: unknown) => response([{ type: 'toolCall', id: `${name}-${Math.random()}`, name, arguments: args as Record<string, unknown> }]);
 type Event = { sequence: number; type: string; payload: Record<string, unknown> };
 
-for (const revise of [false, true]) test(`plain decision traverses production publication with ${revise ? 'a revised audit and forced final inspection' : 'unchanged audit'}`, async t => {
+for (const mode of ['unchanged', 'audit', 'presentation', 'image', 'review-failure']) test(`plain decision traverses production publication with ${mode}`, async t => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-decision-publication-'));
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
+  if (mode === 'image') base.taskCase.privacy.allowBinary = true;
   await mkdir(base.sourceRoot, { recursive: true }); await writeFile(join(base.sourceRoot, 'README.md'), '# frozen source\n');
   const findings: ComparisonFindingsSubmission = { criteria: ['Task use'],
     finals: (['baseline', 'candidate'] as const).map(side => ({ side, status: 'unavailable', sourceRefs: [], description: 'Unchecked final' })),
@@ -38,9 +39,10 @@ for (const revise of [false, true]) test(`plain decision traverses production pu
       evidenceRefs: [], resolution: 'Final quality remains unverified' }] };
   const decision = { kind: 'decision', status: 'insufficient_evidence', category: 'Results', headline: 'Quality unknown', decisionShape: 'single_difference',
     decisionSummary: 'Neither final output is confirmed usable.', decisionBoundary: 'Final quality could reverse the choice.', conclusionScope: 'undetermined', findingDispositions: [], scopeSummaries: [] };
-  let investigationRequests = 0, requests = 0;
+  let investigationRequests = 0, requests = 0, presentationReviews = 0;
+  const revise = mode === 'audit';
   const actualOutputs: AssistantMessage[] = [];
-  const models = { getModel: () => model, streamSimple: (_: unknown, context: Context) => {
+  const models = { getModel: () => mode === 'image' ? { ...model, input: ['text', 'image'] } : model, streamSimple: (_: unknown, context: Context) => {
     requests++;
     const content = context.messages.filter(item => item.role === 'user').at(-1)!.content;
     const prompt = typeof content === 'string' ? content : content.filter(item => item.type === 'text').map(item => item.text).join('\n');
@@ -63,6 +65,7 @@ for (const revise of [false, true]) test(`plain decision traverses production pu
       message = turn('submit_comparison_draft', decision);
     }
     else if (prompt.includes(COMPARISON_DIRECT_SOURCE_REVIEW_PROMPT)) {
+
       assert.ok(context.tools?.some(tool => tool.name === 'update_comparison_findings_delta'));
       assert.ok(context.tools?.every(tool => !['write', 'submit_comparison_draft', 'preview_report'].includes(tool.name)));
       message = response([{ type: 'text', text: 'No final quality support.' }], 'stop');
@@ -76,7 +79,17 @@ for (const revise of [false, true]) test(`plain decision traverses production pu
     }
     else if (prompt.includes('This is the preview-only closure')) {
       assert.match(JSON.stringify(context.messages), /Neither final output is confirmed usable/);
-      assert.deepEqual(context.tools?.map(tool => tool.name), ['preview_report']); message = turn('preview_report', {});
+      assert.deepEqual(context.tools?.map(tool => tool.name), ['preview_report']); message = turn('preview_report', { includeImages: mode === 'image' });
+    } else if (prompt.includes('Review the actual preview_report result now')) {
+      presentationReviews++;
+      if (mode === 'review-failure') throw new Error('Presentation reviewer failed after mechanical preview');
+      assert.ok(context.messages.some(item => item.role === 'toolResult' && item.toolName === 'preview_report'), 'actual preview is present in a subsequent model input');
+      if (mode === 'image') assert.ok(context.messages.some(item => item.role === 'toolResult' && item.toolName === 'preview_report' && item.content.some(block => block.type === 'image')), 'native preview image enters the next actual generation');
+      assert.ok(context.tools?.some(tool => tool.name === 'submit_comparison_draft'));
+      assert.ok(context.tools?.every(tool => !['preview_report', 'shell_exec', 'update_comparison_findings'].includes(tool.name)));
+      message = mode === 'presentation' && presentationReviews === 1
+        ? turn('submit_comparison_draft', { ...decision, headline: 'Final quality remains unknown' })
+        : response([{ type: 'text', text: 'The actual text preview keeps the decisive uncertainty visible; no visual verification claimed.' }], 'stop');
     } else throw new Error(`Unexpected generation ${requests}`);
     actualOutputs.push(JSON.parse(JSON.stringify(message)) as AssistantMessage);
     const stream = createAssistantMessageEventStream(); stream.push({ type: 'done', reason: message.stopReason as 'stop' | 'toolUse', message }); return stream;
@@ -97,9 +110,14 @@ for (const revise of [false, true]) test(`plain decision traverses production pu
       diagnostics: [], measured: { loadMs: 1, viewport: request.viewport, origin: 'fixture://preview' } };
   };
   const result = await startExperiment({ ...base, comparison, comparisonPreviewRenderer }).result;
+  if (mode === 'review-failure') {
+    assert.equal(result.comparison.result.status, 'failed');
+    assert.equal(previewRenders, 1, 'mechanical success cannot mask subsequent reviewer failure');
+    return;
+  }
   assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result));
-  assert.equal(previewRenders, 1);
-  assert.equal(requests, revise ? 9 : 8);
+  assert.equal(previewRenders, mode === 'presentation' ? 2 : 1);
+  assert.equal(requests, mode === 'presentation' ? 12 : revise ? 10 : 9);
   assert.equal(investigationRequests, 1);
   const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as Event);
   const cappedStarts = events.filter(event => event.type === 'agent.invocation_started' && event.payload.reasoningEffortCeiling === 'low');
@@ -116,9 +134,11 @@ for (const revise of [false, true]) test(`plain decision traverses production pu
   const closure = events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'review-findings')!;
   const audit = events.find(event => event.type === 'comparison.draft_audit_started')!;
   const inspect = events.filter(event => event.type === 'agent.tool_completed' && event.payload.tool === 'inspect_comparison_draft' && !event.payload.nativeHook).at(-1)!;
-  const preview = events.find(event => event.type === 'agent.tool_completed' && event.payload.tool === 'preview_report' && !event.payload.nativeHook)!;
+  const preview = events.filter(event => event.type === 'agent.tool_completed' && event.payload.tool === 'preview_report' && !event.payload.nativeHook).at(-1)!;
   assert.ok(closure.sequence < audit.sequence && audit.sequence < inspect.sequence && inspect.sequence < preview.sequence);
   assert.ok(events.some(event => event.type === 'agent.model_request' && event.sequence > inspect.sequence && event.sequence < preview.sequence && 'generationInput' in event.payload));
+  const lastPreview = events.filter(event => event.type === 'agent.tool_completed' && event.payload.tool === 'preview_report' && !event.payload.nativeHook).at(-1)!;
+  assert.ok(events.some(event => event.type === 'agent.model_request' && event.sequence > lastPreview.sequence && 'generationInput' in event.payload));
   const html = await readFile(join(result.experimentRoot, 'report.html'), 'utf8');
   assert.equal(html.split(decision.decisionSummary).length - 1, 1);
   assert.match(html, /Final quality could reverse the choice/);

@@ -637,6 +637,7 @@ h1 { font-size:28px; font-weight:650; letter-spacing:-.03em; line-height:1.2; ma
 .slot { margin-top:14px; }
 .pages { display:flex; flex-direction:column; gap:14px; }
 [data-component="page-row"] { display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:stretch; }
+[data-component="page-row"] > :only-child { grid-column:1 / -1; }
 .cell { margin:0; border:1px solid var(--hair); border-radius:8px; overflow:hidden; background:#fff; min-width:0; }
 .cell .who { padding:8px 12px 0; }
 .cell img,[data-component="page-row"] img { width:100%; height:320px; object-fit:contain; object-position:top; display:block; background:#fff; }
