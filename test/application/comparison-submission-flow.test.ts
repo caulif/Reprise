@@ -187,6 +187,7 @@ for (const bounded of [false, true]) test(`production requireFindings ${bounded 
       const call = (name: string, params: unknown, signal: AbortSignal) => tools.find(tool => tool.name === name)!.execute(params, signal);
       return { append: async ({ content, signal, allowedToolNames, yieldAfterTurn, yieldDeadline }) => {
         turns++; await request(content, allowedToolNames);
+        if (content.includes('Review the actual preview_report result now')) return 'Actual preview reviewed.';
         if (content.includes(COMPARISON_INITIAL_FINDINGS_PROMPT)) {
           assert.deepEqual(allowedToolNames, ['update_comparison_findings']);
           assert.match((await call('update_comparison_findings', findings, signal)).content, /^status=accepted/);
@@ -226,7 +227,7 @@ for (const bounded of [false, true]) test(`production requireFindings ${bounded 
   };
   assert.equal(port instanceof ComparisonAgent, bounded, 'the findings protocol also supports a plain port decorator');
   const result = await startExperiment({ ...base, comparison: port }).result;
-  assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result)); assert.equal(reviewUpdates, 1); assert.equal(turns, bounded ? 7 : 8);
+  assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result)); assert.equal(reviewUpdates, 1); assert.equal(turns, bounded ? 8 : 9);
   const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { sequence: number; type: string; payload: Record<string, unknown> });
   assert.equal(events.find(event => event.type === 'comparison.requested')?.payload.reviewInspectionContractVersion, 2);
   const closure = events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'review-findings');
@@ -361,6 +362,7 @@ test('production failure page reports compose when a Provider fails before submi
     const { request } = fixtureContext(sessionInput);
     return { append: async ({ content, allowedToolNames }) => {
       turns++; await request(content, allowedToolNames);
+        if (content.includes('Review the actual preview_report result now')) return 'Actual preview reviewed.';
       if (turns === 2) throw Object.assign(new Error('Stream ended without finish_reason'), { status: 503 });
       return '';
     }, cancel() {} };

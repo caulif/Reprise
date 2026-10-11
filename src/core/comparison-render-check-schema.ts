@@ -1,5 +1,6 @@
 import { Type } from '@sinclair/typebox';
 import { RenderGeometryQueriesSchema, RenderGeometrySampleSchema } from './schemas/render-geometry.js';
+import { RenderBrowserActionsSchema, RenderBrowserMediaSchema, RenderBrowserObservationsSchema } from './schemas/render-browser.js';
 
 const Text = Type.String({ maxLength: 1200 });
 const Identity = Type.String({ minLength: 1, maxLength: 128 });
@@ -11,6 +12,8 @@ const CheckSchema = Type.Object({
   requestedSampleTimesMs: Type.Array(Time, { maxItems: 8 }),
   viewport: Type.Object({ width: Type.Number({ minimum: 1 }), height: Type.Number({ minimum: 1 }), scale: Type.Number({ minimum: 1 }) }, { additionalProperties: false }),
   geometryQueries: Type.Optional(RenderGeometryQueriesSchema), geometryScope: Type.Optional(Text),
+  actions: Type.Optional(RenderBrowserActionsSchema), media: Type.Optional(RenderBrowserMediaSchema),
+  browserObservations: Type.Optional(RenderBrowserObservationsSchema), browserScope: Type.Optional(Text),
   frames: Type.Array(Type.Object({ sampleTimeMs: Time, actualTimeMs: Time, contentHash: Identity,
     geometrySample: Type.Optional(RenderGeometrySampleSchema), geometryUnavailable: Type.Optional(Text),
   }, { additionalProperties: false }), { maxItems: 8 }),

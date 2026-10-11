@@ -38,7 +38,7 @@ test('author role is short, localized and does not inherit investigation or enve
   assert.ok(zh.length < 1800); assert.match(zh, /Simplified Chinese/); assert.match(en, /Report prose.*English/);
   for (const text of [zh, en]) {
     assert.match(text, /provisional report|hypotheses pending independent review/);
-    assert.match(text, /insufficient_evidence.*undetermined/); assert.match(text, /accepted draft ends your author turn immediately/);
+    assert.match(text, /insufficient_evidence.*undetermined/); assert.match(text, /Accepted submission ends authoring/);
     assert.doesNotMatch(text, /orientAndInvestigate|shell_exec|render_artifact|register_evidence|Return.*JSON|Final JSON|find and investigate/i);
   }
 });
@@ -73,6 +73,7 @@ test('production fresh author submits recorded hypotheses then independently upd
       turn = call('update_comparison_findings_delta', { kind: 'delta', binding: state.binding, findingDecisions: state.findingIds.map(id => ({ id, action: 'retain' })), questionDecisions: state.questionIds.map(id => ({ id, action: 'retain' })) });
     } else if (prompt.includes('The initial checkpoint is not formal certification: after this full audit')) turn = call('inspect_comparison_draft', {});
     else if (prompt.includes('This is the preview-only closure')) { assert.deepEqual(actual.tools?.map(t => t.name), ['preview_report']); turn = call('preview_report', {}); }
+    else if (prompt.includes('Review the actual preview_report result now')) turn = response();
     else throw Error('Unexpected production author isolation request');
     const stream = createAssistantMessageEventStream(); stream.push({ type: 'done', reason: turn.stopReason as 'stop' | 'toolUse', message: turn }); return stream;
   } } as unknown as PiModels;
@@ -104,7 +105,7 @@ for (const strict of [true, false]) test(`actual Pi author isolation retains tas
   const root = await mkdtemp(join(tmpdir(), 'reprise-fresh-author-')); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5 }));
   const store = await ExperimentStore.open(root, 'experiment'); await store.acquireWriter(); t.after(() => store.close());
   const seen: Context[] = []; let accepted = false, material = false, formal = false, epoch = false, previews = 0;
-  const turns = [response('read'), response(), response('submit_comparison_draft'), response(), response('inspect_comparison_draft'), response('update_comparison_findings'), response('inspect_comparison_draft'), response('preview_report')];
+  const turns = [response('read'), response(), response('submit_comparison_draft'), response(), response('inspect_comparison_draft'), response('update_comparison_findings'), response('inspect_comparison_draft'), response('preview_report'), ...(strict ? [response()] : [])];
   const models = { getModel: () => model, streamSimple: (_: unknown, actual: Context) => {
     seen.push(actualInput(actual)); const turn = turns.shift(); assert.ok(turn, 'No generation after matching preview');
     const stream = createAssistantMessageEventStream(); stream.push({ type: 'done', reason: turn.stopReason as 'stop' | 'toolUse', message: turn }); return stream;
@@ -136,7 +137,7 @@ for (const strict of [true, false]) test(`actual Pi author isolation retains tas
   else assert.doesNotMatch(JSON.stringify(source), /SAVED_PROVISIONAL_FINDING/);
   assert.match(JSON.stringify(source), /TASK_SOURCE_REQUIRED/);
   const phases = store.events().filter(e => e.type === 'comparison.phase_completed').map(e => { assert.ok(isRecord(e.payload)); return { ...e, payload: e.payload }; });
-  assert.deepEqual(phases.map(e => e.payload.pass ?? e.payload.phase), ['investigate', 'compose', 'sources', 'inspection', 'review-findings', 'audit', 'preview']);
+  assert.deepEqual(phases.map(e => e.payload.pass ?? e.payload.phase), ['investigate', 'compose', 'sources', 'inspection', 'review-findings', 'audit', 'preview', ...(strict ? ['presentation-review'] : [])]);
   const replay = await reconstructModelRequests(store.events(), experimentModelInputResolver(store, 'run'));
   assert.equal(replay.diagnostic, undefined); assert.equal(replay.requests.length, seen.length);
   assert.ok(replay.requests.every(r => r.contextSource === 'generation_snapshot' && r.contentComplete));

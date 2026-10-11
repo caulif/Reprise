@@ -43,6 +43,9 @@ for (const mode of ['checkpoint', 'interrupted-source', 'closure-timeout', 'save
       if (mode === 'save-timeout-no-update') return 'A promise to save is not an accepted findings update.';
       const saved = await tool('update_comparison_findings_delta').execute({}, signal);
       assert.match(saved.content, /^status=accepted\n/);
+    } else if (content.includes('Review the actual preview_report result now')) {
+      assert.equal(previews, 1);
+      return 'Reviewed actual preview and retained unknowns.';
     } else if (allowedToolNames?.includes('preview_report')) {
       assert.equal(updates, 1); assert.equal(audits, 1); assert.equal(formal, true);
       await tool('preview_report').execute({}, signal);

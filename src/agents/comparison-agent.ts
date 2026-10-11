@@ -7,10 +7,10 @@ import { VISIBLE_PROCESS_NARRATION } from './visible-process.js';
 import { withLanguageBlock, type AgentLocale } from './language.js';
 import { STRUCTURED_FINAL_RULE } from './structured-final-rule.js';
 import type { ComparisonResources } from '../core/schema.js';
-import { ComparisonResourceTracker } from './comparison-resources.js';
+import { ComparisonResourceTracker, comparisonUsesTotalTimeOnly } from './comparison-resources.js';
 import { closeBoundedInvestigation } from './comparison-investigation-closure.js';
 import { comparisonInvocationControls, comparisonDecisionMetrics, comparisonOutputContinuation, comparisonTimeout, comparisonWorkDeadline, comparisonYieldBoundary, type ComparisonWorkPass } from './comparison-invocation-boundaries.js';
-import { ComparisonReviewFindingsClosure, comparisonSourceReviewPrompt, composeComparisonReviewerSystemPrompt, reviewDraftInspectionCheckpoint, COMPARISON_DIRECT_AUDIT_PROMPT } from './comparison-review-findings.js';
+import { ComparisonReviewFindingsClosure, comparisonSourceReviewPrompt, composeComparisonReviewerSystemPrompt, reviewDraftInspectionCheckpoint, COMPARISON_DIRECT_AUDIT_PROMPT, COMPARISON_PRESENTATION_REVIEW_PROMPT } from './comparison-review-findings.js';
 import { ComparisonFindingsCheckpoints } from './comparison-findings-checkpoints.js';
 import { checkpointComparisonEvidence } from './comparison-evidence-progress.js';
 import { composeComparisonAuthorSystemPrompt, COMPARISON_AUTHOR_COMPOSE_PROMPT } from './comparison-author-prompt.js';
@@ -75,6 +75,7 @@ export type ComparisonMetricSide = {
 };
 
 export interface ComparisonAgentPort {
+  readonly workflow?: 'autonomous';
   /** Opts into bound findings tools, draft binding and persisted independent review. */
   readonly requireFindings?: boolean;
   /** Requires actual draft inspection even when using the legacy findings protocol. */
@@ -145,7 +146,7 @@ export const COMPARISON_PREVIEW_CLOSURE_PROMPT = [
   'This is the preview-only closure in the same independent review session after a real full draft audit turn and actual formal current inspection.',
   'The actual complete current inspection tool result is already in this session and must be present in this generation input. Call preview_report now for that exact current digest; do not reconstruct its text from intentions or author notes.',
   'Only preview_report is available. Do not investigate, update findings, submit, edit or repeat inspection here. If the binding changed or a current inspection is unavailable, the Host returns to formal draft audit; stale text cannot be published.',
-  'Use the actual preview result for publication structure, identities, metrics visibility and layout. Successful preview is not semantic approval. When actual current inspection delivery and matching preview are ready, the Host ends at this completed tool turn without another generation.',
+  'Use the actual preview result for publication structure, identities, metrics visibility and layout. Successful preview is not semantic approval. Request includeImages=true when image input is available. The strict production path starts a subsequent presentation review generation with the actual preview result; legacy ports may finish at this completed tool turn.',
 ].join('\n');
 
 export const COMPARISON_DRAFT_INSPECTION_PROMPT = [
@@ -529,7 +530,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
   ): Promise<AgentInvocation<ComparisonResult>> {
     const attemptId = context.attemptId;
     const boundedStages = comparisonProtocol(options).direct;
-    const resources = new ComparisonResourceTracker(this.#resources, { boundedStages });
+    const resources = new ComparisonResourceTracker(this.#resources, { boundedStages, totalTimeOnly: comparisonUsesTotalTimeOnly(this.#resources) });
     const stages = new ComparisonStages(tools, resources, options);
     const { reviewFindings, initialFindings, checkpoints } = stages, phasedTools = stages.bind(tools);
     let activePhase: 'understand' | 'investigate' | 'compose' | 'review' | undefined;
@@ -587,7 +588,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
             signal, yieldAfterTurn: () => stages.exit() });
           return comparisonYieldBoundary(next, resources, signal);
         };
-        return outcome = await (reviewPass === 'review-findings' ? invoke(promptContent) : comparisonOutputContinuation(invoke, promptContent, boundedStages ? deadline.yieldDeadline : undefined));
+        return outcome = await (reviewPass === 'review-findings' ? invoke(promptContent) : comparisonOutputContinuation(invoke, promptContent, boundedStages ? deadline.yieldDeadline : undefined, resources.totalTimeOnly));
       } finally {
         activePhase = undefined;
         await appendComparisonPhaseOutcome(audit, { sessionId: session.sessionId, phase, pass: reviewPass, startedAt, counts, resources, outcome });
@@ -712,6 +713,12 @@ export class ComparisonAgent implements ComparisonAgentPort {
           if (reviewed.status !== 'completed' && reviewed.status !== 'yielded') break;
           if (await options.getSubmittedResult!()) break;
         }
+      }
+      if ((reviewed.status === 'completed' || reviewed.status === 'yielded')
+        && options.enforcePhaseBoundaries && options.reviewFindings && await options.getSubmittedResult!()) {
+        reviewed = await work('review', COMPARISON_PRESENTATION_REVIEW_PROMPT, 'presentation-review');
+        if (reviewed.status === 'yielded' && reviewed.reason === 'presentation_revision_saved') continue;
+        if (reviewed.status === 'yielded') return comparisonProviderFailure(reviewed);
       }
       if (reviewed.status !== 'completed' && reviewed.status !== 'yielded') {
         if (reviewed.status === 'failed') await this.#sessions.discard(attemptId);

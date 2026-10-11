@@ -17,6 +17,21 @@ const draft: ComparisonDraftSubmission = { status: 'completed', category: 'Resul
   decisionSummary: 'Candidate preferred within the checked relation.', decisionBoundary: 'Far wheel remains unknown and may change this choice.', decisionBasis: ['wheel'], conclusionScope: 'conditional',
   findingDispositions: [{ findingId: 'wheel', disposition: 'basis', explanation: 'Task output' }] };
 
+test('shared coverage warnings appear once without losing finding identity or distinct evidence scopes', () => {
+  const current = findings([finding('wheel', 'Text fidelity', partial, partial),
+    finding('data', 'Data accuracy', { ...partial, domain: 'Rows 1-10' }, { ...partial, domain: 'Rows 11-20' })]);
+  const selected: ComparisonDraftSubmission = { ...draft, findingDispositions: [...draft.findingDispositions!,
+    { findingId: 'data', disposition: 'boundary', explanation: 'Changes the choice' }] };
+  const original = JSON.stringify(current);
+  for (const locale of ['zh', 'en'] as const) {
+    const main = decisionTextHtml(selected, current, locale), details = decisionSupportDetailsHtml(selected, current, locale);
+    assert.equal(main.split(locale === 'zh' ? '仅有局部交付支持' : 'limited delivered-output coverage').length - 1, 1);
+    assert.match(main, locale === 'zh' ? /依据1、2/ : /Basis 1, 2/);
+    assert.match(details, /Rows 1-10/); assert.match(details, /Rows 11-20/);
+  }
+  assert.equal(JSON.stringify(current), original);
+});
+
 test('same finding merges both sides in ordinary main text while retaining decisive unknown and complete detailed scope', () => {
   const current = findings([finding('wheel', 'Wheel containment', partial, partial)]);
   const main = decisionTextHtml(draft, current);

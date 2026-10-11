@@ -8,6 +8,22 @@ import type { AgentToolDefinition } from '../../src/infrastructure/agent/host.js
 
 const strict = { getSubmittedResult: async () => undefined, enforcePhaseBoundaries: true };
 const signal = () => new AbortController().signal;
+
+test('presentation review allows evidence-preserving revision but rejects investigation effects', async () => {
+  const effects: string[] = [];
+  const policy = comparisonStagePolicy('presentation-review', { strict: true, direct: true, initial: false });
+  const tools = bindComparisonStageTools(['shell_exec', 'register_evidence', 'update_comparison_findings', 'preview_report', 'read', 'submit_comparison_draft']
+    .map(name => ({ name, description: name, parameters: Type.Object({}), execute: async () => {
+      effects.push(name); return { content: name === 'submit_comparison_draft' ? 'status=accepted\n' : 'observed' };
+    } })), () => policy);
+  for (const item of tools.slice(0, 4)) assert.match((await item.execute({}, signal())).content, /presentation_review_only/);
+  assert.deepEqual(effects, []); assert.equal(await policy.exit(), undefined);
+  await tools[4]!.execute({}, signal()); assert.equal(await policy.exit(), undefined);
+  await tools[5]!.execute({}, signal()); assert.equal(await policy.exit(), 'presentation_revision_saved');
+  assert.deepEqual(effects, ['read', 'submit_comparison_draft']);
+  const aborted = new AbortController(); aborted.abort();
+  await assert.rejects(tools[4]!.execute({}, aborted.signal), { name: 'AbortError' });
+});
 function tool(name: string, effects: string[]): AgentToolDefinition {
   return { name, description: name, parameters: Type.Object({}), execute: async () => { effects.push(name); return { content: 'ok' }; },
     onCompleted: async () => { effects.push(`${name}:completed`); } };

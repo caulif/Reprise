@@ -96,6 +96,7 @@ for (const mode of ['success', 'save_fail', 'verbal', 'not_ready', 'cancel', 'ha
     else if (prompt.includes('This is the independent review findings closure')) message = turn('update_comparison_findings_delta', retainComparisonFindings(prompt));
     else if (prompt.includes('This is the actual draft inspection checkpoint') || prompt.includes('The initial checkpoint is not formal certification: after this full audit')) message = turn('inspect_comparison_draft', {});
     else if (prompt.includes('This is the preview-only closure')) message = turn('preview_report', {});
+    else if (prompt.includes('Review the actual preview_report result now')) message = { ...turn('preview_report', {}), stopReason: 'stop', content: [{ type: 'text', text: 'Actual preview reviewed.' }] };
     else throw new Error(`Unexpected production request ${requests}`);
     stream.push({ type: 'done', reason: message.stopReason as 'stop' | 'toolUse', message }); return stream;
   } } as unknown as PiModels;
@@ -128,7 +129,7 @@ for (const mode of ['success', 'save_fail', 'verbal', 'not_ready', 'cancel', 'ha
     assert.ok(closureCalls.length <= 2); if (mode === 'verbal' || mode === 'not_ready' || mode === 'save_fail') assert.equal(closureCalls.length, 2);
     return;
   }
-  assert.equal(requests, 9); assert.equal(closureRequests, 1); assert.equal(saves.length, 3); assert.equal(acceptedSaves.length, 1, 'unchanged independent snapshot reuses the actual persisted revision');
+  assert.equal(requests, 10); assert.equal(closureRequests, 1); assert.equal(saves.length, 3); assert.equal(acceptedSaves.length, 1, 'unchanged independent snapshot reuses the actual persisted revision');
   for (const saved of saves.slice(1)) assert.match((saved.payload.body as { text: string }).text, /^status=accepted\n/);
   const accepted = events.find(event => event.type === 'comparison.findings_updated')!; assert.ok(accepted.sequence > boundary.sequence);
   const findingsClosure = events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'review-findings')!;

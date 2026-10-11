@@ -70,7 +70,8 @@ for (const mode of ['success', 'cancel', 'hard'] as const) test(`production nati
       assert.ok(actualDelta); response = turn('inspect_comparison_draft', {});
     } else if (actualPrompt.includes('This is the preview-only closure')) {
       assert.ok(actualDelta); assert.deepEqual(context.tools?.map(item => item.name), ['preview_report']); response = turn('preview_report', {});
-    } else throw new Error(`Unexpected production generation ${count}`);
+    } else if (actualPrompt.includes('Review the actual preview_report result now')) response = { ...turn('preview_report', {}), stopReason: 'stop', content: [{ type: 'text', text: 'Actual preview reviewed.' }] };
+    else throw new Error(`Unexpected production generation ${count}`);
     const stream = createAssistantMessageEventStream(); stream.push({ type: 'done', reason: response.stopReason as 'stop' | 'toolUse', message: response }); return stream;
   } } as unknown as PiModels;
   const comparison = new ComparisonAgent({ requireFindings: true, timeoutMs: 0, maxRepairAttempts: 0,
@@ -111,7 +112,7 @@ for (const mode of ['success', 'cancel', 'hard'] as const) test(`production nati
     }
     return;
   }
-  assert.equal(contexts.length, 10); assert.equal(investigationRequests, 1); assert.equal(sourceRequests, 3); assert.ok(actualDelta);
+  assert.equal(contexts.length, 11); assert.equal(investigationRequests, 1); assert.equal(sourceRequests, 3); assert.ok(actualDelta);
   const source = events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'sources')!;
   assert.equal(source.payload.outcome, 'yielded'); assert.equal(source.payload.yieldReason, 'reviewModelRequests');
   const denied = events.find(event => event.type === 'agent.tool_failed' && String(event.payload.message).includes('write_denied'))!;

@@ -134,13 +134,7 @@ export class ComparisonDraft {
         signal.throwIfAborted();
         const result = await this.submit(draft);
         if (!result.startsWith("status=accepted") || !this.#accepted) return { content: result };
-        const accepted = this.#accepted;
-        const receipt = { schemaVersion: 1 as const, status: "accepted" as const, draftDigest: accepted.digest,
-          catalogRevision: accepted.revision, bindingRevision: this.#bindingRevision,
-          ...(accepted.discoveryRevision === undefined ? {} : { findingsRevision: accepted.discoveryRevision }),
-          decisionShape: accepted.decisionShape ?? "unknown" };
-        if (!Value.Check(ComparisonDraftAcceptanceReceiptSchema, receipt)) throw new Error("Invalid comparison acceptance receipt.");
-        return { content: result, details: receipt };
+        return { content: result, details: this.acceptedReceipt() };
       },
     };
   }
@@ -412,6 +406,17 @@ export class ComparisonDraft {
 
   hasAcceptedDraft(): boolean {
     return this.#accepted !== undefined;
+  }
+
+  acceptedReceipt() {
+    const accepted = this.#accepted;
+    if (!accepted) throw new Error('No accepted comparison draft.');
+    const receipt = { schemaVersion: 1 as const, status: 'accepted' as const, draftDigest: accepted.digest,
+      catalogRevision: accepted.revision, bindingRevision: this.#bindingRevision,
+      ...(accepted.discoveryRevision === undefined ? {} : { findingsRevision: accepted.discoveryRevision }),
+      decisionShape: accepted.decisionShape ?? 'unknown' as const };
+    if (!Value.Check(ComparisonDraftAcceptanceReceiptSchema, receipt)) throw new Error('Invalid comparison acceptance receipt.');
+    return receipt;
   }
 
   submissionState(): string {

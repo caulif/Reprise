@@ -37,13 +37,22 @@ export function comparisonOrientation(input: {
   indexMarkdown: string;
   baselineAvailable: boolean;
   candidateAvailable: boolean;
+  links?: readonly ComparisonLinkRecord[];
 }): string {
   return [
     "Compare this real task's historical outcome with the candidate run.",
     `baselineEvidence=${input.baselineAvailable ? "available" : "unavailable"}`,
     `candidateEvidence=${input.candidateAvailable ? "available" : "unavailable"}`,
-    "Navigation for the attempt root is in INDEX.md below.",
-    "Start with briefing/decision-map.md for bounded delivery leads and gaps; verify conclusions against the linked sources.",
+    "Read the original task and ordered user requirements first: briefing/task/initial-input.txt and observations/user-inputs/INDEX.tsv. Follow-up requirements may change the initial task.",
+    "Inspect the actual deliveries below before expanding into process history. These are navigation leads, not certified final versions or findings; confirm which artifacts were delivered. For text-only tasks, final messages may be the delivery.",
+    ...(["baseline", "candidate"] as const).flatMap(side => {
+      const leads = (input.links ?? []).filter(link => link.side === side);
+      return [`${side} delivery leads:`, ...leads.slice(0, 6).map(link =>
+        `- ${link.shortRef ?? 'unreferenced'}: ${link.inspectPath} (${link.mediaType ?? 'unknown format'})`),
+      leads.length > 6 ? '- More leads: briefing/facts/comparison-links.json; this list is not exhaustive.' :
+        leads.length === 0 ? '- No indexed lead. Use briefing/decision-map.md to locate delivery or identify the gap.' : ''];
+    }),
+    "Use briefing/decision-map.md for additional delivery leads and gaps. Open history, process logs and Host facts when needed to resolve a consequential question, not as a mandatory reading sequence.",
     "",
     "# INDEX.md",
     input.indexMarkdown,

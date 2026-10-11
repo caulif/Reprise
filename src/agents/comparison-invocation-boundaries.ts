@@ -3,17 +3,19 @@ import type { FreeformInvocation, FreeformWorkRequest } from '../infrastructure/
 import type { ComparisonResourceTracker } from './comparison-resources.js';
 import type { ComparisonReportFacts } from './comparison-agent.js';
 
-export type ComparisonWorkPass = 'sources' | 'source-save' | 'review-supplement' | 'initial-findings' | 'findings' | 'review-findings' | 'inspection' | 'audit' | 'final-inspection' | 'preview';
+export type ComparisonWorkPass = 'sources' | 'source-save' | 'review-supplement' | 'initial-findings' | 'findings' | 'review-findings' | 'inspection' | 'audit' | 'final-inspection' | 'preview' | 'presentation-review';
 
 export function comparisonTimeout(resources: ComparisonResourceTracker, limits: ComparisonResources, callTimeoutMs: number): number {
   resources.checkHard('phase invocation');
   if (limits.maxElapsedMs === undefined) return callTimeoutMs;
   const remaining = Math.max(1, limits.maxElapsedMs - Number(resources.snapshot().elapsedMs));
+  if (resources.totalTimeOnly) return remaining;
   return callTimeoutMs > 0 ? Math.min(callTimeoutMs, remaining) : remaining;
 }
 
 export function comparisonWorkDeadline(resources: ComparisonResourceTracker, phase: string, pass?: ComparisonWorkPass): { yieldDeadline?: { at: number; reason: string } } {
   resources.phase(phase, pass);
+  if (resources.totalTimeOnly) return {};
   const deadline = resources.workDeadline();
   if (deadline) return { yieldDeadline: deadline };
   const investigation = phase === 'investigate' && pass !== 'findings';
@@ -33,9 +35,17 @@ export async function comparisonOutputContinuation(
   invoke: (prompt: string) => Promise<FreeformInvocation>,
   prompt: string,
   deadline?: { at: number; reason: string },
+  totalTimeOnly = false,
 ): Promise<FreeformInvocation> {
   const first = await invoke(prompt);
   if (first.status !== 'yielded' || first.reason !== 'output_limit') return first;
+  if (totalTimeOnly) {
+    let result: FreeformInvocation = first;
+    while (result.status === 'yielded' && result.reason === 'output_limit') {
+      result = await invoke('Continue the necessary remaining actions of this current phase in the same session. The previous generation reached its output limit; no completion was certified. Preserve received evidence and current bindings.');
+    }
+    return result;
+  }
   if (deadline && Date.now() >= deadline.at) return { status: 'yielded', sessionId: first.sessionId, reason: deadline.reason };
   const continued = await invoke('The previous generation reached its output limit and did not complete this current phase/pass. Continue only its necessary remaining actions in this same session and audit scope; do not restart investigation or audit. Preserve unchecked task relationships and limitations. Check the actual Host metrics for each side before making cost/time comparisons. Do not assume a promised action or assessment was completed.');
   if (continued.status !== 'yielded' || continued.reason !== 'output_limit') return continued;

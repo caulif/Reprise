@@ -97,6 +97,38 @@ async function fixture(preview: boolean, visual?: 'message' | 'tool' | 'tool-art
   return { dataDir, experimentRoot, attemptRoot, html, catalogRevision: catalog.snapshot().revision, input: { dataDir, experimentId, attemptId } };
 }
 
+test('autonomous recovery requires an accepted current report and actual preview input before completion', async t => {
+  const f = await fixture(false);
+  t.after(() => rm(f.dataDir, { recursive: true, force: true }));
+  const store = await ExperimentStore.open(f.experimentRoot, experimentId);
+  await store.acquireWriter();
+  const audit = experimentAgentAuditSink(store, 'run-1');
+  const sessionId = 'comparison-session-1';
+  const receipt = { status: 'ok', draftDigest: sha256(f.html), revision: f.catalogRevision, previewDigest: 'b'.repeat(64) };
+  await store.append({ type: 'comparison.requested', runId: 'run-1', payload: { schemaVersion: 1, attemptId,
+    autonomousContractVersion: 1, requestId: 'request', runId: 'run-1', inputDigest: 'a'.repeat(64), artifactId: 'input', byteLength: 1, truncated: false } });
+  await audit.append({ type: 'agent.session_started', sessionId, role: 'comparison', payload: { attemptId, systemPrompt: 'Compare', tools: [] } });
+  await audit.append({ type: 'agent.tool_completed', sessionId, role: 'comparison', payload: { attemptId, tool: 'submit_report',
+    details: { schemaVersion: 1, status: 'accepted', draftDigest: receipt.draftDigest, catalogRevision: f.catalogRevision, bindingRevision: 1, decisionShape: 'unknown' } } });
+  await audit.append({ type: 'agent.tool_completed', sessionId, role: 'comparison', payload: { attemptId, tool: 'preview_report', details: receipt } });
+  await store.close();
+  assert.equal((await inspectComparisonRecovery(f.input)).ready, false);
+  await store.acquireWriter();
+  await audit.append({ type: 'agent.model_request', sessionId, role: 'comparison', payload: { attemptId, scope: 'generation',
+    invocationId: 'invocation', requestIndex: 1, model: 'fixture', digest: 'c'.repeat(64), images: [], generationInput: {
+      schemaVersion: 1, encoding: 'inline', text: JSON.stringify({ systemPrompt: 'Compare', tools: [], messages: [
+        { role: 'toolResult', toolName: 'preview_report', toolCallId: 'preview', content: [{ type: 'text', text: JSON.stringify(receipt) }] },
+      ] }),
+    } } });
+  await audit.append({ type: 'agent.invocation_completed', sessionId, role: 'comparison', payload: { attemptId } });
+  await store.close();
+  assert.equal((await inspectComparisonRecovery(f.input)).ready, true);
+  await store.acquireWriter();
+  await audit.append({ type: 'agent.invocation_cancelled', sessionId, role: 'comparison', payload: { attemptId } });
+  await store.close();
+  assert.equal((await inspectComparisonRecovery(f.input)).ready, false);
+});
+
 test('A to B to A persists a new draft acceptance while consecutive A stays idempotent and recoverable', async t => {
   const ready = await fixture(false);
   t.after(() => rm(ready.dataDir, { recursive: true, force: true }));

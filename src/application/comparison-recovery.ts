@@ -16,6 +16,7 @@ import { comparisonReportModelFromHtml, persistComparisonReportModel, prepareCom
 import { recoveryFindingsBinding } from './comparison-recovery-discovery.js';
 import { recoveryComparisonQuoteSources } from './comparison-recovery-quotes.js';
 import { recoveryReviewBinding } from './comparison-recovery-review.js';
+import { autonomousComparisonBinding, autonomousComparisonRequested } from './comparison-autonomous-binding.js';
 import type { ComparisonQuoteSourcePort } from './comparison-source.js';
 
 const CatalogPointerSchema = Type.Object({
@@ -153,7 +154,9 @@ export async function inspectComparisonRecovery(input: {
   if (!previewed) return { ready: false, reason: 'No successful preview with a session ID for this draft and catalog revision.', draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html, result, media, evidence: links };
   const sessionId = (previewed.payload as { sessionId: string }).sessionId;
   const draftModel = comparisonReportModelFromHtml(html, context.reportFacts, result, media, links);
-  const reviewError = await recoveryReviewBinding({ store, events, attemptId: input.attemptId, draftDigest, catalogRevision: catalog.revision,
+  const reviewError = autonomousComparisonRequested(events, input.attemptId)
+    ? await autonomousComparisonBinding({ store, events, attemptId: input.attemptId, draftDigest, catalogRevision: catalog.revision })
+    : await recoveryReviewBinding({ store, events, attemptId: input.attemptId, draftDigest, catalogRevision: catalog.revision,
     previewSessionId: sessionId, acceptedAfterSequence: findings.previewAfterSequence ?? 0,
     content: { headline: draftModel.headline ?? '', comparisonHtml: draftModel.slots.comparison ?? '', detailsHtml: draftModel.slots.details ?? '' } });
   if (reviewError) return { ready: false, reason: reviewError, draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html, result, media, evidence: links };

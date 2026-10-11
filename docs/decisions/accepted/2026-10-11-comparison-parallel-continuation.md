@@ -2,6 +2,8 @@
 
 状态：accepted
 
+默认预算部分由[整体时间预算](2026-10-11-comparison-total-time-budget.md)取代；本文局部截止与配额政策仍适用于显式旧资源配置。
+
 部分取代 [Agent foundation](2026-09-09-agent-foundation-host.md) 的全局固定串行政策；不改变同 Session 模型请求互斥、恢复与发布认证。
 
 ## 问题

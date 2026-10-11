@@ -2,11 +2,14 @@ import type { ComparisonResources } from '../core/schema.js';
 import type { AgentAuditEvent } from '../infrastructure/agent/host.js';
 
 export const DEFAULT_COMPARISON_RESOURCES: Readonly<ComparisonResources> = Object.freeze({
-  investigationModelRequests: 12, investigationToolCalls: 30, investigationMs: 240_000,
-  maxModelRequests: 40, maxToolCalls: 120, maxElapsedMs: 1_200_000,
+  maxElapsedMs: 1_800_000,
 });
 
 class ComparisonResourceLimit extends Error {}
+
+export function comparisonUsesTotalTimeOnly(resources: ComparisonResources): boolean {
+  return resources.maxElapsedMs !== undefined && Object.entries(resources).every(([key, value]) => key === 'maxElapsedMs' || value === undefined);
+}
 
 type WorkStage = 'investigate' | 'investigation-checkpoint' | 'compose' | 'review' | 'review-checkpoint' | 'review-inspection' | 'review-findings' | 'audit' | 'preview';
 const STAGE_BUDGETS: Readonly<Record<WorkStage, number>> = { investigate: 240_000, compose: 180_000, review: 300_000,
@@ -22,6 +25,7 @@ const STAGE_REASONS: Readonly<Record<WorkStage, string>> = {
 };
 
 export class ComparisonResourceTracker {
+  readonly totalTimeOnly: boolean;
   readonly #limits: ComparisonResources;
   readonly #started = Date.now();
   #phaseStarted = this.#started;
@@ -49,9 +53,10 @@ export class ComparisonResourceTracker {
   readonly #saveSpent = new Map<string, number>();
   #saveStarted: { phase: string; at: number } | undefined;
 
-  constructor(limits: ComparisonResources, options?: { boundedStages?: boolean }) {
+  constructor(limits: ComparisonResources, options?: { boundedStages?: boolean; totalTimeOnly?: boolean }) {
     this.#limits = limits;
-    this.#boundedStages = !!options?.boundedStages && limits.maxElapsedMs !== undefined;
+    this.totalTimeOnly = options?.totalTimeOnly === true;
+    this.#boundedStages = !this.totalTimeOnly && !!options?.boundedStages && limits.maxElapsedMs !== undefined;
     if (this.#boundedStages) this.#enterStage('investigate');
   }
 
@@ -73,7 +78,7 @@ export class ComparisonResourceTracker {
     }
     this.#workPass = pass;
     if (this.#boundedStages) this.#enterStage(phase === 'compose' ? 'compose' : phase === 'review'
-      ? pass === 'final-inspection' ? 'audit' : pass === 'audit' || pass === 'preview' || pass === 'review-findings' ? pass
+      ? pass === 'final-inspection' ? 'audit' : pass === 'presentation-review' ? 'preview' : pass === 'audit' || pass === 'preview' || pass === 'review-findings' ? pass
         : pass === 'source-save' ? 'review-checkpoint' : pass === 'inspection' ? 'review-inspection' : 'review'
       : pass === 'source-save' ? 'investigation-checkpoint' : 'investigate');
     if (this.#boundedStages && (pass === 'sources' || pass === 'review-supplement') && !this.#sourceDeadlines.has(pass)) {
@@ -200,6 +205,7 @@ export class ComparisonResourceTracker {
   }
 
   reviewReason(): string | undefined {
+    if (this.totalTimeOnly) return undefined;
     if (this.#boundedStages) {
       const deadline = this.workDeadline();
       if (deadline && Date.now() >= deadline.at) return deadline.reason;
@@ -219,6 +225,7 @@ export class ComparisonResourceTracker {
   }
 
   investigationRemainingMs(): number | undefined {
+    if (this.totalTimeOnly) return undefined;
     if (this.#boundedStages) return Math.max(0, this.#stageDeadlines.get('investigate')! - Date.now());
     const now = Date.now();
     const remaining: number[] = [];
@@ -229,6 +236,7 @@ export class ComparisonResourceTracker {
   }
 
   sourceRemainingMs(): number | undefined {
+    if (this.totalTimeOnly) return undefined;
     if (this.#boundedStages) {
       const deadline = this.#workStage === 'review' ? this.workDeadline()?.at : this.#stageDeadlines.get('review');
       return deadline === undefined ? undefined : Math.max(0, deadline - Date.now());

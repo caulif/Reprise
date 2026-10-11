@@ -33,6 +33,7 @@ export class ComparisonFindingsCheckpoints {
   #checks = 0;
   #batchStarted = Date.now();
   #acceptedState: string | undefined;
+  #totalTimeOnly = false;
   readonly #sourceDeadline: (() => { at: number } | undefined) | undefined;
   constructor(tools: readonly AgentToolDefinition[], options?: ComparisonCompareOptions,
     sourceDeadline?: () => { at: number } | undefined) {
@@ -43,6 +44,7 @@ export class ComparisonFindingsCheckpoints {
       && typeof options?.getFindingsState === 'function' && tools.some(tool => tool.name === 'update_comparison_findings_delta');
   }
   configureContinuation(resources: ComparisonResourceTracker, audit: AgentAuditSink, signal: AbortSignal, sessionId: () => string): void {
+    this.#totalTimeOnly = resources.totalTimeOnly;
     this.continueSources = async () => {
       if (signal.aborted) return false;
       const decision = resources.continueSources();
@@ -84,7 +86,8 @@ export class ComparisonFindingsCheckpoints {
         outcome = await work(phase, 'The local source target ended, but the Host granted a bounded extension from remaining global resources. Continue only useful unfinished source work if needed; otherwise save the actual findings and finish. This is a scheduling opportunity, not evidence of absence or an instruction to invent more checks. Current hypotheses: ' + (this.#options?.getFindingsState?.() ?? 'unavailable'), pass);
         continue;
       }
-      if (outcome.reason !== 'findings_checkpoint_required' || saves++ >= 5) break;
+      if (outcome.reason !== 'findings_checkpoint_required' || (!this.#totalTimeOnly && saves >= 5)) break;
+      saves++;
       const prompt = this.#compact
         ? `SAVE ONLY: call save_comparison_checkpoint now with binding and at most one concise finding (exactly two observations, one per side); include finals only if newly located. Omit finding if no supported difference is ready. Do not reconstruct history, resolve questions, investigate or call unavailable source tools. All other saved content is preserved unchanged, not approved. Actual observations remain in this session for resumed checks and mandatory final explicit review. Current hypotheses and binding: ${this.#options?.getFindingsState?.() ?? 'unavailable'}`
         : `SAVE ONLY: read, shell_exec, view_image and all other source tools are unavailable in this invocation; do not call or retry them here. Call update_comparison_findings_delta immediately with already received observations, not the entire investigation. Save at most ONE new or corrected consequential finding now; exactly TWO observations, one per side, combining source and image support within each side. Keep each new text field to one short sentence and instance lists to only the relevant checks. Prioritize an observed output defect or decisive difference over a feature inventory. Include located finals if newly found; remove stale limitations contradicted by received evidence. Use the exact current binding, explicitly retain or replace every existing finding/question ID, and put only new complete objects in addedFindings/addedQuestions. Preserve every question identity and decisionImpact. Retain pending questions when further checking is needed; this checkpoint does not require ready or certify success. Do not invent missing observations. Other actual observations remain in this session for the next checkpoint or final closure. Current saved hypotheses and binding: ${this.#options?.getFindingsState?.() ?? 'unavailable'}`;
