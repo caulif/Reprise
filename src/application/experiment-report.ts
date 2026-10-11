@@ -340,7 +340,7 @@ async function runComparisonAttempt(input: {
   reportShellHtml: string;
   locale: AgentLocale;
 }): Promise<AgentInvocation<ComparisonResult>> {
-  const compareContext = withOrientation(input.compareFacts, input.host, input.attemptId, input.attemptRoot, input.briefing.indexMarkdown);
+  const compareContext = withOrientation(input.compareFacts, input.host, input.attemptId, input.attemptRoot, input.briefing.indexMarkdown, input.briefing.links);
   const catalog = await ComparisonEvidenceCatalog.create({
     attemptRoot: input.attemptRoot,
     attemptId: input.attemptId,
@@ -480,6 +480,7 @@ function withOrientation(
   attemptId: string,
   attemptRoot: string,
   indexMarkdown: string,
+  links: readonly ComparisonLinkRecord[],
 ): ComparisonContext {
   return {
     ...context,
@@ -487,6 +488,7 @@ function withOrientation(
     promptContent: comparisonOrientation({
       briefingRoot: join(attemptRoot, "briefing"),
       indexMarkdown,
+      links,
       baselineAvailable: input.taskCase.baseline.status === "available",
       candidateAvailable: context.candidates.length > 0,
     }),

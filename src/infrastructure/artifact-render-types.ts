@@ -1,4 +1,5 @@
 import type { RenderGeometryQuery, RenderGeometrySample } from "../core/schema.js";
+import type { RenderBrowserAction, RenderBrowserMedia, RenderBrowserObservation } from '../core/schemas/render-browser.js';
 
 export const ARTIFACT_RENDERER_VERSION = "reprise-artifact-renderer/1";
 
@@ -17,6 +18,8 @@ export type RenderRequest = {
   signal: AbortSignal;
   layoutSelectors?: readonly { name: string; selector: string }[];
   geometryQueries?: readonly RenderGeometryQuery[];
+  actions?: readonly RenderBrowserAction[];
+  media?: RenderBrowserMedia;
 };
 
 export type RenderLayout = {
@@ -58,7 +61,7 @@ export type RenderResult =
       ok: true;
       frames: RenderFrame[];
       diagnostics: RenderDiagnostic[];
-      measured: { loadMs: number; viewport: RenderViewport; origin: string; layout?: RenderLayout };
+      measured: { loadMs: number; viewport: RenderViewport; origin: string; layout?: RenderLayout; browserObservations?: RenderBrowserObservation[] };
     }
   | {
       ok: false;

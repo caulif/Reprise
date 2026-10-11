@@ -24,6 +24,8 @@ History 从已校验的提交日志前缀构造只读附件读取器，每个 Se
 
 ## Comparison attempt
 
+默认自主 Session 的输入以用户需求和实际交付物为先，完整导航与过程材料按需展开。`render_artifact` 支持一次调用中重放受控点击、表单输入、按键、滚动、等待和 DOM 状态观察，加载前可设置弱动效和主题偏好。每次新开冻结页面，传完整动作序列；带动作的帧时间相对序列完成，观察对应其动作位置。工具回执记录动作、条件及观察，沿现有审计和测量分页保存；不开放任意脚本、任意网址或用户浏览器。初始和工具后的剩余时间与实际整体截止保持一致。见[交付优先与浏览器检查](../decisions/accepted/2026-10-11-comparison-browser-actions.md)。
+
 默认由 [`AutonomousComparisonAgent`](../../src/agents/comparison-autonomous.ts) 执行单个自主 Session、一个初始任务 prompt。模型自主调查、验证、编写、预览及修订；read/search、write/edit、shell、受控渲染、图片读取/变换及证据登记工具全程可用，独立只读工具仍按已有声明并行。没有强制 understand/investigate/compose/review 阶段、周期语义保存、独立 reviewer 或 findings/disposition 提交要求；原始交付只读，工作文件写入 scratch/。模型选择证据与判断，Host 不对任务语义增加专用判题规则。
 
 `submit_report` 从 scratch/ 读取 UTF-8 HTML fragment 及可选详情，复用安全 shell 和原有证据、图片声明及来源验证；不是任意可执行整页 HTML。没有旧 decisionShape 的固定字数限制，简洁与重要差异由 prompt 指导。接受后必须 `preview_report` 当前 digest/catalog，且实际预览回执进入同 Session 后续 generation 快照，调用正常完成后才可发布。live 与离线恢复共用此检查；这证明版本和输入完整性，不认证模型判断或审美。新 `comparison.requested` 明确记录 `autonomousContractVersion=1`，不得与独立复审标记并存。详见[单 Session 决策](../decisions/accepted/2026-10-11-comparison-autonomous-session.md)。

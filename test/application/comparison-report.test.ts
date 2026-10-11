@@ -218,7 +218,7 @@ test('comparison orientation does not inline the initial task and points at user
   assert.doesNotMatch(prompt, /initialTask=/);
   assert.doesNotMatch(prompt, /修复报告/);
   assert.match(prompt, /observations\/user-inputs\/INDEX\.tsv/);
-  assert.match(prompt, /Navigation for the attempt root is in INDEX\.md below/);
+  assert.match(prompt, /Inspect the actual deliveries below before expanding into process history/);
   assert.doesNotMatch(prompt, /briefingRoot=/);
   assert.doesNotMatch(prompt, /every user turn in index order/);
 });

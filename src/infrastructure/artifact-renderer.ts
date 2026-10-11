@@ -1,6 +1,9 @@
 import { copyFile, lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import { pathContainedBy } from "../core/paths.js";
+import { Value } from '@sinclair/typebox/value';
+import { RenderBrowserActionsSchema, RenderBrowserMediaSchema } from '../core/schemas/render-browser.js';
+import { runBrowserActions } from './artifact-browser-actions.js';
 import { sha256, sha256File } from "../core/identity.js";
 import { collectGeometrySample, createGeometryWorld, validGeometryQueries } from "./artifact-geometry.js";
 import { startBundleStaticServer, type BundleStaticServer } from "./artifact-bundle-server.js";
@@ -45,6 +48,7 @@ export async function renderFrozenArtifact(request: RenderRequest): Promise<Rend
 
   const entryExt = extname(request.entryRelativePath).toLowerCase();
   if (RASTER_EXTENSIONS.has(entryExt)) {
+    if (request.actions || request.media) return invalid('Browser actions and media require an HTML or SVG document', []);
     if (request.geometryQueries) return invalid("geometry queries require an HTML or SVG document", []);
     return renderRasterFrame(request);
   }
@@ -98,6 +102,8 @@ export async function captureHeadlessScreenshotViaRenderer(
 function validateRenderRequest(request: RenderRequest): { ok: true } | RenderResult {
   const diagnostics: RenderDiagnostic[] = [];
   const { viewport, sampleTimesMs } = request;
+  if (request.actions && !Value.Check(RenderBrowserActionsSchema, request.actions)) return invalid('Invalid browser actions', diagnostics);
+  if (request.media && !Value.Check(RenderBrowserMediaSchema, request.media)) return invalid('Invalid browser media', diagnostics);
   if (request.geometryQueries && !validGeometryQueries(request.geometryQueries)) return invalid("geometryQueries must contain 1..8 bounded queries with unique names", diagnostics);
   if (!Number.isInteger(viewport.width) || !Number.isInteger(viewport.height) || !Number.isFinite(viewport.scale)) {
     return invalid("viewport must use integer width/height and finite scale", diagnostics);
@@ -235,7 +241,10 @@ async function renderDocumentBundle(request: RenderRequest): Promise<RenderResul
     cdp = opened.cdp;
     const navigated = await navigateDocument(opened, request, watchdog, diagnostics);
     if (!navigated.ok) return navigated.result;
-    const frames = await captureSampledFrames(opened.cdp, opened.pageSessionId, request, navigated.originMs, watchdog, diagnostics, navigated.geometryContextId);
+    const browserObservations = request.actions ? await runBrowserActions(opened.cdp, opened.pageSessionId, request.actions, watchdog) : undefined;
+    // Action replay takes wall time; samples then start at the resulting page state.
+    const originMs = request.actions ? await evaluateJson<number>(opened.cdp, opened.pageSessionId, 'performance.now()') : navigated.originMs;
+    const frames = await captureSampledFrames(opened.cdp, opened.pageSessionId, request, originMs, watchdog, diagnostics, navigated.geometryContextId);
     if (!frames.ok) return frames.result;
     let layout: import("./artifact-render-types.js").RenderLayout | undefined;
     if (request.layoutSelectors) {
@@ -250,7 +259,7 @@ async function renderDocumentBundle(request: RenderRequest): Promise<RenderResul
       ok: true,
       frames: frames.frames,
       diagnostics: [...diagnostics, ...opened.cdp.diagnostics],
-      measured: { loadMs: navigated.loadMs, viewport: request.viewport, origin: opened.server.origin, ...(layout ? { layout } : {}) },
+      measured: { loadMs: navigated.loadMs, viewport: request.viewport, origin: opened.server.origin, ...(layout ? { layout } : {}), ...(browserObservations ? { browserObservations } : {}) },
     };
   } catch (error) {
     return renderFailureResult(error, { request: request.signal, watchdog }, diagnostics);
@@ -355,6 +364,10 @@ export async function openDocumentSession(
     }
     const page = await createPageTarget(cdp);
     const guards = await configurePageSession(cdp, page.sessionId, request.viewport, server.origin, page.targetId);
+    if (request.media) await cdp.send('Emulation.setEmulatedMedia', { features: [
+      ...(request.media.reducedMotion ? [{ name: 'prefers-reduced-motion', value: request.media.reducedMotion }] : []),
+      ...(request.media.colorScheme ? [{ name: 'prefers-color-scheme', value: request.media.colorScheme }] : []),
+    ] }, page.sessionId);
     diagnostics.push({
       code: "timing_mode",
       message: "wall_clock_after_load",
