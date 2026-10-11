@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { copyFile, mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { sha256, writeAtomic } from "../core/identity.js";
@@ -230,7 +231,7 @@ async function registerPreviewMedia(
   // Always call catalog.registerMedia so emit-failure retry can re-emit via #finishExistingRegistration.
   // Omit capturedAt from derivation so mediaDerivationKey matches across retries (adapter must not
   // short-circuit with a second, disagreeing dedupe key).
-  const fileName = `render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}.png`;
+  const fileName = `render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}-${randomUUID()}.png`;
   const inspectPath = `media/${fileName}`;
   const absoluteOut = join(attemptRoot, ...inspectPath.split("/"));
   await mkdir(dirname(absoluteOut), { recursive: true });
@@ -285,7 +286,7 @@ async function registerPreviewMediaBatch(
   try {
     const inputs: RegisterMediaInput[] = [];
     for (const entry of entries) {
-      const fileName = `render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}.png`;
+      const fileName = `render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}-${randomUUID()}.png`;
       const inspectPath = `media/${fileName}`;
       const absoluteOut = join(attemptRoot, ...inspectPath.split("/"));
       await mkdir(dirname(absoluteOut), { recursive: true });

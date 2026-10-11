@@ -668,6 +668,7 @@ function mediaDerivationKey(derivation: ComparisonMediaDerivation | undefined): 
   return [
     derivation.kind,
     derivation.rendererVersion ?? "",
+    derivation.imageTransform ? JSON.stringify(derivation.imageTransform) : "",
     viewport,
     samples,
     derivation.capturedAt ?? "",

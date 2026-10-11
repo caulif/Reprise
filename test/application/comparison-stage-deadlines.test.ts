@@ -208,7 +208,7 @@ test('legacy findings/audit/preview deadlines retain their previous opt-out sema
   assert.equal(legacy.workDeadline(), undefined);
 });
 
-test('source-save has non-renewable persistence windows while source investigation retains its cutoff', t => {
+test('source-save has non-renewable persistence windows while source activity excludes semantic saving', t => {
   t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
   const tracker = bounded();
   const investigation = comparisonWorkDeadline(tracker, 'investigate').yieldDeadline!;
@@ -217,8 +217,8 @@ test('source-save has non-renewable persistence windows while source investigati
   assert.equal(initialSave.at, 141_000);
   t.mock.timers.tick(40_000);
   assert.equal(tracker.beforeTool('update_comparison_findings_delta'), undefined);
-  assert.deepEqual(comparisonWorkDeadline(tracker, 'investigate').yieldDeadline, investigation);
-  assert.equal(tracker.beforeTool('read'), 'bounded_investigation_timeout');
+  assert.equal(comparisonWorkDeadline(tracker, 'investigate').yieldDeadline!.at, investigation.at + 40_000);
+  assert.equal(tracker.beforeTool('read'), undefined);
   const source = comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline!;
   assert.equal(source.at, 241_000);
   t.mock.timers.tick(80_000);
@@ -231,12 +231,12 @@ test('source-save has non-renewable persistence windows while source investigati
   assert.equal(inspection.at, 291_000, 'draft delivery has its own non-renewable cutoff');
   comparisonWorkDeadline(tracker, 'review', 'source-save');
   t.mock.timers.tick(30_000);
-  assert.equal(tracker.beforeTool('update_comparison_findings_delta'), 'bounded_source_timeout');
+  assert.equal(tracker.beforeTool('update_comparison_findings_delta'), 'bounded_source_save_timeout');
   assert.deepEqual(comparisonWorkDeadline(tracker, 'review', 'inspection').yieldDeadline, inspection);
   assert.equal(tracker.beforeTool('inspect_comparison_draft'), undefined, 'expired save does not expire draft delivery');
   t.mock.timers.tick(30_000);
   assert.equal(tracker.beforeTool('inspect_comparison_draft'), 'bounded_source_timeout');
-  assert.deepEqual(comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline, source);
+  assert.ok(comparisonWorkDeadline(tracker, 'review', 'sources').yieldDeadline!.at > source.at, 'saving preserves active source allowance but cannot cross global reserve');
 });
 
 test('bounded review protects finishing requests and tools without blocking findings or overriding hard limits', () => {
@@ -256,6 +256,27 @@ test('bounded review protects finishing requests and tools without blocking find
   tools.observe({ type: 'agent.tool_called', role: 'comparison', sessionId: 'review', payload: { toolCallId: 'one' } });
   assert.equal(tools.beforeTool('read'), 'reserve_finish');
   assert.equal(tools.beforeTool('inspect_comparison_draft'), undefined);
-  for (let i = 0; i < 7; i++) tools.observe({ type: 'agent.tool_called', role: 'comparison', sessionId: 'review', payload: { toolCallId: `other-${i}` } });
-  assert.throws(() => tools.beforeTool('preview_report'), /maxToolCalls/);
+  for (let i = 0; i < 6; i++) tools.observe({ type: 'agent.tool_called', role: 'comparison', sessionId: 'review', payload: { toolCallId: `other-${i}` } });
+  assert.throws(() => tools.observe({ type: 'agent.tool_called', role: 'comparison', sessionId: 'review', payload: { toolCallId: 'overflow' } }), /maxToolCalls/);
+});
+
+
+for (const phase of ['investigate', 'review'] as const) test(`${phase} save allowance counts actual saving across separated source batches`, t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const tracker = new ComparisonResourceTracker({ ...DEFAULT_COMPARISON_RESOURCES }, { boundedStages: true });
+  tracker.phase(phase, phase === 'review' ? 'sources' : undefined);
+  tracker.phase(phase, 'source-save');
+  t.mock.timers.tick(34_000);
+  tracker.phase(phase, phase === 'review' ? 'sources' : undefined);
+  t.mock.timers.tick(116_000);
+  tracker.phase(phase, 'source-save');
+  assert.equal(tracker.workDeadline()!.at, Date.now() + 86_000, 'intervening source work cannot exhaust the 120-second cumulative save allowance');
+  t.mock.timers.tick(85_000);
+  assert.equal(tracker.beforeTool('save_comparison_checkpoint'), undefined);
+  tracker.phase(phase, phase === 'review' ? 'sources' : undefined);
+  t.mock.timers.tick(10_000);
+  tracker.phase(phase, 'source-save');
+  assert.equal(tracker.workDeadline()!.at, Date.now() + 1_000, 'a later save cannot reset previously spent saving time');
+  t.mock.timers.tick(1_000);
+  assert.equal(tracker.beforeTool('save_comparison_checkpoint'), phase === 'review' ? 'bounded_source_save_timeout' : 'bounded_investigation_save_timeout');
 });

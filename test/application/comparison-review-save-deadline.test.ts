@@ -26,11 +26,14 @@ for (const mode of ['checkpoint', 'interrupted-source', 'closure-timeout', 'save
     else if (requests === 3) {
       t.mock.timers.tick(mode === 'checkpoint' ? 94_000 : saveTimeout ? 76_000 : 110_000);
       return { status: 'yielded', reason: mode === 'checkpoint' || saveTimeout ? 'findings_checkpoint_required' : 'bounded_source_timeout' };
+    } else if (content.includes('local source target ended') || content.includes('semantic save window expired')) {
+      t.mock.timers.tick(1_000);
+      return 'Useful source work ended with actual limitations; no findings acceptance is implied.';
     } else if (content.includes('SAVE ONLY:') || content.includes('independent review findings closure')) {
       assert.deepEqual(allowedToolNames, ['update_comparison_findings_delta']);
       const saving = content.includes('SAVE ONLY:');
       assert.equal(maxOutputTokens, undefined, 'semantic findings must retain the model output allowance, including reasoning and complete tool arguments');
-      assert.equal(yieldDeadline?.at, Date.now() + 60_000);
+      assert.ok(yieldDeadline && yieldDeadline.at > Date.now() && yieldDeadline.at <= Date.now() + 60_000, 'closure retries cannot renew their deadline');
       const delay = mode === 'closure-timeout' || (saveTimeout && saving) ? 90_000 : saveTimeout ? 10_000 : 43_000;
       if (Date.now() + delay >= yieldDeadline.at) {
         t.mock.timers.tick(yieldDeadline.at - Date.now());
@@ -67,7 +70,7 @@ for (const mode of ['checkpoint', 'interrupted-source', 'closure-timeout', 'save
     resources: { maxElapsedMs: 600_000, maxModelRequests: 40, maxToolCalls: 120 } }).compare({ ...context, attemptId: mode }, tools,
     { append: async event => { events.push(event); } }, new AbortController().signal, {
       enforcePhaseBoundaries: true, reviewFindings: true, hasAcceptedDraft: () => true,
-      findingsReady: () => true, getFindingsState: () => 'Current hypotheses; task quality is unavailable.',
+      hasSavedFindings: () => true, findingsReady: () => true, getFindingsState: () => 'Current hypotheses; task quality is unavailable.',
       hasReviewDraftMaterial: () => material, hasCurrentReviewInspection: () => formal,
       onDraftAuditStarted: () => { audits++; formal = false; },
       getSubmittedResult: async () => formal && previews > 0
@@ -78,13 +81,13 @@ for (const mode of ['checkpoint', 'interrupted-source', 'closure-timeout', 'save
   assert.equal(audits, fails ? 0 : 1);
   assert.equal(previews, fails ? 0 : 1);
   const phases = events.filter(event => event.type === 'comparison.phase_completed');
-  assert.equal(phases.filter(event => event.payload.pass === 'review-findings').length, mode === 'checkpoint' || mode === 'inspection-timeout' ? 0 : 1);
+  assert.equal(phases.filter(event => event.payload.pass === 'review-findings').length, mode === 'checkpoint' || mode === 'inspection-timeout' ? 0 : mode === 'save-timeout-no-update' ? 2 : 1);
   assert.equal(phases.filter(event => event.payload.pass === 'review-supplement').length, 0);
   if (result.status === 'failed') assert.equal(result.failure.kind, mode === 'save-timeout-no-update' ? 'protocol' : 'timeout');
   if (mode === 'inspection-timeout') assert.equal(phases.filter(event => event.payload.pass === 'inspection').length, 1);
   if (saveTimeout) {
     const save = phases.find(event => event.payload.pass === 'source-save')!;
-    assert.equal(save.payload.yieldReason, 'bounded_source_timeout');
+    assert.equal(save.payload.yieldReason, 'bounded_source_save_timeout');
     assert.equal(save.payload.modelRequests, 1);
     assert.equal(save.payload.toolCalls, 0);
     const inspection = phases.find(event => event.payload.pass === 'inspection')!;

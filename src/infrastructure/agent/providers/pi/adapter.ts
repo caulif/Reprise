@@ -1,3 +1,4 @@
+import { evidenceContext } from './evidence-context.js';
 import { createPiAgent, toPiTool } from "./tool-adapter.js";
 import { toPiUserPrompt } from "./message-mapper.js";
 import { isAssistantMessageEnd } from "./event-mapper.js";
@@ -67,6 +68,7 @@ export class PiProviderAdapter implements ProviderAdapter {
   createSession(input: Parameters<ProviderAdapter["createSession"]>[0]): ProviderSession {
     const model = this.#model;
     let deadline: ReturnType<typeof invocationYieldDeadline> | undefined;
+    let contextMode: 'evidence' | undefined;
     let maxOutputTokens: number | undefined;
     const recordFailure = (error: unknown) => deadline?.recordFailure(error);
     const usage = piRequestUsage(this.#models, input, recordFailure, error => deadline?.recordProviderFailure(error), () => maxOutputTokens);
@@ -111,7 +113,7 @@ export class PiProviderAdapter implements ProviderAdapter {
         const availableWindow = contextWindowOf(model) - fixedTokens - Math.max(1_024, model.maxTokens);
         await compactInto(messages, agent, model, models, effort, combined, input.compactionInstructions, input.onContextCompact, availableWindow).catch(error => { recordFailure(error); throw error; });
         combined?.throwIfAborted();
-        return messages;
+        return contextMode === 'evidence' ? evidenceContext(messages) : messages;
       },
       initialState: {
         systemPrompt: input.systemPrompt,
@@ -131,6 +133,7 @@ export class PiProviderAdapter implements ProviderAdapter {
         if (signal.aborted) throw abortError();
         exposure.enter(allowedToolNames);
         maxOutputTokens = request.maxOutputTokens;
+        contextMode = request.contextMode;
         effort = request.reasoningEffortCeiling === 'low' && inputEffort !== 'minimal' ? 'low' : inputEffort;
         agent.state.thinkingLevel = effort;
         deadline = invocationYieldDeadline(agent, signal, yieldDeadline);
@@ -140,7 +143,7 @@ export class PiProviderAdapter implements ProviderAdapter {
             return await appendPiPrompt({ agent, model, models, effort, request, deadline, turnYield, usage, input });
           } finally {
             try { try { await agent.waitForIdle(); } finally { await usage.flush(); } }
-            finally { deadline.dispose(); deadline = undefined; maxOutputTokens = undefined; turnYield.policy = undefined; exposure.restore(); effort = inputEffort; agent.state.thinkingLevel = inputEffort; }
+            finally { deadline.dispose(); deadline = undefined; maxOutputTokens = undefined; contextMode = undefined; turnYield.policy = undefined; exposure.restore(); effort = inputEffort; agent.state.thinkingLevel = inputEffort; }
           }
         } catch (error) {
           appendFailure = error;

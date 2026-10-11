@@ -58,7 +58,15 @@ export const ComparisonMediaDerivationSchema = Type.Object({
     Type.Literal("headless_screenshot"),
     Type.Literal("render_preview"),
     Type.Literal("host_review"),
+    Type.Literal("image_transform"),
   ]),
+  imageTransform: Type.Optional(Type.Object({
+    parentHash: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+    originalWidth: Type.Integer({ minimum: 1 }), originalHeight: Type.Integer({ minimum: 1 }),
+    crop: Type.Object({ x: Type.Integer({ minimum: 0 }), y: Type.Integer({ minimum: 0 }), width: Type.Integer({ minimum: 1 }), height: Type.Integer({ minimum: 1 }) }),
+    outputWidth: Type.Integer({ minimum: 1, maximum: 4096 }), outputHeight: Type.Integer({ minimum: 1, maximum: 4096 }),
+    order: Type.Literal('crop_then_resize'),
+  }, { additionalProperties: false })),
   rendererVersion: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
   viewport: Type.Optional(Type.Object({
     width: Type.Integer({ minimum: 1, maximum: 8192 }),

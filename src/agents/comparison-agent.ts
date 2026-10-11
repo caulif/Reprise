@@ -9,7 +9,7 @@ import { STRUCTURED_FINAL_RULE } from './structured-final-rule.js';
 import type { ComparisonResources } from '../core/schema.js';
 import { ComparisonResourceTracker } from './comparison-resources.js';
 import { closeBoundedInvestigation } from './comparison-investigation-closure.js';
-import { comparisonDecisionMetrics, comparisonOutputContinuation, comparisonTimeout, comparisonWorkDeadline, comparisonYieldBoundary, type ComparisonWorkPass } from './comparison-invocation-boundaries.js';
+import { comparisonInvocationControls, comparisonDecisionMetrics, comparisonOutputContinuation, comparisonTimeout, comparisonWorkDeadline, comparisonYieldBoundary, type ComparisonWorkPass } from './comparison-invocation-boundaries.js';
 import { ComparisonReviewFindingsClosure, comparisonSourceReviewPrompt, composeComparisonReviewerSystemPrompt, reviewDraftInspectionCheckpoint, COMPARISON_DIRECT_AUDIT_PROMPT } from './comparison-review-findings.js';
 import { ComparisonFindingsCheckpoints } from './comparison-findings-checkpoints.js';
 import { checkpointComparisonEvidence } from './comparison-evidence-progress.js';
@@ -555,6 +555,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
       ...(audit?.commitModelInput ? { commitModelInput: (bytes: Uint8Array) => audit.commitModelInput!(bytes) } : {}),
     };
     let session = await this.#sessionFor(attemptId, context, phasedTools, measuredAudit, initialFindings.enabled ? 'investigator' : undefined);
+    checkpoints.configureContinuation(resources, measuredAudit, signal, () => session.sessionId);
     let freshReview = false, freshAuthor = false;
     const measuredWork = async (phase: 'understand' | 'investigate' | 'compose' | 'review', promptContent: string, reviewPass?: ComparisonWorkPass) => {
       stages.begin(phase, reviewPass);
@@ -582,8 +583,7 @@ export class ComparisonAgent implements ComparisonAgentPort {
           if (boundedStages && deadline.yieldDeadline && Date.now() >= deadline.yieldDeadline.at) return { status: 'yielded', sessionId: session.sessionId, reason: deadline.yieldDeadline.reason };
           const next = await session.work({ promptContent: [comparisonDecisionMetrics(prompt, phase, context.reportFacts.metrics), stages.prompt()].filter(Boolean).join('\n\n'), timeoutMs: comparisonTimeout(resources, this.#resources, this.#timeoutMs),
             allowedToolNames: stages.toolNames(phasedTools), ...deadline,
-            ...(boundedStages && reviewPass && ['initial-findings', 'source-save', 'findings', 'review-findings', 'inspection', 'final-inspection', 'preview'].includes(reviewPass)
-              ? { reasoningEffortCeiling: 'low' as const, ...(['inspection', 'final-inspection', 'preview'].includes(reviewPass) ? { maxOutputTokens: 4_096 } : {}) } : {}),
+            ...comparisonInvocationControls(boundedStages, reviewPass),
             signal, yieldAfterTurn: () => stages.exit() });
           return comparisonYieldBoundary(next, resources, signal);
         };

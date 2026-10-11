@@ -454,7 +454,7 @@ test('agent execution does not import experiment application', async () => {
   assert.deepEqual(violations, []);
 });
 
-test('agent foundation uses sequential Pi Agent and never AgentHarness', async () => {
+test('agent foundation defaults each Pi tool to ordered execution and never AgentHarness', async () => {
   await stat(join(SRC, 'infrastructure/agent/types.ts'));
   await stat(join(SRC, 'infrastructure/agent/session.ts'));
   await stat(join(SRC, 'infrastructure/agent/providers/fake/adapter.ts'));
@@ -464,6 +464,7 @@ test('agent foundation uses sequential Pi Agent and never AgentHarness', async (
   assert.doesNotMatch(adapter, /AgentHarness/);
   assert.doesNotMatch(tools, /AgentHarness/);
   assert.match(tools, /toolExecution: PI_TOOL_EXECUTION/);
+  assert.match(tools, /executionMode: tool.executionMode \?\? "sequential"/);
   const host = await readFile(join(SRC, 'infrastructure/agent/host.ts'), 'utf8');
   assert.match(host, /export class AgentHost/);
   const types = await readFile(join(SRC, 'infrastructure/agent/types.ts'), 'utf8');

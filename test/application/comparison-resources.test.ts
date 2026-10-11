@@ -22,10 +22,8 @@ test('canonical tools count once and exhausted hard tool budget blocks further r
   tracker.observe(event('agent.tool_called', { toolCallId: 'one' }));
   tracker.observe(event('agent.tool_called', { nativeHook: 'before' }));
   assert.equal(tracker.beforeTool('read'), undefined);
-  tracker.observe(event('agent.tool_called', { toolCallId: 'two' }));
-  assert.throws(() => tracker.beforeTool('read'), /maxToolCalls/);
-  assert.throws(() => tracker.observe(event('agent.model_request')), /maxToolCalls/);
-  assert.equal(tracker.snapshot().toolCalls, 2);
+  assert.throws(() => tracker.observe(event('agent.tool_called', { toolCallId: 'two' })), /maxToolCalls/);
+  assert.equal(tracker.snapshot().toolCalls, 1);
 });
 
 test('soft limits allow findings closure and preserve compose/review resources', () => {
@@ -283,8 +281,8 @@ test('investigation saving gets a bounded persistence window without renewing so
   const save = tracker.workDeadline()!;
   assert.equal(save.at, Date.now() + 60_000);
   t.mock.timers.tick(50_000);
-  tracker.phase('investigate'); assert.deepEqual(tracker.workDeadline(), source);
-  assert.ok(tracker.workDeadline()!.at < Date.now(), 'expired source work cannot restart');
+  tracker.phase('investigate'); assert.equal(tracker.workDeadline()!.at, source.at + 50_000);
+  assert.equal(tracker.workDeadline()!.at - Date.now(), 10_000, 'saving pauses source activity but still spends global time');
   tracker.phase('investigate', 'source-save'); assert.deepEqual(tracker.workDeadline(), save);
   tracker.phase('compose'); assert.ok(tracker.workDeadline()!.at === Date.now() + 90_000, 'compose finishing reserve remains protected');
 });
@@ -299,8 +297,47 @@ test('investigation saves share sixty seconds of active saving and cannot borrow
   assert.equal(tracker.workDeadline()!.at, Date.now() + 10_000, 'source time does not consume the remaining save allowance');
   assert.equal(tracker.workDeadline()!.at, first.at + 20_000);
   t.mock.timers.tick(10_000); tracker.phase('investigate'); tracker.phase('investigate', 'source-save');
-  assert.equal(tracker.beforeTool('update_comparison_findings_delta'), 'bounded_investigation_timeout', 'a third save cannot renew consumed saving time');
+  assert.equal(tracker.beforeTool('update_comparison_findings_delta'), 'bounded_investigation_save_timeout', 'a third save cannot renew consumed saving time');
   const late = new ComparisonResourceTracker({ maxElapsedMs: 600_000 }, { boundedStages: true });
   t.mock.timers.tick(260_000); late.phase('investigate', 'source-save');
   assert.equal(late.workDeadline()!.at, Date.now() + 10_000, 'all saving is still capped by the global finishing reserve');
+});
+
+
+test('bounded continuation uses remaining global resources twice without resetting counters', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const tracker = new ComparisonResourceTracker({ maxElapsedMs: 1_200_000, maxModelRequests: 40, maxToolCalls: 120 }, { boundedStages: true });
+  tracker.phase('review', 'sources');
+  tracker.observe(event('agent.model_request'));
+  t.mock.timers.tick(240_000);
+  const first = tracker.continueSources();
+  assert.equal(first.granted, true); assert.equal(first.newDeadline, Date.now() + 60_000);
+  t.mock.timers.tick(60_000);
+  assert.equal(tracker.continueSources().granted, true);
+  t.mock.timers.tick(60_000);
+  assert.equal(tracker.continueSources().reason, 'extension_limit');
+  assert.equal(tracker.snapshot().modelRequests, 1);
+  assert.equal(tracker.snapshot().remainingMs, 840_000);
+});
+
+test('source continuation respects short explicit resources and finishing reserves', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const explicit = new ComparisonResourceTracker({ maxElapsedMs: 1_200_000, investigationMs: 10 }, { boundedStages: true });
+  assert.equal(explicit.continueSources().reason, 'explicit_source_limit');
+  const calls = new ComparisonResourceTracker({ maxElapsedMs: 1_200_000, maxModelRequests: 6 }, { boundedStages: true });
+  assert.equal(calls.continueSources().reason, 'reserve_calls');
+  const late = new ComparisonResourceTracker({ maxElapsedMs: 1_200_000 }, { boundedStages: true });
+  t.mock.timers.tick(420_000);
+  assert.equal(late.continueSources().reason, 'reserve_time');
+});
+
+test('review source activity pauses while semantic checkpoint still spends global wall clock', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const tracker = new ComparisonResourceTracker({ maxElapsedMs: 1_200_000 }, { boundedStages: true });
+  tracker.phase('review', 'sources'); const old = tracker.workDeadline()!.at;
+  t.mock.timers.tick(100_000); tracker.phase('review', 'source-save');
+  t.mock.timers.tick(90_000); tracker.phase('review', 'sources');
+  assert.equal(tracker.workDeadline()!.at, old + 90_000);
+  assert.equal(tracker.sourceRemainingMs(), 140_000);
+  assert.equal(tracker.snapshot().remainingMs, 1_010_000);
 });

@@ -49,6 +49,8 @@ export type StructuredAgentResult<T> = AgentInvocation<T>;
 export type FreeformInvocation = AgentInvocation<{ text?: string }> | { status: "yielded"; reason: string; sessionId: string; invocationId?: string };
 
 export type AgentToolDefinition = {
+  /** Tools remain ordered unless their owner explicitly permits independent execution. */
+  executionMode?: "parallel" | "sequential";
   name: string;
   description: string;
   parameters: TSchema;
@@ -57,6 +59,7 @@ export type AgentToolDefinition = {
 };
 
 export type AgentAuditEventType =
+  | "comparison.sources_continued"
   | "comparison.evidence_checkpoint"
   | "comparison.phase_completed"
   | "comparison.resources_completed"
@@ -79,7 +82,8 @@ export type AgentAuditEventType =
   | "agent.request_retried"
   | "agent.assistant_visible"
   | "agent.model_output"
-  | "agent.model_request";
+  | "agent.model_request"
+  | "agent.model_stream_completed";
 
 export type AgentAuditEvent = {
   type: AgentAuditEventType;
@@ -138,6 +142,8 @@ export type FreeformWorkRequest = {
   allowedToolNames?: readonly string[] | undefined;
   /** Optional ceiling for mechanical closure; never raises the configured reasoning effort. */
   reasoningEffortCeiling?: 'low';
+  /** Save-only evidence projection retains all tool results and user material. */
+  contextMode?: 'evidence';
   /** Invocation-local generation output ceiling; compaction keeps its own independent limit. */
   maxOutputTokens?: number;
   /** Optional invocation-local interrupt; Provider must settle idle and usage before yielding. */
@@ -186,7 +192,7 @@ export interface AgentHost {
 
 export interface ProviderSession {
   readonly inputCapabilities?: readonly string[];
-  append(input: { content: string; images?: readonly ImageContent[]; signal: AbortSignal; yieldAfterTurn?: FreeformWorkRequest['yieldAfterTurn']; allowedToolNames?: readonly string[]; yieldDeadline?: FreeformWorkRequest['yieldDeadline']; reasoningEffortCeiling?: FreeformWorkRequest['reasoningEffortCeiling']; maxOutputTokens?: number }): Promise<string | { status: "yielded"; reason: string }>;
+  append(input: { content: string; images?: readonly ImageContent[]; signal: AbortSignal; yieldAfterTurn?: FreeformWorkRequest['yieldAfterTurn']; allowedToolNames?: readonly string[]; yieldDeadline?: FreeformWorkRequest['yieldDeadline']; reasoningEffortCeiling?: FreeformWorkRequest['reasoningEffortCeiling']; maxOutputTokens?: number; contextMode?: FreeformWorkRequest['contextMode'] }): Promise<string | { status: "yielded"; reason: string }>;
   cancel(): void;
   /** Required when cancellation can leave tool execution or audit writes in flight. */
   waitForIdle?(): Promise<void>;
@@ -228,6 +234,7 @@ export interface ProviderAdapter {
       contentDigest: string;
     }) => Promise<void>;
     onModelRequest?: (payload: { model: string; digest: string; messageCount: number; images?: readonly ImageContent[]; scope?: 'generation' | 'compaction'; compactionContext?: { systemPrompt?: string; messages: readonly unknown[]; tools?: readonly unknown[] }; generationContext?: { systemPrompt?: string; messages: readonly unknown[]; tools?: readonly unknown[] } }) => Promise<void>;
+    onModelStream?: (payload: { startedAt: number; firstEventAt: number | null; firstTextAt: number | null; finishedAt: number; events: number }) => Promise<void>;
     onModelUsage?: (payload: AgentUsageFacts) => Promise<void>;
   }): Promise<ProviderSession> | ProviderSession;
 }
