@@ -91,6 +91,22 @@ node dist/scripts/comparison-evaluate.js assess $comparisonEvalOutput 'C:\repris
 
 统计报告区分已生成与已人工审阅，汇总遗漏、错误、资源分布和重复/变体漂移；有条件推荐变化须人工解释，不能机械要求赢家一致，也不输出模型总分或排名。正文长度与提交回执共用生成报告的计数口径：结论加主比较区，折叠 details 只计 summary，展开则计正文，排除模板与独立详情区，不从评审猜测。`manual_review_recorded` 只说明人工记录齐全，不宣称语义自动通过；假输入和协议回归不能替代真实模型质量验收。协议见[关键发现与资源保护 ADR](./decisions/accepted/2026-10-05-comparison-scoped-findings-and-resource-protection.md)。
 
+## Comparison 通用工具试验
+
+用[独立试跑入口](../scripts/comparison-coding-trial.ts)对照模型侧协议的影响：同一个 prompt 驱动通用文件、Shell、图片、裁切和浏览器工具，直接生成完整 HTML，不经过正式报告的证据登记、片段提交及预览绑定。它不是默认 Comparison，也不覆盖正式报告，边界见[试验决策](./decisions/accepted/2026-10-12-comparison-coding-trial.md)。
+
+先 `npm run build`。准备仅含任务材料和交付物的独立副本、一个描述交付目标的 UTF-8 prompt 文件，以及不存在的输出目录。四个参数均为绝对路径：
+
+```powershell
+$env:REPRISE_REAL_MODEL = '1'
+node dist/scripts/comparison-coding-trial.js C:/trial/inputs C:/trial/run-01 C:/reprise-config C:/trial/prompt.txt
+Remove-Item Env:REPRISE_REAL_MODEL
+```
+
+真实调用可能计费。输入不得使用生产工作区或凭据目录；Shell 沿用现有命令检查，不是操作系统沙箱。工具中的 `source/` 是只读文件挂载，Shell 使用 `REPRISE_SOURCE_MOUNT`。工作文件在输出的 `work/`，完整模型输入与图片审计在 `audit/`；输入前后 hash、耗时和执行状态在 `summary.json`。仅设三十分钟整体截止，没有请求或工具次数配额。正常结束、完整 HTML 存在且输入未变才记为 completed，语义质量仍需独立检查。
+
+仓库提供[通用报告骨架](../scripts/comparison-report-template.html)与[配套提示词](../scripts/comparison-report-prompt.txt)。将骨架复制到专用输入副本的 `report-template.html`，并按实际输入调整提示词末尾的任务描述，再将提示词绝对路径作为第四个参数。骨架仅保留总体判断、关键差异和运行指标，证据紧邻对应差异，不设置补充详情或方法附录；指标使用 h/m/s、总 Tokens 的 k/M 缩写及美元估算费用。具体展示约定由提示词拥有。模板与计量材料和其他输入一样纳入 hash 与模型输入审计，不包含本机样本结论；调用者也可使用自己的 prompt 和骨架。
+
 ## 发布与回滚
 
 发布包名为 `@caulif/reprise`，CLI 名为 `reprise`；裸名 npm 包不是本项目。发布前确认版本、tag、CHANGELOG 与持久化兼容策略一致，在干净检出执行安装与 check，并核对打包、依赖审计、秘密扫描结果。check 已覆盖的检查仅在证据失效时重跑。
