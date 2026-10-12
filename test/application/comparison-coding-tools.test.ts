@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createCodingComparisonTools } from '../../src/application/comparison-coding-tools.js';
@@ -42,13 +42,13 @@ test('browser tool checks both source and working report with actions and native
   const render = tools.find(tool => tool.name === 'render_browser')!;
   const first = await render.execute({ path: 'source/delivery.html', actions: [{ kind: 'scroll', x: 0, y: 500 }], media: { reducedMotion: 'reduce' }, geometryQueries: [{ name: 'body', selector: 'body', kind: 'dom_rect' }] }, signal);
   assert.equal(first.contentBlocks?.[1]?.type, 'image');
-  assert.equal(requests[0]?.bundleRoot, f.sourceRoot);
+  assert.equal(requests[0]?.bundleRoot, await realpath(f.sourceRoot));
   assert.equal(requests[0]?.actions?.[0]?.kind, 'scroll');
   assert.equal(requests[0]?.media?.reducedMotion, 'reduce');
   assert.equal(requests[0]?.geometryQueries?.[0]?.selector, 'body');
   await writeFile(join(f.workRoot, 'report.html'), '<html><body>Result</body></html>');
   const second = await render.execute({ path: 'report.html', viewport: { width: 390, height: 844 }, includeImages: false }, signal);
-  assert.equal(requests[1]?.bundleRoot, f.workRoot);
+  assert.equal(requests[1]?.bundleRoot, await realpath(f.workRoot));
   assert.equal(requests[1]?.viewport.width, 390);
   assert.equal(second.contentBlocks?.length, 1);
   assert.notEqual(requests[0]?.outputRoot, requests[1]?.outputRoot);
