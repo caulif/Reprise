@@ -12,7 +12,7 @@ Recovery 的目标是给历史任务找到一个可执行的起点，不宣称�
 
 一个 Recovery attempt 使用一个 Session 和同一工作副本，三个主要轮次。Recovery Agent 自己按提示词在每轮结束前写 `.reprise/recovery-work/notes.md`；Host 保存并在继续同一 Session 时重新提供该位置：
 
-1. **understand**：读取完整任务输入、playbook、历史索引和工作区摘要，确定起点边界与关键未知。
+1. **understand**：优先使用 briefing 内的任务文本、source Git 探测事实和工作区摘要，读取 playbook，并按关键未知定位历史证据；任务被截断或存在具体疑问时再读完整任务文件。
 2. **restore**：在工作副本内调查、复制、清理、重建配置/依赖并运行有界检查；保持原任务未完成。
 3. **conclude**：再次检查，写工作副本根部的 `recovery.md`，区分观察、推断、已执行动作和未解决项，返回 `ready` 或 `blocked`。
 
@@ -24,7 +24,13 @@ Host 的机械检查报告缺失文件、越界写入、source tripwire、schema
 
 ## 隔离边界
 
+Briefing 中的 source Git 事实来自准备时对 source 的既有探测，只提供 repository、HEAD、指定历史 commit 对象是否存在及 status 是否可用；未成功取得的事实保持 unknown。它们不是工作副本当前 Git 状态，也不证明历史任务前起点。事实进入 `recovery.model_input` artifact，并随模型可见文本进入既有请求审计。
+
+共享 Pi Provider 以连续失败而非整轮 `continue()` 次数限制瞬时网络/上游错误：一次成功模型 turn 后重置计数，无成功进展时最多三次请求，退避依次为 2 秒和 4 秒。失败响应中的部分文本不算进展，已完成工具不会重放；context overflow 仍只允许一次缩减恢复，取消、原截止、致命工具与审计失败优先。失败诊断保留脱敏的 HTTP/TLS 原因；这些恢复措施不代表上游网络已经可用。见[可靠性决策](../decisions/accepted/2026-10-12-recovery-progress-aware-retries-and-briefing.md)。
+
 Recovery 工具以工作副本为 cwd，受控文件写入限制在该根内。source/、observations/、playbook 只读；Host 通过路径边界、source 写锁和 fingerprint 保护 source。候选运行随后从接受的 baseline 准备独立副本，Runtime 启动上下文声明 `workspace: isolated`。Git sink、捕获 artifacts 和 cleanup 都归 Harness 管理。
+
+`source/`、`workspace/` 和其他合法相对目录路径允许单个尾斜杠；空中间段、`..`、绝对路径仍拒绝。source/ 与 observations/ 是文件工具虚拟前缀；shell 以工作副本为 cwd，只通过既有 `REPRISE_SOURCE_MOUNT` 访问 source。observations 不提供 shell 挂载，只能用 `ls`、`find`、`grep`、`read` 读取；不把文本命令守卫当成对任意外部路径的文件系统隔离。
 
 本机 shell 隔离不是全局容器沙箱；凭据目录、全局配置和外部系统不在恢复能力内。Windows 11 是已验证平台，Recovery 工具自己的 shell 发现链不能与通用 Runtime spawn 规则混为一谈。
 

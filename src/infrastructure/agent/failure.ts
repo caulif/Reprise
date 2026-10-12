@@ -1,4 +1,10 @@
 import type { AgentFailure, AgentFailureCode } from "./types.js";
+import { redactModelVisibleText } from "./model-input.js";
+import { stripVTControlCharacters } from "node:util";
+
+export function safeAgentFailureText(text: string): string {
+  return stripVTControlCharacters(redactModelVisibleText(text).text).replace(/\p{Cc}/gu, " ");
+}
 
 export type AgentFailureKind =
   | "authentication"
@@ -27,7 +33,7 @@ export function toAgentFailure(input: {
   const kind = input.kind ?? (input.code === "privacy_blocked" ? "privacy" : input.code === "audit_failure" ? "persistence" : "unknown");
   return {
     code: input.code,
-    message: input.message,
+    message: safeAgentFailureText(input.message),
     attempts: input.attempts,
     kind,
     retryable: input.retryable ?? agentFailureRetryable(kind),

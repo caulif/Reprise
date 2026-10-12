@@ -45,4 +45,9 @@ test('Recovery preflight persistence is schema-checked and atomic', async (t) =>
   await persistRecoveryPreflight(path, record);
   assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), record);
   await assert.rejects(persistRecoveryPreflight(join(root, 'bad.json'), { ...record, providerId: 'bad id' }), /invalid/);
+  const routed = { ...record, modelId: 'deepseek/deepseek-v4.1-flash' };
+  const routedPath = join(root, 'routed.json');
+  await persistRecoveryPreflight(routedPath, routed);
+  assert.deepEqual(JSON.parse(await readFile(routedPath, 'utf8')), routed);
+  await assert.rejects(persistRecoveryPreflight(join(root, 'empty-model.json'), { ...record, modelId: '' }), /invalid/);
 });

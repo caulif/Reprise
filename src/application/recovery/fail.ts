@@ -19,6 +19,7 @@ import type { RecoveryOrchestrator, RecoveryLifecycleState } from "./orchestrato
 import type { RecoveryReadinessResult } from "./readiness.js";
 import type { RecoveryAttempt } from "./types.js";
 import type { RecoveryAttemptInput } from "./input.js";
+import { safeAgentFailureText } from "../../infrastructure/agent/failure.js";
 
 export type FailRecoverExperimentInput = {
   error: unknown;
@@ -126,7 +127,9 @@ function recoveryExplanation(input: FailRecoverExperimentInput, stage: string): 
     status,
     stage: workspaceStage,
     reason: stage,
-    summary: mapped.key,
+    summary: mapped.key === "harnessTransient" && failed?.message
+      ? safeAgentFailureText(failed.message).slice(0, 240)
+      : mapped.key,
     ...(mapped.params ? { summaryParams: mapped.params } : {}),
     diagnosis: "host",
   };

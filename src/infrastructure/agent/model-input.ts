@@ -44,6 +44,7 @@ export type ModelInputResolver = ArtifactBodyResolver & {
 
 export function redactModelVisibleText(text: string): { text: string; redacted: boolean } {
   const next = text
+    .replace(/(https?:\/\/)[^\s/@]+@/gi, '$1[REDACTED]@')
     .replace(/("(?:authorization|api[_-]?key|(?:access[_-]?|refresh[_-]?)?token|password|(?:client[_-]?)?secret)"\s*:\s*)"(?:\\.|[^"\\])*"/gi, '$1"[REDACTED]"')
     .replace(/(\\"(?:authorization|api[_-]?key|(?:access[_-]?|refresh[_-]?)?token|password|(?:client[_-]?)?secret)\\"\s*:\s*)\\"[^\r\n]*?\\"/gi, '$1\\"[REDACTED]\\"')
     .replace(/(authorization\s*[=:]\s*)(?:"?)(?:Bearer\s+)?[^\s"]+/gi, "$1[REDACTED]")

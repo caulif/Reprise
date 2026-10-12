@@ -31,6 +31,7 @@ export function recoveryModelInputAudit(
         : [],
     },
     runtimeCapabilities: context.runtimeCapabilities,
+    sourceGit: context.sourceGit,
     staging: {
       fileCount: staging?.fileCount,
       totalBytes: staging?.totalBytes,

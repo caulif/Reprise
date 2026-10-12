@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RecoveryAgentPort } from "../../src/agents/recovery-agent.js";
@@ -10,6 +10,35 @@ import { recoveryViewFromAttempt } from "../../src/application/recovery/view.js"
 import { createTheme } from "../../src/tui/theme.js";
 import { renderConfirmation } from "../../src/tui/pages/run.js";
 import { now, VerifiedRuntime, input } from "../codex-experiment-support.js";
+
+test("transient Recovery diagnosis shows the redacted HTTP/TLS cause and preserves safe failure evidence", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-recovery-tls-diagnosis-"));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  const base = input(root, new VerifiedRuntime());
+  await mkdir(base.sourceRoot, { recursive: true });
+  const recovery: RecoveryAgentPort = {
+    recover: async (context) => {
+      assert.equal(context.sourceGit?.isRepo, false);
+      return { status: "failed", sessionId: "tls-failure", failure: {
+        code: "agent_failure", kind: "transient_network", attempts: 1,
+        message: "\u001b[2JHTTP 500: opencode.ai TLS handshake timeout\u0007\r\n https://user:private-pass@example.test/v1?token=private-token",
+      } };
+    },
+  };
+  const attempt = await recoverExperiment({
+    dataDir: base.dataDir, caseId: base.caseId, experimentId: "tls-diagnosis", runId: "tls-diagnosis-run",
+    sourceRoot: base.sourceRoot, taskCase: base.taskCase, recovery, now,
+  });
+  assert.match(attempt.baseline.recovery?.summary ?? "", /HTTP 500: opencode.ai TLS handshake timeout/);
+  assert.notEqual(attempt.baseline.recovery?.summary, "harnessTransient");
+  assert.doesNotMatch(attempt.baseline.recovery?.summary ?? "", /\p{Cc}/u);
+  for (const name of ["recovery.json", "recovery-explanation.json"]) {
+    const content = await readFile(join(attempt.experimentRoot, "runs", "tls-diagnosis-run", name), "utf8");
+    assert.match(content, /TLS handshake timeout/);
+    assert.doesNotMatch(content, /private-pass|private-token/);
+    assert.doesNotMatch(content, /\\u001b|\\u0007|\\r|\\n/);
+  }
+});
 
 test("blocked Recovery TUI sentence equals the Agent summary", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-recovery-blocked-summary-"));

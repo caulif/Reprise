@@ -740,7 +740,9 @@ function workspaceRelative(input: string): string | { root: true } | undefined {
   if (slash.includes("\\")) return undefined;
   if (slash === "" || slash === "." || slash === "./") return { root: true };
   const kept: string[] = [];
-  for (const part of slash.split("/")) {
+  const parts = slash.split("/");
+  if (parts.at(-1) === "") parts.pop();
+  for (const part of parts) {
     if (part === ".") continue;
     if (!part || part === "..") return undefined;
     kept.push(part);

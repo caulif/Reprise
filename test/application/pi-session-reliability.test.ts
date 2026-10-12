@@ -74,6 +74,39 @@ test('persistent upstream failure has three attempts while authentication never 
   }
 });
 
+test('successful turns reset the consecutive failure budget without replaying tools', async () => {
+  const seen: string[] = [];
+  const retries: { attempt: number; delayMs: number }[] = [];
+  let writes = 0;
+  const session = caller([
+    response('error', [], 'fetch failed'),
+    response('toolUse', [{ type: 'toolCall', id: 'write-1', name: 'write', arguments: {} }]),
+    response('error', [], 'fetch failed'),
+    response('toolUse', [{ type: 'toolCall', id: 'write-2', name: 'write', arguments: {} }]),
+    response('error', [], 'fetch failed'),
+    response('stop', [{ type: 'text', text: 'finished' }]),
+  ], seen).createSession({ sessionId: 'progress-retries', systemPrompt: 'test', tools: [
+    { name: 'write', description: 'write', parameters: Type.Object({}), execute: async () => ({ content: `saved-${++writes}` }) },
+  ], onRetry: async ({ attempt, delayMs }) => { retries.push({ attempt, delayMs }); } });
+  assert.equal(await session.append({ content: 'single-prompt', signal: new AbortController().signal }), 'finished');
+  assert.equal(writes, 2);
+  assert.deepEqual(retries, [{ attempt: 2, delayMs: 2_000 }, { attempt: 2, delayMs: 2_000 }, { attempt: 2, delayMs: 2_000 }]);
+  assert.equal(seen.length, 6);
+  assert.match(seen.at(-1)!, /saved-1/);
+  assert.match(seen.at(-1)!, /saved-2/);
+  for (const context of seen) assert.equal(context.split('single-prompt').length - 1, 1);
+});
+
+test('partial failed text is not progress and retains the bounded 2s/4s backoff', async () => {
+  const seen: string[] = [];
+  const delays: number[] = [];
+  const session = caller(Array.from({ length: 3 }, (_, index) => response('error', [{ type: 'text', text: `partial-${index}` }], 'fetch failed')), seen)
+    .createSession({ sessionId: 'partial-is-not-progress', systemPrompt: 'test', tools: [], onRetry: async ({ delayMs }) => { delays.push(delayMs); } });
+  await assert.rejects(session.append({ content: 'test', signal: new AbortController().signal }), /fetch failed/);
+  assert.equal(seen.length, 3);
+  assert.deepEqual(delays, [2_000, 4_000]);
+});
+
 for (const [errorMessage, failureKind] of [
   ['Stream ended without finish_reason', 'transient_upstream'],
   ['unexpected EOF', 'transient_network'],
@@ -108,6 +141,28 @@ test('cancellation during backoff stops before another provider request', async 
   const session = caller([response('error', [], 'Upstream request failed')], seen).createSession({ sessionId: 'cancel-test', systemPrompt: 'test', tools: [], onRetry: async () => { abort.abort(); } });
   await assert.rejects(session.append({ content: 'test', signal: abort.signal }));
   assert.equal(seen.length, 1);
+});
+
+test('the original yield deadline stops backoff without hiding the provider failure', async () => {
+  const seen: string[] = [];
+  const session = caller([response('error', [], 'fetch failed')], seen).createSession({ sessionId: 'retry-deadline', systemPrompt: 'test', tools: [] });
+  await assert.rejects(session.append({ content: 'test', signal: new AbortController().signal,
+    yieldDeadline: { at: Date.now() + 50, reason: 'budget' } }), /fetch failed/);
+  assert.equal(seen.length, 1);
+});
+
+test('a tool failure during recovered work cannot trigger another network retry', async () => {
+  const seen: string[] = [];
+  let retries = 0;
+  const session = caller([
+    response('error', [], 'fetch failed'),
+    response('toolUse', [{ type: 'toolCall', id: 'write-failure', name: 'write', arguments: {} }]),
+    response('error', [], 'fetch failed'),
+  ], seen).createSession({ sessionId: 'fatal-recovered-tool', systemPrompt: 'test', tools: [
+    { name: 'write', description: 'write', parameters: Type.Object({}), execute: async () => { throw new Error('disk failure'); } },
+  ], onRetry: async () => { retries++; } });
+  await assert.rejects(session.append({ content: 'test', signal: new AbortController().signal }), /disk failure/);
+  assert.equal(retries, 1);
 });
 
 test('oversized first input fails before the provider or a doomed summary request', async () => {

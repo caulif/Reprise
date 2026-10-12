@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyAgentFailure } from '../../src/infrastructure/agent/failure.js';
+import { classifyAgentFailure, toAgentFailure } from '../../src/infrastructure/agent/failure.js';
 import { retryableRecoveryFailure } from '../../src/application/recovery/fail.js';
+
+test('failure diagnostics retain HTTP and TLS causes while redacting credentials', () => {
+  const failure = toAgentFailure({ code: 'agent_failure', attempts: 1, message: '\u001b[31mHTTP 500: opencode.ai TLS handshake timeout\u001b[0m\u0007 https://user:private-pass@example.test/v1?token=private-token Authorization: Bearer private-key' });
+  assert.match(failure.message, /HTTP 500: opencode.ai TLS handshake timeout/);
+  assert.doesNotMatch(failure.message, /private-pass|private-token|private-key/);
+  assert.doesNotMatch(failure.message, /\p{Cc}/u);
+});
 
 test('HTTP/2 and undici abort are transient, not cancelled or unknown', () => {
   const http2 = classifyAgentFailure(new Error('Upstream HTTP/2 stream failed'));
