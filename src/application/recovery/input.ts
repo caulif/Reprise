@@ -1,5 +1,5 @@
 import type { RecoveryAgentPort } from "../../agents/recovery-agent.js";
-import type { EventEnvelope, TaskCase } from "../../core/schema.js";
+import type { EventEnvelope, TaskCase, RecoveryGitStart } from "../../core/schema.js";
 import type { LocalWorkspaceProvider } from "../../environment/local-workspace-provider.js";
 import type { ProductPack } from "../../products/contract.js";
 import type { ExperimentActivity } from "../experiment-activity.js";
@@ -18,6 +18,8 @@ export type RecoveryAttemptInput = {
   sourceRoot: string;
   /** Optional Host-owned pre-mutation checkpoint captured before the task started. */
   checkpointRoot?: string;
+  /** Explicit task-before commit and complete additional-input allowlist; never inferred from history. */
+  gitStart?: RecoveryGitStart;
   taskCase: TaskCase;
   recovery: RecoveryAgentPort;
   /** Defaults to safe maximum-effort investigation in isolated staging. */

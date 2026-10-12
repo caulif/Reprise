@@ -158,7 +158,8 @@ for (const mode of ['before_hook', 'after_hook', 'execute', 'visible'] as const)
     ...(mode === 'visible' ? { onAssistantVisible: async () => { fail(); } } : {}),
   });
   await assert.rejects(provider.append({ content: 'Audit', signal: new AbortController().signal, yieldAfterTurn: () => undefined }), new RegExp(`Actual ${mode} audit or execution failure`));
-  assert.equal(contexts.length, mode === 'visible' ? 1 : 2, 'latched SDK error survives through actual length terminal, with no consumer continuation');
+  assert.equal(contexts.length, mode === 'execute' ? 2 : 1,
+    'fatal audit errors abort before another request; a recoverable raw execute error remains latched through the actual length terminal');
 });
 
 test('latched recoverable tool errors do not change ordinary completed invocation semantics', async () => {

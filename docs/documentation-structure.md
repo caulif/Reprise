@@ -7,6 +7,7 @@
 ```text
 docs/
 ├── architecture/           # 当前架构，四个按任务划分的专题
+├── .locl/                  # 用户指定的规划稿目录，当前未被 Git 忽略
 ├── decisions/              # 选择理由和历史，不是日常必读
 ├── plan/                   # 仅保留 archive 历史计划
 └── tui-audit/frames/        # Windows 门禁快照，非阅读材料

@@ -10,10 +10,40 @@ import { invocationYieldDeadline } from '../../src/infrastructure/agent/provider
 import { AgentInvocationStartedSchema } from '../../src/core/schema.js';
 import { piRequestUsage } from '../../src/infrastructure/agent/providers/pi/request-usage.js';
 import { Agent } from '@earendil-works/pi-agent-core';
+import { ToolPreconditionRejected } from '../../src/core/tool-precondition-rejected.js';
 
 const model: Model<'openai-completions'> = { id: 'fixture', name: 'fixture', api: 'openai-completions', provider: 'fixture', baseUrl: 'https://example.test', reasoning: false, input: ['text'], contextWindow: 128_000, maxTokens: 16_384, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 const config = { schemaVersion: 2 as const, provider: { kind: 'pi-catalog' as const, id: 'fixture' }, providerId: 'fixture', modelId: 'fixture', effort: 'low' as const };
 const reason = 'bounded_source_timeout';
+
+test('fatal tool failure takes priority over its internal abort without requiring a local deadline', () => {
+  const deadline = invocationYieldDeadline({ abort() {} }, new AbortController().signal);
+  const failure = new Error('Original Host audit failure');
+  deadline.recordFailure(failure);
+  assert.equal(deadline.signal.aborted, true);
+  assert.throws(() => deadline.reason(), error => error === failure);
+  deadline.dispose();
+});
+
+for (const fatal of [true, false]) test(`hosted ${fatal ? 'fatal audit' : 'correctable edit'} failure ${fatal ? 'stops immediately' : 'allows correction'}`, async () => {
+  let calls = 0;
+  const models = { streamSimple: () => {
+    calls++;
+    const stream = createAssistantMessageEventStream();
+    const terminal = message(calls === 1 ? 'toolUse' : 'stop');
+    if (calls === 1) terminal.content = [{ type: 'toolCall', id: 'edit', name: 'edit', arguments: {} }];
+    emit(stream, terminal); return stream;
+  } } as unknown as PiModels;
+  const session = await new AgentHost(new PiProviderAdapter({ models, model, config })).createSession({
+    role: 'recovery', systemPrompt: 'Test', tools: [{ name: 'edit', description: 'Edit fixture', parameters: Type.Object({}),
+      execute: async () => { throw fatal ? new Error('write audit persistence failed') : new ToolPreconditionRejected('edit_text_mismatch', 'Read current file and retry.'); },
+    }],
+  });
+  const result = await session.work({ promptContent: 'Edit', timeoutMs: 1_000 });
+  assert.equal(result.status, fatal ? 'failed' : 'completed');
+  assert.equal(calls, fatal ? 1 : 2);
+  await session.close();
+});
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; }
 function message(stopReason: AssistantMessage['stopReason'] = 'stop', errorMessage?: string): AssistantMessage {
   return { role: 'assistant', api: model.api, provider: model.provider, model: model.id, timestamp: 1, content: stopReason === 'stop' ? [{ type: 'text', text: 'Done' }] : [], stopReason,

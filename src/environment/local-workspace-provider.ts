@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { SAFE_ID, writeAtomic } from '../core/identity.js';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { Value } from '@sinclair/typebox/value';
-import { RecoveryCheckpointRecordSchema, RecoveryMarkerSchema, type RecoveryCheckpointRecord, type RecoveryControlledWrite } from '../core/schema.js';
+import { RecoveryCheckpointRecordSchema, RecoveryMarkerSchema, type RecoveryCheckpointRecord, type RecoveryControlledWrite, type RecoveryGitStart } from '../core/schema.js';
+import { materializeGitStart } from './recovery-git-start.js';
 import { getRecoveryControlledWriteBinding, replayControlledRecoveryDeltaBytes } from '../infrastructure/recovery-write-journal.js';
 import {
   copyTree as copyTree,
@@ -473,6 +474,23 @@ export class LocalWorkspaceProvider {
   async fingerprintRecoveryStaging(staging: RecoveryStaging): Promise<EnvironmentFingerprint> {
     this.#assertRecoveryStaging(staging);
     return (await this.#fingerprintTree(staging.root)).fingerprint;
+  }
+
+  async restoreGitStart(staging: RecoveryStaging, start: RecoveryGitStart, signal?: AbortSignal): Promise<void> {
+    this.#assertRecoveryStaging(staging);
+    const temporary = join(this.#root, 'rt', `g-${randomUUID().replaceAll('-', '')}`);
+    try {
+      await materializeGitStart(staging.root, temporary, start, signal);
+      const checked = await this.#fingerprintTree(temporary);
+      if (checked.budget.blockedReasons.length) throw new Error('Confirmed Git start exceeds workspace budget.');
+      signal?.throwIfAborted();
+      await rm(staging.root, { recursive: true, force: true });
+      await rename(temporary, staging.root);
+      await removeGitSink(gitSinkRoot(this.#root, staging.recoveryId));
+      await this.#isolateOwned(staging.root, staging.recoveryId);
+    } finally {
+      await rm(temporary, { recursive: true, force: true });
+    }
   }
 
   /** Mechanical checks only; never ranks evidence or rewrites ready/blocked from changed paths. */

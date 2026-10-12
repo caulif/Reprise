@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { AgentBudget, CandidateSpec, EventEnvelope, RunPolicy, TaskCase } from '../core/schema.js';
+import type { AgentBudget, CandidateSpec, EventEnvelope, RunPolicy, TaskCase, RecoveryGitStart } from '../core/schema.js';
 import type { ResolvedRuntime, RuntimeAvailability, RuntimeModelOffer, ProductRuntime } from '../core/runtime.js';
 import { readHarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import { PiModelCaller } from '../infrastructure/agent/model-caller.js';
@@ -54,7 +54,7 @@ export type ExperimentRequest = {
   compare?: boolean;
   deferComparison?: boolean;
 };
-export type RecoveryRequest = Omit<ExperimentRequest, 'onEvent' | 'expectedSourceFingerprint' | 'preResolvedBaseline' | 'recoveryAttempt' | 'recoveryExperimentId' | 'experimentId' | 'runId' | 'candidate'> & { onEvent?: (event: EventEnvelope) => void; signal?: AbortSignal };
+export type RecoveryRequest = Omit<ExperimentRequest, 'onEvent' | 'expectedSourceFingerprint' | 'preResolvedBaseline' | 'recoveryAttempt' | 'recoveryExperimentId' | 'experimentId' | 'runId' | 'candidate'> & { onEvent?: (event: EventEnvelope) => void; signal?: AbortSignal; gitStart?: RecoveryGitStart };
 
 export type ExperimentWorkflow = {
   readonly candidate?: CandidateSpec;
@@ -120,12 +120,15 @@ export function createExperimentWorkflow(input: {
       const experimentId = `recovery-${randomUUID()}`;
       const runId = `recovery-run-${randomUUID()}`;
       const owned = await beginOwnedActivity("prepare", experimentId, runId, input.dataDir, request.signal, request.onActivity);
-      const agents = await input.agents(owned.signal);
+      const recovery = request.gitStart
+        ? { recover: async () => { throw new Error('Confirmed Git start must not invoke a Recovery model.'); } }
+        : (await input.agents(owned.signal)).recovery;
       owned.signal.throwIfAborted();
       const attempt = await recoverExperiment({
         dataDir: input.dataDir, caseId: request.taskCase.caseId, experimentId, runId, sourceRoot: request.sourceRoot,
-        taskCase: request.taskCase, recovery: agents.recovery, now: input.now(), pack: packFor(request.taskCase.source.productId),
+        taskCase: request.taskCase, recovery, now: input.now(), pack: packFor(request.taskCase.source.productId),
         activity: owned.activity, signal: owned.signal, ...(request.onEvent ? { onEvent: request.onEvent } : {}),
+        ...(request.gitStart ? { gitStart: request.gitStart } : {}),
       });
       return ownedRecoveries.retain(attempt);
     },

@@ -7,6 +7,7 @@ export const SceneDescriptorSchema = Type.Object({
   caseId: Id,
   runId: Id,
   recoveryProviderRunId: Type.Optional(Id),
+  recoveryProviderLayout: Type.Optional(Type.Literal('compact-v1')),
   sourceRoot: Type.String({ minLength: 1 }),
   sealed: Type.Boolean(),
 });

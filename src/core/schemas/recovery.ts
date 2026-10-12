@@ -317,6 +317,7 @@ export const RecoveryLifecycleAttemptSchema = Type.Object({
   ]),
   operation: Type.Union([
     Type.Literal("begin_staging"),
+    Type.Literal("restore_confirmed_git_start"),
     Type.Literal("resolve_facts"),
     Type.Literal("invoke_model"),
     Type.Literal("validate"),

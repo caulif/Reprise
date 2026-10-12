@@ -44,7 +44,7 @@ test("checkpoint seed still invokes Recovery Agent with the same tools", async (
         assert.equal(context.staging.seed, "checkpoint");
         assert.deepEqual(
           tools.map((tool) => tool.name).sort(),
-          ["edit", "find", "grep", "ls", "read", "shell_exec", "write"],
+          ["cancel_process", "edit", "exec_command", "find", "grep", "ls", "read", "write", "write_stdin"],
         );
         await tools.find((tool) => tool.name === "write")?.execute(
           { path: "recovery.md", content: "# Recovery\n\nCheckpoint seed went through the Agent." },

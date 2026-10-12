@@ -28,8 +28,8 @@ import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export async function finalizeRecoveredCandidate(session: RecoveryRunSession): Promise<RecoveryAttempt> {
-  const { input, store, provider, staging, recovery, facts } = session;
-  if (!staging || !recovery || recovery.status !== "completed" || !facts)
+  const { input, store, provider, staging, recovery } = session;
+  if (!staging || !recovery || recovery.status !== "completed")
     throw new Error("Recovery finalize was not prepared.");
   await ensureRecoveryReport(staging.root, recovery.value);
   session.failureStage = "provider_validation_failed";
@@ -105,7 +105,7 @@ async function applyPreTaskReadyGate(
 ): Promise<boolean> {
   const { input, store, staging, activeProviderPreview } = session;
   if (envelopeStatus !== "ready" || !staging || !activeProviderPreview) return false;
-  const preTask = await evaluateRecoveryPreTaskConditions(staging.root, input.taskCase);
+  const preTask = await evaluateRecoveryPreTaskConditions(staging.root, input.taskCase, input.gitStart);
   if (preTask.readyAllowed) return false;
   if (!Value.Check(RecoveryPreTaskDiagnosisSchema, preTask)) {
     throw new Error("Recovery pre-task diagnosis does not match RecoveryPreTaskDiagnosisSchema.");
@@ -206,7 +206,7 @@ async function persistRecoveryCompletionArtifacts(
       taskCase: input.taskCase,
       baseline: activeProviderPreview.baseline,
       transcriptOk: Boolean(input.taskCase.initialInput?.text),
-      recoveryAgentStarted: true,
+      recoveryAgentStarted: !input.gitStart,
       retryable: false,
       reasonCode: diagnosisReasonCode({
         baseline: activeProviderPreview.baseline,

@@ -4,6 +4,7 @@ import { inlineBody, redactToolResultForModel, toolResultBody } from "./model-in
 import type { AgentAuditEvent, AgentAuditSink, AgentToolDefinition, AgentToolResult, InvocationCursor } from "./types.js";
 import { recordedImageRefs } from './artifacts.js';
 import { preserveToolDelivery } from './tool-delivery.js';
+import { redactModelVisibleText } from './model-input.js';
 
 export class AgentToolFailure extends Error {
   constructor(role: string, cause: unknown) {
@@ -47,7 +48,7 @@ export function instrumentTools(
               ...(cursor.invocationId ? { invocationId: cursor.invocationId } : {}),
             },
           });
-          const raw = await tool.execute(params, signal).catch((error: unknown) => {
+          const raw = await tool.execute(params, signal, { sessionId, invocationId: cursor.invocationId ?? sessionId }).catch((error: unknown) => {
             if (error instanceof ToolPreconditionRejected && !signal.aborted) rejection = error;
             throw error;
           });
@@ -158,8 +159,9 @@ function safeParams(value: unknown): Record<string, unknown> {
         ? { byteLength: Buffer.byteLength(item) }
         : key === "path" && typeof item === "string"
           ? redactAuditText(item).slice(0, 240)
-          : key === "command" && typeof item === "string"
+          : ["command", "cmd", "workdir", "chars", "session_id"].includes(key) && typeof item === "string"
             ? redactAuditText(item)
+            : ["yield_time_ms", "max_output_tokens"].includes(key) && typeof item === "number" ? item
             : typeof item;
   }
   return facts;
@@ -174,8 +176,8 @@ function safeDetails(value: unknown): Record<string, unknown> {
         ? redactAuditText(item)
         : key === "content" && typeof item === "string"
           ? { byteLength: Buffer.byteLength(item) }
-          : typeof item === "string" && item.length > 512
-            ? `${item.slice(0, 512)}…`
+          : typeof item === "string"
+            ? redactModelVisibleText(item).text
             : item;
   }
   return facts;
@@ -185,6 +187,5 @@ function redactAuditText(text: string): string {
   return text
     .replace(/(authorization\s*[=:]\s*)(?:"?)(?:Bearer\s+)?[^\s"]+/gi, "$1[REDACTED]")
     .replace(/((?:api[_-]?key|token|password|secret)\s*[=:]\s*)([^\s]+)/gi, "$1[REDACTED]")
-    .replace(/(Bearer\s+)[^\s]+/gi, "$1[REDACTED]")
-    .slice(0, 2048);
+    .replace(/(Bearer\s+)[^\s]+/gi, "$1[REDACTED]");
 }

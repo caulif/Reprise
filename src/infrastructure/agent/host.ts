@@ -91,7 +91,8 @@ export class AgentHost implements AgentHostPort {
           inputCapabilities: capabilities,
         },
       });
-      return new AgentSessionHost(sessionId, input.role, session, input.audit, undefined, capabilities, cursor);
+      return new AgentSessionHost(sessionId, input.role, session, input.audit, undefined, capabilities, cursor,
+        [...new Set(tools.flatMap(tool => tool.lifecycle ? [tool.lifecycle] : []))]);
     } catch (error) {
       await input.audit?.append({
         type: "agent.session_failed",

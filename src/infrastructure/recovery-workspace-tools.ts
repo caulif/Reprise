@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { randomUUID } from 'node:crypto';
 import { existsSync } from "node:fs";
 import { lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -16,6 +17,8 @@ import { ProcessBoundaryError, runProcess, type ProcessSpawner } from "./process
 import { shellExecutableAvailable, shellInvocation } from "./platform.js";
 import { integer, requiredString } from "./recovery-tools.js";
 import { boundedPng, IMAGE_LIMITS } from './image-limits.js';
+import { startProcessSession } from './process-session.js';
+import { workspaceProcessTools } from './workspace-process-tools.js';
 
 const MAX_BYTES = 262_144;
 const DEFAULT_READ_BYTES = 65_536;
@@ -56,6 +59,8 @@ export type RecoveryToolOptions = {
   shellExecutable?: string;
   homeRoot?: string;
   allowShell?: boolean;
+  managedExecution?: boolean;
+  onProcessLog?: (relativePath: string, truncated: boolean) => Promise<unknown>;
   /** When true, ls/read/grep/find accept absolute and other host-readable paths without write containment. */
   unrestrictedRead?: boolean;
   onControlledWrite?: RecoveryControlledWriteHook;
@@ -144,15 +149,39 @@ export function workspaceTools(
   options: RecoveryToolOptions = {},
 ): readonly AgentToolDefinition[] {
   const ctx = createRecoveryToolContext(stagingRoot, options);
-  return [
+  const processes = options.allowShell && options.managedExecution ? workspaceProcessTools({
+    description: shellExecDescription(options.unrestrictedRead),
+    ...(options.onProcessLog ? { onProcessLog: options.onProcessLog } : {}),
+    start: async (command, workdir, signal) => {
+      assertShellCommandDoesNotTargetSensitiveFiles(command);
+      assertShellDoesNotMutateReadonlyMount(ctx, command);
+      const base = resolve(options.shellCwd ?? ctx.root);
+      const cwd = workdir ? resolve(base, workdir) : base;
+      if (!pathContainedBy(base, cwd)) throw new ToolPreconditionRejected('invalid_path', 'workdir must stay within the writable workspace.');
+      await assertNoSymlinkAncestors(base, cwd);
+      const invocation = shellProcessInput(cwd, await ctx.ensureHome(), command, options);
+      const outputLog = `.reprise/recovery-work/process-${randomUUID()}.log`;
+      const outputLogPath = resolve(base, outputLog);
+      await assertNoSymlinkAncestors(base, outputLogPath);
+      return { process: startProcessSession({ ...invocation, signal, outputLogPath }), cwd: relativeInside(base, cwd) || '.', outputLog };
+    },
+  }) : undefined;
+  const files = [
     lsTool(ctx),
     readTool(ctx),
     grepTool(ctx),
     findTool(ctx),
     editTool(ctx),
     writeTool(ctx),
-    ...(options.allowShell ? [powershellTool(ctx)] : []),
+    ...(options.allowShell && !processes ? [powershellTool(ctx)] : []),
   ];
+  return [...files.map(tool => ({ ...tool,
+    ...(['ls', 'read', 'grep', 'find'].includes(tool.name) ? { executionMode: 'parallel' as const } : {}),
+    execute: async (params: unknown, signal: AbortSignal) => {
+      processes?.assertIdle();
+      return tool.execute(params, signal);
+    },
+  })), ...(processes?.tools ?? [])];
 }
 
 function lsTool(ctx: RecoveryToolContext): AgentToolDefinition {
@@ -352,8 +381,7 @@ function editTool(ctx: RecoveryToolContext): AgentToolDefinition {
         const newText = requiredString(value.newText, "newText");
         const containmentRoot = writeContainmentRoot(path);
         await assertNoSymlinkAncestors(containmentRoot, path.absolute);
-        await assertRegular(path.absolute);
-        const current = await readFile(path.absolute, "utf8");
+        const current = await readEditableFile(path.absolute);
         const index = current.indexOf(oldText);
         if (index < 0) throw new ToolPreconditionRejected("edit_text_mismatch", "oldText was not found in the file. Read the current file and retry with one exact text span.");
         if (current.indexOf(oldText, index + 1) >= 0) throw new ToolPreconditionRejected("edit_text_mismatch", "oldText matches more than once; make it unique. Read the current file and retry with one exact text span.");
@@ -479,7 +507,26 @@ function runShell(
 ): Promise<{ content: string; details: Record<string, unknown> }> {
   const timeoutMs = options.shellTimeoutMs ?? RECOVERY_SHELL_TIMEOUT_MS;
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1) throw new Error("Shell timeout must be a positive integer.");
-  if (!existsSync(root)) throw new Error("Working directory does not exist. Cannot execute PowerShell commands.");
+  const invocation = shellProcessInput(root, home, command, options);
+  return runProcess({
+    ...invocation,
+    operation: "shell_exec", allowNonzeroExit: true, killTree: true,
+    signal, timeoutMs, maxOutputBytes: MAX_BYTES, truncateOutput: true,
+  }).then((result) => {
+    const content = [result.stdout, result.stderr ? `stderr:\n${result.stderr}` : ""].filter(Boolean).join("\n");
+    return { content: content || "ok", details: {
+      command: redactCommand(command), cwd: ".", exitCode: result.exitCode,
+      stdoutBytes: Buffer.byteLength(result.stdout), stderrBytes: Buffer.byteLength(result.stderr),
+      truncated: result.outputTruncated, networkAccess: looksLikeNetworkCommand(command),
+    } };
+  }).catch((error) => {
+    if (error instanceof ProcessBoundaryError) throw formatShellBoundary(error, process.platform === 'win32', invocation.command);
+    throw error;
+  });
+}
+
+function shellProcessInput(root: string, home: string, command: string, options: RecoveryToolOptions) {
+  if (!existsSync(root)) throw new ToolPreconditionRejected('invalid_path', 'Working directory does not exist.');
   const windows = process.platform === "win32";
   const resolved = windows
     ? resolveWindowsPowershell(options.shellExecutable, options.findExecutableOnPath)
@@ -492,38 +539,14 @@ function runShell(
   if (!windows && portableShell && !shellExecutableAvailable(portableShell)) {
     throw new Error("ENOENT: Bash executable was not found (未找到 Bash).");
   }
-  return runProcess({
-    operation: "shell_exec",
+  return {
     executableKind: windows ? resolved!.kind : portableShell!.kind,
     command: windows ? resolved!.executable : portableShell!.executable,
     args: windows ? invocation!.args : portableShell!.args,
     cwd: windows ? invocation!.spawnCwd : root,
     env: { ...sanitizedEnvironment(home), ...options.shellEnv, ...(windows ? invocation!.extraEnv : {}) },
-    allowNonzeroExit: true,
-    killTree: true,
-    signal,
-    timeoutMs,
-    maxOutputBytes: MAX_BYTES,
-    truncateOutput: true,
     ...(options.spawnProcess ? { spawnProcess: options.spawnProcess } : {}),
-  }).then((result) => {
-    const content = [result.stdout, result.stderr ? `stderr:\n${result.stderr}` : ""].filter(Boolean).join("\n");
-    return {
-      content: content || "ok",
-      details: {
-        command: redactCommand(command),
-        cwd: ".",
-        exitCode: result.exitCode,
-        stdoutBytes: Buffer.byteLength(result.stdout),
-        stderrBytes: Buffer.byteLength(result.stderr),
-        truncated: result.outputTruncated,
-        networkAccess: looksLikeNetworkCommand(command),
-      },
-    };
-  }).catch((error) => {
-    if (error instanceof ProcessBoundaryError) throw formatShellBoundary(error, windows, windows ? resolved?.executable : portableShell?.executable);
-    throw error;
-  });
+  };
 }
 
 function windowsPowershellInvocation(
@@ -907,6 +930,15 @@ async function listTree(ctx: RecoveryToolContext, start: ResolvedWorkspacePath, 
 async function assertRegular(path: string): Promise<void> {
   const info = await lstat(path);
   if (!info.isFile() || info.isSymbolicLink()) throw new Error("Path must name a regular file.");
+}
+
+async function readEditableFile(path: string): Promise<string> {
+  try { await assertRegular(path); return await readFile(path, 'utf8'); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+      throw new ToolPreconditionRejected('invalid_path', 'The file does not exist. Read/list the workspace and choose an existing file or use write to create it.');
+    throw error;
+  }
 }
 
 async function assertWritableFile(path: string): Promise<void> {

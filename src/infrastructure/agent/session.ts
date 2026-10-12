@@ -55,6 +55,7 @@ export class AgentSessionHost {
     failure?: AgentFailure,
     inputCapabilities: readonly string[] = [],
     cursor: InvocationCursor = { requestIndex: 0 },
+    private readonly toolLifecycles: readonly NonNullable<import('./types.js').AgentToolDefinition['lifecycle']>[] = [],
   ) {
     this.#sessionId = sessionId;
     this.#role = role;
@@ -99,6 +100,7 @@ export class AgentSessionHost {
     this.#shutdown = (async () => {
       this.#session?.cancel();
       await this.#session?.waitForIdle?.();
+      if (invocationId) await this.#drainTools(invocationId, false);
       if (type === 'agent.session_cancelled' && invocationId) {
         await this.#audit?.append({
           type: 'agent.invocation_cancelled',
@@ -187,8 +189,11 @@ export class AgentSessionHost {
       }
       throw error;
     } finally {
-      this.#busy = false;
-      this.#cursor.invocationId = undefined;
+      try { await this.#drainTools(invocationId, false); }
+      finally {
+        this.#busy = false;
+        this.#cursor.invocationId = undefined;
+      }
     }
   }
 
@@ -278,6 +283,7 @@ export class AgentSessionHost {
         if (this.#session!.waitForIdle) await abortable(this.#session!.waitForIdle(), signal);
         if (controller.signal.aborted) throw timeoutError();
         if (cancelled()) return { done: true, result: { status: 'cancelled', sessionId: this.#sessionId, invocationId } };
+        await this.#drainTools(invocationId);
         const payload = { schemaVersion: 1, invocationId, reason: output.reason };
         if (!Value.Check(AgentInvocationYieldedSchema, payload)) throw new Error('Invalid invocation yield audit payload.');
         await this.#audit?.append({ type: 'agent.invocation_yielded', sessionId: this.#sessionId, role: this.#role, payload });
@@ -333,6 +339,7 @@ export class AgentSessionHost {
     invocationId: string,
     attempts: number,
   ): Promise<void> {
+    await this.#drainTools(invocationId);
     await this.#audit?.append({
       type: "agent.invocation_completed",
       sessionId: this.#sessionId,
@@ -345,6 +352,12 @@ export class AgentSessionHost {
         kind: request.kind,
       },
     });
+  }
+
+  async #drainTools(invocationId: string, requireCompleted = true): Promise<void> {
+    const results = await Promise.allSettled(this.toolLifecycles.map(lifecycle => lifecycle.finishInvocation({ sessionId: this.#sessionId, invocationId }, requireCompleted)));
+    const failures = results.filter(result => result.status === 'rejected');
+    if (failures.length) throw new AggregateError(failures.map(result => result.reason as unknown), 'Agent tool lifecycle cleanup failed.');
   }
 
   async #failed(

@@ -3,6 +3,20 @@ import { CandidateRuntimeEventTypeSchema, type CandidateLaunchContext, type Cand
 
 export type Delivery = 'accepted' | 'rejected' | 'unknown';
 export type RuntimeStopReason = 'completed' | 'cancelled' | 'failed' | 'shutdown';
+export type ManagedProcessSnapshot = {
+  state: 'running' | 'completed' | 'cancelled' | 'failed';
+  output: string;
+  truncated: boolean;
+  remainingOutput: boolean;
+  exitCode?: number;
+};
+/** Invocation-owned pipe process; waiting never imposes a command lifetime. */
+export interface ManagedProcessSession {
+  readonly running: boolean;
+  readonly logTruncated?: boolean;
+  poll(waitMs: number, maxBytes: number, chars?: string): Promise<ManagedProcessSnapshot>;
+  cancel(): Promise<void>;
+}
 export type UserMessage = { id: string; text: string };
 export type MessageIdentity = { runId: string; turnIndex: number; clientMessageId: string };
 export type DeliveryReceipt = {

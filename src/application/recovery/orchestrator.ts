@@ -15,7 +15,7 @@ export type RecoveryLifecycleState =
 
 const transitions: Record<RecoveryLifecycleState, readonly RecoveryLifecycleState[]> = {
   created: ["staged", "failed"],
-  staged: ["forensics", "failed"],
+  staged: ["forensics", "validated", "failed"],
   forensics: ["model", "failed"],
   model: ["validated", "failed"],
   validated: ["accepted", "failed"],

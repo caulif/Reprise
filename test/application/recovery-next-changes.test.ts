@@ -13,7 +13,7 @@ import { SNAPSHOT_LIMITS } from "../../src/environment/snapshots.js";
 import { now, VerifiedRuntime, input } from "../codex-experiment-support.js";
 
 const exec = promisify(execFile);
-const TOOLS = ["edit", "find", "grep", "ls", "read", "shell_exec", "write"] as const;
+const TOOLS = ["cancel_process", "edit", "exec_command", "find", "grep", "ls", "read", "write", "write_stdin"] as const;
 
 function readyRecovery(sessionId: string): RecoveryAgentPort {
   return {

@@ -11,6 +11,7 @@ import { readJsonFile } from "./experiment-history-list.js";
 import { resolvedExperimentRoot } from "./experiment-layout.js";
 import { candidateStartBlocked, candidateGateFromAttempt } from "./candidate-start.js";
 import type { RecoveryAttempt } from "./recovery/types.js";
+import { compactRecoveryProviderRoot } from './recovery-provider-layout.js';
 
 function recordedFsPath(path: string): string {
   const trimmed = path.trim();
@@ -36,6 +37,9 @@ export async function persistPreparedScene(attempt: RecoveryAttempt, sourceRoot:
     ...(attempt.runId && attempt.baseline.root &&
       resolve(attempt.baseline.root) === resolve(attempt.experimentRoot, "environment", "recovery", attempt.runId, "baselines", taskCase.caseId)
       ? { recoveryProviderRunId: attempt.runId } : {}),
+    ...(attempt.runId && attempt.baseline.root &&
+      resolve(attempt.baseline.root) === resolve(compactRecoveryProviderRoot(attempt.experimentRoot, attempt.runId), 'baselines', taskCase.caseId)
+      ? { recoveryProviderRunId: attempt.runId, recoveryProviderLayout: 'compact-v1' as const } : {}),
     sourceRoot: recordedFsPath(sourceRoot),
     sealed,
   };
@@ -65,7 +69,11 @@ export async function loadSealedScene(dataDir: string, experimentId: string): Pr
   if (!Value.Check(TaskCaseSchema, taskCaseValue)) {
     throw new CliError("not_found", `TaskCase ${descriptorValue.caseId} was not found.`, descriptorValue.caseId);
   }
-  const providerRoot = descriptorValue.recoveryProviderRunId
+  if (descriptorValue.recoveryProviderLayout && !descriptorValue.recoveryProviderRunId)
+    throw new CliError('failed', 'Compact scene is missing its Recovery run identity.', experimentId);
+  const providerRoot = descriptorValue.recoveryProviderLayout === 'compact-v1'
+    ? compactRecoveryProviderRoot(experimentRoot, descriptorValue.recoveryProviderRunId!)
+    : descriptorValue.recoveryProviderRunId
     ? join(experimentRoot, "environment", "recovery", descriptorValue.recoveryProviderRunId)
     : join(experimentRoot, "environment");
   const provider = new LocalWorkspaceProvider(providerRoot);
