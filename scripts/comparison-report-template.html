@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>结果对比 · 通用报告骨架</title>
+  <style>
+    :root{color-scheme:light;--ink:#202b36;--muted:#697480;--line:#e2e6e9;--accent:#246858;--paper:#fff;--bg:#f6f7f5}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.7 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+    main{max-width:960px;margin:auto;padding:44px 32px 32px}
+    header{margin-bottom:26px}
+    .eyebrow{margin:0 0 9px;color:var(--muted);font-size:12px;letter-spacing:.08em}
+    h1{margin:0;font-size:29px;line-height:1.35;letter-spacing:-.03em}
+    .intro{margin:8px 0 0;color:var(--muted);font-size:14px}
+    .verdict{padding:22px 26px;background:#edf3ef;border-left:3px solid var(--accent);border-radius:0 12px 12px 0;margin-bottom:30px}
+    .label{margin:0 0 7px;color:var(--accent);font-size:12px;font-weight:650}
+    .verdict h2{margin:0;font-size:21px;line-height:1.5}
+    .verdict p:last-child{margin:8px 0 0;color:#4d6058}
+    section>h2{font-size:16px;margin:0 0 14px}
+    .differences{display:grid;gap:12px}
+    article{display:grid;grid-template-columns:32px minmax(0,1fr);gap:12px;padding:20px 22px;background:var(--paper);border:1px solid var(--line);border-radius:12px}
+    .number{font-size:12px;color:var(--muted);padding-top:3px;font-variant-numeric:tabular-nums}
+    article h3{margin:0 0 6px;font-size:17px;line-height:1.5}
+    article p{margin:0;color:#56616d}
+    .evidence{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0 0}
+    figure{margin:0;min-width:0}
+    .placeholder{display:grid;place-items:center;min-height:135px;background:#f4f6f7;border:1px dashed #cbd3d9;border-radius:8px;color:#7a8791;text-align:center;font-size:13px;padding:18px}
+    .placeholder span{display:block;font-size:11px;margin-top:4px}
+    figcaption{font-size:12px;color:var(--muted);margin-top:6px}
+    .metrics{margin-top:28px}
+    .table-wrap{border:1px solid var(--line);border-radius:12px;background:var(--paper);overflow:hidden}
+    table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:14px}
+    th,td{padding:12px 18px;text-align:left;overflow-wrap:anywhere}
+    thead{background:#f0f2ef;color:#5d6863;font-size:12px}
+    tbody tr+tr{border-top:1px solid var(--line)}
+    th:first-child{width:34%}
+    td{font-variant-numeric:tabular-nums}
+    .note{margin:8px 0 0;font-size:12px;color:var(--muted)}
+    footer{margin-top:26px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+    @media(max-width:600px){main{padding:26px 18px}h1{font-size:25px}.verdict{padding:18px}.verdict h2{font-size:19px}article{padding:17px 14px;grid-template-columns:23px minmax(0,1fr);gap:7px}.evidence{grid-template-columns:1fr}.placeholder{min-height:115px}th,td{padding:11px 10px;font-size:12px}}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="eyebrow">结果对比 / 模板预览</p>
+    <h1>哪一版更符合你的目标？</h1>
+    <p class="intro">版本 A 与版本 B · 此页文字和证据框均为示意，不代表实际测试结论。</p>
+  </header>
+
+  <section class="verdict" aria-labelledby="verdict-title">
+    <p class="label">总体判断</p>
+    <h2 id="verdict-title">一句话给出选择，说明最关键的理由。</h2>
+    <p>必要时补充一个会影响选择的取舍；证据不足时直接说明，避免强行排名。</p>
+  </section>
+
+  <section aria-labelledby="differences-title">
+    <h2 id="differences-title">关键差异</h2>
+    <div class="differences">
+      <article>
+        <div class="number" aria-hidden="true">01</div>
+        <div>
+          <h3>直接说出最重要的差异</h3>
+          <p>用一小段讲清 A 与 B 的实际表现，以及它对用户目标的影响。把必要证据放在这里，结论只说一次。</p>
+          <div class="evidence">
+            <figure>
+              <div class="placeholder">版本 A 的必要证据<span>图片、关键数值、短摘录或文件位置</span></div>
+              <figcaption>A · 一句解释证据说明了什么。</figcaption>
+            </figure>
+            <figure>
+              <div class="placeholder">版本 B 的必要证据<span>与 A 对应，方便直接比较</span></div>
+              <figcaption>B · 一句解释证据说明了什么。</figcaption>
+            </figure>
+          </div>
+        </div>
+      </article>
+      <article>
+        <div class="number" aria-hidden="true">02</div>
+        <div>
+          <h3>另一个会改变用户选择的差异</h3>
+          <p>只保留有价值的取舍。证据可以直接写进这段话，不要求每项都有图片，也不要求凑够固定条数。</p>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="metrics" aria-labelledby="metrics-title">
+    <h2 id="metrics-title">运行指标</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">指标</th><th scope="col">版本 A</th><th scope="col">版本 B</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">时长</th><td>—</td><td>—</td></tr>
+          <tr><th scope="row">Tokens</th><td>—</td><td>—</td></tr>
+          <tr><th scope="row">费用</th><td>—</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">时长用 h/m/s，Tokens 仅列总量（k = 千、M = 百万）；费用为 USD 估算。缺失值写“未知”。</p>
+  </section>
+  <footer>报告到此结束 · 不设置补充详情、检查记录或方法附录。</footer>
+</main>
+</body>
+</html>

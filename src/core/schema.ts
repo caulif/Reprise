@@ -286,6 +286,7 @@ export type { ComparisonEvidenceQuoteParams, ComparisonEvidenceQuoteSpec } from 
 export { RenderGeometryQueriesSchema, RenderGeometrySampleSchema, RENDER_GEOMETRY_MAX_SAMPLE_BYTES } from "./schemas/render-geometry.js";
 export type { RenderGeometryQuery, RenderGeometrySample } from "./schemas/render-geometry.js";
 export { ComparisonRenderMeasurementDocumentSchema } from './comparison-render-check-schema.js';
+export { CodingTrialImageSchema, CodingTrialRenderSchema, CodingTrialTransformSchema, CodingTrialSummarySchema, CodingTrialInputHashesSchema, CodingTrialAuditSchema } from './schemas/comparison-coding-trial.js';
 
 
 
