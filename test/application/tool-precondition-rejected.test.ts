@@ -52,11 +52,12 @@ for (const role of ['recovery', 'comparison'] as const) for (const oldText of ['
 for (const mode of ['audit', 'persist', 'read'] as const) test(`edit rejection does not hide actual ${mode} failure`, async t => {
   const f = await fixture(t); const events: AgentAuditEvent[] = []; let failures = 0;
   await writeFile(join(f.work, 'notes.md'), 'current');
+  if (mode === 'read') await mkdir(join(f.work, 'not-a-file.md'));
   const tools = workspaceTools(f.work, { onControlledWrite: async () => {
     if (mode === 'persist') { failures++; throw new Error('Actual edit journal failure'); }
   } });
   const responses = [turn('edit', { path: 'notes.md', oldText: 'absent', newText: 'changed' }),
-    turn('edit', { path: mode === 'read' ? 'missing.md' : 'notes.md', oldText: 'current', newText: 'changed' }),
+    turn('edit', { path: mode === 'read' ? 'not-a-file.md' : 'notes.md', oldText: 'current', newText: 'changed' }),
     message([{ type: 'text', text: 'Done' }], 'stop')];
   const session = await new AgentHost(new PiModelCaller(config, native(responses))).createSession({ role: 'recovery',
     systemPrompt: 'Correct edits', tools, audit: { append: async event => {
@@ -69,7 +70,7 @@ for (const mode of ['audit', 'persist', 'read'] as const) test(`edit rejection d
   const result = await session.work({ promptContent: 'Update notes', timeoutMs: 2_000 });
   assert.equal(result.status, 'failed', JSON.stringify(result));
   if (mode !== 'read') assert.ok(failures > 0);
-  else assert.ok(events.some(event => event.type === 'agent.tool_failed' && /ENOENT/.test(String(event.payload.message))));
+  else assert.ok(events.some(event => event.type === 'agent.tool_failed' && /regular file/.test(String(event.payload.message))));
   if (mode !== 'audit') assert.equal(await readFile(join(f.work, 'notes.md'), 'utf8'), 'current');
   assert.equal(events.some(event => event.type === 'agent.invocation_completed'), false);
 });
@@ -175,6 +176,12 @@ for (const mode of ['corrected', 'audit', 'persist'] as const) test(`native inva
     assert.ok(events.some(event => event.type === 'agent.invocation_failed'));
     assert.equal(events.some(event => event.type === 'agent.invocation_completed'), false);
   }
+  if (mode === 'audit') {
+    assert.equal(contexts.length, 1, 'fatal audit failure stops before any correction request');
+    assert.equal(events.some(event => event.type === 'agent.tool_called' && event.payload.tool === 'read'), false);
+    assert.equal(events.filter(event => event.type === 'agent.tool_failed' && String(event.payload.message).includes('relative path within the workspace')).length, 1);
+    return;
+  }
   assert.ok(events.some(event => event.type === 'agent.tool_completed' && event.payload.tool === 'read' && !event.payload.nativeHook));
   assert.match(JSON.stringify(contexts[3]!.messages), /sealed/);
   const denied = events.filter(event => event.type === 'agent.tool_failed' && String(event.payload.message).includes('relative path within the workspace'));
@@ -207,15 +214,19 @@ for (const mode of ['execute', 'persist', 'delivery', 'audit', 'before_hook', 'a
   if (mode === 'persist') await assert.rejects(readFile(join(f.work, 'result.txt')), { code: 'ENOENT' });
 });
 
-for (const failure of ['Actual ordinary tool execution failure', '400 context_length_exceeded: Your input exceeds the context window of this model.']) test(`a Host tool failure (${failure}) remains fatal after the native SDK produces a normal stop`, async () => {
+for (const failure of ['Actual ordinary tool execution failure', '400 context_length_exceeded: Your input exceeds the context window of this model.']) test(`a Host tool failure (${failure}) stops the native SDK before its next generation`, async () => {
   const events: AgentAuditEvent[] = [], contexts: Context[] = [];
   const session = await new AgentHost(new PiModelCaller(config, native([turn('check'), message([{ type: 'text', text: 'Done' }], 'stop')], contexts))).createSession({
     role: 'comparison', systemPrompt: 'Check', tools: [{ name: 'check', description: 'Actual failing check', parameters: Type.Object({}),
       execute: async () => { throw new Error(failure); } }], audit: { append: async event => { events.push(event); } },
   });
   const result = await session.work({ promptContent: 'Check the actual source', timeoutMs: 2_000 });
-  assert.equal(contexts.length, 2, 'the SDK actually continues to the normal final stop after its error tool result');
+  assert.equal(contexts.length, 1, 'a fatal Host tool failure cannot continue to the normal final stop or trigger overflow recovery');
   assert.equal(result.status, 'failed', JSON.stringify(result));
+  if (result.status === 'failed') {
+    assert.equal(result.failure.kind, 'tool');
+    assert.equal(result.failure.retryable, false);
+  }
   assert.ok(events.some(event => event.type === 'agent.tool_failed' && event.payload.message === failure));
   assert.equal(events.some(event => event.type === 'agent.invocation_completed'), false);
 });

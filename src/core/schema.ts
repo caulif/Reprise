@@ -1,4 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
+export { RecoveryGitStartSchema, type RecoveryGitStart } from './recovery-git-start.js';
 export { ComparisonAutonomousContractSchema } from './comparison-review-schema.js';
 import { EvidenceRefSchema, Hash, Id } from "./schemas/ids.js";
 export { AgentUsageFactsSchema, type ComparisonResources, type AgentUsageFacts } from './comparison-resources-schema.js';

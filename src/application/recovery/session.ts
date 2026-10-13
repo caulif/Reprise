@@ -5,6 +5,9 @@ import type { RecoveryContext, RecoveryPlaybook, RecoveryResult } from "../../ag
 import type {
   RecoveryControlledWrite,
 } from "../../core/schema.js";
+import { Value } from '@sinclair/typebox/value';
+import { RecoveryGitStartSchema } from '../../core/schema.js';
+import { compactRecoveryProviderRoot } from '../recovery-provider-layout.js';
 import {
   LocalWorkspaceProvider,
   type EnvironmentBaseline,
@@ -95,6 +98,10 @@ export async function createRecoveryRunSession(
   if (input.checkpointRoot && !isAbsolute(input.checkpointRoot))
     throw new Error("Recovery checkpoint path must be absolute.");
   assertIds(input);
+  if (input.gitStart && !Value.Check(RecoveryGitStartSchema, input.gitStart))
+    throw new Error('Recovery gitStart does not match RecoveryGitStartSchema.');
+  if (input.gitStart && input.checkpointRoot)
+    throw new Error('Recovery accepts either gitStart or a checkpoint, not both.');
   const maxModelAttempts = input.maxModelAttempts ?? 2;
   if (!Number.isSafeInteger(maxModelAttempts) || maxModelAttempts < 1)
     throw new Error("Recovery maxModelAttempts must be a positive integer.");
@@ -104,6 +111,7 @@ export async function createRecoveryRunSession(
     new LocalWorkspaceProvider(
       input.checkpointRoot
         ? dirname(dirname(resolve(input.checkpointRoot)))
+        : input.gitStart ? compactRecoveryProviderRoot(experimentRoot, input.runId)
         : join(experimentRoot, "environment", "recovery", input.runId),
     );
   await mkdir(experimentRoot, { recursive: true });

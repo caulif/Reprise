@@ -141,14 +141,21 @@ test("Recovery persists shell audit details alongside the report narrative for c
       createSession: (session) => ({
         append: async () => {
           const shell = session.tools.find(
-            (tool) => tool.name === "shell_exec",
+            (tool) => tool.name === "exec_command",
           );
           const report = session.tools.find(
             (tool) => tool.name === "write",
           );
           assert.ok(shell);
           assert.ok(report);
-          await shell.execute({ command }, new AbortController().signal);
+          const signal = new AbortController().signal;
+          let receipt = await shell.execute({ cmd: command }, signal);
+          while (isRecord(receipt.details) && receipt.details.state === "running") {
+            const poll = session.tools.find((tool) => tool.name === "write_stdin");
+            assert.ok(poll);
+            receipt = await poll.execute({ session_id: receipt.details.session_id }, signal);
+          }
+          assert.equal(isRecord(receipt.details) ? receipt.details.exitCode : undefined, 0);
           await report.execute(
             {
               path: "recovery.md",
@@ -190,13 +197,19 @@ test("Recovery persists shell audit details alongside the report narrative for c
       (event) =>
         event.type === "agent.tool_completed" &&
         isRecord(event.payload) &&
-        event.payload.tool === "shell_exec",
+        event.payload.tool === "exec_command",
     );
   const details = isRecord(shellCompleted?.payload)
     ? shellCompleted.payload.details
     : undefined;
 
   assert.equal(isRecord(details) ? details.command : undefined, command);
+  const logEvent = store.events("recovery-audit-run").find(
+    (event) => event.type === "recovery.process_log_committed",
+  );
+  assert.ok(isRecord(logEvent?.payload));
+  assert.equal(typeof logEvent.payload.artifactId, "string");
+  assert.match(await readFile(join(attempt.experimentRoot, "runs", "recovery-audit-run", "artifacts", logEvent.payload.artifactId as string), "utf8"), /recovery-audit-marker/);
   assert.match(
     await readFile(
       join(attempt.experimentRoot, "runs", "recovery-audit-run", "artifacts", "recovery-md"),

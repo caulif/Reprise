@@ -8,6 +8,7 @@ import type { ExperimentResult } from "./experiment.js";
 import { resolveHistoricalFinalPath } from "./historical-final-discovery.js";
 import { finalDeliverableRank, isHistoricalVisualPath } from "./openable-final-path.js";
 import type { TaskCase } from "../core/schema.js";
+import { compactRecoveryExperimentRoot } from './recovery-provider-layout.js';
 
 export type ResultPathLinks = {
   readonly report?: string;
@@ -17,7 +18,7 @@ export type ResultPathLinks = {
   readonly replica?: string;
 };
 
-/** Accepts only the two Host-owned Provider layouts recorded for this candidate run. */
+/** Accepts Host-owned Provider layouts within this experiment and candidate run. */
 export function replicaWorkspaceLocation(experimentRoot: string, runId: string, workspaceRoot: string): { providerRoot: string; workspaceRoot: string } | undefined {
   if (!SAFE_ID.test(runId)) return undefined;
   const environmentRoot = resolve(experimentRoot, 'environment');
@@ -25,6 +26,10 @@ export function replicaWorkspaceLocation(experimentRoot: string, runId: string, 
   if (sameFsPath(workspacePath, join(environmentRoot, 'runs', runId))) {
     return { providerRoot: environmentRoot, workspaceRoot: workspacePath };
   }
+  const compactRoot = compactRecoveryExperimentRoot(resolve(experimentRoot));
+  const compactParts = relative(compactRoot, workspacePath).split(sep);
+  if (compactParts.length === 3 && /^[a-f0-9]{32}$/.test(compactParts[0] ?? '') && compactParts[1] === 'runs' && compactParts[2] === runId)
+    return { providerRoot: join(compactRoot, compactParts[0]!), workspaceRoot: workspacePath };
   const parts = relative(join(environmentRoot, 'recovery'), workspacePath).split(sep);
   if (parts.length !== 3 || !SAFE_ID.test(parts[0] ?? '') || parts[1] !== 'runs' || parts[2] !== runId) return undefined;
   return { providerRoot: join(environmentRoot, 'recovery', parts[0]!), workspaceRoot: workspacePath };

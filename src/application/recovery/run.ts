@@ -8,6 +8,7 @@ import { beginRecoveryStaging } from "./staging.js";
 import { runRecoveryForensics } from "./run-forensics.js";
 import { enforceRecoveryReadiness, invokeRecoveryAgent } from "./run-model.js";
 import { finalizeRecoveredCandidate } from "./run-finalize.js";
+import { restoreConfirmedGitStart } from './git-start.js';
 import { classifyRecoveryFailureStage } from "./fail.js";
 import { finishExperimentActivity, registerActivity, activityControlReady } from "../experiment-activity.js";
 import type { RecoveryAttemptInput } from "./input.js";
@@ -97,6 +98,10 @@ async function runRecoverExperiment(session: RecoveryRunSession): Promise<Recove
   session.input.signal?.throwIfAborted();
   await beginRecoveryStaging(session);
   session.input.signal?.throwIfAborted();
+  if (session.input.gitStart) {
+    await restoreConfirmedGitStart(session);
+    return finalizeRecoveredCandidate(session);
+  }
   await runRecoveryForensics(session);
   session.input.signal?.throwIfAborted();
   await invokeRecoveryAgent(session);

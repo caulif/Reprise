@@ -26,7 +26,7 @@ import type { AgentToolDefinition, StructuredAgentResult } from "../../infrastru
 import { RecoveryValidationError } from "../../environment/local-workspace-provider.js";
 import { assertRecoveryReadyPreconditions } from "../../environment/recovery-pre-task.js";
 import { ProcessBoundaryError } from "../../infrastructure/process-runner.js";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { safeAgentFailureText } from "../../infrastructure/agent/failure.js";
 
 export function buildRecoveryAgentContext(session: RecoveryRunSession): RecoveryContext {
@@ -98,6 +98,18 @@ export function buildRecoveryAgentTools(session: RecoveryRunSession): void {
     },
     denyDestructiveOnPrefix: [OBSERVATIONS_MOUNT, SOURCE_MOUNT],
     allowShell: true,
+    managedExecution: true,
+    onProcessLog: async (relativePath, logTruncated) => {
+      const bytes = await readFile(join(workspaceRoot, relativePath));
+      const artifactId = `recovery-process-log-${sha256(relativePath).slice(0, 16)}`;
+      const artifact = await store.commitArtifact({ artifactId, runId: input.runId,
+        kind: 'recovery_process_output', mediaType: 'text/plain', bytes,
+        operationId: `${artifactId}-created` });
+      const reference = { artifactId: artifact.artifactId, contentHash: artifact.contentHash, byteLength: artifact.byteLength, logTruncated };
+      await store.append({ type: 'recovery.process_log_committed', runId: input.runId,
+        operationId: runOperationId(input.runId, `${artifactId}-committed`), payload: reference });
+      return reference;
+    },
     shellEnv: { REPRISE_SOURCE_MOUNT: staging.sourceRoot },
     ...(activeStaging?.temporaryRoot ? { homeRoot: activeStaging.temporaryRoot } : {}),
     onControlledWrite: async (entry) => {

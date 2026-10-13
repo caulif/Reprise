@@ -1,6 +1,16 @@
 # Recovery 与隔离
 
-Recovery 的目标是给历史任务找到一个可执行的起点，不宣称恢复了所有过去状态。它在候选运行前完成，使用一个可写工作副本、只读 source 挂载、只读 observations 和产品 playbook。
+Recovery 的目标是恢复任务前的源码与必要输入，不宣称恢复了所有过去状态。它在候选运行前完成，使用一个可写工作副本、只读 source 挂载、只读 observations 和产品 playbook。默认不安装依赖、不完整构建；候选按实际验证需求准备环境。用户明确要求恢复运行环境时仍按该目标调查与检查，未执行的环境检查不宣称通过。
+
+## 明确 Git 起点
+
+调用方可在 `RecoveryAttemptInput` 或 workflow 的 `RecoveryRequest` 显式传入 `gitStart`：完整 commit SHA 与必填 `inputs` 文件清单，每个输入有相对路径及 SHA-256；空清单明确表示只需提交内容。该契约经过 schema 校验，不从历史 `taskContext.historicalCommit` 自动生成，也没有新增 TUI 自动推断入口。
+
+Provider 在已有隔离 staging 上建立新独立 Git 树，仅获取指定 commit 及其祖先，再复制清单中的哈希匹配文件。后续任务提交、未列出的未跟踪文件和依赖产物不进入新树，不对用户源目录 reset/clean。新树经过预算、源保护和起点校验后才接受。请求和恢复结果分别记录 `recovery.git_start_requested`、`recovery.git_start_restored`；成功路径无需模型，生命周期从 staged 直接进入 validated，不伪造模型调用事件。
+
+此路径要求已有可物化的隔离仓库；超预算导致 sparse、缺少对象、输入不匹配、symlink/submodule 或 LFS filter 均不能声称恢复成功。调用方未明确起点时仍走历史调查；确定性路径拒绝后不会擅自改成另一个起点。第一版仍复用现有 source staging 复制，不是大型仓库复制加速或完整依赖缓存实现。见[轻量化决策](../decisions/accepted/2026-10-12-lightweight-recovery-and-managed-processes.md)。
+
+显式 Git 起点的新默认 Provider 位于数据目录的 `r/<experiment hash>/<recovery-run hash>`，避免实验 UUID、运行 UUID 和 Git sink 目录叠加触发 Windows Git 的路径长度上限。scene 通过可选 `recoveryProviderLayout: compact-v1` 与原 run ID 重建目录；旧 scene 和既有调查路径保持原位置。候选路径解析只接受当前 experiment 的哈希目录与指定 Candidate run，不接受其他实验的副本。这减少内部目录开销，不能保证任意长的数据根或源码路径都被 Git 支持。
 
 ## 来源、staging 与 checkpoint
 
@@ -13,14 +23,24 @@ Recovery 的目标是给历史任务找到一个可执行的起点，不宣称�
 一个 Recovery attempt 使用一个 Session 和同一工作副本，三个主要轮次。Recovery Agent 自己按提示词在每轮结束前写 `.reprise/recovery-work/notes.md`；Host 保存并在继续同一 Session 时重新提供该位置：
 
 1. **understand**：优先使用 briefing 内的任务文本、source Git 探测事实和工作区摘要，读取 playbook，并按关键未知定位历史证据；任务被截断或存在具体疑问时再读完整任务文件。
-2. **restore**：在工作副本内调查、复制、清理、重建配置/依赖并运行有界检查；保持原任务未完成。
+2. **restore**：在工作副本内调查、复制、清理并验证必要输入；仅当恢复目标需要时准备环境，保持原任务未完成。
 3. **conclude**：再次检查，写工作副本根部的 `recovery.md`，区分观察、推断、已执行动作和未解决项，返回 `ready` 或 `blocked`。
 
 Host 的机械检查报告缺失文件、越界写入、source tripwire、schema 和报告格式问题；Recovery 编排在后续调用中把这些结果作为 `mechanicalFeedback` 传回 Agent。机械反馈和结构化修复可能增加模型请求，不能把三个主要轮次当成最多三次模型调用。有效结论缺少 recovery.md 时，Host 会根据 summary/unresolved 生成最小报告；报告缺失本身不必推翻结论。Agent 的一行 summary 原样进入 baseline 事实，Host 不另造证据评分。
 
-`ready` 表示存在合理的可执行起点，非关键未知可以保留；`blocked` 表示继续需要猜测关键输入、任务条件或结果边界，且必须带 unresolved。Recovery 失败、取消、超时和无效输出都有 failure stage，但不应伪造为成功恢复。
+`ready` 表示任务前输入已具备、候选可开始处理任务，不要求已经安装全部依赖或通过完整构建；非关键未知可以保留。`blocked` 表示继续需要猜测关键输入、任务条件或结果边界，且必须带 unresolved。Recovery 失败、取消、超时和无效输出都有 failure stage，不应伪造为成功恢复。
 
 工具的确定性前置条件拒绝保留失败审计和模型可见错误，允许模型纠正后继续。同一 workspace broker 的 `edit` 在读取当前文件后，若 `oldText` 未命中或不唯一，会在 journal 和写入前以 `ToolPreconditionRejected(edit_text_mismatch)` 拒绝；不会因该拒绝锁存整轮致命失败。实际文件系统、symlink、受控写入、审计和完成回调失败仍终止 invocation，不把未知异常当作可恢复反馈。该规则也适用于使用同一 broker 的其他 Agent，详见[文本编辑前置条件决策](../decisions/accepted/2026-10-08-recoverable-edit-text-preconditions.md)。
+
+## 受管命令与并行
+
+Recovery 默认使用 `exec_command`、`write_stdin` 和 `cancel_process`。命令首次等待默认 10 秒，返回 running 与 invocation-owned 会话句柄后可继续获取新增输出；等待时间不是命令生命期，不再受旧 shell 默认 60 秒限制。旧 `shell_exec` 仍供未启用 managed execution 的调用方兼容使用。命令非零退出保留实际 exitCode，失效/越权句柄、工作区忙及编辑不存在的文件属于可纠正前置条件；审计、未知 I/O 和受控写入故障保持致命，并立即取消模型调用。
+
+文件读取、列表与搜索可声明并行；后台命令可能写入，因此其存活期间拒绝其他冲突操作，模型必须先等待或取消。Session 在发布 invocation 完成/让出前排空受管进程；若模型未完成命令就结束，终止并收尾后返回失败，不把后台工作算作成功。不能确认终止时拒绝封存；这些措施仍不构成任意 shell 外部副作用的容器隔离。
+
+输出按增量分页返回，待消费缓冲最多 1 MiB；脱敏日志最多 16 MiB，超长行省略。两者的 truncated 与 logTruncated 分别报告，属于诊断资源保护，不是请求次数额度。Recovery 将终态日志提交为 `recovery_process_output` artifact，并记录 `recovery.process_log_committed`，避免 staging 清理后日志引用失效。新增参数、输出和日志引用继续通过工具与 artifact 事件复原。
+
+stdout、stderr 各自增量解码 UTF-8，并分别维护输出脱敏状态，再汇合已脱敏内容；另一管道的换行不能结束本管道尚未完整到达的敏感记录。脱敏发生在分页、模型交付、事件审计与日志写入之前。可能的凭据前缀和未结束值延迟交付，完整记录使用共享脱敏规则，普通交互提示仍可即时返回。敏感待定记录超过 64 Ki 字符时省略并标记截断，命令结束仍未闭合的敏感记录也省略。参数及完成事件统一使用共享规则，覆盖 JSON 凭据与 URL userinfo。日志持久化失败在 poll 和取消收尾中都保持致命，不因取消时序而消失。
 
 ## 隔离边界
 

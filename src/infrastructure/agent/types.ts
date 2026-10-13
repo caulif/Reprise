@@ -49,14 +49,16 @@ export type StructuredAgentResult<T> = AgentInvocation<T>;
 export type FreeformInvocation = AgentInvocation<{ text?: string }> | { status: "yielded"; reason: string; sessionId: string; invocationId?: string };
 
 export type AgentToolDefinition = {
+  lifecycle?: { finishInvocation(owner: AgentToolOwner, requireCompleted?: boolean): Promise<void> };
   /** Tools remain ordered unless their owner explicitly permits independent execution. */
   executionMode?: "parallel" | "sequential";
   name: string;
   description: string;
   parameters: TSchema;
-  execute(params: unknown, signal: AbortSignal): Promise<AgentToolResult>;
+  execute(params: unknown, signal: AbortSignal, owner?: AgentToolOwner): Promise<AgentToolResult>;
   onCompleted?(result: AgentToolResult): Promise<void>;
 };
+export type AgentToolOwner = { sessionId: string; invocationId: string };
 
 export type AgentAuditEventType =
   | "comparison.sources_continued"

@@ -34,7 +34,10 @@ export function invocationYieldDeadline(agent: { abort(): void; readonly signal?
   return {
     signal,
     recordFailure(error: unknown) {
-      if (!signal.aborted || !isKnownAbort(error, knownReasons)) failure ??= error instanceof Error ? error : new Error('Pi invocation failed.', { cause: error });
+      if (!signal.aborted || !isKnownAbort(error, knownReasons)) {
+        failure ??= error instanceof Error ? error : new Error('Pi invocation failed.', { cause: error });
+        local.abort();
+      }
     },
     recordProviderFailure(error: unknown) { if (!signal.aborted || !isKnownAbort(error, knownReasons)) providerFailure ??= error instanceof Error ? error : new Error('Provider response failed.', { cause: error }); },
     recordToolFailure(error: unknown) { if (!signal.aborted || !isKnownAbort(error, knownReasons)) toolFailure ??= error instanceof Error ? error : new Error('Pi tool failed.', { cause: error }); },
@@ -42,8 +45,8 @@ export function invocationYieldDeadline(agent: { abort(): void; readonly signal?
     assertCanRecover(retrying = false) { outer.throwIfAborted(); if (failure !== undefined) throw failure; if (retrying && toolFailure !== undefined) throw toolFailure; },
     reason() {
       outer.throwIfAborted();
-      if (!expired) return undefined;
       if (failure !== undefined) throw failure;
+      if (!expired) return undefined;
       if (providerFailure !== undefined) throw providerFailure;
       if (toolFailure !== undefined) throw toolFailure;
       return deadline!.reason;

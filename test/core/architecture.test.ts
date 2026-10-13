@@ -124,11 +124,12 @@ test('internal agents share workspace tools without read_observation', async () 
     .sort();
   assert.deepEqual(recovery, withoutShell);
   assert.deepEqual(recoveryShell, seven);
+  assert.deepEqual(workspaceTools('TMP', { allowShell: true, managedExecution: true }).map((tool) => tool.name).sort(),
+    ['cancel_process', 'edit', 'exec_command', 'find', 'grep', 'ls', 'read', 'write', 'write_stdin']);
   assert.deepEqual(controller, seven);
   assert.equal(controller.includes('read_observation'), false);
   const registered = await readFile(join(SRC, 'infrastructure/recovery-workspace-tools.ts'), 'utf8');
   assert.doesNotMatch(registered, /name:\s*["']read_observation["']/);
-  assert.match(registered, /\.\.\.\(options\.allowShell \? \[powershellTool\(ctx\)\] : \[\]\)/);
   const experiment = await readFile(join(SRC, 'application/experiment-report.ts'), 'utf8');
   assert.match(experiment, /comparison\.requested/);
   assert.match(experiment, /allowShell:\s*true/);

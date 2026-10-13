@@ -1,11 +1,14 @@
-import { lstat } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import {
   RecoveryPreTaskDiagnosisSchema,
   type RecoveryPreTaskDiagnosis,
   type TaskCase,
+  type RecoveryGitStart,
 } from "../core/schema.js";
+import { sha256 } from '../core/identity.js';
+import { recoveryPath, assertNoSymlinkAncestors } from './local-workspace-fs.js';
 import { RecoveryValidationError } from "./local-workspace-provider.js";
 import { runProcess } from "../infrastructure/process-runner.js";
 
@@ -28,7 +31,9 @@ export type RecoveryPreTaskCheck = RecoveryPreTaskDiagnosis;
 export async function evaluateRecoveryPreTaskConditions(
   root: string,
   taskCase: TaskCase,
+  gitStart?: RecoveryGitStart,
 ): Promise<RecoveryPreTaskCheck> {
+  if (gitStart) return checkConfirmedGitStart(root, gitStart);
   const head = await gitOutput(root, ["rev-parse", "HEAD"]);
   if (!head) return diagnosis({ schemaVersion: 1, readyAllowed: true, reasons: [], dirtyPaths: [] });
   const recorded = recordedEventCommits(taskCase.historicalEvents);
@@ -64,6 +69,24 @@ export async function evaluateRecoveryPreTaskConditions(
     ...(preTaskCommit ? { preTaskCommit } : {}),
     ...(taskCommit ? { taskCommit } : {}),
   });
+}
+
+async function checkConfirmedGitStart(root: string, start: RecoveryGitStart): Promise<RecoveryPreTaskCheck> {
+  const head = await gitOutput(root, ['rev-parse', 'HEAD']);
+  const reasons: string[] = [];
+  if (head !== start.commit) reasons.push('Work-copy HEAD is not the explicitly confirmed task-before commit.');
+  for (const input of start.inputs) {
+    await assertNoSymlinkAncestors(root, input.path);
+    const bytes = await readFile(recoveryPath(root, input.path));
+    if (sha256(bytes) !== input.sha256) reasons.push(`Confirmed input changed: ${input.path}.`);
+  }
+  const tracked = await git(root, ['diff', '--name-only', '-z', start.commit]);
+  const untracked = await git(root, ['ls-files', '--others', '--exclude-standard', '-z']);
+  const allowed = new Set(['recovery.md', ...start.inputs.map((input) => input.path)]);
+  const dirtyPaths = `${tracked}\0${untracked}`.split('\0').filter((path) => path && !allowed.has(path));
+  if (dirtyPaths.length) reasons.push('Unexpected paths changed after confirmed Git start restoration.');
+  return diagnosis({ schemaVersion: 1, readyAllowed: reasons.length === 0, reasons, dirtyPaths,
+    preTaskCommit: start.commit, ...(head ? { head } : {}) });
 }
 
 export async function assertRecoveryReadyPreconditions(root: string, taskCase: TaskCase): Promise<void> {
