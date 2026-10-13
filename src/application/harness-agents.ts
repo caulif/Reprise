@@ -35,7 +35,7 @@ export function createHarnessAgents(
   const host = new AgentHost(caller);
   const budget: AgentBudget = { ...(limits.budget ?? DEFAULT_BUDGET),
     comparisonResources: limits.budget?.comparisonResources ?? DEFAULT_COMPARISON_RESOURCES };
-  const recoveryBudget = limits.recoveryBudget ?? limits.budget ?? DEFAULT_BUDGET;
+  const recoveryBudget = limits.recoveryBudget ?? limits.budget ?? { callTimeoutMs: 30 * 60_000, maxStructuredRepairAttempts: 1 };
   const locale = options.locale ?? 'zh';
   return {
     comparison: new AutonomousComparisonAgent({

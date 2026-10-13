@@ -1,3 +1,4 @@
+import { sealRecoveryGitHistory } from "../../environment/recovery-history.js";
 import { Value } from "@sinclair/typebox/value";
 import { runOperationId } from "../../core/identity.js";
 import {
@@ -31,8 +32,19 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
   const { input, store, provider, staging, recovery } = session;
   if (!staging || !recovery || recovery.status !== "completed")
     throw new Error("Recovery finalize was not prepared.");
-  await ensureRecoveryReport(staging.root, recovery.value);
+  if (staging.externalArtifacts) {
+    staging.hostReportText = `# Recovery report\n\n## Agent judgment (before Host sealing)\n\n${recovery.value.summary}\n\n${recovery.value.boundary ? JSON.stringify(recovery.value.boundary) + "\n\n" : ""}${recovery.value.unresolved.map(item => `- ${item}`).join("\n")}\n`;
+  } else await ensureRecoveryReport(staging.root, recovery.value);
   session.failureStage = "provider_validation_failed";
+  let historySealed = false;
+  if (!input.gitStart && recovery.value.status === "ready") {
+    const check = await evaluateRecoveryPreTaskConditions(staging.root, input.taskCase, undefined, staging.sourceRoot, session.frozenGit);
+    if (check.readyAllowed && check.head) {
+      await sealRecoveryGitHistory(staging.root, check.head, input.signal);
+      historySealed = true;
+      await store.append({ type: "recovery.history_sealed", runId: input.runId, payload: { head: check.head, scope: "isolated Git refs, reflogs and unreachable objects", semanticBoundaryVerified: false } });
+    }
+  }
   const providerVerificationStartedAt = Date.now();
   const validated = await provider.validateRecovery(staging, recovery.value);
   session.readinessResult = await measureRecoveryStagingReadiness(staging.root, input.taskCase, {
@@ -69,6 +81,9 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
   moveRecoveryState(session, "validated");
   session.verification = hostReady ? "verified" : "rejected";
   session.taskOutcome = preTaskBlocksReady ? "blocked_by_safety" : taskContinuationOutcome(recovery.value.status);
+  if (staging.externalArtifacts && session.activeProviderPreview.reportText) {
+    session.activeProviderPreview = { ...session.activeProviderPreview, reportText: `${session.activeProviderPreview.reportText}\n## Host validation (after Agent judgment)\n\nMechanical boundary check: ${hostReady ? "passed" : "not accepted"}. Historical semantic choice remains the Agent's judgment.\nGit history sealing: ${historySealed ? "completed; refs/reflogs and unreachable future objects removed in the isolated tree" : "not performed by this path"}.\nAdditional path checks: ${session.readinessResult.checkedPaths.length}; command checks: ${session.readinessResult.commandChecks.length}. ${session.readinessResult.feedback}\nRecovery readiness permits a candidate to start; full original-task execution, dependencies and build success are not established.\n` };
+  }
   const preview = session.activeProviderPreview;
   if (preview.baseline.recovery && session.taskOutcome) {
     const baseline = {
@@ -79,7 +94,8 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
   }
   const mayAccept = hostReady;
   if (mayAccept) {
-    session.automaticallyAcceptedBaseline = await provider.acceptRecovery(session.activeProviderPreview);
+    input.signal?.throwIfAborted();
+    session.automaticallyAcceptedBaseline = await provider.acceptRecovery(session.activeProviderPreview, input.signal);
     if (session.automaticallyAcceptedBaseline.recovery && session.taskOutcome) {
       session.automaticallyAcceptedBaseline = {
         ...session.automaticallyAcceptedBaseline,
@@ -105,7 +121,8 @@ async function applyPreTaskReadyGate(
 ): Promise<boolean> {
   const { input, store, staging, activeProviderPreview } = session;
   if (envelopeStatus !== "ready" || !staging || !activeProviderPreview) return false;
-  const preTask = await evaluateRecoveryPreTaskConditions(staging.root, input.taskCase, input.gitStart);
+  const preTask = await evaluateRecoveryPreTaskConditions(staging.root, input.taskCase, input.gitStart, staging.sourceRoot, session.frozenGit);
+  await store.commitArtifact({ artifactId: "recovery-boundary-check", runId: input.runId, kind: "recovery_boundary_check", mediaType: "application/json", bytes: Buffer.from(JSON.stringify(preTask)) });
   if (preTask.readyAllowed) return false;
   if (!Value.Check(RecoveryPreTaskDiagnosisSchema, preTask)) {
     throw new Error("Recovery pre-task diagnosis does not match RecoveryPreTaskDiagnosisSchema.");

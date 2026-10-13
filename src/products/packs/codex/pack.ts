@@ -46,7 +46,7 @@ export type CodexRuntimeEvent = {
 
 export type { RecoveryPlaybookDescriptor };
 
-const CODEX_RECOVERY_PLAYBOOK_VERSION = 'codex-recovery/v3';
+const CODEX_RECOVERY_PLAYBOOK_VERSION = 'codex-recovery/v4';
 
 function codexRecoveryPlaybook(): RecoveryPlaybookDescriptor {
   const text = readFileSync(new URL('./recovery/SKILL.md', import.meta.url), 'utf8');

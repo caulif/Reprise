@@ -18,27 +18,29 @@ Provider 在已有隔离 staging 上建立新独立 Git 树，仅获取指定 co
 
 当前实现会优先复用 source/checkpoint，并按预算建立 staging；“默认空 staging”仍是开放目标，不能写成现状。source 在准备前后有 tripwire，变化会使恢复验证失败。外部服务、远程副作用和未观察到的环境状态不会因本地副本而被宣称已还原。
 
-## Recovery Agent 三轮
+## Recovery Agent 单任务会话
 
-一个 Recovery attempt 使用一个 Session 和同一工作副本，三个主要轮次。Recovery Agent 自己按提示词在每轮结束前写 `.reprise/recovery-work/notes.md`；Host 保存并在继续同一 Session 时重新提供该位置：
+一个 Recovery attempt 使用同一 Session 与隔离工作副本，首次只交付一个恢复目标。Agent 自行调查、恢复与核对，返回短 ready/blocked decision；不固定 understand/restore/conclude 三轮，也不在项目内写 notes 或 recovery.md。上下文压缩由实际压力触发，摘要保留起点、证据位置、已完成动作和未解决项。旧 freeform request ID 仅保留历史读取兼容。
 
-1. **understand**：优先使用 briefing 内的任务文本、source Git 探测事实和工作区摘要，读取 playbook，并按关键未知定位历史证据；任务被截断或存在具体疑问时再读完整任务文件。
-2. **restore**：在工作副本内调查、复制、清理并验证必要输入；仅当恢复目标需要时准备环境，保持原任务未完成。
-3. **conclude**：再次检查，写工作副本根部的 `recovery.md`，区分观察、推断、已执行动作和未解决项，返回 `ready` 或 `blocked`。
+Host 将报告、process logs、临时 home 和冻结 Git 依据放在项目之外，报告仍发布为 recovery-md artifact。新 baseline marker 带 artifactLayout: external-v1；Candidate 副本保留用户原有 recovery.md 和 .reprise/recovery-work 文件。旧 marker 沿用旧清理和报告读取契约，不静默迁移。
 
-Host 的机械检查报告缺失文件、越界写入、source tripwire、schema 和报告格式问题；Recovery 编排在后续调用中把这些结果作为 `mechanicalFeedback` 传回 Agent。机械反馈和结构化修复可能增加模型请求，不能把三个主要轮次当成最多三次模型调用。有效结论缺少 recovery.md 时，Host 会根据 summary/unresolved 生成最小报告；报告缺失本身不必推翻结论。Agent 的一行 summary 原样进入 baseline 事实，Host 不另造证据评分。
+普通历史调查中 historicalCommit 是线索，不强制成为 HEAD。Agent 应恢复选定第一条任务输入到来前状态，不能自动采用后来同步基线。Host 在工具可写前冻结受保护 source 的 commit→tree 映射、明确 commit receipt 和源指纹；session_meta/turn_context 的 commit 元数据不算任务成果。选择的 HEAD 必须存在于冻结源，树匹配，不能包含已识别任务成果提交。此机械检查并不证明所有未知历史状态；确切起点仍需历史证据，独立实验审计不能只看 accepted 标志。
 
-`ready` 表示任务前输入已具备、候选可开始处理任务，不要求已经安装全部依赖或通过完整构建；非关键未知可以保留。`blocked` 表示继续需要猜测关键输入、任务条件或结果边界，且必须带 unresolved。Recovery 失败、取消、超时和无效输出都有 failure stage，不应伪造为成功恢复。
+Git dirty 检查按 NUL 分隔路径及内容进行，不以 mtime 为判据。与原 source 完全相同的 dirty 文件暂按保留输入处理，这不能独立证明其历史归属；必要输入/答案边界仍由 Agent 调查并披露。通过检查后，Host 仅在隔离副本中封存所选 HEAD 的祖先，清理其他 refs、reflogs、未来不可达对象，再验证 Git 完整性。显式 gitStart 契约保持独立和严格。
 
-工具的确定性前置条件拒绝保留失败审计和模型可见错误，允许模型纠正后继续。同一 workspace broker 的 `edit` 在读取当前文件后，若 `oldText` 未命中或不唯一，会在 journal 和写入前以 `ToolPreconditionRejected(edit_text_mismatch)` 拒绝；不会因该拒绝锁存整轮致命失败。实际文件系统、symlink、受控写入、审计和完成回调失败仍终止 invocation，不把未知异常当作可恢复反馈。该规则也适用于使用同一 broker 的其他 Agent，详见[文本编辑前置条件决策](../decisions/accepted/2026-10-08-recoverable-edit-text-preconditions.md)。
+机械反馈仅回传具体失败事实；相同失败与文件指纹没有变化时停止。默认总预算 30 分钟，覆盖准备、模型、校验与封存，无模型请求数或工具调用次数额度。瞬时故障仍使用既有进展感知重试。取消后有界收尾，截止后不得接受 ready。
+
+ready 表示必要任务输入已具备且 Candidate 可开始，不默认要求依赖安装或全量构建。blocked 表示继续需猜关键输入、任务条件或答案边界；未验证内容应披露，不能通过改时间或查 Host 源码绕过检查。
 
 ## 受管命令与并行
 
 Recovery 默认使用 `exec_command`、`write_stdin` 和 `cancel_process`。命令首次等待默认 10 秒，返回 running 与 invocation-owned 会话句柄后可继续获取新增输出；等待时间不是命令生命期，不再受旧 shell 默认 60 秒限制。旧 `shell_exec` 仍供未启用 managed execution 的调用方兼容使用。命令非零退出保留实际 exitCode，失效/越权句柄、工作区忙及编辑不存在的文件属于可纠正前置条件；审计、未知 I/O 和受控写入故障保持致命，并立即取消模型调用。
 
-文件读取、列表与搜索可声明并行；后台命令可能写入，因此其存活期间拒绝其他冲突操作，模型必须先等待或取消。Session 在发布 invocation 完成/让出前排空受管进程；若模型未完成命令就结束，终止并收尾后返回失败，不把后台工作算作成功。不能确认终止时拒绝封存；这些措施仍不构成任意 shell 外部副作用的容器隔离。
+文件读取、列表与搜索声明并行；独立 observations 读取可与项目后台命令重叠。后台命令可能写入，项目文件操作仍需等待或取消该命令，两个任意 shell 命令不自动并发。Session 在发布 invocation 完成/让出前排空受管进程；若模型未完成命令就结束，终止并收尾后返回失败，不把后台工作算作成功。不能确认终止时拒绝封存；这些措施仍不构成任意 shell 外部副作用的容器隔离。
 
 输出按增量分页返回，待消费缓冲最多 1 MiB；脱敏日志最多 16 MiB，超长行省略。两者的 truncated 与 logTruncated 分别报告，属于诊断资源保护，不是请求次数额度。Recovery 将终态日志提交为 `recovery_process_output` artifact，并记录 `recovery.process_log_committed`，避免 staging 清理后日志引用失效。新增参数、输出和日志引用继续通过工具与 artifact 事件复原。
+
+Recovery 按 opt-in 注册 apply_patch 和 view_image，不改变 Comparison 的共享工具默认面。apply_patch 复用静态补丁解码与受控写入 journal，支持普通文件 Add/Update/Delete，所有目标与上下文在写入前预检，保留 CRLF；Move、无已有上下文的纯插入暂不支持。格式/上下文错误可纠正，真实 I/O 或部分写入失败仍终止。view_image 复用 read(format=image) 的 native image blocks、尺寸限制和 allowBinary 权限，图片路径文字不等于模型看图。
 
 stdout、stderr 各自增量解码 UTF-8，并分别维护输出脱敏状态，再汇合已脱敏内容；另一管道的换行不能结束本管道尚未完整到达的敏感记录。脱敏发生在分页、模型交付、事件审计与日志写入之前。可能的凭据前缀和未结束值延迟交付，完整记录使用共享脱敏规则，普通交互提示仍可即时返回。敏感待定记录超过 64 Ki 字符时省略并标记截断，命令结束仍未闭合的敏感记录也省略。参数及完成事件统一使用共享规则，覆盖 JSON 凭据与 URL userinfo。日志持久化失败在 poll 和取消收尾中都保持致命，不因取消时序而消失。
 
@@ -63,3 +65,11 @@ Recovery 工具以工作副本为 cwd，受控文件写入限制在该根内。s
 Git remote 在 Harness 拥有的树内改写至本实验 sink，禁止为补齐对象触发 lazy fetch；对象不完整也不能跳过 remote 保护。sink 的 initial refs 来自所观察的工作树，sink 隔离不代表其中内容已经是任务前状态。树内链接只按已验证边界处理，越界或无法解析的链接不跟随。NTFS 写锁和 source fingerprint 是保护与检测手段，不是对任意 shell 外部副作用的完整撤销机制。
 
 [LocalWorkspaceProvider](../../src/environment/local-workspace-provider.ts) 拥有 staging、checkpoint、accept 与副本生命周期；[Recovery Agent](../../src/agents/recovery-agent.ts) 拥有调查和结论；[编排](../../src/application/recovery/orchestrator.ts) 拥有 created → staged → forensics → model → validated → accepted/failed 生命周期。具体 Git 不变量见[隔离决策](../decisions/accepted/2026-09-11-git-isolation-invariants.md)。
+
+## 冻结观察导航与报告边界
+
+冻结观察 JSON 保留完整隐私处理后内容；`read` 使用字节 offset/maxBytes 翻页，截断正文含 nextCursor。读取不存在、访问拒绝、空文件和 EOF 均有不同文本反馈；未知 I/O、安全边界和审计故障不降级成“未找到”。旧 excerpt envelope 原样兼容，已丢失尾部不伪造。
+
+`observations/timeline/INDEX.tsv` 按冻结 transcript 顺序列出编号 `.txt` 路径，消息、工具命令和结果不再需要多层 JSON 解码；每条仍指向原 transcript JSON。完整 INDEX.tsv 保留，`index-pages/0001.tsv` 起每页 100 个精确 catalog 路径。导航只提供事实，不选择 Git 起点。
+
+Agent 负责选点和恢复工作树，不需要手工清理 Git refs/reflog/对象；Host 统一封存并记录 `recovery.history_sealed`。外置报告分别保留封存前 Agent 判断和封存后 Host 机械状态，不把历史语义包装成机械验证通过。taskReadiness 无额外路径或命令检查时明确披露检查为空；ready 不证明依赖、build 或完整原任务已经验证。

@@ -10,15 +10,22 @@ const RecoverySummarySchema = Type.String({
   // recovery decisions such as `question-1/README.md`.
   pattern: "^[^\\r\\n]+$",
 });
+const RecoveryBoundarySchema = Type.Object({
+  commit: Type.Optional(Type.String({ pattern: "^[0-9a-f]{40}$" })),
+  evidenceRefs: Type.Array(Type.String({ minLength: 1, maxLength: 512 }), { minItems: 1, maxItems: 4 }),
+  statement: Type.String({ minLength: 1, maxLength: 400 }),
+}, { additionalProperties: false });
 export const RecoveryDecisionSchema = Type.Union([
   Type.Object({
     status: Type.Literal("ready"),
     summary: RecoverySummarySchema,
+    boundary: Type.Optional(RecoveryBoundarySchema),
     unresolved: Type.Array(Type.String()),
   }, { additionalProperties: false }),
   Type.Object({
     status: Type.Literal("blocked"),
     summary: RecoverySummarySchema,
+    boundary: Type.Optional(RecoveryBoundarySchema),
     unresolved: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
   }, { additionalProperties: false }),
 ]);
@@ -27,12 +34,14 @@ export const RecoveryAgentEnvelopeSchema = Type.Union([
   Type.Object({
     status: Type.Literal("ready"),
     summary: RecoverySummarySchema,
+    boundary: Type.Optional(RecoveryBoundarySchema),
     reportPath: Type.Literal("recovery.md"),
     unresolved: Type.Array(Type.String()),
   }),
   Type.Object({
     status: Type.Literal("blocked"),
     summary: RecoverySummarySchema,
+    boundary: Type.Optional(RecoveryBoundarySchema),
     reportPath: Type.Literal("recovery.md"),
     unresolved: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
   }),
@@ -727,3 +736,12 @@ export const RecoveryExplanationSchema = Type.Object({
 }, { additionalProperties: false });
 export type RecoveryExplanation = Static<typeof RecoveryExplanationSchema>;
 
+
+export const RecoveryFrozenGitSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  state: Type.Union([Type.Literal("git"), Type.Literal("non-git"), Type.Literal("unavailable")]),
+  commits: Type.Record(Type.String(), Type.String()),
+  taskCommits: Type.Array(Type.String()),
+  sourceDigest: Type.String(),
+});
+export type RecoveryFrozenGit = Static<typeof RecoveryFrozenGitSchema>;

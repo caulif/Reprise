@@ -13,6 +13,7 @@ export const RecoveryMarkerSchema = Type.Object({
   unresolved: Type.Array(Type.String()),
   sourceDigest: Type.String(),
   recoveredDigest: Type.String(),
+  artifactLayout: Type.Optional(Type.Literal("external-v1")),
   reportRef: Type.Optional(Id),
   reportRunId: Type.Optional(Id),
 });

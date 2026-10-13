@@ -32,7 +32,7 @@ test("recovery model prompt is a text briefing without Host JSON fields", () => 
   assert.match(prompt, /Task: Write slides\./);
   assert.match(prompt, /\(truncated; full text at observations\/task\/initial-input\.txt\)/);
   assert.match(prompt, /Evidence level: transcript; 715 historical messages, 553 historical events/);
-  assert.match(prompt, /Clues: cwd=unknown; historicalCommit=unknown; sourceVersion=unknown/);
+  assert.match(prompt, /Environment clues.*not proof.*clues.json; cwd=unknown/);
   assert.match(prompt, /Playbook: codex v1, text at observations\/playbook\.md/);
   assert.match(prompt, /sample refs: event:transcript-0-aaaa/);
   assert.doesNotMatch(prompt, /schemaVersion/);

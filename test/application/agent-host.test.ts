@@ -783,8 +783,6 @@ test("Recovery repair is envelope-only and audits invalid output without model t
   };
   const recovery = new RecoveryAgent({
     host: new AgentHost(caller([
-      "scout",
-      "restore",
       JSON.stringify({ status: "blocked", summary: "Ready for the original task.", unresolved: [] }),
       JSON.stringify({ status: "blocked", summary: "Ready for the original task.", unresolved: ["missing proof"] }),
     ], sessions)),
@@ -798,14 +796,12 @@ test("Recovery repair is envelope-only and audits invalid output without model t
     execute: async () => { throw new Error("repair called a tool"); },
   }], { append: async (event) => { events.push(event); } });
   assert.equal(result.status, "completed");
-  assert.equal(sessions[0]?.appended.length, 4);
-  assert.match(sessions[0]?.appended[3] ?? "", /Repair turns call no tools/i);
+  assert.equal(sessions[0]?.appended.length, 2);
+  assert.match(sessions[0]?.appended[1] ?? "", /Repair turns call no tools/i);
   assert.doesNotMatch(JSON.stringify(events.filter((event) => event.type === "agent.invalid_output")), /foreign/);
   const invalidEvents: AgentAuditEvent[] = [];
   const invalid = new RecoveryAgent({
     host: new AgentHost(caller([
-      "scout",
-      "restore",
       JSON.stringify({ status: "blocked", summary: "Ready for the original task.", unresolved: [] }),
     ])),
     timeoutMs: 50,

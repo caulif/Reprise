@@ -289,8 +289,8 @@ test("Comparison Agent can read both tracks from a new attempt root via INDEX mo
     const body = JSON.parse(await read(row[5]!)) as { ref: string; truncated: boolean; observation: unknown };
     assert.equal(body.ref, `event:${events[index]!.eventId}`);
     if (index === events.length - 1) {
-      assert.equal(body.truncated, true);
-      assert.match(JSON.stringify(body.observation), /file_char_limit/);
+      assert.equal(body.truncated, false);
+      assert.deepEqual(body.observation, events[index]);
     } else {
       assert.equal(body.truncated, false);
       assert.deepEqual(body.observation, events[index]);

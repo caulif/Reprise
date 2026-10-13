@@ -181,10 +181,10 @@ test('Recovery production path does not reintroduce candidate selection or three
   assert.doesNotMatch(agent, /select_recovery_candidate/);
   assert.doesNotMatch(agent, /Type\.Literal\("recovered"\)/);
   assert.doesNotMatch(agent, /insufficient_evidence/);
-  assert.match(agent, /runTurns/);
+  assert.doesNotMatch(agent, /runTurns/);
   assert.match(agent, /RecoveryAgentEnvelope/);
   assert.doesNotMatch(agent, /必须证明起点|完整证明起点|推导任务开始前必须具备/);
-  assert.match(agent, /reasonable starting environment/);
+  assert.match(agent, /necessary inputs and a defensible start exist/);
   assert.match(agent, /Do not claim that an unobserved historical fact was verified/);
   const envelopeSchema = await readFile(join(SRC, 'core/schemas/recovery.ts'), 'utf8');
   assert.match(envelopeSchema, /Type\.Literal\("ready"\)/);
@@ -255,7 +255,7 @@ test('Recovery production path does not reintroduce candidate selection or three
   assert.doesNotMatch(readiness, /applyTaskReadinessGate/);
   const workspaceTools = await readFile(join(SRC, 'infrastructure/recovery-workspace-tools.ts'), 'utf8');
   assert.doesNotMatch(workspaceTools, /filesystem ACL/);
-  assert.match(agent, /verifies its fingerprint afterwards/);
+  assert.match(provider, /sourceTripwire/);
   assert.match(provider, /lockSourceWrites/);
   const runFinalize = await readFile(join(SRC, 'application/recovery/run-finalize.ts'), 'utf8');
   assert.doesNotMatch(runFinalize, /verifiedEvidence/);

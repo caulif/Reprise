@@ -118,6 +118,7 @@ export type EnvironmentBaseline = {
     /** Host-recorded inspectable facts; Agent envelope decides publication except mechanical safety. */
     taskOutcome?: 'ready_for_task' | 'blocked' | 'unrecoverable' | 'blocked_by_safety' | 'runner_failed';
     reportRef?: string;
+    artifactLayout?: "external-v1";
     reportRunId?: string;
     unresolved: string[];
     sourceDigest: string;
@@ -171,6 +172,8 @@ export type RecoveryStaging = {
   checkpointId?: string;
   checkpointFingerprint?: EnvironmentFingerprint;
   temporaryRoot?: string;
+  externalArtifacts?: boolean;
+  hostReportText?: string;
   playbook?: RecoveryPlaybookProvenance;
 };
 
@@ -371,7 +374,7 @@ export class LocalWorkspaceProvider {
         workspaceSeed = 'sparse';
       }
       const sourceSummary = await summarizeSourceRoot(sourceRoot, inspected.budget);
-      if (workspaceSeed === 'sparse') await writeSourceSummary(root, sourceSummary);
+      if (workspaceSeed === 'sparse') await writeSourceSummary(policy.externalArtifacts === true ? temporaryRoot : root, sourceSummary);
       await this.#isolateOwned(root, recoveryId);
       const staging: RecoveryStaging = {
         recoveryId,
@@ -464,7 +467,7 @@ export class LocalWorkspaceProvider {
       await rm(staging.root, { recursive: true, force: true });
       await mkdir(staging.root, { recursive: true });
       if (staging.workspaceSeed !== 'sparse') await this.#copyTree(temporary, staging.root);
-      if (staging.workspaceSeed === 'sparse') await writeSourceSummary(staging.root, staging.sourceSummary);
+      if (staging.workspaceSeed === 'sparse') await writeSourceSummary(staging.externalArtifacts && staging.temporaryRoot ? staging.temporaryRoot : staging.root, staging.sourceSummary);
       await this.#isolateOwned(staging.root, staging.recoveryId);
     } finally {
       await rm(temporary, { recursive: true, force: true });
@@ -501,14 +504,15 @@ export class LocalWorkspaceProvider {
     try {
       await this.probeRecovery(staging);
       sourceTripwireAfter = (await this.#inspectSource(staging.sourceRoot)).fingerprint;
-      reportText = await readRecoveryReport(staging.root);
-      await cleanupRecoveryTransients(staging.root);
+      reportText = staging.externalArtifacts ? staging.hostReportText : await readRecoveryReport(staging.root);
+      if (!staging.externalArtifacts) await cleanupRecoveryTransients(staging.root);
       if (staging.temporaryRoot) await rm(staging.temporaryRoot, { recursive: true, force: true });
       const captured = await this.#fingerprintTree(staging.root);
       if (captured.budget.blockedReasons.length) throw new Error(captured.budget.blockedReasons.join(' '));
       const changed = changedPaths(staging.sourceFingerprint, captured.fingerprint).filter((path) => path !== 'recovery.md' && path !== 'recovery-manifest.json' && path !== '.reprise/recovery-work' && !path.startsWith('.reprise/recovery-work/'));
       assertRecoveryPathBoundary(changed);
       const recovery: NonNullable<EnvironmentBaseline['recovery']> = {
+        ...(staging.externalArtifacts ? { artifactLayout: "external-v1" as const } : {}),
         status: result.status,
         summary: result.summary,
         ...(reportText ? { reportRef: 'recovery-md' } : {}),
@@ -545,7 +549,7 @@ export class LocalWorkspaceProvider {
       const sourceTripwireAfter = (await this.#inspectSource(staging.sourceRoot)).fingerprint;
       if (sourceTripwireAfter.digest !== staging.sourceTripwireBefore.digest) throw new RecoveryValidationError("source_tripwire_failed", "Recovery changed the user source directory; staging will be discarded.");
       try {
-        await readRecoveryReport(root);
+        if (!staging.externalArtifacts) await readRecoveryReport(root);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         throw new RecoveryValidationError("provider_validation_failed", message.includes("ENOENT") || message.includes("no such file") ? "Recovery report recovery.md is missing." : message);
@@ -562,7 +566,8 @@ export class LocalWorkspaceProvider {
   }
 
   /** Publishes a previously validated preview; this is the operator confirmation boundary. */
-  async acceptRecovery(preview: RecoveryPreview): Promise<EnvironmentBaseline> {
+  async acceptRecovery(preview: RecoveryPreview, signal?: AbortSignal): Promise<EnvironmentBaseline> {
+    signal?.throwIfAborted();
     const staging = this.#recoveryStaging.get(preview.recoveryId);
     if (!staging || preview.accepted || preview.baseline.root !== staging.root) throw new Error('Recovery preview is no longer available.');
     if (preview.baseline.recovery?.status === 'blocked' || preview.baseline.readiness.runnable === 'blocked') {
@@ -575,9 +580,11 @@ export class LocalWorkspaceProvider {
     await this.#unlockSource(staging.recoveryId);
     await mkdir(dirname(baselineRoot), { recursive: true });
     try {
+      signal?.throwIfAborted();
       await publishDirectory(staging.root, baselineRoot);
       await this.#isolateOwned(baselineRoot, `baseline-${staging.caseId}`);
       await writeFile(markerPath, JSON.stringify({ sourceFingerprint: staging.sourceFingerprint.digest, recovery: preview.baseline.recovery }), { flag: 'wx' });
+      signal?.throwIfAborted();
       this.#recoveryStaging.delete(staging.recoveryId);
       await removeGitSink(gitSinkRoot(this.#root, preview.recoveryId));
       return { ...preview.baseline, root: baselineRoot };
@@ -678,7 +685,7 @@ export class LocalWorkspaceProvider {
     let isolationStatus: 'ready' | 'partial' | 'failed' | 'missing';
     try {
       await this.#copyTree(baselineRoot, runRoot);
-      await cleanupRecoveryTransients(runRoot);
+      if (baseline.recovery?.artifactLayout !== "external-v1") await cleanupRecoveryTransients(runRoot);
       const isolation = await this.#isolateOwned(runRoot, runId);
       isolationStatus = isolation.status;
       beforeFingerprint = (await this.#fingerprintTree(runRoot)).fingerprint;

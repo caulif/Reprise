@@ -9,7 +9,7 @@ import type { TaskCase } from "../../src/core/schema.js";
 import { now, VerifiedRuntime, input } from "../codex-experiment-support.js";
 import { hostShellDelete } from "../host-shell.js";
 
-test("Recovery mechanical feedback reuses the same recover() after a missing report", async (t) => {
+test("Host external report needs no second recovery request", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-recovery-keep-probed-envelope-"));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
@@ -60,14 +60,14 @@ test("Recovery mechanical feedback reuses the same recover() after a missing rep
     now,
     onEvent: (event) => events.push({ type: event.type, payload: event.payload }),
   });
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
   assert.equal(attempt.accept !== undefined, true);
   assert.equal(attempt.acceptedAutomatically, true);
   assert.equal(attempt.baseline.match, "recovered");
   assert.equal(attempt.baseline.recovery?.status, "ready");
   assert.equal(
     events.some((event) => event.type === "recovery.readiness_feedback"),
-    true,
+    false,
   );
 });
 

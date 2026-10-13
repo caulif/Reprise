@@ -309,19 +309,12 @@ test("Recovery orchestration uses a scripted Agent to restore a historical Git b
         { path: "README.md", content: "# original\n" },
         new AbortController().signal,
       );
-      await writer.execute(
-        {
-          path: "recovery.md",
-          content: "# Recovery\n\nRestored README.md from the verified task-start commit.",
-        },
-        new AbortController().signal,
-      );
       return {
         status: "completed",
         sessionId: "recovery-golden",
         value: {
           status: "ready",
-          summary: "Ready for the original task.",
+          summary: "Restored README.md from the verified task-start commit.",
           reportPath: "recovery.md",
           unresolved: [],
           evidenceRefs: ["artifact:historical-commit"],
@@ -339,7 +332,7 @@ test("Recovery orchestration uses a scripted Agent to restore a historical Git b
     recovery,
     now,
   });
-  assert.equal(attempt.baseline.match, "recovered");
+  assert.equal(attempt.baseline.match, "recovered", JSON.stringify({recovery:attempt.recovery,warnings:attempt.baseline.warnings,finalizationFailure:attempt.finalizationFailure}));
   assert.match(
     await readFile(join(attempt.baseline.root ?? attempt.staging?.root ?? "", "README.md"), "utf8"),
     /^# original\r?\n$/,
@@ -367,7 +360,7 @@ test("Recovery orchestration uses a scripted Agent to restore a historical Git b
   assert.equal(result.record.outcome.termination.kind, "completed");
 });
 
-test("Recovery executes in a selected candidate and persists its reviewable metadata diff", async (t) => {
+test("Recovery restores non-Git content and persists its reviewable controlled-write diff", async (t) => {
   const root = await mkdtemp(
     join(tmpdir(), "reprise-codex-recovery-candidate-"),
   );
@@ -375,15 +368,6 @@ test("Recovery executes in a selected candidate and persists its reviewable meta
   const source = join(root, "source");
   await mkdir(source);
   await writeFile(join(source, "README.md"), "# completed\n");
-  const git = promisify(execFile);
-  const runGit = async (args: string[]) =>
-    (await git("git", args, { cwd: source, windowsHide: true })).stdout.trim();
-  await runGit(["init"]);
-  await runGit(["config", "user.email", "test@example.invalid"]);
-  await runGit(["config", "user.name", "Test"]);
-  await runGit(["config", "core.autocrlf", "false"]);
-  await runGit(["add", "README.md"]);
-  await runGit(["commit", "-m", "recovery-fixture"]);
   const preimage = "# verified preimage\n";
   const base = input(root, new VerifiedRuntime());
   const task = {
@@ -405,10 +389,6 @@ test("Recovery executes in a selected candidate and persists its reviewable meta
       assert.ok(writer);
       await writer.execute(
         { path: "README.md", content: "# recovered\n" },
-        new AbortController().signal,
-      );
-      await writer.execute(
-        { path: "recovery.md", content: "# Recovery\n\nCandidate restored README." },
         new AbortController().signal,
       );
       return {
@@ -467,18 +447,16 @@ test("Recovery executes in a selected candidate and persists its reviewable meta
     [
       ["write", "before", "README.md"],
       ["write", "after", "README.md"],
-      ["write", "before", "recovery.md"],
-      ["write", "after", "recovery.md"],
     ],
   );
   const controlledPostimages = events
     .filter((event) => event.type === "recovery.controlled_write")
     .map((event) => event.payload)
     .filter((entry) => entry.phase === "after");
-  assert.equal(controlledPostimages.length, 2);
+  assert.equal(controlledPostimages.length, 1);
   assert.deepEqual(
     controlledPostimages.map((entry) => entry.origin),
-    ["agent_direct_write", "agent_direct_write"],
+    ["agent_direct_write"],
   );
   for (const entry of controlledPostimages) {
     const after = entry.after as {

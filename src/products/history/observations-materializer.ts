@@ -11,11 +11,11 @@ import {
 } from "../../core/schema.js";
 import { recoveryEvidenceCatalog } from "./source-refs.js";
 import type { ObservationOwnedFile } from "./types.js";
+import { writeObservationNavigation } from "./observations-navigation.js";
 
 export type { ObservationOwnedFile } from "./types.js";
 
 export const OBSERVATIONS_MOUNT = "observations";
-const FILE_MAX_CHARS = 8_000;
 const SECRET_NAME = /(?:^|[\\/])(?:auth\.json|\.credentials\.json|\.env|credentials|token|api[-_]?key)(?:$|[\\/])/i;
 
 export function recoveryObservationsRoot(experimentRoot: string, runId: string): string {
@@ -96,6 +96,7 @@ export async function writeFrozenObservationTree(input: {
   await writeAtomic(join(input.root, "task", "initial-input.txt"), `${input.taskCase.initialInput.text}\n`);
   fileCount += 1;
   fileCount += await writeSessionManifest(input.root, input.taskCase, missing);
+  fileCount += await writeObservationNavigation(input.root, input.taskCase, rows);
   const index = [
     "# Frozen observations",
     "",
@@ -103,6 +104,8 @@ export async function writeFrozenObservationTree(input: {
     "Read this file first, then single files with read; use grep when you need one sentence or one ref.",
     "User demand is indexed at user-inputs/INDEX.tsv; read those files in order before other evidence.",
     "The full task sentence is task/initial-input.txt even when the briefing truncates it.",
+    "Chronological normalized messages and tool commands/results: timeline/INDEX.tsv. Read exact numbered .txt paths in order; each entry cites its original transcript JSON.",
+    "Large catalogs: index-pages/0001.tsv, 0002.tsv, ... (100 entries per page, in catalog order). INDEX.tsv remains the complete catalog. Text files support read offset/maxBytes pagination; nextCursor is in the text response.",
     "Credentials and the product's original session paths are not copied here.",
     "",
     `- transcript files: ${catalog.filter((entry) => entry.source === "transcript").length}`,
@@ -290,16 +293,13 @@ async function writeObservationFile(path: string, body: {
   observation: unknown;
 }): Promise<void> {
   const encoded = JSON.stringify(body.observation);
-  const truncated = encoded.length > FILE_MAX_CHARS;
   const payload = {
     ref: body.ref,
     source: body.source,
     index: body.index,
-    truncated,
+    truncated: false,
     originalChars: encoded.length,
-    observation: truncated
-      ? { excerpt: encoded.slice(0, FILE_MAX_CHARS), reason: "file_char_limit" }
-      : body.observation,
+    observation: body.observation,
   };
   await mkdir(dirname(path), { recursive: true });
   await writeAtomic(path, `${JSON.stringify(payload, null, 2)}\n`);
