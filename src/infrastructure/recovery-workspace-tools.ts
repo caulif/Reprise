@@ -248,7 +248,7 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
         let readFailure = readUnavailableReason(path) as string;
         const bytes = await boundedRead("file_read", async () => {
           await assertReadSymlinkPolicy(path);
-          await assertRegular(path.absolute);
+          await assertRegular(path.absolute, true);
           return readRegularFile(path.absolute);
         }, code => { if (readFailure !== "wsl_unavailable") readFailure = code === "ENOENT" || code === "ENOTDIR" ? "not_found" : "not_readable"; });
         if (!bytes) return unavailableFileReadResult(path.relative, offset, readFailure);
@@ -918,8 +918,9 @@ async function listTree(ctx: RecoveryToolContext, start: ResolvedWorkspacePath, 
   return output;
 }
 
-async function assertRegular(path: string): Promise<void> {
+async function assertRegular(path: string, directoryRejection = false): Promise<void> {
   const info = await lstat(path);
+  if (directoryRejection && info.isDirectory()) throw new ToolPreconditionRejected('invalid_path', 'Path names a directory. Use ls to list it, then read a regular file.');
   if (!info.isFile() || info.isSymbolicLink()) throw new Error("Path must name a regular file.");
 }
 

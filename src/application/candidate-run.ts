@@ -1,4 +1,7 @@
+import { ArtifactCaptureError } from './artifact-capture-error.js';
 import { SAFE_ID, runOperationId } from '../core/identity.js';
+import { Value } from '@sinclair/typebox/value';
+import { CandidateProgressCheckpointSchema } from '../core/schema.js';
 import { assertTransition } from '../core/state-machine.js';
 import type { ArtifactRef, CandidateRunState, CandidateSessionHandle, EventEnvelope, RunAttempt, RunManifest, RunOutcome, RunRecord } from '../core/schema.js';
 import { isCandidateRuntimeJournalType, type DeliveryReceipt, type MessageIdentity, type RuntimeStopReason, type TargetRunner, type TurnSettlement, type UserMessage } from '../core/runtime.js';
@@ -45,7 +48,7 @@ export type CandidateRunPersistence = {
   /** Artifacts committed before completion, retained in the terminal RunRecord. */
   artifactRefs?: readonly ArtifactRef[];
   /** Runs after the target stops but before the isolated workspace is released. */
-  captureArtifacts?: () => Promise<readonly ArtifactRef[]>;
+  captureArtifacts?: (signal: AbortSignal) => Promise<readonly ArtifactRef[]>;
 };
 
 type MessageCall = { messageId: string; text: string; promise: Promise<CandidateRunState> };
@@ -72,6 +75,10 @@ export class CandidateRun {
   #finishing: Promise<CandidateRunState> | undefined;
   #messages = new Map<string, MessageCall>();
   #handle: CandidateSessionHandle | undefined;
+  #startAttempted = false;
+  #moves: Promise<void> = Promise.resolve();
+  readonly #stoppedWait: Promise<never>;
+  #interrupt: () => void = () => undefined;
 
   constructor(input: {
     runner: TargetRunner;
@@ -85,6 +92,8 @@ export class CandidateRun {
       throw new Error('RunManifest must belong to the persisted RunAttempt.');
     }
     this.#runner = input.runner;
+    this.#stoppedWait = new Promise<never>((_, reject) => { this.#interrupt = () => reject(new Error('Candidate is stopping.')); });
+    void this.#stoppedWait.catch(() => { /* Every active RPC/wait races this signal; terminal runs may have no active wait. */ });
     this.#runner.setRequestTimeout(input.policy.turnTimeoutMs);
     this.#policy = input.policy;
     this.#release = input.release;
@@ -92,6 +101,8 @@ export class CandidateRun {
     this.#progressFingerprint = input.progressFingerprint;
     this.#artifactRefs = [...(input.persistence?.artifactRefs ?? [])];
   }
+
+  isStopping(): boolean { return this.#finishing !== undefined || this.#state === 'finished'; }
 
   states(): readonly CandidateRunState[] { return this.#states; }
   session(): CandidateSessionHandle {
@@ -133,36 +144,41 @@ export class CandidateRun {
   async failBeforeStart(failure: { code: string; message: string }): Promise<CandidateRunState> {
     this.#ensure('created');
     if (this.#persistence) this.#track(await this.#persistence.journal.commitAttempt(this.#persistence.attempt));
+    if (this.#finishing) return this.#finishing;
     await this.#append('controller.failed', failure, 'controller-failed');
     return this.#finish('failed.controller', 'failed', Object.assign(new Error(failure.message), { code: failure.code }));
   }
 
-  async cancel(): Promise<CandidateRunState> {
+  async cancel(source: 'user' | 'supervisor' | 'budget' = 'user'): Promise<CandidateRunState> {
+    if (source !== 'user') return this.stopByHarness(source === 'budget' ? 'limit.wall_clock' : 'cancelled.supervisor');
     if (this.#state === 'finished') return this.#state;
     if (this.#finishing) return this.#finishing;
-    await this.#append('run.cancel_requested', { requestedBy: 'user' }, 'cancel-request');
-    if (this.#finishing) return this.#finishing;
-    return this.#finish('cancelled.user', 'cancelled');
+    return this.#finish('cancelled.user', 'cancelled', undefined, () => this.#append('run.cancel_requested', { requestedBy: 'user' }, 'cancel-request'));
   }
 
-  async stopByHarness(code: 'limit.controller_calls' | 'limit.wall_clock' | 'stalled.no_progress'): Promise<CandidateRunState> {
-    this.#ensure('awaiting_controller');
-    await this.#append('harness.stop_requested', { code }, `harness-stop-${code}`);
-    return this.#finish(code, 'shutdown');
+  async stopByHarness(code: 'limit.controller_calls' | 'limit.wall_clock' | 'stalled.no_progress' | 'cancelled.supervisor'): Promise<CandidateRunState> {
+    if (this.#state === 'finished') return this.#state;
+    if (this.#finishing) return this.#finishing;
+    return this.#finish(code, 'shutdown', undefined, () => this.#append('harness.stop_requested', { code }, `harness-stop-${code}`));
   }
 
   async #start(message: UserMessage, identity: MessageIdentity): Promise<CandidateRunState> {
     this.#ensure('created');
     this.#assertIdentity(identity);
     if (this.#persistence) this.#track(await this.#persistence.journal.commitAttempt(this.#persistence.attempt));
+    if (this.#finishing) return this.#finishing;
     await this.#move('preparing');
+    if (this.#finishing) return this.#finishing;
     if (this.#persistence && !this.#persistence.manifest) return this.#finish('blocked.manifest_unavailable', 'failed');
     if (this.#persistence?.manifest) this.#track(await this.#persistence.journal.commitManifest(this.#persistence.manifest));
+    if (this.#finishing) return this.#finishing;
     await this.#move('launching');
+    if (this.#finishing) return this.#finishing;
     await this.#append('input.submitted', messageFact(message, identity), `input-${identity.clientMessageId}`);
     if (this.#finishing) return this.#finishing;
     try {
-      const receipt = await this.#runner.start(message, identity);
+      this.#startAttempted = true;
+      const receipt = await Promise.race([this.#runner.start(message, identity), this.#stoppedWait]);
       this.#handle = this.#runner.session();
       this.#assertHandle();
       await this.#append('runtime.session_started', { sessionId: this.#handle.sessionId, productId: this.#handle.productId }, 'session-started');
@@ -178,10 +194,11 @@ export class CandidateRun {
     this.#assertIdentity(identity);
     if (identity.turnIndex !== this.#turns) throw new Error('Message identity turn index does not match CandidateRun.');
     await this.#move('awaiting_target');
+    if (this.#finishing) return this.#finishing;
     await this.#append('input.submitted', messageFact(message, identity), `input-${identity.clientMessageId}`);
     if (this.#finishing) return this.#finishing;
     try {
-      return await this.#advance(await this.#runner.send(message, identity), identity);
+      return await this.#advance(await Promise.race([this.#runner.send(message, identity), this.#stoppedWait]), identity);
     } catch (error) {
       return this.#finish('failed.runtime', 'failed', error);
     }
@@ -192,6 +209,7 @@ export class CandidateRun {
     if (this.#finishing) return this.#finishing;
     assertReceipt(receipt);
     await this.#append('runtime.delivery_observed', { clientMessageId: identity.clientMessageId, turnIndex: identity.turnIndex, receipt }, `delivery-${identity.clientMessageId}`);
+    await this.#checkpoint(identity, receipt, receipt.delivery === 'unknown' ? 'inspect_unknown_delivery' : receipt.delivery === 'accepted' ? 'wait_for_turn' : 'stop');
     if (this.#finishing) return this.#finishing;
     if (receipt.delivery === 'rejected') return this.#finish('blocked.input_rejected', 'failed');
     if (receipt.delivery === 'unknown') return this.#finish('uncertain.input_delivery', 'failed');
@@ -202,6 +220,7 @@ export class CandidateRun {
       if (this.#finishing) return this.#finishing;
       assertSettlement(settlement);
       await this.#append('runtime.turn_settled', settlement, `settlement-${identity.turnIndex}`);
+      await this.#checkpoint(identity, receipt, settlement.status === 'completed' || settlement.status === 'waiting_input' ? 'controller_decision' : 'stop');
       if (this.#finishing) return this.#finishing;
       if (settlement.status !== 'waiting_input' && settlement.status !== 'completed') {
         const mapped = finishFromSettlement(settlement);
@@ -209,8 +228,10 @@ export class CandidateRun {
       }
       this.#settledTurns += 1;
       const limit = await this.#targetSafetyLimit();
+      if (this.#finishing) return this.#finishing;
       if (limit) return this.#finish(limit, 'shutdown');
       await this.#move('awaiting_controller');
+      if (this.#finishing) return this.#finishing;
       return this.#state;
     } catch (error) {
       if (this.#finishing) return this.#finishing;
@@ -218,10 +239,12 @@ export class CandidateRun {
     }
   }
 
-  async #finish(code: string, reason: RuntimeStopReason, cause?: unknown): Promise<CandidateRunState> {
+  async #finish(code: string, reason: RuntimeStopReason, cause?: unknown, before?: () => Promise<unknown>): Promise<CandidateRunState> {
     if (this.#state === 'finished') return this.#state;
     if (this.#finishing) return this.#finishing;
-    this.#finishing = this.#finishOnce(code, reason, cause);
+    this.#finishing = (async () => { await before?.(); return this.#finishOnce(code, reason, cause); })();
+    this.#interrupt();
+    if (this.#startAttempted) this.#runner.cancelWait('Candidate is stopping.');
     return this.#finishing;
   }
 
@@ -233,13 +256,14 @@ export class CandidateRun {
     if (this.#state !== 'finalizing') await this.#move('finalizing');
     const cleanup = await cleanupCandidateRun(reason, {
       runner: this.#runner,
+      started: this.#startAttempted,
       ...(this.#release ? { release: this.#release } : {}),
       timeoutMs: this.#policy.cleanupTimeoutMs ?? DEFAULT_CLEANUP_TIMEOUT_MS,
       appendCleanup: async (type, payload, operationId) => {
         const event = await this.#append(type, payload, operationId);
         return event?.eventId;
       },
-      captureArtifacts: () => this.#captureArtifacts(),
+      captureArtifacts: signal => this.#captureArtifacts(signal),
     });
     const termination = terminationFor(code, cause);
     this.#outcome = { task: this.#assessment ?? assessmentFor(code, this.#settledTurns > 0, Boolean(this.#persistence?.manifest)), termination, cleanup };
@@ -269,6 +293,7 @@ export class CandidateRun {
     try {
       return await Promise.race([
         native,
+        this.#stoppedWait,
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => { timedOut = true; reject(new Error('turn timeout')); }, this.#policy.turnTimeoutMs);
         }),
@@ -279,12 +304,23 @@ export class CandidateRun {
     }
   }
 
-  async #captureArtifacts(): Promise<void> {
+  async #checkpoint(identity: MessageIdentity, receipt: DeliveryReceipt, nextAction: 'wait_for_turn' | 'controller_decision' | 'inspect_unknown_delivery' | 'stop'): Promise<void> {
+    const payload = { schemaVersion: 1, ...(this.#handle ? { sessionId: this.#handle.sessionId } : {}),
+      clientMessageId: identity.clientMessageId, turnIndex: identity.turnIndex, delivery: receipt.delivery, nextAction };
+    if (!Value.Check(CandidateProgressCheckpointSchema, payload)) throw new Error('Malformed Candidate progress checkpoint.');
+    await this.#append('candidate.progress_checkpoint', payload, `progress-${identity.clientMessageId}-${nextAction}`);
+  }
+
+  async #captureArtifacts(signal: AbortSignal): Promise<void> {
     if (!this.#persistence?.captureArtifacts) return;
     try {
-      this.#artifactRefs = [...this.#artifactRefs, ...await this.#persistence.captureArtifacts()];
+      const refs = await this.#persistence.captureArtifacts(signal);
+      signal.throwIfAborted();
+      this.#artifactRefs = [...this.#artifactRefs, ...refs];
     } catch (error) {
+      if (!signal.aborted && error instanceof ArtifactCaptureError) this.#artifactRefs = [...this.#artifactRefs, ...error.artifactRefs];
       this.#warnings.push({ code: 'artifact.capture_failed', message: errorFact(error).message, evidenceRefs: [] });
+      throw error;
     }
   }
 
@@ -308,10 +344,15 @@ export class CandidateRun {
   }
 
   async #move(next: CandidateRunState): Promise<void> {
-    assertTransition(this.#state, next);
-    await this.#append('run.state_changed', { from: this.#state, to: next }, `state-${this.#states.length}`);
-    this.#state = next;
-    this.#states.push(next);
+    const moved = this.#moves.then(async () => {
+      if (this.#finishing && next !== 'finalizing' && next !== 'finished') return;
+      assertTransition(this.#state, next);
+      await this.#append('run.state_changed', { from: this.#state, to: next }, `state-${this.#states.length}`);
+      this.#state = next;
+      this.#states.push(next);
+    });
+    this.#moves = moved;
+    await moved;
   }
 
   #once(message: UserMessage, identity: MessageIdentity, operation: () => Promise<CandidateRunState>): Promise<CandidateRunState> {

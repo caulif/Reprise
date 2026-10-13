@@ -22,6 +22,7 @@ export function remainingResources(error: unknown): string[] {
 }
 
 export function terminationFor(code: string, cause: unknown): Termination {
+  if (code === 'cancelled.supervisor') return { kind: 'cancelled', code, initiatedBy: 'harness' };
   if (code.startsWith("completed.")) return { kind: "completed", code, initiatedBy: "controller" };
   if (code.startsWith("limit.")) return { kind: "limit_reached", code, initiatedBy: "harness" };
   if (code.startsWith("cancelled.")) return { kind: "cancelled", code, initiatedBy: "user" };

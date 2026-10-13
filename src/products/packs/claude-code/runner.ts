@@ -248,7 +248,7 @@ export class ClaudeTargetRunner implements TargetRunner {
       clientMessageId: true,
       nativeTurnSettlement: true,
       tokenTelemetry: 'native',
-      reconnectSession: true,
+      reconnectSession: false,
       querySubmissionByClientId: false,
       confirmProcessTermination: true,
     };

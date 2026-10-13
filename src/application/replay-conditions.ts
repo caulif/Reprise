@@ -63,6 +63,7 @@ export function hostReplayConditions(input: ReplayHostInput): readonly string[] 
   const lang = input.lang ?? "en";
   const zh = lang === "zh";
   const notes: string[] = [];
+  notes.push(zh ? '当前 Runtime 未提供 OS 级私有数据读取隔离；工作区副本不能保证盲测公平性。' : 'This Runtime does not provide OS isolation of Host-private reads; a workspace replica cannot guarantee blind-evaluation fairness.');
   const requested = input.requestedModel;
   const resolved = input.resolvedModel ?? input.record?.manifest?.resolvedModel.resolved;
   if (resolved && resolved !== "unknown" && resolved !== requested) {
@@ -95,8 +96,8 @@ export function hostReplayConditions(input: ReplayHostInput): readonly string[] 
   notes.push(sourceRootKindNote(input.sourceRootKind, lang));
   notes.push(
     zh
-      ? "写入只留在隔离副本。没有出现在用户原目录是不变量，不是能力差异。"
-      : "Writes stay in the isolated replica. Not appearing in the original user directory is an invariant, not a capability difference.",
+      ? "受控文件写入指向副本；任意 shell 不具备 OS 写入隔离。用户原目录不是交付位置。"
+      : "Controlled file writes target the replica; arbitrary shell has no OS write isolation. The original user directory is not the delivery location.",
   );
   const started = input.events?.find((event) => event.type === "runtime.session_started");
   const startedPayload = recordValue(started?.payload);

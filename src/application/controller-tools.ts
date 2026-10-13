@@ -1,4 +1,4 @@
-import { appendFile } from "node:fs/promises";
+import { appendFile, readFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import {
@@ -70,6 +70,13 @@ export function controllerDecisionTools(
     role: "controller",
     allowBinary: input.taskCase.privacy.allowBinary,
     allowShell: true,
+    managedExecution: true,
+    processLogRoot: briefingRoot,
+    onProcessLog: async (path) => {
+      const artifactId = `controller-${basename(path)}`;
+      await input.store.commitArtifact({ artifactId, runId: input.runId, kind: 'controller_process_log', mediaType: 'text/plain', bytes: await readFile(join(briefingRoot, path)) });
+      return { artifactId, runId: input.runId };
+    },
     unrestrictedRead: true,
     shellCwd: input.environment.root,
     homeRoot: join(input.experimentRoot, ".reprise-controller-home"),
@@ -80,7 +87,7 @@ export function controllerDecisionTools(
     onControlledWrite: (entry) => persistControllerWorkspaceWrite(input, briefingRoot, bindings, entry),
   }).map((tool) => {
     if (tool.name === "read") return wrapControllerRead(input, bindings, tool);
-    if (tool.name === "shell_exec") return wrapControllerShell(input, briefingRoot, bindings, tool);
+    if (["exec_command", "write_stdin", "cancel_process"].includes(tool.name)) return wrapControllerShell(input, briefingRoot, bindings, tool);
     return tool;
   });
 }
@@ -137,11 +144,9 @@ function wrapControllerShell(
 ): AgentToolDefinition {
   return {
     ...tool,
-    execute: async (params, signal) => {
-      const command = typeof (params as { command?: unknown }).command === "string"
-        ? (params as { command: string }).command
-        : "";
-      const result = await tool.execute(params, signal);
+    execute: async (params, signal, owner) => {
+      const result = await tool.execute(params, signal, owner);
+      const command = (result.details as { command?: string } | undefined)?.command ?? '';
       await persistShellObservation(input, bindings, result);
       await persistControllerExternalWrites(input, briefingRoot, bindings, command);
       return result;

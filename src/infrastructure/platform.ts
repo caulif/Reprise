@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { homedir, platform as hostPlatform, arch } from "node:os";
 import { delimiter, join } from "node:path";
-import { spawnSync, type ChildProcess } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
+import { terminateVerifiedWindowsTree } from './windows-process-identity.js';
 
 export type ShellKind = "powershell" | "cmd" | "bash" | "zsh" | "fish";
 export type HostPlatform = "win32" | "darwin" | "linux";
@@ -101,7 +102,7 @@ export function terminateProcessTree(child: ChildProcess, killTree: boolean): bo
     return child.kill();
   }
   if (hostPlatformInfo() === "win32") {
-    return killWindowsProcessTree(child, pid);
+    return terminateVerifiedWindowsTree(child);
   }
   try {
     process.kill(-pid, "SIGKILL");
@@ -114,26 +115,4 @@ export function terminateProcessTree(child: ChildProcess, killTree: boolean): bo
     }
     return false;
   }
-}
-
-function killWindowsProcessTree(child: ChildProcess, pid: number): boolean {
-  const systemRoot = process.env.SystemRoot ?? process.env.WINDIR ?? "C:\\Windows";
-  // Synchronous taskkill: async spawn left nested node/PowerShell children alive until
-  // their natural sleep ended (~30s), which flaked Comparison shell timeout tests.
-  try {
-    const result = spawnSync(join(systemRoot, "System32", "taskkill.exe"), ["/F", "/T", "/PID", String(pid)], {
-      stdio: "ignore",
-      windowsHide: true,
-      timeout: 5_000,
-    });
-    if (result.status === 0) return true;
-  } catch {
-    /* taskkill missing or timed out; fall through to child.kill */
-  }
-  try {
-    if (!child.killed) child.kill();
-  } catch {
-    /* child already exited */
-  }
-  return false;
 }

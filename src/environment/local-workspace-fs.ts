@@ -326,8 +326,9 @@ async function resolveSafeLink(
 }
 
 
-export async function copyTree(source: string, destination: string): Promise<void> {
-  await copyTreeFrom(source, destination, source, new Set());
+export type SnapshotCopyPolicy = { retainPaths: readonly string[]; omitted: { path: string; lockfile: string; restoreCommand: string }[] };
+export async function copyTree(source: string, destination: string, signal?: AbortSignal, policy?: SnapshotCopyPolicy): Promise<void> {
+  await copyTreeFrom(source, destination, source, new Set(), signal, policy);
 }
 
 async function copyTreeFrom(
@@ -335,7 +336,10 @@ async function copyTreeFrom(
   destination: string,
   sourceRoot: string,
   chain: ReadonlySet<string>,
+  signal?: AbortSignal,
+  policy?: SnapshotCopyPolicy,
 ): Promise<void> {
+  signal?.throwIfAborted();
   const identity = await realPathOrResolved(source);
   if (chain.has(identity)) return;
   const nextChain = new Set(chain).add(identity);
@@ -343,25 +347,27 @@ async function copyTreeFrom(
   try {
     entries = await readdir(source, { withFileTypes: true });
   } catch (error) {
-    if (isAccessDenied(error) || isMissing(error)) return;
+    if (!policy && (isAccessDenied(error) || isMissing(error))) return;
     throw error;
   }
   for (const entry of entries) {
+    signal?.throwIfAborted();
     const from = join(source, entry.name);
     const to = join(destination, entry.name);
+    if (policy && entry.isDirectory() && !entry.isSymbolicLink() && await omitRebuildableDirectory(sourceRoot, source, entry.name, policy)) continue;
     let info;
     try {
       info = await lstat(from);
     } catch (error) {
-      if (isAccessDenied(error) || isMissing(error)) continue;
+      if (!policy && (isAccessDenied(error) || isMissing(error))) continue;
       throw error;
     }
     if (info.isSymbolicLink()) {
       const resolved = await resolveSafeLink(sourceRoot, from, nextChain);
-      if (resolved.action === 'skip') continue;
+      if (resolved.action === 'skip') { if (policy) throw new Error('Snapshot omitted an unsupported link.'); continue; }
       if (resolved.action === 'directory') {
         await mkdir(to);
-        await copyTreeFrom(resolved.from, to, sourceRoot, nextChain);
+        await copyTreeFrom(resolved.from, to, sourceRoot, nextChain, signal, policy);
         continue;
       }
       await writeFile(to, await readFile(resolved.from, { flag: 'r' }), { flag: 'wx' });
@@ -369,12 +375,12 @@ async function copyTreeFrom(
     }
     if (info.isDirectory()) {
       await mkdir(to);
-      await copyTreeFrom(from, to, sourceRoot, nextChain);
+      await copyTreeFrom(from, to, sourceRoot, nextChain, signal, policy);
     } else if (info.isFile()) {
       try {
         await writeFile(to, await readFile(from, { flag: 'r' }), { flag: 'wx' });
       } catch (error) {
-        if (isAccessDenied(error) || isMissing(error)) continue;
+        if (!policy && (isAccessDenied(error) || isMissing(error))) continue;
         throw error;
       }
     }
@@ -637,4 +643,26 @@ class BudgetExceeded extends Error {
 
 function compareFingerprintEntries(left: FingerprintEntry, right: FingerprintEntry): number {
   return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
+}
+
+async function omitRebuildableDirectory(root: string, parent: string, name: string, policy: SnapshotCopyPolicy): Promise<boolean> {
+  const path = relativeInside(root, join(parent, name))?.replaceAll('\\', '/');
+  const normalize = (value: string) => value.replaceAll('\\', '/').replace(/^(?:\.\/)+/, '').replace(/\/+$/, '').toLowerCase();
+  const canonical = path ? normalize(path) : '';
+  if (!path || policy.retainPaths.some(value => { const keep = normalize(value); return keep === canonical || keep.startsWith(`${canonical}/`) || canonical.startsWith(`${keep}/`); })) return false;
+  const regular = async (file: string) => {
+    try { const info = await lstat(join(parent, file)); return info.isFile() && !info.isSymbolicLink(); }
+    catch (error) { if (isMissing(error)) return false; throw error; }
+  };
+  const recipes = name === 'node_modules' ? [
+    ['package.json', 'package-lock.json', 'node_modules/.package-lock.json', 'npm ci'],
+    ['package.json', 'pnpm-lock.yaml', 'node_modules/.modules.yaml', 'pnpm install --frozen-lockfile'],
+  ] : name === 'target' ? [['Cargo.toml', 'Cargo.lock', 'target/.rustc_info.json', 'cargo build --locked']] : [];
+  for (const [manifest, lockfile, marker, restoreCommand] of recipes) {
+    if (await regular(manifest!) && await regular(lockfile!) && await regular(marker!)) {
+      policy.omitted.push({ path, lockfile: relativeInside(root, join(parent, lockfile!))!, restoreCommand: restoreCommand! });
+      return true;
+    }
+  }
+  return false;
 }

@@ -4,6 +4,7 @@ import {
   assertBriefingOutsideReplica,
   controllerBriefingRoot,
   controllerPromptContent,
+  CONTROLLER_ISOLATION,
   controllerRequestSnapshot,
   controllerViewSurface,
   historicalRequirementRefs,
@@ -51,6 +52,8 @@ export async function runControllerLoop(input: {
 }> {
   const decisions: StructuredAgentResult<ControllerDecision>[] = [];
   const startedAt = Date.now();
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  let stopping: Promise<unknown> | undefined;
   const briefingRoot = controllerBriefingRoot(input.experimentRoot, input.runId);
   const bindings = createControllerToolBindings();
   const historicalCwd = historicalCwdOf(input.taskCase);
@@ -59,20 +62,26 @@ export async function runControllerLoop(input: {
     briefingRoot,
     bindings,
   );
-  await input.store.append({
-    type: "controller.started",
-    runId: input.runId,
-    operationId: runOperationId(input.runId, "controller-started"),
-    payload: { model: input.controllerModel },
-  });
   try {
+    if (input.policy.wallClockMs !== undefined) {
+      deadline = setTimeout(() => {
+        stopping = Promise.all([input.run.stopByHarness('limit.wall_clock'), input.controller.cancel?.(input.runId)]);
+        void stopping.catch(() => { /* The finally block awaits and surfaces deadline cleanup failures. */ });
+      }, input.policy.wallClockMs);
+    }
+    await input.store.append({
+      type: "controller.started",
+      runId: input.runId,
+      operationId: runOperationId(input.runId, "controller-started"),
+      payload: { model: input.controllerModel },
+    });
     const opened = await deliverOpening(input, decisions, tools, bindings);
     if (opened.finished) return opened.result;
     let state = opened.state;
     let controllerCalls = opened.controllerCalls;
     let followupSubmission = false;
     while (state === "awaiting_controller") {
-      if (Date.now() - startedAt >= input.policy.wallClockMs) {
+      if (input.policy.wallClockMs !== undefined && Date.now() - startedAt >= input.policy.wallClockMs) {
         state = await input.run.stopByHarness("limit.wall_clock");
         break;
       }
@@ -88,7 +97,8 @@ export async function runControllerLoop(input: {
     }
     return finalizeControllerLoop(state, decisions, controllerCalls, followupSubmission);
   } finally {
-    await input.controller.release?.(input.runId);
+    if (deadline) clearTimeout(deadline);
+    try { await stopping; } finally { await input.controller.release?.(input.runId); }
   }
 }
 
@@ -106,6 +116,10 @@ async function deliverOpening(
   const opening = await requestControllerDecision(input, "created", 0, "opening", tools, bindings);
   decisions.push(opening);
   await persistControllerDecision(input, 1, opening);
+  if (input.run.isStopping()) {
+    await input.run.cancel();
+    return { finished: true, result: finalizeControllerLoop('finished', decisions, 1, false) };
+  }
   if (opening.status !== "completed" || opening.value.type !== "send") {
     const state = await abortOpening(input, opening);
     return { finished: true, result: finalizeControllerLoop(state, decisions, 1, false) };
@@ -149,6 +163,10 @@ async function deliverSteering(
   const calls = controllerCalls + 1;
   decisions.push(decision);
   await persistControllerDecision(input, calls, decision);
+  if (input.run.isStopping()) {
+    await input.run.cancel();
+    return { state: 'finished', controllerCalls: calls, followupSubmission: false, stop: true };
+  }
   if (decision.status !== "completed") {
     const next = decision.status === "failed"
       ? await input.run.failController({ code: decision.failure.code, message: decision.failure.message })
@@ -222,15 +240,19 @@ async function requestControllerDecision(
   tools: readonly AgentToolDefinition[],
   bindings: ControllerToolBindings,
 ) {
+  const cancelled = () => ({ status: "cancelled" as const, factRef: `run:${input.runId}:stopped` });
+  if (input.run.isStopping()) return cancelled();
   const briefingRoot = controllerBriefingRoot(input.experimentRoot, input.runId);
   assertBriefingOutsideReplica(briefingRoot, input.environment.root);
   const packed = await packControllerBriefing(input, phase, briefingRoot);
+  if (input.run.isStopping()) return cancelled();
   const context = steeringContextFrom(input, state, controllerCalls, phase, packed);
   bindings.requestId = context.requestId;
   bindings.phase = phase;
   bindings.changedPaths = packed.observation.changedPaths;
   bindings.settledTurnCount = input.store.events(input.runId).filter((event) => event.type === "runtime.turn_settled").length;
   await persistControllerRequested(input, context);
+  if (input.run.isStopping()) return cancelled();
   return input.controller.decide(context, tools, experimentAgentAuditSink(input.store, input.runId));
 }
 
@@ -239,7 +261,7 @@ async function packControllerBriefing(
   phase: "opening" | "steering",
   briefingRoot: string,
 ): Promise<{
-    observation: Pick<ControllerObservation, "currentSummary" | "trajectorySummary" | "evidenceRefs" | "changedPaths"> & Partial<Pick<ControllerObservation, "runtimeGeneratedPaths" | "settlementStatus">>;
+    observation: Pick<ControllerObservation, "currentSummary" | "trajectorySummary" | "evidenceRefs" | "changedPaths"> & Partial<Pick<ControllerObservation, "runtimeGeneratedPaths" | "settlementStatus" | "progress">>;
   indexMarkdown: string;
   fileDigests: Record<string, string>;
   briefingRoot: string;
@@ -293,7 +315,7 @@ function steeringContextFrom(
   controllerCalls: number,
   phase: "opening" | "steering",
   packed: {
-    observation: Pick<ControllerObservation, "currentSummary" | "trajectorySummary" | "evidenceRefs" | "changedPaths"> & Partial<Pick<ControllerObservation, "runtimeGeneratedPaths" | "settlementStatus">>;
+    observation: Pick<ControllerObservation, "currentSummary" | "trajectorySummary" | "evidenceRefs" | "changedPaths"> & Partial<Pick<ControllerObservation, "runtimeGeneratedPaths" | "settlementStatus" | "progress">>;
     indexMarkdown: string;
     fileDigests: Record<string, string>; briefingRoot: string;
     turnRelative?: string;
@@ -310,6 +332,7 @@ function steeringContextFrom(
       baseline: input.taskCase.baseline,
       privacy: input.taskCase.privacy,
     },
+    ...(input.taskCase.execution ? { execution: input.taskCase.execution } : {}),
     current: {
       summary: observation.currentSummary,
       evidenceRefs: observation.evidenceRefs,
@@ -325,6 +348,7 @@ function steeringContextFrom(
     },
     promptContent: controllerPromptContent({
       phase,
+      ...(input.taskCase.execution ? { execution: input.taskCase.execution } : {}),
       briefingRoot: packed.briefingRoot,
       indexMarkdown: packed.indexMarkdown,
       ...(packed.turnRelative ? { latestTurnRelative: packed.turnRelative } : {}),
@@ -333,7 +357,7 @@ function steeringContextFrom(
     fileDigests: packed.fileDigests,
     replay: {
       sourceRootKind: input.sourceRootKind,
-      isolation: "Writes stay in the isolated replica and never land in the original user directory.",
+      isolation: CONTROLLER_ISOLATION,
       requestedModel: input.requestedModel,
       resolvedModel: input.resolvedModel,
       changedPaths: observation.changedPaths,
@@ -341,6 +365,7 @@ function steeringContextFrom(
       ...(historicalCwd ? { historicalCwd } : {}),
     },
     hostFacts: {
+      ...(observation.progress ? { progress: observation.progress } : {}),
       changedPaths: observation.changedPaths,
       requestId: `controller-request-${input.runId}-${controllerCalls + 1}`,
       runId: input.runId,

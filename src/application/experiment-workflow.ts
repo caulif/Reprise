@@ -283,7 +283,7 @@ async function beginOwnedActivity(
   const combined = signal ? AbortSignal.any([signal, localAbort.signal]) : localAbort.signal;
   const activity = registerActivity({
     kind, experimentId, runId, dataDir,
-    cancel: async () => { localAbort.abort(); },
+    cancel: async () => { localAbort.abort({ source: 'user' }); },
   });
   onActivity?.(activity);
   await activityControlReady(activity);

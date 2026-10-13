@@ -1,10 +1,12 @@
+import { ArtifactCaptureError } from './artifact-capture-error.js';
 import { lstat, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathContainedBy } from "../core/paths.js";
 import { gitSinkRoot, readGitSinkManifest } from "../environment/git-sink.js";
 import type { RunInspection } from "./comparison.js";
 import { Value } from "@sinclair/typebox/value";
-import { UserVisibleTurnSchema, type EventEnvelope, type RunRecord, type UserVisibleTurn } from "../core/schema.js";
+import { CandidateWorkspaceScopeSchema, UserVisibleTurnSchema, type EventEnvelope, type RunRecord, type UserVisibleTurn } from "../core/schema.js";
+import { candidateProgress } from './candidate-progress.js';
 import type { TurnSettlement } from "../core/runtime.js";
 import {
   LocalWorkspaceProvider,
@@ -22,6 +24,7 @@ import { loadOperatorPricingOverride } from "./model-pricing.js";
 export type RecentToolError = { tool: string; message: string };
 
 export type ControllerObservation = RunInspection & {
+  progress?: ReturnType<typeof candidateProgress>;
   evidenceRefs: string[];
   currentSummary: string;
   trajectorySummary: string;
@@ -124,6 +127,7 @@ export async function inspectRun(
   const trajectorySummary = `Settled turns: ${inspection.turns}. Read current-user-view.md and THIS-TURN.txt.`;
   return {
     ...inspection,
+    progress: candidateProgress(events),
     recentToolErrors: recentToolErrorsFromEvents(events),
     evidenceRefs,
     currentSummary,
@@ -285,6 +289,7 @@ async function readWorkspaceScope(
     const scope = recordValue(
       JSON.parse(Buffer.from(await store.readArtifact(ref)).toString("utf8")),
     );
+    if (!Value.Check(CandidateWorkspaceScopeSchema, scope)) throw new Error('Malformed candidate workspace scope.');
     return {
       changedPaths: strings(scope.changedPaths).filter(isComparisonChangedPath),
       runtimeGeneratedPaths: strings(scope.runtimeGeneratedPaths),
@@ -314,6 +319,8 @@ function elapsedWallClock(
 
 /** Captures bounded, immutable evidence before CandidateRun releases its workspace. */
 export async function captureWorkspaceScope(input: {
+  signal?: AbortSignal;
+  snapshotRetainPaths?: readonly string[];
   store: ExperimentStore;
   environment: PreparedEnvironmentRef;
   workspaceProvider: LocalWorkspaceProvider;
@@ -321,7 +328,9 @@ export async function captureWorkspaceScope(input: {
   runId: string;
 }): Promise<RunRecord["artifactRefs"]> {
   const after = await input.workspaceProvider.fingerprint(input.environment);
-  const snapshot = await input.workspaceProvider.sealCandidateSnapshot(input.environment);
+  input.signal?.throwIfAborted();
+  const snapshot = await input.workspaceProvider.sealCandidateSnapshot(input.environment, input.signal, input.snapshotRetainPaths);
+  input.signal?.throwIfAborted();
   const allChangedPaths = changedPathsBetween(
     input.environment.beforeFingerprint,
     after,
@@ -348,17 +357,10 @@ export async function captureWorkspaceScope(input: {
     });
     artifactRefs.push({ artifactId: gitSinkArtifactId, experimentId: input.experimentId, runId: input.runId });
   }
-  const artifactId = "candidate-workspace-scope.json";
-  await input.store.commitArtifact({
-    artifactId,
-    runId: input.runId,
-    kind: "candidate_workspace_scope",
-    mediaType: "application/json",
-    bytes: Buffer.from(
-      JSON.stringify(
-        {
+  const scope = {
           snapshotStatus: snapshot.status,
           snapshotRoot: snapshot.root,
+          omittedRebuildableDirectories: snapshot.omitted,
           baselineFingerprint: input.environment.beforeFingerprint.digest,
           candidateFingerprint: after.digest,
           changedPaths,
@@ -372,14 +374,12 @@ export async function captureWorkspaceScope(input: {
             (snapshot): snapshot is NonNullable<typeof snapshot> =>
               snapshot !== undefined,
           ),
-        },
-        null,
-        2,
-      ),
-      "utf8",
-    ),
-  });
+        };
+  if (!Value.Check(CandidateWorkspaceScopeSchema, scope)) throw new Error('Malformed candidate workspace scope.');
+  const artifactId = "candidate-workspace-scope.json";
+  await input.store.commitArtifact({ artifactId, runId: input.runId, kind: "candidate_workspace_scope", mediaType: "application/json", bytes: Buffer.from(JSON.stringify(scope, null, 2), 'utf8') });
   artifactRefs.push({ artifactId, experimentId: input.experimentId, runId: input.runId });
+  if (snapshot.status !== 'complete') throw new ArtifactCaptureError('Candidate snapshot is incomplete; workspace retained for recovery.', artifactRefs);
   return artifactRefs;
 }
 

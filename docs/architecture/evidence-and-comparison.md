@@ -188,3 +188,5 @@ Comparison 的 `view_image({ref})` 只观察当前 catalog 注册的 PNG 媒体�
 Comparison 的独立 read/ls/grep/view_image/render_artifact 使用 Pi 原生并行批次；其它工具省略执行模式时保持串行，混合批整体串行。渲染采用独立输出目录、最多两路并发，媒体登记沿用有序队列。默认仅整体 30 分钟截止，不设置来源或保存阶段配额。显式旧配额模式才使用累计保存窗口、来源活动时间暂停及最多两次有界续查；授予及拒绝进入 comparison.sources_continued。
 
 transform_image 裁剪/缩放已有冻结 PNG，使用原图像素坐标并记录父 hash 和变换顺序；返回派生 media ref，再由 view_image 交付图片。工具不重新渲染来源，不证明视觉理解。source-save 的 evidence 投影保留全部 user 材料、工具结果与调用配对，仅省略 assistant 叙述，实际输入仍按 generation 快照恢复。首流事件、首文本 delta 与工具执行计时用于诊断，不把首 SDK 事件当网络 TTFT。详见[并行与续查决定](../decisions/accepted/2026-10-11-comparison-parallel-continuation.md)。
+
+候选快照的依赖省略、可取消收尾与旧格式兼容按 [Controller 执行可靠性](../decisions/accepted/2026-10-13-controller-execution-reliability.md) 执行。候选工作树保留实际依赖，封存仅省略有清单、锁和生成标记支持的可重建目录；scope 记录省略路径与恢复命令，用户明确交付路径可保留。省略目录不是删除执行工作树，也不保证重新安装后与原依赖二进制相同。

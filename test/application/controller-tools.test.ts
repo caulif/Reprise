@@ -84,10 +84,10 @@ test("reads classify briefing, replica, and external paths without gating on cha
   assert.equal(controllerReadEvidenceSource("C:\\other\\session.jsonl", bindings), "external_read");
 });
 
-test("Controller registers shell_exec, writes project, and rejects briefing", async () => {
+test("Controller registers managed exec_command, writes project, and rejects briefing", async () => {
   const ctx = await fixture();
   try {
-    assert.equal(ctx.tools.some((tool) => tool.name === "shell_exec"), true);
+    assert.equal(ctx.tools.some((tool) => tool.name === "exec_command"), true);
     const write = ctx.tools.find((tool) => tool.name === "write");
     assert.ok(write);
     const signal = new AbortController().signal;
@@ -239,18 +239,18 @@ test("Controller shell_exec uses replica cwd, can read external paths, and diagn
     const marker = join(ctx.root, "external-marker.txt");
     await writeFile(marker, "from-outside\n");
     const signal = new AbortController().signal;
-    const shell = ctx.tools.find((tool) => tool.name === "shell_exec");
+    const shell = ctx.tools.find((tool) => tool.name === "exec_command");
     assert.ok(shell);
-    const cwd = await shell.execute({ command: hostShellPwd() }, signal);
-    assert.equal(await sameLiveFsPath(toolBodyWithoutEvidenceFooter(cwd.content).trim(), ctx.replicaRoot), true);
+    const cwd = await shell.execute({ cmd: hostShellPwd() }, signal, { sessionId: "controller", invocationId: "request" });
+    assert.equal(await sameLiveFsPath((JSON.parse(toolBodyWithoutEvidenceFooter(cwd.content)) as { output: string }).output.trim(), ctx.replicaRoot), true);
     assert.match(cwd.content, /Evidence refs: artifact:controller-shell-/);
-    const external = await shell.execute({ command: hostShellReadFile(marker) }, signal);
+    const external = await shell.execute({ cmd: hostShellReadFile(marker) }, signal, { sessionId: "controller", invocationId: "request" });
     assert.match(toolBodyWithoutEvidenceFooter(external.content), /from-outside/);
     assert.match(external.content, /Evidence refs: artifact:controller-shell-/);
     assert.doesNotMatch(external.content, /slash-separated relative path/);
-    const nonzero = await shell.execute({ command: "exit 9" }, signal);
+    const nonzero = await shell.execute({ cmd: "exit 9" }, signal, { sessionId: "controller", invocationId: "request" });
     assert.equal((nonzero.details as { exitCode?: number }).exitCode, 9);
-    const missing = await shell.execute({ command: hostShellMissingExecutable() }, signal);
+    const missing = await shell.execute({ cmd: hostShellMissingExecutable() }, signal, { sessionId: "controller", invocationId: "request" });
     assert.notEqual((missing.details as { exitCode?: number }).exitCode, 0);
     const timed = workspaceTools(ctx.briefingRoot, {
       allowShell: true,
@@ -271,11 +271,11 @@ test("Controller shell_exec uses replica cwd, can read external paths, and diagn
 test("Controller shell_exec rejects writes to the historical source root", async () => {
   const ctx = await fixture();
   try {
-    const shell = ctx.tools.find((tool) => tool.name === "shell_exec");
+    const shell = ctx.tools.find((tool) => tool.name === "exec_command");
     assert.ok(shell);
     const signal = new AbortController().signal;
     await assert.rejects(
-      () => shell.execute({ command: `Set-Content -LiteralPath '${ctx.sourceRoot}\\blocked.txt' -Value blocked` }, signal),
+      () => shell.execute({ cmd: `Set-Content -LiteralPath '${ctx.sourceRoot}\\blocked.txt' -Value blocked` }, signal, { sessionId: "controller", invocationId: "request" }),
       /read-only mount|write_denied/,
     );
     assert.equal((await readFile(join(ctx.sourceRoot, "blocked.txt")).catch(() => "")), "");
@@ -289,10 +289,10 @@ test("shell external writes are audited as controller.external_write, not worksp
   try {
     const outside = join(ctx.root, "shell-out.txt");
     const signal = new AbortController().signal;
-    const shell = ctx.tools.find((tool) => tool.name === "shell_exec");
+    const shell = ctx.tools.find((tool) => tool.name === "exec_command");
     const write = ctx.tools.find((tool) => tool.name === "write");
     assert.ok(shell && write);
-    await shell.execute({ command: hostShellWriteFile(outside, "external") }, signal);
+    await shell.execute({ cmd: hostShellWriteFile(outside, "external") }, signal, { sessionId: "controller", invocationId: "request" });
     assert.equal((await readFile(outside, "utf8")).trim(), "external");
     const types = ctx.events.map((event) => (event as { type?: string }).type);
     assert.equal(types.includes("controller.external_write"), true);
@@ -302,7 +302,7 @@ test("shell external writes are audited as controller.external_write, not worksp
       ctx.events.filter((event) => (event as { type?: string }).type === "controller.workspace_write").length,
       1,
     );
-    await shell.execute({ command: hostShellWriteFile("replica-shell.txt", "in-copy") }, signal);
+    await shell.execute({ cmd: hostShellWriteFile("replica-shell.txt", "in-copy") }, signal, { sessionId: "controller", invocationId: "request" });
     assert.equal((await readFile(join(ctx.replicaRoot, "replica-shell.txt"), "utf8")).trim(), "in-copy");
     assert.equal(
       ctx.events.filter((event) => (event as { type?: string }).type === "controller.workspace_write").length,

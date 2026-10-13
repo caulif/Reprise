@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Value } from '@sinclair/typebox/value';
 import { CandidateRun } from '../../src/application/candidate-run.js';
+import { ArtifactCaptureError } from '../../src/application/artifact-capture-error.js';
 import { RunRecordSchema, type RunAttempt, type RunManifest } from '../../src/core/schema.js';
 import { ExperimentStore } from '../../src/infrastructure/store/experiment-store.js';
 import { ScriptedRunner } from '../support/scripted-runtime.js';
@@ -52,6 +53,54 @@ function persistedRun(): { attempt: RunAttempt; manifest: RunManifest } {
 async function temporaryExperiment(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'reprise-candidate-run-'));
 }
+
+test('failed snapshot keeps its committed scope reference in the terminal record and retains ownership', async t => {
+  const root = await temporaryExperiment();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = await ExperimentStore.open(root, 'experiment-1');
+  await store.acquireWriter();
+  t.after(() => store.close());
+  const { attempt, manifest } = persistedRun();
+  const scope = { artifactId: 'candidate-workspace-scope.json', experimentId: 'experiment-1', runId: 'run-1' };
+  let releases = 0;
+  const run = new CandidateRun({ runner: new ScriptedRunner([], []), policy,
+    release: async () => { releases++; return { status: 'released' }; },
+    persistence: { journal: store, attempt, manifest, captureArtifacts: async () => { throw new ArtifactCaptureError('incomplete snapshot', [scope]); } },
+  });
+  await run.failBeforeStart({ code: 'blocked', message: 'opening blocked' });
+  assert.equal(releases, 0);
+  assert.equal(run.result().outcome.cleanup.status, 'incomplete');
+  assert.ok(run.result().record?.artifactRefs.some(ref => ref.artifactId === scope.artifactId));
+});
+
+for (const boundary of ['attempt', 'manifest', 'transition'] as const) test(`budget during persisted ${boundary} prevents late startup or terminal state overwrite`, async t => {
+  const root = await temporaryExperiment();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = await ExperimentStore.open(root, 'experiment-1');
+  await store.acquireWriter();
+  t.after(() => store.close());
+  const { attempt, manifest } = persistedRun();
+  let entered!: () => void; let resume!: () => void;
+  const paused = new Promise<void>(resolve => { entered = resolve; });
+  const gate = new Promise<void>(resolve => { resume = resolve; });
+  const delay = async () => { entered(); await gate; };
+  const runner = new ScriptedRunner([], []);
+  const run = new CandidateRun({ runner, policy, persistence: { attempt, manifest, journal: {
+    commitAttempt: async (...args) => { if (boundary === 'attempt') await delay(); return store.commitAttempt(...args); },
+    commitManifest: async (...args) => { if (boundary === 'manifest') await delay(); return store.commitManifest(...args); },
+    append: async event => { if (boundary === 'transition' && event.type === 'run.state_changed' && (event.payload as { to: string }).to === 'preparing') await delay(); return store.append(event); },
+    events: id => store.events(id), nextSequence: () => store.nextSequence(),
+  } } });
+  const pending = run.start(initial, identity);
+  await paused;
+  const stopping = run.stopByHarness('limit.wall_clock');
+  resume();
+  await stopping;
+  assert.equal(await pending, 'finished');
+  assert.equal(runner.started.length, 0);
+  assert.equal(run.states().at(-1), 'finished');
+  assert.equal(run.result().outcome.termination.code, 'limit.wall_clock');
+});
 
 test('CandidateRun accepts an initial message, waits for settlement, and records all state transitions', async () => {
   const runner = new ScriptedRunner([{ delivery: 'accepted', evidence: 'native_admission' }], [settled('waiting_input')]);
@@ -181,7 +230,7 @@ test('CandidateRun records failed and aborted settlements with causes and cleanu
 
       const events = (await readFile(join(root, 'events.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as { type: string; eventId: string; payload: unknown });
       const outcomeEvent = events.find((event) => event.type === 'run.outcome_created');
-      const cleanupEvents = events.filter((event) => ['runtime.stop_completed', 'runtime.stop_failed', 'environment.release_completed', 'environment.release_failed'].includes(event.type));
+      const cleanupEvents = events.filter((event) => event.type.startsWith('cleanup.') || ['runtime.stop_completed', 'runtime.stop_failed', 'environment.release_completed', 'environment.release_failed'].includes(event.type));
       assert.ok(outcomeEvent);
       assert.deepEqual(outcomeEvent?.payload, result.outcome);
       assert.deepEqual(result.outcome.cleanup.evidenceRefs, cleanupEvents.map((event) => `event:${event.eventId}`));

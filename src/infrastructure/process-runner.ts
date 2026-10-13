@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import { spawnCancelOptions, terminateProcessTree } from './platform.js';
 import { join } from 'node:path';
+import { captureWindowsProcessIdentity } from './windows-process-identity.js';
 
 export type ProcessExitCategory = 'spawn_error' | 'stdio_disconnected' | 'nonzero_exit' | 'timed_out' | 'cancelled' | 'output_limit_exceeded';
 
@@ -56,6 +57,7 @@ export async function runProcess(input: {
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   const stdout: Buffer[] = [];
+  if (process.platform === 'win32' && input.killTree && !input.spawnProcess) captureWindowsProcessIdentity(child);
   const stderr: Buffer[] = [];
   const maxOutputBytes = input.maxOutputBytes ?? 262_144;
   const output = { bytes: 0, truncated: false };

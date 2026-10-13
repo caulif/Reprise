@@ -37,6 +37,12 @@ export const TaskCaseSchema = Type.Object({
     Type.Union([Type.Literal("transcript"), Type.Literal("history")]),
   ),
   initialInput: MessageSchema,
+  execution: Type.Optional(Type.Union([
+    Type.Object({ mode: Type.Literal('historical_simulation') }),
+    Type.Object({ mode: Type.Literal('task_completion'), goal: Type.String({ minLength: 1 }),
+      deliverables: Type.Array(Type.String({ minLength: 1 })), authorization: Type.String({ minLength: 1 }),
+      snapshotRetainPaths: Type.Optional(Type.Array(Type.String({ minLength: 1 }))) }),
+  ])),
   transcript: Type.Array(MessageSchema),
   historicalEvents: Type.Array(JsonRecord),
   baseline: BaselineEvidenceSchema,
