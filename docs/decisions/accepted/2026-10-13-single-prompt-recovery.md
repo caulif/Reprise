@@ -28,7 +28,7 @@ Recovery 按角色 opt-in 增加通用 apply_patch/view_image，复用既有静�
 
 受管进程继续 invocation-owned：单次 request 内多个模型 turn 共享句柄，最终 decision、取消或关闭前必须排空。没有复制 Codex 整套宿主、PTY、审批或容器。任意 shell 仍不构成全局外部副作用隔离。
 
-Git 封存只处理普通独立 `.git` 目录，拒绝 gitdir、commondir、alternate、链接和模型预置的禁用 hook/config 路径；清理继承的 Git 环境并逐次禁用 hook、fsmonitor 与全局配置。Windows 深暂存路径逐次启用 longpaths，不修改全局设置。封存失败不自动再次执行。
+Git 封存只处理普通独立 `.git` 目录，拒绝 gitdir、commondir、alternate、链接和模型预置的禁用 hook/config 路径；清理继承的 Git 环境并逐次禁用 hook、fsmonitor 与全局配置。全局配置指向 Git 支持的 `/dev/null`，避免 Windows 在解析 longpaths 配置之前打开深工作区中的占位路径而失败；不读取或修改用户全局配置。Windows 深暂存路径逐次启用 longpaths。封存失败不自动再次执行。
 
 ## 验证
 

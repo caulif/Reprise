@@ -82,3 +82,20 @@ test('history sealing supports deep Windows staging roots without changing globa
   assert.equal(await git(project, 'rev-parse', 'HEAD'), head);
   assert.equal(await readFile(join(project, 'input.txt'), 'utf8'), 'original');
 });
+
+test('history sealing reads no global config at the Windows pre-longpaths filename boundary', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-seal-config-boundary-'));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  const project = join(root, 'project-'.padEnd(Math.max(8, 240 - root.length - 1), 'x'));
+  const head = await repo(project);
+  const config = join(root, 'global-config');
+  await writeFile(config, 'invalid global config\n');
+  const previous = process.env.GIT_CONFIG_GLOBAL;
+  process.env.GIT_CONFIG_GLOBAL = config;
+  try { await sealRecoveryGitHistory(project, head); }
+  finally { if (previous === undefined) delete process.env.GIT_CONFIG_GLOBAL; else process.env.GIT_CONFIG_GLOBAL = previous; }
+  assert.equal(await readFile(config, 'utf8'), 'invalid global config\n');
+  assert.equal(await git(project, 'rev-parse', 'HEAD'), head);
+  assert.equal(await readFile(join(project, 'input.txt'), 'utf8'), 'original');
+  assert.equal(await git(project, 'for-each-ref', '--format=%(refname)'), '');
+});

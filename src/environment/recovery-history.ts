@@ -33,7 +33,7 @@ export async function sealRecoveryGitHistory(root: string, head: string, signal?
   const git = async (args: string[]) => (await runProcess({ operation: "recovery_seal_history", executableKind: "git", command: "git",
     args: ["--git-dir=.git", "--work-tree=.", "-c", "core.hooksPath=.git/reprise-disabled-hooks", "-c", "core.fsmonitor=false", "-c", "core.longpaths=true", "-c", "gc.auto=0", ...args],
     cwd: root, timeoutMs: 120000, maxOutputBytes: 8 * 1024 * 1024,
-    env: { ...env, GIT_NO_LAZY_FETCH: "1", GIT_TERMINAL_PROMPT: "0", GIT_ALLOW_PROTOCOL: "file", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: ".git/missing-global-config" }, ...(signal ? { signal } : {}),
+    env: { ...env, GIT_NO_LAZY_FETCH: "1", GIT_TERMINAL_PROMPT: "0", GIT_ALLOW_PROTOCOL: "file", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" }, ...(signal ? { signal } : {}),
   })).stdout;
   if ((await git(["rev-parse", "--verify", "HEAD"])).trim() !== head) throw new Error("Recovery HEAD changed before history sealing.");
   // Detach without checkout: no working-tree rewrite or post-checkout hooks are needed.
