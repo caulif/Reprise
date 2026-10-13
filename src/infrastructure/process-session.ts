@@ -41,16 +41,20 @@ class PipeProcessSession implements ManagedProcessSession {
       void this.cancel().catch(() => { /* poll/drain surfaces persistence and termination failure. */ });
     }) : undefined;
     this.#log = log;
-    const output = processOutputRedactor(text => { const bytes = Buffer.from(text); log?.append(bytes); this.#collect(bytes); });
+    const outputs = [child.stdout, child.stderr].map(() => processOutputRedactor(text => {
+      const bytes = Buffer.from(text); log?.append(bytes); this.#collect(bytes);
+    }));
     const decoders = [new StringDecoder('utf8'), new StringDecoder('utf8')];
     const abort = () => { void this.cancel().catch(() => { /* poll/drain surfaces termination uncertainty. */ }); };
     this.#closed = new Promise(resolve => child.once('close', code => {
       this.#rootClosed = true;
       this.#exitCode = typeof code === 'number' ? code : undefined;
       signal.removeEventListener('abort', abort);
-      for (const decoder of decoders) output.append(decoder.end());
-      output.finish();
-      this.#redactionTruncated ||= output.truncated;
+      for (const [index, output] of outputs.entries()) {
+        output.append(decoders[index]!.end());
+        output.finish();
+        this.#redactionTruncated ||= output.truncated;
+      }
       void (async () => {
         try { await log?.finish(); }
         catch (error) { this.#failure ??= new Error('Process output log persistence failed.', { cause: error }); }
@@ -67,6 +71,7 @@ class PipeProcessSession implements ManagedProcessSession {
     for (const [index, pipe] of [child.stdout, child.stderr].entries()) {
       pipe?.on('error', () => failure('stdio_disconnected'));
       pipe?.on('data', (chunk: Buffer | string) => {
+        const output = outputs[index]!;
         output.append(decoders[index]!.write(Buffer.from(chunk)));
         this.#redactionTruncated ||= output.truncated;
       });

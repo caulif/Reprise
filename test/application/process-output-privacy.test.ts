@@ -73,7 +73,7 @@ test('safe interactive prompts are delivered without a newline; incomplete and o
   assert.match(parts.join(''), /incomplete sensitive output omitted/);
 });
 
-test('cross-pipe secret output is sanitized before pagination, model results, audit, and diagnostic logs', async t => {
+for (const sensitivePipe of ['stdout', 'stderr'] as const) test(`${sensitivePipe} secrets survive interleaved output before pagination, model results, audit, and logs`, async t => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-output-privacy-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const logPath = join(root, 'output.log');
@@ -82,10 +82,11 @@ test('cross-pipe secret output is sanitized before pagination, model results, au
   const registry = workspaceProcessTools({ description: 'Fixture', start: async () => ({ process, cwd: '.' }) });
   const tools = instrumentTools(registry.tools, 'session', 'recovery', { requestIndex: 0, invocationId: 'invocation' },
     { append: async event => { events.push(event); } });
-  child.stdout.write('token=');
+  child[sensitivePipe].write('token=');
   const first = await tools[0]!.execute({ cmd: 'fixture', yield_time_ms: 0, max_output_tokens: 1 }, signal);
   const id = (first.details as { session_id: string }).session_id;
-  child.stderr.write('synthetic-secret\n'); child.emit('close', 0);
+  child[sensitivePipe === 'stdout' ? 'stderr' : 'stdout'].write('progress\n');
+  child[sensitivePipe].write('synthetic-secret\n'); child.emit('close', 0);
   let output = (first.details as { output: string }).output;
   let result;
   do {
@@ -93,10 +94,10 @@ test('cross-pipe secret output is sanitized before pagination, model results, au
     assert.ok(!JSON.stringify(result).includes('synthetic-secret'));
     output += (result.details as { output: string }).output;
   } while ((result.details as { remainingOutput: boolean; state: string }).remainingOutput || (result.details as { state: string }).state === 'running');
-  assert.equal(output, 'token=[REDACTED]\n');
+  assert.equal(output, 'progress\ntoken=[REDACTED]\n');
   await tools[0]!.lifecycle!.finishInvocation({ sessionId: 'session', invocationId: 'invocation' });
   assert.ok(!JSON.stringify(events).includes('synthetic-secret'));
-  assert.equal(await readFile(logPath, 'utf8'), 'token=[REDACTED]\n');
+  assert.equal(await readFile(logPath, 'utf8'), 'progress\ntoken=[REDACTED]\n');
 });
 
 test('tool parameter and completion audits redact JSON credentials and URL userinfo', async () => {
