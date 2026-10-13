@@ -84,7 +84,7 @@ process.stdin.on('data', (chunk) => {
 
 test('Claude Code Recovery Playbook has stable provenance and is included in source', async () => {
   const playbook = claudeCodeProductPack.recoveryPlaybook();
-  assert.equal(playbook.version, 'claude-code-recovery/v2');
+  assert.equal(playbook.version, 'claude-code-recovery/v3');
   assert.equal(playbook.sha256, sha256(playbook.text));
   assert.match(playbook.text, /Semantics of Claude Code history/);
   assert.doesNotMatch(playbook.text, /permission-prompt-tool/);

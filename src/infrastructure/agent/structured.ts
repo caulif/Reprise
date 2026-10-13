@@ -78,7 +78,10 @@ function balancedJsonObjects(text: string): string[] {
   for (let index = 0; index < text.length; index += 1) {
     if (text[index] !== "{") continue;
     const span = sliceBalancedObject(text, index);
-    if (span) objects.push(span);
+    if (span) {
+      objects.push(span);
+      index += span.length - 1;
+    }
   }
   return objects;
 }

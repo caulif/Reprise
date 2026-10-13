@@ -1,3 +1,4 @@
+import { freezeRecoveryGitEvidence } from "../../environment/recovery-pre-task.js";
 import { resolve } from "node:path";
 import { runOperationId } from "../../core/identity.js";
 import type { AgentAuditEvent, AgentAuditSink } from "../../infrastructure/agent/host.js";
@@ -64,7 +65,7 @@ export async function beginRecoveryStaging(session: RecoveryRunSession): Promise
           sourceRoot: resolve(input.sourceRoot),
           ...(input.checkpointRoot ? { checkpointRoot: resolve(input.checkpointRoot) } : {}),
           playbook,
-        }),
+        }, [], { externalArtifacts: true }),
       async (diagnostic) => {
         await store.append({
           type: "recovery.preflight_retry",
@@ -96,6 +97,10 @@ export async function beginRecoveryStaging(session: RecoveryRunSession): Promise
     durationMs: Math.max(0, Date.now() - startedAt),
     recordedAt: new Date().toISOString(),
   }));
+  session.staging.externalArtifacts = true;
+  session.frozenGit = await freezeRecoveryGitEvidence(session.staging.sourceRoot, input.taskCase, session.staging.sourceFingerprint.digest, input.signal);
+  const frozen = await store.commitArtifact({ artifactId: "recovery-frozen-git", runId: input.runId, kind: "recovery_frozen_git", mediaType: "application/json", bytes: Buffer.from(JSON.stringify(session.frozenGit)) });
+  await store.append({ type: "recovery.evidence_frozen", runId: input.runId, operationId: runOperationId(input.runId, "recovery-evidence-frozen"), payload: { artifactId: frozen.artifactId, contentHash: frozen.contentHash } });
   session.activeStaging = session.staging;
   moveRecoveryState(session, "staged");
   session.preflightOperation = "recovery_resolve_facts";

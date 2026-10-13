@@ -11,7 +11,7 @@ const BLOCKS: Record<AgentLanguageRole, (language: string) => string> = {
   recovery: (language) =>
     [
       "# Language",
-      `Instructions and file navigation are in English. Text you write for the operator is in ${language}: process sentences, recovery.md, and the summary and unresolved items of the final JSON.`,
+      `Instructions and file navigation are in English. Text you write for the operator is in ${language}: process sentences and the summary, boundary statement and unresolved items of the final JSON.`,
       "Quote file contents, commands, paths, and identifiers verbatim; never translate them.",
     ].join("\n"),
   controller: (language) =>

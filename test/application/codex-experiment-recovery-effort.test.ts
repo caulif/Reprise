@@ -122,7 +122,7 @@ test("Recovery orchestration persists audit/report and accepted baseline can sta
   assert.equal(legacyReportRef.runId, undefined);
   const verifyStore = await ExperimentStore.open(attempt.experimentRoot, 'recovery-experiment');
   try {
-    assert.equal((await verifyStore.readArtifact(newReportRef)).toString(), '# Recovery\n\nRestored from current evidence.');
+    assert.match((await verifyStore.readArtifact(newReportRef)).toString(), /Ready for the original task/);
     assert.equal((await verifyStore.readArtifact(legacyReportRef)).toString(), '# Legacy recovery\n');
   } finally {
     await verifyStore.close();
@@ -215,7 +215,7 @@ test("Recovery persists shell audit details alongside the report narrative for c
       join(attempt.experimentRoot, "runs", "recovery-audit-run", "artifacts", "recovery-md"),
       "utf8",
     ),
-    /recovery-audit-marker/,
+    /Ready for the original task/,
   );
   await store.close();
 });

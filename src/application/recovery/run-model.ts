@@ -1,7 +1,6 @@
 import { runOperationId, sha256 } from "../../core/identity.js";
 import type { RecoveryContext, RecoveryResult } from "../../agents/recovery-agent.js";
 import type { RecoveryDecision } from "../../core/schema.js";
-import { completedRecoveryFreeformTurns } from "../../agents/recovery-agent.js";
 import { recoveryWorkingSet } from "../../agents/recovery-working-set.js";
 import { OBSERVATIONS_MOUNT, recoveryObservationsRoot, writeFrozenObservationTree } from "../../products/history/observations-materializer.js";
 import { workspaceTools, SOURCE_MOUNT } from "../../infrastructure/recovery-tools.js";
@@ -24,7 +23,7 @@ import { recoveryAttemptRecord } from "./orchestrator.js";
 import { packRuntime } from "../../products/pack-access.js";
 import type { AgentToolDefinition, StructuredAgentResult } from "../../infrastructure/agent/host.js";
 import { RecoveryValidationError } from "../../environment/local-workspace-provider.js";
-import { assertRecoveryReadyPreconditions } from "../../environment/recovery-pre-task.js";
+import { evaluateRecoveryPreTaskConditions } from "../../environment/recovery-pre-task.js";
 import { ProcessBoundaryError } from "../../infrastructure/process-runner.js";
 import { readFile, stat } from "node:fs/promises";
 import { safeAgentFailureText } from "../../infrastructure/agent/failure.js";
@@ -59,7 +58,7 @@ export function buildRecoveryAgentContext(session: RecoveryRunSession): Recovery
       totalBytes: staging.workspaceSeed === "sparse" ? 0 : staging.sourceBudget.totalBytes,
       sourceMount: "source",
       workspaceAlias: "workspace",
-      summaryPath: ".reprise/recovery-work/source-summary.json",
+      summaryPath: "observations/metadata/source-summary.json",
       source: {
         copyEligible: staging.sourceSummary.copyEligible,
         budgetExceeded: staging.sourceSummary.budgetExceeded,
@@ -74,7 +73,6 @@ export function buildRecoveryAgentContext(session: RecoveryRunSession): Recovery
     budget: { timeoutMs: input.recovery.timeoutMs ?? 600_000 },
     allowModelText: input.taskCase.privacy.allowModelText,
     continuityKey: input.experimentId,
-    completedFreeformTurns: completedRecoveryFreeformTurns(session.store.events(input.runId)),
     evidence: {
       catalogCount: facts.catalog.length,
       verifiedCount: facts.verifiedEvidence.length,
@@ -99,8 +97,10 @@ export function buildRecoveryAgentTools(session: RecoveryRunSession): void {
     denyDestructiveOnPrefix: [OBSERVATIONS_MOUNT, SOURCE_MOUNT],
     allowShell: true,
     managedExecution: true,
+    recoveryCodingTools: true,
+    ...(activeStaging?.temporaryRoot ? { processLogRoot: activeStaging.temporaryRoot } : {}),
     onProcessLog: async (relativePath, logTruncated) => {
-      const bytes = await readFile(join(workspaceRoot, relativePath));
+      const bytes = await readFile(join(activeStaging?.temporaryRoot ?? workspaceRoot, relativePath));
       const artifactId = `recovery-process-log-${sha256(relativePath).slice(0, 16)}`;
       const artifact = await store.commitArtifact({ artifactId, runId: input.runId,
         kind: 'recovery_process_output', mediaType: 'text/plain', bytes,
@@ -137,19 +137,16 @@ export function buildRecoveryAgentTools(session: RecoveryRunSession): void {
 }
 
 export async function runRecoveryModelAttempts(session: RecoveryRunSession): Promise<void> {
-  const { input, store, audit, maxModelAttempts, experimentRoot, staging } = session;
+  const { input, store, audit, experimentRoot, staging } = session;
   if (!session.context || !session.tools || !audit || !staging)
     throw new Error("Recovery model invocation was not prepared.");
   session.failureStage = "agent_tool_failed";
   session.preflightOperation = "recovery_agent_invoke";
   let retryModel = true;
+  let previousRetryState: string | undefined;
   while (retryModel) {
     input.signal?.throwIfAborted();
     session.modelAttempts += 1;
-    session.context = {
-      ...session.context,
-      completedFreeformTurns: completedRecoveryFreeformTurns(store.events(input.runId)),
-    };
     const context = session.context;
     const tools = session.tools;
     if (!context || !tools) throw new Error("Recovery retry context was not prepared.");
@@ -184,7 +181,9 @@ export async function runRecoveryModelAttempts(session: RecoveryRunSession): Pro
     );
     const retryFailure = retryableRecoveryFailure(session.recovery);
     const workspaceDamaged = await recoveryWorkspaceNeedsReset(staging.root, session.recovery);
-    retryModel = session.modelAttempts < maxModelAttempts && (retryFailure !== undefined || workspaceDamaged);
+    const retryState = `${retryFailure ?? ""}:${workspaceDamaged}:${workspaceDamaged ? "workspace-damaged" : (await session.provider.fingerprintRecoveryStaging(staging)).digest}`;
+    retryModel = (retryFailure !== undefined || workspaceDamaged) && retryState !== previousRetryState;
+    previousRetryState = retryState;
     if (!retryModel) continue;
     if (workspaceDamaged && retryFailure === undefined) {
       await restartRecoveryWorkspace(session);
@@ -259,6 +258,8 @@ export async function invokeRecoveryAgent(session: RecoveryRunSession): Promise<
     taskCase: session.input.taskCase,
     ...(session.playbook?.text ? { playbookText: session.playbook.text } : {}),
   });
+  await writeImmutableJson(join(recoveryObservationsRoot(session.experimentRoot, session.input.runId), "metadata", "source-summary.json"), session.staging?.sourceSummary);
+  await writeImmutableJson(join(recoveryObservationsRoot(session.experimentRoot, session.input.runId), "metadata", "clues.json"), session.context.clues);
   buildRecoveryAgentTools(session);
   await runRecoveryModelAttempts(session);
 }
@@ -268,24 +269,34 @@ export async function enforceRecoveryReadiness(session: RecoveryRunSession): Pro
   if (!context || !tools || !audit || !staging)
     throw new Error("Recovery mechanical check was not prepared.");
   session.failureStage = "provider_validation_failed";
-  let attempts = 0;
-  while (attempts < (session.maxModelAttempts ?? 2)) {
+  let previousFailureState: string | undefined;
+  while (true) {
     try {
       await session.provider.probeRecovery(staging);
       if (session.recovery?.status === "completed" && session.recovery.value.status === "ready") {
-        await assertRecoveryReadyPreconditions(staging.root, input.taskCase);
+          const check = await evaluateRecoveryPreTaskConditions(staging.root, input.taskCase, undefined, staging.sourceRoot, session.frozenGit);
+          if (!check.readyAllowed) throw new RecoveryValidationError("provider_validation_failed", check.reasons.join(" "));
+          const boundary = session.recovery.value.boundary;
+          if (boundary?.commit && boundary.commit !== check.head) throw new RecoveryValidationError("provider_validation_failed", "Boundary commit differs from the selected work-copy HEAD.");
+          for (const ref of boundary?.evidenceRefs ?? []) {
+            const known = input.taskCase.transcript.some(message => message.id === ref) || session.facts?.evidenceRefs.includes(ref);
+            if (known) continue;
+            if (!ref.startsWith("observations/") || ref.split(/[\\/]/).some(part => part === "..")) throw new RecoveryValidationError("provider_validation_failed", "Boundary cites an unknown original evidence reference.");
+            const path = join(recoveryObservationsRoot(session.experimentRoot, input.runId), ref.slice("observations/".length));
+            if (!(await stat(path).catch(() => undefined))?.isFile()) throw new RecoveryValidationError("provider_validation_failed", "Boundary evidence file is unavailable.");
+          }
       }
       return;
     } catch (error) {
       if (error instanceof RecoveryValidationError && error.code === "source_tripwire_failed") throw error;
-      attempts += 1;
+      const failureState = `${error instanceof Error ? error.message : String(error)}:${(await session.provider.fingerprintRecoveryStaging(staging)).digest}`;
+      if (failureState === previousFailureState) throw error;
+      previousFailureState = failureState;
       if (await recoveryWorkspaceNeedsReset(staging.root, undefined, error)) {
-        if (attempts >= (session.maxModelAttempts ?? 2)) throw error;
         await restartRecoveryWorkspace(session);
         await runRecoveryModelAttempts(session);
         continue;
       }
-      if (attempts >= (session.maxModelAttempts ?? 2)) throw error;
       const facts = error instanceof Error ? error.message : "mechanical check failed";
       session.context = {
         ...context,

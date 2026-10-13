@@ -1,7 +1,8 @@
+import { parseApplyPatchText, applyUpdateHunks } from "./apply-patch.js";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from 'node:crypto';
 import { existsSync } from "node:fs";
-import { lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { Type } from "@sinclair/typebox";
@@ -19,7 +20,6 @@ import { integer, requiredString } from "./recovery-tools.js";
 import { boundedPng, IMAGE_LIMITS } from './image-limits.js';
 import { startProcessSession } from './process-session.js';
 import { workspaceProcessTools } from './workspace-process-tools.js';
-
 const MAX_BYTES = 262_144;
 const DEFAULT_READ_BYTES = 65_536;
 const MAX_LIST_ENTRIES = 256;
@@ -35,7 +35,6 @@ const LONG_CWD_POWERSHELL =
 const HOST_RESERVED = new Set(["recovery-manifest.json"]);
 export const SOURCE_MOUNT = "source";
 const WORKSPACE_ALIAS = "workspace";
-
 export type RecoveryToolOperation = {
   operation: "workspace_tree" | "directory_list" | "file_read";
   availability: "available" | "unavailable";
@@ -60,6 +59,8 @@ export type RecoveryToolOptions = {
   homeRoot?: string;
   allowShell?: boolean;
   managedExecution?: boolean;
+  recoveryCodingTools?: boolean;
+  processLogRoot?: string;
   onProcessLog?: (relativePath: string, truncated: boolean) => Promise<unknown>;
   /** When true, ls/read/grep/find accept absolute and other host-readable paths without write containment. */
   unrestrictedRead?: boolean;
@@ -84,7 +85,6 @@ export type RecoveryToolOptions = {
   /** Whether this role may send file bytes to the model as native image blocks. */
   allowBinary?: boolean;
 };
-
 type RecoveryToolContext = {
   root: string;
   options: RecoveryToolOptions;
@@ -94,12 +94,12 @@ type RecoveryToolContext = {
   boundedRead: <T>(
     operation: RecoveryToolOperation["operation"],
     read: () => Promise<T>,
+    unavailable?: (code: string) => void,
   ) => Promise<T | undefined>;
   ensureHome: () => Promise<string>;
   readDirectory: NonNullable<RecoveryToolFilesystem["readDirectory"]>;
   readRegularFile: NonNullable<RecoveryToolFilesystem["readRegularFile"]>;
 };
-
 function createRecoveryToolContext(
   stagingRoot: string,
   options: RecoveryToolOptions,
@@ -122,14 +122,16 @@ function createRecoveryToolContext(
   const boundedRead = async <T>(
     operation: RecoveryToolOperation["operation"],
     read: () => Promise<T>,
+    unavailable?: (code: string) => void,
   ): Promise<T | undefined> => {
     for (const attempt of [1, 2] as const) {
+      let value: T;
       try {
-        const value = await read();
-        await options.onOperation?.({ operation, availability: "available", attempts: attempt });
-        return value;
+        value = await read();
       } catch (error) {
-        if (recoveryReadBoundaryError(error)) throw error;
+        const code = (error as NodeJS.ErrnoException).code;
+        if (recoveryReadBoundaryError(error) || !code || !["ENOENT", "ENOTDIR", "EACCES", "EPERM"].includes(code)) throw error;
+        unavailable?.(code);
         if (attempt === 2)
           await options.onOperation?.({
             operation,
@@ -137,13 +139,15 @@ function createRecoveryToolContext(
             attempts: attempt,
             reason: "filesystem_error",
           });
+        continue;
       }
+      await options.onOperation?.({ operation, availability: "available", attempts: attempt });
+      return value;
     }
     return undefined;
   };
   return { root, options, mounts: options.mounts ?? {}, completionPaths: options.completionPaths ?? new Set(["recovery.md"]), limit, boundedRead, ensureHome, readDirectory, readRegularFile };
 }
-
 export function workspaceTools(
   stagingRoot: string,
   options: RecoveryToolOptions = {},
@@ -160,9 +164,10 @@ export function workspaceTools(
       if (!pathContainedBy(base, cwd)) throw new ToolPreconditionRejected('invalid_path', 'workdir must stay within the writable workspace.');
       await assertNoSymlinkAncestors(base, cwd);
       const invocation = shellProcessInput(cwd, await ctx.ensureHome(), command, options);
-      const outputLog = `.reprise/recovery-work/process-${randomUUID()}.log`;
-      const outputLogPath = resolve(base, outputLog);
-      await assertNoSymlinkAncestors(base, outputLogPath);
+      const logRoot = options.processLogRoot ?? base;
+      const outputLog = options.processLogRoot ? `process-${randomUUID()}.log` : `.reprise/recovery-work/process-${randomUUID()}.log`;
+      const outputLogPath = resolve(logRoot, outputLog);
+      await assertNoSymlinkAncestors(logRoot, outputLogPath);
       return { process: startProcessSession({ ...invocation, signal, outputLogPath }), cwd: relativeInside(base, cwd) || '.', outputLog };
     },
   }) : undefined;
@@ -173,17 +178,19 @@ export function workspaceTools(
     findTool(ctx),
     editTool(ctx),
     writeTool(ctx),
+    ...(options.recoveryCodingTools ? [applyPatchTool(ctx), viewImageTool(ctx)] : []),
     ...(options.allowShell && !processes ? [powershellTool(ctx)] : []),
   ];
   return [...files.map(tool => ({ ...tool,
     ...(['ls', 'read', 'grep', 'find'].includes(tool.name) ? { executionMode: 'parallel' as const } : {}),
     execute: async (params: unknown, signal: AbortSignal) => {
-      processes?.assertIdle();
+      const requestedPath = (params as { path?: unknown })?.path;
+      const independentObservationRead = ["ls", "read", "grep", "find", "view_image"].includes(tool.name) && typeof requestedPath === "string" && /^observations(?:[\\/]|$)/.test(requestedPath);
+      if (!independentObservationRead) processes?.assertIdle();
       return tool.execute(params, signal);
     },
   })), ...(processes?.tools ?? [])];
 }
-
 function lsTool(ctx: RecoveryToolContext): AgentToolDefinition {
   const { limit, boundedRead } = ctx;
   return {
@@ -208,7 +215,6 @@ function lsTool(ctx: RecoveryToolContext): AgentToolDefinition {
       })(),
   };
 }
-
 function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
   const { limit, boundedRead, readRegularFile } = ctx;
   return {
@@ -239,12 +245,13 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
         };
         const maxBytes = value.maxBytes === undefined ? (image ? ceiling : DEFAULT_READ_BYTES)
           : integer(value.maxBytes, undefined, "maxBytes", 1, ceiling);
+        let readFailure = readUnavailableReason(path) as string;
         const bytes = await boundedRead("file_read", async () => {
           await assertReadSymlinkPolicy(path);
           await assertRegular(path.absolute);
           return readRegularFile(path.absolute);
-        });
-        if (!bytes) return unavailableFileReadResult(path.relative, offset, readUnavailableReason(path));
+        }, code => { if (readFailure !== "wsl_unavailable") readFailure = code === "ENOENT" || code === "ENOTDIR" ? "not_found" : "not_readable"; });
+        if (!bytes) return unavailableFileReadResult(path.relative, offset, readFailure);
         if (value.format === "image") {
           const reject = (code: string, message: string) => ({ content: JSON.stringify({ code, message, imageDelivery: 'unavailable' }) });
           if (!ctx.options.allowBinary) return reject('binary_read_denied', 'Image content is not authorized for this task; continue with text evidence.');
@@ -259,20 +266,21 @@ function readTool(ctx: RecoveryToolContext): AgentToolDefinition {
           };
         }
         const slice = bytes.subarray(offset, offset + maxBytes);
+        const truncated = offset + slice.length < bytes.length;
+        const state = bytes.length === 0 ? "empty_file" : offset >= bytes.length ? "end_of_file" : truncated ? "truncated" : "complete";
         return {
-          content: slice.toString("utf8"),
+          content: state === "complete" || ctx.options.role !== "recovery" ? slice.toString("utf8") : `[read ${state}; offset=${offset}; returnedBytes=${slice.length}; totalBytes=${bytes.length}${truncated ? `; nextCursor=${offset + slice.length}; use read offset=${offset + slice.length} for the next page` : ""}]\n${slice.toString("utf8")}`,
           details: {
             path: path.relative,
             offset,
             available: true,
-            truncated: offset + slice.length < bytes.length,
+            truncated,
             ...(offset + slice.length < bytes.length ? { nextCursor: offset + slice.length } : {}),
           },
         };
       })(),
   };
 }
-
 function grepTool(ctx: RecoveryToolContext): AgentToolDefinition {
   const { limit, boundedRead, readRegularFile } = ctx;
   return {
@@ -321,7 +329,6 @@ function grepTool(ctx: RecoveryToolContext): AgentToolDefinition {
       })(),
   };
 }
-
 function findTool(ctx: RecoveryToolContext): AgentToolDefinition {
   const { limit, boundedRead } = ctx;
   return {
@@ -354,7 +361,6 @@ function findTool(ctx: RecoveryToolContext): AgentToolDefinition {
       })(),
   };
 }
-
 function editTool(ctx: RecoveryToolContext): AgentToolDefinition {
   const { options, limit } = ctx;
   return {
@@ -401,7 +407,6 @@ function editTool(ctx: RecoveryToolContext): AgentToolDefinition {
       })(),
   };
 }
-
 function writeTool(ctx: RecoveryToolContext): AgentToolDefinition {
   const { options, limit } = ctx;
   return {
@@ -448,7 +453,6 @@ function writeTool(ctx: RecoveryToolContext): AgentToolDefinition {
       })(),
   };
 }
-
 function powershellTool(ctx: RecoveryToolContext): AgentToolDefinition {
   const { root, options, limit, ensureHome } = ctx;
   return {
@@ -471,7 +475,6 @@ function powershellTool(ctx: RecoveryToolContext): AgentToolDefinition {
       })(),
   };
 }
-
 function isSensitiveRecoveryPath(path: string): boolean {
   const name = basename(path).toLowerCase();
   return (
@@ -484,11 +487,9 @@ function isSensitiveRecoveryPath(path: string): boolean {
     name.includes("credential")
   );
 }
-
 function recoveryToolError(code: string, detail: string, example: unknown): Error {
   return new Error(`${code}: ${detail} Example: ${JSON.stringify(example)}`);
 }
-
 function assertShellCommandDoesNotTargetSensitiveFiles(command: string): void {
   if (
     /(?:^|[\s"'/\\])(?:\.env(?:\.[A-Za-z0-9_-]+)?|auth\.json|credentials?\.json|[^\s"'/\\]*credential[^\s"'/\\]*|[^\s"'/\\]+\.(?:pem|key|p12|pfx))(?:$|[\s"'/\\])/i.test(
@@ -497,7 +498,6 @@ function assertShellCommandDoesNotTargetSensitiveFiles(command: string): void {
   )
     throw new Error("credential_read_denied: sensitive file category.");
 }
-
 function runShell(
   root: string,
   home: string,
@@ -524,7 +524,6 @@ function runShell(
     throw error;
   });
 }
-
 function shellProcessInput(root: string, home: string, command: string, options: RecoveryToolOptions) {
   if (!existsSync(root)) throw new ToolPreconditionRejected('invalid_path', 'Working directory does not exist.');
   const windows = process.platform === "win32";
@@ -548,7 +547,6 @@ function shellProcessInput(root: string, home: string, command: string, options:
     ...(options.spawnProcess ? { spawnProcess: options.spawnProcess } : {}),
   };
 }
-
 function windowsPowershellInvocation(
   stagingRoot: string,
   command: string,
@@ -564,12 +562,10 @@ function windowsPowershellInvocation(
     extraEnv: { REPRISE_RECOVERY_COMMAND: script, REPRISE_RECOVERY_CWD: stagingRoot },
   };
 }
-
 function windowsCreateProcessCwd(stagingRoot: string): string {
   if (process.platform !== "win32" || stagingRoot.length < WINDOWS_CREATEPROCESS_CWD_LIMIT) return stagingRoot;
   return tmpdir();
 }
-
 function resolveWindowsPowershell(
   override?: string,
   findOnPath?: (name: string) => string | undefined,
@@ -591,7 +587,6 @@ function resolveWindowsPowershell(
   if (existsSync(windowsPs)) return { executable: windowsPs, kind: "powershell_windows" };
   return undefined;
 }
-
 function findExecutableOnPath(executable: string): string | undefined {
   try {
     const result = spawnSync("where", [executable], { encoding: "utf-8", timeout: 5_000, windowsHide: true });
@@ -603,7 +598,6 @@ function findExecutableOnPath(executable: string): string | undefined {
   }
   return undefined;
 }
-
 function formatShellBoundary(error: ProcessBoundaryError, windows: boolean, executable?: string): Error {
   const bits = [error.exitCategory, error.errnoCode].filter(Boolean).join(" ");
   const missing =
@@ -616,12 +610,10 @@ function formatShellBoundary(error: ProcessBoundaryError, windows: boolean, exec
         : "";
   return new Error(`${bits}:${missing} ${error.message}`.replace(/\s+/g, " ").trim());
 }
-
 function envLookup(env: NodeJS.ProcessEnv, name: string): string | undefined {
   const found = Object.keys(env).find((key) => key.toLowerCase() === name.toLowerCase());
   return found === undefined ? undefined : env[found];
 }
-
 function sanitizedEnvironment(home: string): NodeJS.ProcessEnv {
   const allowed = new Set([
     "path",
@@ -662,7 +654,6 @@ function sanitizedEnvironment(home: string): NodeJS.ProcessEnv {
   env.GIT_NO_LAZY_FETCH = "1";
   return env;
 }
-
 function redactCommand(command: string): string {
   return command
     .replace(/(authorization\s*[=:]\s*)(?:"?)(?:Bearer\s+)?[^\s"]+/gi, "$1[REDACTED]")
@@ -891,9 +882,9 @@ function directoryReadResult(
 function unavailableFileReadResult(
   path: string,
   offset: number,
-  reason: "filesystem_error" | "wsl_unavailable" = "filesystem_error",
+  reason: string = "filesystem_error",
 ): { content: string; details: Record<string, unknown> } {
-  return { content: "", details: { path, offset, available: false, reason } };
+  return { content: `[read unavailable: ${reason}; no file content returned. Use ls/find or the exact path from INDEX.tsv; check read permissions if the file exists.]`, details: { path, offset, available: false, reason } };
 }
 
 async function listTree(ctx: RecoveryToolContext, start: ResolvedWorkspacePath, depth: number): Promise<string[]> {
@@ -950,3 +941,58 @@ async function assertWritableFile(path: string): Promise<void> {
   }
 }
 
+
+function viewImageTool(ctx: RecoveryToolContext): AgentToolDefinition {
+  return { name: "view_image", description: "Read a local image as native model image content when authorized. Uses the same paths as read.",
+    parameters: Type.Object({ path: Type.String({ minLength: 1, maxLength: 512 }) }),
+    execute: async (params, signal) => {
+      const path = requiredString((params as { path?: unknown }).path, "path");
+      const extension = path.split(".").at(-1)?.toLowerCase();
+      const mimeType = extension === "jpg" || extension === "jpeg" ? "image/jpeg" : extension === "webp" ? "image/webp" : "image/png";
+      return readTool(ctx).execute({ path, format: "image", mimeType }, signal);
+    },
+  };
+}
+
+function applyPatchTool(ctx: RecoveryToolContext): AgentToolDefinition {
+  return { name: "apply_patch", description: "Apply a Codex-style *** Begin Patch / Add File / Update File / Delete File / End Patch to ordinary workspace files. No Move form or context-free insertions; update hunks must have unique existing context. Function tool accepts a patch string. All paths and contexts are checked before writing; multi-file I/O is not atomic.",
+    parameters: Type.Object({ patch: Type.String({ minLength: 1, maxLength: MAX_BYTES }) }),
+    execute: async (params, signal) => {
+      signal.throwIfAborted();
+      const patch = requiredString((params as { patch?: unknown }).patch, "patch");
+      const parsed = parseApplyPatchText(patch);
+      if (!patch.startsWith("*** Begin Patch\n") || !patch.trimEnd().endsWith("*** End Patch") || !parsed.ok) throw new ToolPreconditionRejected("edit_text_mismatch", "Malformed patch; supply complete Begin/End markers and valid hunks.");
+      const prepared: { path: ReturnType<typeof resolveWritePath>; content?: string }[] = [];
+      const seen = new Set<string>();
+      for (const op of parsed.ops) {
+        if (op.kind === "move") throw new ToolPreconditionRejected("edit_text_mismatch", "Move patches are unsupported; use separate file operations.");
+        const path = resolveWritePath(ctx, op.path);
+        assertWritablePath(ctx, path);
+        if (HOST_RESERVED.has(basename(path.relative))) throw new ToolPreconditionRejected("invalid_path", "Host contract files cannot be patched.");
+        if (seen.has(path.absolute.toLowerCase())) throw new ToolPreconditionRejected("edit_text_mismatch", "Patch must name each file once.");
+        seen.add(path.absolute.toLowerCase());
+        await assertNoSymlinkAncestors(writeContainmentRoot(path), path.absolute);
+        await assertWritableFile(path.absolute);
+        if (op.kind === "add") {
+          if (existsSync(path.absolute)) throw new ToolPreconditionRejected("edit_text_mismatch", "Add target already exists.");
+          prepared.push({ path, content: Buffer.from(op.bytes).toString("utf8") + "\n" });
+        } else {
+          const current = await readEditableFile(path.absolute);
+          if (op.kind === "delete") prepared.push({ path });
+          else {
+            const next = applyUpdateHunks(Buffer.from(current.replaceAll("\r\n", "\n")), op.hunks);
+            if (!next) throw new ToolPreconditionRejected("edit_text_mismatch", "Patch context is missing or ambiguous; read the file and correct the hunk.");
+            prepared.push({ path, content: current.includes("\r\n") ? Buffer.from(next).toString("utf8").replaceAll("\n", "\r\n") : Buffer.from(next).toString("utf8") });
+          }
+        }
+      }
+      for (const item of prepared) {
+        signal.throwIfAborted();
+        await assertNoSymlinkAncestors(writeContainmentRoot(item.path), item.path.absolute);
+        if (item.content !== undefined) await writeTool(ctx).execute({ path: item.path.relative, content: item.content }, signal);
+        else await journalControlledRecoveryWrite({ tool: "delete_file", relativePath: item.path.relative, absolutePath: item.path.absolute, expectAfter: false, write: async () => { signal.throwIfAborted(); await unlink(item.path.absolute); } }, ctx.options.onControlledWrite);
+      }
+      return { content: "Applied patch.", details: { paths: prepared.map(item => item.path.relative) } };
+    },
+  };
+}

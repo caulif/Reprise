@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Value } from "@sinclair/typebox/value";
 import { RecoveryAgentEnvelopeSchema } from "../../src/core/schema.js";
-import { RecoveryAgent, RECOVERY_TURN_PROMPTS, RECOVERY_FREEFORM_REQUEST_IDS, completedRecoveryFreeformTurns, type RecoveryContext } from "../../src/agents/recovery-agent.js";
+import { RecoveryAgent, RECOVERY_FREEFORM_REQUEST_IDS, completedRecoveryFreeformTurns, type RecoveryContext } from "../../src/agents/recovery-agent.js";
 import { AgentHost, type ProviderAdapter } from "../../src/infrastructure/agent/host.js";
 
 function caller(responses: string[]): ProviderAdapter {
@@ -37,14 +37,13 @@ const readyEnvelope = JSON.stringify({
   summary: "Ready for the original task.", unresolved: [],
 });
 
-test("Recovery uses three turns and only validates the final envelope", async () => {
+test("Recovery delivers one task prompt and validates the final decision", async () => {
   const appended: string[] = [];
   const recovery = new RecoveryAgent({
     host: new AgentHost({
       createSession: () => ({
         append: async ({ content }) => {
           appended.push(content);
-          if (appended.length < 3) return "working";
           return readyEnvelope;
         },
         cancel() {},
@@ -56,17 +55,15 @@ test("Recovery uses three turns and only validates the final envelope", async ()
   const result = await recovery.recover(recoveryContext(), []);
   assert.equal(result.status, "completed");
   if (result.status === "completed") assert.equal(result.value.status, "ready");
-  assert.equal(appended.length, 3);
-  assert.match(appended[0] ?? "", /Turn 1: understand the task/);
-  assert.match(appended[1] ?? "", new RegExp(RECOVERY_TURN_PROMPTS.restore.slice(0, 12)));
-  assert.match(appended[2] ?? "", /Turn 3: check your work/);
-  assert.doesNotMatch(appended[0] ?? "", /Return only JSON matching the contract|输出契约/);
+  assert.equal(appended.length, 1);
+  assert.match(appended[0] ?? "", /Restore the environment before the first selected task input/);
+  assert.doesNotMatch(appended[0] ?? "", /Turn [123]:|Write recovery.md first/);
 });
 
 test("Recovery accepts ready with unrelated unresolved gaps", async () => {
   const recovery = new RecoveryAgent({
     host: new AgentHost(
-      caller(["ok", "ok", JSON.stringify({
+      caller([JSON.stringify({
         status: "ready",
         summary: "Ready for the original task.", unresolved: ["cache layout unknown"],
       })]),
@@ -105,8 +102,8 @@ test("Recovery investigation and mechanical feedback reuse one Pi session", asyn
   await recovery.recover(context, []);
   await recovery.recover({ ...context, mechanicalFeedback: { facts: "recovery.md is missing" } }, []);
   assert.equal(created, 1);
-  assert.equal(appended.length, 4);
-  assert.match(appended[3] ?? "", /The Host's mechanical check failed|recovery.md is missing/);
+  assert.equal(appended.length, 2);
+  assert.match(appended[1] ?? "", /The Host's mechanical check failed|recovery.md is missing/);
   await recovery.releasePreparation("case-1");
 });
 
@@ -121,7 +118,6 @@ test("model request failure keeps the Session and retries remaining turns", asyn
           append: async ({ content }) => {
             appended.push(content);
             if (appended.length === 1) throw new Error("transient model failure");
-            if (appended.length < 4) return "working";
             return readyEnvelope;
           },
           cancel() {},
@@ -137,9 +133,8 @@ test("model request failure keeps the Session and retries remaining turns", asyn
   const second = await recovery.recover(context, []);
   assert.equal(second.status, "completed");
   assert.equal(created, 1);
-  assert.match(appended[0] ?? "", /Turn 1: understand the task/);
-  assert.match(appended[1] ?? "", /Turn 1: understand the task/);
-  assert.match(appended[2] ?? "", new RegExp(RECOVERY_TURN_PROMPTS.restore.slice(0, 12)));
+  assert.match(appended[0] ?? "", /# Recovery briefing/);
+  assert.match(appended[1] ?? "", /Continue the existing recovery/);
   await recovery.releasePreparation("case-1");
 });
 
@@ -154,8 +149,7 @@ test("failed envelope keeps the Session and does not replay completed freeform t
         return {
           append: async ({ content }) => {
             appended.push(content);
-            if (appended.length < 3) return "working";
-            if (appended.length === 3) return "{";
+            if (appended.length === 1) return "{";
             return readyEnvelope;
           },
           cancel() {},
@@ -175,7 +169,7 @@ test("failed envelope keeps the Session and does not replay completed freeform t
   }, [], audit);
   assert.equal(second.status, "completed");
   assert.equal(created, 1);
-  assert.equal(appended.filter((item) => item.includes("Turn 1: understand the task")).length, 1);
+  assert.equal(appended.filter((item) => item.includes("# Recovery briefing")).length, 1);
   await recovery.releasePreparation("case-1");
 });
 
@@ -217,7 +211,6 @@ test("Recovery investigation restart after releasePreparation begins at the unde
         return {
           append: async ({ content }) => {
             appended.push(content);
-            if (appended.length % 3 !== 0) return "working";
             return readyEnvelope;
           },
           cancel() {},
@@ -232,7 +225,7 @@ test("Recovery investigation restart after releasePreparation begins at the unde
   await recovery.releasePreparation("case-1");
   await recovery.recover(context, []);
   assert.equal(created, 2);
-  assert.equal(appended.filter((item) => item.includes("Turn 1: understand the task")).length, 2);
+  assert.equal(appended.filter((item) => item.includes("# Recovery briefing")).length, 2);
   await recovery.releasePreparation("case-1");
 });
 
@@ -262,7 +255,6 @@ test("new Session after two completed freeform turns prepends the recovery brief
         return {
           append: async ({ content }) => {
             appended.push(content);
-            if (created === 1 && appended.length < 3) return "working";
             return readyEnvelope;
           },
           cancel() {},
@@ -282,8 +274,8 @@ test("new Session after two completed freeform turns prepends the recovery brief
   }, [], audit);
   assert.equal(second.status, "completed");
   assert.equal(created, 2);
-  assert.equal(completedRecoveryFreeformTurns(auditEvents), 2);
-  assert.match(appended[3] ?? "", /# Recovery briefing/);
-  assert.match(appended[3] ?? "", /Turn 3: check your work/);
+  assert.equal(completedRecoveryFreeformTurns(auditEvents), 0);
+  assert.match(appended[1] ?? "", /# Recovery briefing/);
+  assert.doesNotMatch(appended[1] ?? "", /Turn [123]:/);
   await recovery.releasePreparation("case-1");
 });

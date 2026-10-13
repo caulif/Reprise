@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile, readFile, cp, utimes, rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -9,6 +9,7 @@ import type { RecoveryAgentPort } from "../../src/agents/recovery-agent.js";
 import { recoverExperiment } from "../../src/application/recovery/recover.js";
 import {
   evaluateRecoveryPreTaskConditions,
+  freezeRecoveryGitEvidence,
 } from "../../src/environment/recovery-pre-task.js";
 import type { TaskCase } from "../../src/core/schema.js";
 import { now, VerifiedRuntime, input } from "../codex-experiment-support.js";
@@ -106,12 +107,10 @@ test("Recovery does not accept ready when staging HEAD is the historical task co
   await commitTree(source, "before", "start\n");
   const taskCommit = await commitTree(source, "task", "done\n");
   const base = input(root, new VerifiedRuntime());
+  const feedback: string[] = [];
   const recovery: RecoveryAgentPort = {
-    recover: async (_context, tools) => {
-      await tools.find((tool) => tool.name === "write")?.execute(
-        { path: "recovery.md", content: "# Recovery\n\nReady without resetting HEAD.\n" },
-        new AbortController().signal,
-      );
+    recover: async context => {
+      if (context.mechanicalFeedback) feedback.push(context.mechanicalFeedback.facts);
       return {
         status: "completed",
         sessionId: "recovery-pre-task",
@@ -141,8 +140,8 @@ test("Recovery does not accept ready when staging HEAD is the historical task co
   assert.equal(attempt.acceptedAutomatically, undefined);
   assert.equal(typeof attempt.accept, "undefined");
   assert.notEqual(attempt.baseline.recovery?.status, "ready");
-  assert.equal(attempt.baseline.readiness.runnable, "blocked");
-  assert.match(attempt.baseline.warnings.join("\n"), /historical task commit/);
+  assert.equal(attempt.baseline.recovery?.failureStage, "provider_validation_failed");
+  assert.match(feedback.join("\n"), /historical task commit/);
 });
 
 test("pre-task git probes do not pass caret peel to git.cmd", async () => {
@@ -151,4 +150,44 @@ test("pre-task git probes do not pass caret peel to git.cmd", async () => {
   assert.doesNotMatch(source, /taskCommit\}\^/);
   assert.match(source, /cat-file", "-t"/);
   assert.match(source, /~1/);
+});
+
+test('backdated Chinese and spaced paths and renames remain post-task dirt', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-pre-task-paths-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await git(root, ['init', '--template=']); await commitTree(root, 'before', 'start\n');
+  await rename(join(root, 'README.md'), join(root, '原始 输入.md'));
+  await git(root, ['add', '-A']);
+  await writeFile(join(root, '回填 时间.txt'), 'answer');
+  await utimes(join(root, '回填 时间.txt'), new Date('2000-01-01'), new Date('2000-01-01'));
+  const check = await evaluateRecoveryPreTaskConditions(root, taskCase({}));
+  assert.equal(check.readyAllowed, false);
+  assert.ok(check.dirtyPaths.includes('原始 输入.md'));
+  assert.ok(check.dirtyPaths.includes('回填 时间.txt'));
+});
+
+test('frozen source evidence rejects deleting task objects or inventing a clean unrelated commit', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-pre-task-freeze-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const source = join(root, 'source'), work = join(root, 'work'); await mkdir(source);
+  await git(source, ['init', '--template=']);
+  const before = await commitTree(source, 'before', 'start\n'), answer = await commitTree(source, 'answer', 'done\n');
+  const task = taskCase({ historicalEvents: [{ type: 'turn_context', commit: before }, { type: 'session_meta', commit: before }, { text: '[main ' + answer.slice(0, 7) + '] answer' }] });
+  const frozen = await freezeRecoveryGitEvidence(source, task, 'a'.repeat(64));
+  assert.equal(frozen.state, 'git');
+  assert.deepEqual(frozen.taskCommits, [answer]);
+  await cp(source, work, { recursive: true });
+  await rm(join(work, '.git'), { recursive: true }); await git(work, ['init', '--template=']);
+  await commitTree(work, 'invented', 'start\n');
+  const check = await evaluateRecoveryPreTaskConditions(work, task, undefined, source, frozen);
+  assert.equal(check.readyAllowed, false);
+  assert.match(check.reasons.join(' '), /absent from the protected source/);
+});
+
+test('corrupt Git probe errors do not become a ready non-Git scene', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-pre-task-corrupt-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await git(root, ['init', '--template=']); await commitTree(root, 'before', 'start\n');
+  await writeFile(join(root, '.git', 'config'), '[invalid config');
+  await assert.rejects(evaluateRecoveryPreTaskConditions(root, taskCase({})), /Process boundary failed/);
 });

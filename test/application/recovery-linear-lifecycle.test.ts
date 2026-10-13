@@ -193,8 +193,7 @@ test('two Recovery runs in one experiment keep independent attempts, baselines a
     sourceRoot: base.sourceRoot,
     taskCase: base.taskCase,
     recovery: {
-      recover: async (_context, tools) => {
-        await tools.find((tool) => tool.name === 'write')?.execute({ path: 'recovery.md', content: `# Recovery ${runId}\n` }, new AbortController().signal);
+      recover: async () => {
         return { status: 'completed', sessionId: `session-${runId}`, value: { status: 'ready', summary: `Ready ${runId}.`, reportPath: 'recovery.md', unresolved: [] } };
       },
     },
@@ -215,7 +214,10 @@ test('two Recovery runs in one experiment keep independent attempts, baselines a
       assert.ok(events.some((event) => event.type === 'recovery.attempt'));
       assert.ok(events.some((event) => event.type === 'recovery.started'));
       assert.ok(events.some((event) => event.type === 'recovery.completed'));
-      assert.deepEqual(await store.readArtifact({ artifactId: 'recovery-md', experimentId: 'recovery-repeat', runId }), Buffer.from(`# Recovery ${runId}\n`));
+      const report = (await store.readArtifact({ artifactId: 'recovery-md', experimentId: 'recovery-repeat', runId })).toString();
+      assert.ok(report.includes(`Ready ${runId}.`));
+      assert.match(report, /Agent judgment.*before Host sealing/);
+      assert.match(report, /Host validation.*after Agent judgment/);
       assert.ok((await store.listArtifacts(runId)).some((artifact) => artifact.artifactId === 'recovery-attempts'));
     } finally {
       await store.close();

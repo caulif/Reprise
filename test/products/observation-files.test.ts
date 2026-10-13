@@ -32,7 +32,7 @@ function taskCase(overrides: Partial<TaskCase> = {}): TaskCase {
   };
 }
 
-test("frozen observation files carry Host refs and truncate oversized bodies", async (t) => {
+test("frozen observation files carry Host refs and preserve oversized bodies", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-observations-"));
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const huge = taskCase({
@@ -59,11 +59,11 @@ test("frozen observation files carry Host refs and truncate oversized bodies", a
   const history = JSON.parse(await readFile(join(root, "events", "historical", `${catalog[2]!.ref.replace(/^event:/, "")}.json`), "utf8")) as {
     ref: string;
     truncated: boolean;
-    observation: { excerpt?: string };
+    observation: { output: string };
   };
   assert.equal(history.ref, catalog[2]?.ref);
-  assert.equal(history.truncated, true);
-  assert.ok((history.observation.excerpt?.length ?? 0) <= 8_000);
+  assert.equal(history.truncated, false);
+  assert.equal(history.observation.output, "x".repeat(40_000));
   const workspace = await mkdtemp(join(tmpdir(), "reprise-obs-ws-"));
   t.after(() => rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const tools = workspaceTools(workspace, { mounts: { [OBSERVATIONS_MOUNT]: root } });
@@ -183,4 +183,38 @@ test("observation rematerialization is stable and omits original session paths a
   await writeFrozenObservationTree({ root, taskCase: frozen, ownedFiles: owned });
   assert.equal(await readFile(join(root, "INDEX.md"), "utf8"), first);
   assert.equal(await readFile(join(root, "files", "notes", "readme.txt"), "utf8"), "owned note");
+});
+
+test('timeline exact paths preserve normalized commands/results, full tails, and legacy JSON reads', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-timeline-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const messages: TaskCase['transcript'] = Array.from({ length: 102 }, (_, i) => ({ id: `message-${i + 1}`, role: i === 0 ? 'user' : 'tool', text: i === 101 ? 'exec_command\n' + 'x'.repeat(90_000) + '\nTAIL-EVIDENCE' : `command/result ${i}` }));
+  const frozen = taskCase({ transcript: messages });
+  await writeFrozenObservationTree({ root, taskCase: frozen });
+  const tools = workspaceTools(root, { role: 'recovery', mounts: { observations: root } });
+  const read = tools.find(tool => tool.name === 'read')!;
+  const signal = new AbortController().signal;
+  const index = (await read.execute({ path: 'observations/timeline/INDEX.tsv' }, signal)).content;
+  const rows = index.trim().split('\n').slice(1).map(row => row.split('\t'));
+  assert.equal(rows.length, 102);
+  for (const [i, row] of rows.entries()) {
+    const result = await read.execute({ path: row[3] }, signal);
+    assert.equal((result.details as { available: boolean }).available, true);
+    assert.match(result.content, new RegExp(`order: ${i + 1}\\nrole:`));
+  }
+  const head = await read.execute({ path: rows[101]![3], maxBytes: 8000 }, signal);
+  assert.match(head.content, /nextCursor=8000/);
+  const tail = await read.execute({ path: rows[101]![3], offset: 88_000 }, signal);
+  assert.match(tail.content, /TAIL-EVIDENCE/);
+  const original = JSON.parse((await read.execute({ path: rows[101]![4], maxBytes: 200_000 }, signal)).content) as { truncated: boolean; observation: { text: string } };
+  assert.equal(original.truncated, false);
+  assert.equal(original.observation.text, messages[101]!.text);
+  const page1 = (await read.execute({ path: 'observations/index-pages/0001.tsv' }, signal)).content;
+  const page2 = (await read.execute({ path: 'observations/index-pages/0002.tsv' }, signal)).content;
+  assert.equal(page1.trim().split('\n').length, 101);
+  assert.match(page2, /message-102/);
+  // Old on-disk excerpt envelopes remain ordinary readable evidence; missing tails are not invented.
+  const { writeFile } = await import('node:fs/promises');
+  await writeFile(join(root, 'legacy.json'), JSON.stringify({ ref: 'old', truncated: true, observation: { excerpt: 'old prefix', reason: 'file_char_limit' } }));
+  assert.match((await read.execute({ path: 'observations/legacy.json' }, signal)).content, /old prefix.*file_char_limit/);
 });

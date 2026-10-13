@@ -5,7 +5,7 @@ const WORKING_SET_EVIDENCE_REFS = 8;
 const RECOVERY_INITIAL_INPUT_OBSERVATION = "observations/task/initial-input.txt";
 const RECOVERY_PLAYBOOK_OBSERVATION = "observations/playbook.md";
 const RECOVERY_CATALOG_INDEX = "observations/INDEX.tsv";
-const SOURCE_SUMMARY_PATH = ".reprise/recovery-work/source-summary.json";
+const SOURCE_SUMMARY_PATH = "observations/metadata/source-summary.json";
 
 /** Host digest of Recovery facts. The model sees `recoveryModelPrompt`, not this object. */
 export function recoveryWorkingSet(context: RecoveryContext): Record<string, unknown> {
@@ -32,8 +32,7 @@ export function recoveryWorkingSet(context: RecoveryContext): Record<string, unk
     staging: context.staging,
     budget: context.budget,
     allowModelText: context.allowModelText,
-    workRecords: ".reprise/recovery-work",
-    reportPath: "recovery.md",
+    reports: "Host-owned external artifacts",
     playbook: {
       productId: context.playbook.productId,
       version: context.playbook.version,
@@ -84,14 +83,15 @@ export function recoveryModelPrompt(context: RecoveryContext): string {
     `Task: ${taskText}`,
     ...(truncated ? ["(truncated; full text at observations/task/initial-input.txt)"] : []),
     `Evidence level: ${evidenceLevel}; ${context.session.transcriptLength} historical messages, ${context.session.historicalEventCount} historical events`,
-    `Clues: cwd=${clue(context.clues.cwd)}; historicalCommit=${clue(context.clues.historicalCommit)}; sourceVersion=${clue(context.clues.sourceVersion)}`,
+    `Environment clues (not proof of the task start) are available at observations/metadata/clues.json; cwd=${clue(context.clues.cwd)}.`,
     ...(context.sourceGit ? [`Verified source Git at preparation: repository=${yesNo(context.sourceGit.isRepo)}; HEAD=${context.sourceGit.head ?? context.sourceGit.headState}; historical commit object present=${yesNo(context.sourceGit.historicalCommitPresent)}; status available=${yesNo(context.sourceGit.statusAvailable)}. These facts do not establish the task-before boundary or the current work-copy state.`] : []),
     `Work copy seed: ${seed}; currently ${context.staging.fileCount} files, ${context.staging.totalBytes} bytes`,
     `Source directory: ${count(source?.fileCount)} files, ${count(source?.totalBytes)} bytes; whole-tree copy eligible=${yesNo(source?.copyEligible)}; copy budget exceeded=${yesNo(source?.budgetExceeded)}; summary and excluded entries at ${context.staging.summaryPath ?? SOURCE_SUMMARY_PATH}`,
     `Runtime capabilities: session history=${caps?.sessionHistory ?? "unknown"}; local artifacts=${yesNo(caps?.localArtifacts)}; workspace history=${yesNo(caps?.workspaceHistory)}; external side effects=${caps?.externalSideEffects ?? "unknown"}`,
     `Playbook: ${context.playbook.productId} ${context.playbook.version}, text at ${RECOVERY_PLAYBOOK_OBSERVATION}`,
     `Evidence catalog: ${evidence?.catalogCount ?? 0} entries, ${evidence?.verifiedCount ?? 0} verified; index at ${RECOVERY_CATALOG_INDEX}; sample refs: ${sampleRefs.join(", ")}`,
-    "Report: recovery.md at the work copy root",
+    "For Git, read the catalog in historical order and inspect the earliest task commands AND their responses before resetting. A worktree created during the task has a base chosen by a task action; compare it with the state observed before that action. Later fetch/pull/reset receipts cannot establish the first input's state. Resolve conflicting starting states explicitly, rather than selecting the latest convenient baseline.",
+    "Reports and logs are stored by the Host outside the project; do not create them in the project.",
   ];
   return lines.join("\n");
 }

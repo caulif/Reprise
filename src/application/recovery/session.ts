@@ -38,6 +38,7 @@ export type RecoveryFacts = Awaited<ReturnType<typeof resolvedRecoveryFacts>>;
 export type RecoveryRunSession = {
   input: RecoveryAttemptInput;
   maxModelAttempts: number;
+  frozenGit?: import("../../core/schema.js").RecoveryFrozenGit;
   experimentRoot: string;
   provider: LocalWorkspaceProvider;
   store: ExperimentStore;
@@ -71,6 +72,7 @@ export type RecoveryRunSession = {
   context?: RecoveryContext;
   tools?: readonly AgentToolDefinition[];
   activeProviderPreview?: RecoveryPreview;
+  finalizationStarted?: boolean;
 };
 
 export function lifecycleState(session: RecoveryRunSession): RecoveryLifecycleState {

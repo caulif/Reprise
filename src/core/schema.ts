@@ -291,3 +291,5 @@ export { CodingTrialImageSchema, CodingTrialRenderSchema, CodingTrialTransformSc
 
 
 
+
+export { RecoveryFrozenGitSchema, type RecoveryFrozenGit } from "./schemas/recovery.js";

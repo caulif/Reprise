@@ -23,7 +23,8 @@ export async function recoverExperiment(
   input: RecoveryAttemptInput,
 ): Promise<RecoveryAttempt> {
   const localAbort = new AbortController();
-  const signal = input.signal ? AbortSignal.any([input.signal, localAbort.signal]) : localAbort.signal;
+  const deadline = AbortSignal.timeout(30 * 60_000);
+  const signal = AbortSignal.any([...(input.signal ? [input.signal] : []), localAbort.signal, deadline]);
   const activity = input.activity ?? registerActivity({
     kind: "prepare",
     experimentId: input.experimentId,
@@ -42,28 +43,14 @@ export async function recoverExperiment(
   } catch (error) {
     if (!session) throw error;
     if (signal.aborted) {
-      session.failureStage = 'cancelled';
+      session.failureStage = deadline.aborted ? "agent_timeout" : "cancelled";
       session.recovery = { status: 'cancelled' };
       return await failRecoveryRunSession(session, error);
     }
-    if (session.lastCompletedRecovery?.status === "completed" || session.recovery?.status === "completed") {
-      const completed = session.lastCompletedRecovery?.status === "completed"
-        ? session.lastCompletedRecovery
-        : session.recovery;
-      if (!completed || completed.status !== "completed") {
-        return await failRecoveryRunSession(session, error);
-      }
-      session.recovery = completed;
-      try {
-        return await finalizeRecoveredCandidate(session);
-      } catch (finalizeError) {
-        // Preserve the valid agent decision. Finalization is a separate phase and
-        // must not rewrite it as an agent/Recovery failure.
-        if (finalizeError instanceof Error && (finalizeError as Error & { code?: string }).code === "source_tripwire_failed")
-          return await failRecoveryRunSession(session, finalizeError);
-        return completedDecisionWithFinalizationFailure(session, finalizeError);
-      }
-    }
+    const completed = session.lastCompletedRecovery ?? session.recovery;
+    if (session.finalizationStarted && session.activeProviderPreview && completed?.status === "completed"
+      && !(error instanceof Error && (error as Error & { code?: string }).code === "source_tripwire_failed"))
+      return completedDecisionWithFinalizationFailure(session, error);
     return await failRecoveryRunSession(session, error);
   } finally {
     if (session) await closeRecoveryRunSession(session);
@@ -100,6 +87,7 @@ async function runRecoverExperiment(session: RecoveryRunSession): Promise<Recove
   session.input.signal?.throwIfAborted();
   if (session.input.gitStart) {
     await restoreConfirmedGitStart(session);
+    session.finalizationStarted = true;
     return finalizeRecoveredCandidate(session);
   }
   await runRecoveryForensics(session);
@@ -108,5 +96,6 @@ async function runRecoverExperiment(session: RecoveryRunSession): Promise<Recove
   session.input.signal?.throwIfAborted();
   await enforceRecoveryReadiness(session);
   session.input.signal?.throwIfAborted();
+  session.finalizationStarted = true;
   return finalizeRecoveredCandidate(session);
 }

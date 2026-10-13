@@ -114,7 +114,7 @@ export async function checkRecoveryReadiness(root: string, context: RecoveryRead
       checkedPaths,
       missingPaths,
       commandChecks,
-      feedback: "No extra task paths were derived; Host already accepted the recovered workspace fingerprint.",
+      feedback: "No extra task paths were derived; no additional path or command checks were performed. This does not establish full task executability.",
     };
   }
   if (options.executeCommands && missingPaths.length === 0 && context.priorCommands.length > 0) {

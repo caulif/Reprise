@@ -1,16 +1,17 @@
-import { lstat, readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { Value } from "@sinclair/typebox/value";
 import {
   RecoveryPreTaskDiagnosisSchema,
+  RecoveryFrozenGitSchema, type RecoveryFrozenGit,
   type RecoveryPreTaskDiagnosis,
   type TaskCase,
   type RecoveryGitStart,
 } from "../core/schema.js";
 import { sha256 } from '../core/identity.js';
 import { recoveryPath, assertNoSymlinkAncestors } from './local-workspace-fs.js';
-import { RecoveryValidationError } from "./local-workspace-provider.js";
-import { runProcess } from "../infrastructure/process-runner.js";
+import { runProcess, ProcessBoundaryError } from "../infrastructure/process-runner.js";
 
 const GIT_SHA = /^[0-9a-f]{7,40}$/i;
 const DEPENDENCY_PREFIXES = [
@@ -32,31 +33,41 @@ export async function evaluateRecoveryPreTaskConditions(
   root: string,
   taskCase: TaskCase,
   gitStart?: RecoveryGitStart,
+  evidenceRoot: string = root,
+  frozen?: RecoveryFrozenGit,
 ): Promise<RecoveryPreTaskCheck> {
   if (gitStart) return checkConfirmedGitStart(root, gitStart);
+  if (frozen?.state === "unavailable") return diagnosis({ schemaVersion: 1, readyAllowed: false, reasons: ["Protected source Git evidence was unavailable before recovery."], dirtyPaths: [] });
   const head = await gitOutput(root, ["rev-parse", "HEAD"]);
-  if (!head) return diagnosis({ schemaVersion: 1, readyAllowed: true, reasons: [], dirtyPaths: [] });
-  const recorded = recordedEventCommits(taskCase.historicalEvents);
+  if (!head) {
+    const isRepo = await gitOutput(evidenceRoot, ["rev-parse", "--is-inside-work-tree"]);
+    return diagnosis({ schemaVersion: 1, readyAllowed: isRepo !== "true", reasons: isRepo === "true" ? ["Git HEAD is unavailable; a missing or corrupt repository cannot satisfy a known Git source."] : [], dirtyPaths: [] });
+  }
+  const recorded = frozen?.taskCommits ?? recordedEventCommits(taskCase.historicalEvents);
   const existingRecorded: string[] = [];
   for (const commit of recorded) {
-    const full = await peelCommit(root, commit);
+    const full = await peelCommit(evidenceRoot, commit);
     if (full) existingRecorded.push(full);
   }
-  const taskCommit = existingRecorded.length ? await earliestCommit(root, existingRecorded) : undefined;
+  const taskCommit = existingRecorded.length ? await earliestCommit(evidenceRoot, existingRecorded) : undefined;
   const historical = recordedHistoricalCommit(taskCase);
-  const historicalFull = historical ? await peelCommit(root, historical) : undefined;
-  const parentOfTask = taskCommit ? await gitOutput(root, ["rev-parse", `${taskCommit}~1`]) : undefined;
+  const historicalFull = historical ? await peelCommit(evidenceRoot, historical) : undefined;
+  const parentOfTask = taskCommit ? await gitOutput(evidenceRoot, ["rev-parse", `${taskCommit}~1`]) : undefined;
   const preTaskCommit = historicalFull && historicalFull !== taskCommit
     ? historicalFull
     : parentOfTask;
   const reasons: string[] = [];
-  if (taskCommit && (head === taskCommit || await isAncestor(root, taskCommit, head))) {
+  const knownSourceHead = !frozen || Boolean(frozen.commits[head]);
+  if (taskCommit && (head === taskCommit || knownSourceHead && await isAncestor(evidenceRoot, taskCommit, head))) {
     reasons.push(`Work-copy HEAD already contains historical task commit ${taskCommit}.`);
-  } else if (preTaskCommit && head !== preTaskCommit) {
-    reasons.push(`Work-copy HEAD ${head} is not the pre-task commit ${preTaskCommit}.`);
   }
-  const sessionEndedAt = latestHistoricalTime(taskCase);
-  const dirtyPaths = sessionEndedAt ? await postTaskDirtyPaths(root, sessionEndedAt) : [];
+  if (evidenceRoot !== root) {
+    const originalTree = frozen ? frozen.commits[head] : await gitOutput(evidenceRoot, ["rev-parse", `${head}:`]);
+    const currentTree = await gitOutput(root, ["rev-parse", `${head}:`]);
+    if (!originalTree || originalTree !== currentTree) reasons.push("Selected HEAD is absent from the protected source or its tree differs.");
+    if (originalTree) for (const commit of existingRecorded) if (await isAncestor(evidenceRoot, commit, head)) reasons.push(`Selected HEAD contains historical task commit ${commit}.`);
+  }
+  const dirtyPaths = await postTaskDirtyPaths(root, evidenceRoot);
   if (dirtyPaths.length) {
     reasons.push(`Post-task dirty paths remain visible: ${dirtyPaths.slice(0, 8).join(", ")}.`);
   }
@@ -82,20 +93,11 @@ async function checkConfirmedGitStart(root: string, start: RecoveryGitStart): Pr
   }
   const tracked = await git(root, ['diff', '--name-only', '-z', start.commit]);
   const untracked = await git(root, ['ls-files', '--others', '--exclude-standard', '-z']);
-  const allowed = new Set(['recovery.md', ...start.inputs.map((input) => input.path)]);
+  const allowed = new Set(start.inputs.map((input) => input.path));
   const dirtyPaths = `${tracked}\0${untracked}`.split('\0').filter((path) => path && !allowed.has(path));
   if (dirtyPaths.length) reasons.push('Unexpected paths changed after confirmed Git start restoration.');
   return diagnosis({ schemaVersion: 1, readyAllowed: reasons.length === 0, reasons, dirtyPaths,
     preTaskCommit: start.commit, ...(head ? { head } : {}) });
-}
-
-export async function assertRecoveryReadyPreconditions(root: string, taskCase: TaskCase): Promise<void> {
-  const check = await evaluateRecoveryPreTaskConditions(root, taskCase);
-  if (check.readyAllowed) return;
-  throw new RecoveryValidationError(
-    "provider_validation_failed",
-    check.reasons.join(" ") || "Work-copy HEAD is not the pre-task commit.",
-  );
 }
 
 function diagnosis(value: RecoveryPreTaskCheck): RecoveryPreTaskCheck {
@@ -116,24 +118,16 @@ function recordedEventCommits(value: unknown, found: string[] = []): string[] {
     return found;
   }
   if (!value || typeof value !== "object") return found;
+  const record = value as Record<string, unknown>;
+  if (record.type === "session_meta" || record.type === "turn_context") return found;
   for (const [key, child] of Object.entries(value)) {
     if (/commit/i.test(key) && typeof child === "string" && GIT_SHA.test(child)) found.push(child);
-    else recordedEventCommits(child, found);
+    else if (typeof child === "string") {
+      // Git commit command receipts have [branch shortSHA] headers; arbitrary SHAs are not task commits.
+      for (const match of child.matchAll(/\[[^\]\r\n]+\s([0-9a-f]{7,40})\] [^\r\n]+/gi)) found.push(match[1]!);
+    } else recordedEventCommits(child, found);
   }
   return found;
-}
-
-function latestHistoricalTime(taskCase: TaskCase): string | undefined {
-  const values = taskCase.historicalEvents.flatMap((event) => {
-    if (!event || typeof event !== "object") return [];
-    const record = event as Record<string, unknown>;
-    return typeof record.timestamp === "string"
-      ? [record.timestamp]
-      : typeof record.time === "string"
-        ? [record.time]
-        : [];
-  });
-  return values.filter((value) => /^\d{4}-\d{2}-\d{2}T/.test(value)).sort().at(-1);
 }
 
 async function earliestCommit(root: string, commits: string[]): Promise<string | undefined> {
@@ -149,26 +143,36 @@ async function isAncestor(root: string, ancestor: string, descendant: string): P
   try {
     await git(root, ["merge-base", "--is-ancestor", ancestor, descendant]);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (error instanceof ProcessBoundaryError && error.exitCategory === "nonzero_exit" && error.exitCode === 1) return false;
+    throw error;
   }
 }
 
-async function postTaskDirtyPaths(root: string, sessionEndedAt: string): Promise<string[]> {
-  const status = await gitOutput(root, ["status", "--porcelain"]);
-  if (status === undefined) return [];
-  const ended = Date.parse(sessionEndedAt);
-  if (!Number.isFinite(ended)) return [];
+async function postTaskDirtyPaths(root: string, evidenceRoot: string): Promise<string[]> {
+  const output = await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
   const paths: string[] = [];
-  for (const line of status.split("\n").map((item) => item.replace(/\r$/, "")).filter(Boolean)) {
-    const relative = line.startsWith("?? ") ? line.slice(3) : line.slice(3);
-    const posix = relative.replaceAll("\\", "/");
-    if (!posix || isDependencyPath(posix)) continue;
-    const info = await lstat(resolve(root, ...posix.split("/"))).catch(() => undefined);
-    if (!info) continue;
-    if (info.mtimeMs > ended) paths.push(posix);
+  const rows = output.split("\0");
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!;
+    if (!row) continue;
+    const relative = row.slice(3).replaceAll("\\", "/");
+    if (row.slice(0, 2).includes("R") || row.slice(0, 2).includes("C")) i++;
+    if (!relative || isDependencyPath(relative)) continue;
+    // Only source dirt with identical bytes can be a retained original input.
+    if (evidenceRoot !== root) {
+      const sourceDirty = await git(evidenceRoot, ["status", "--porcelain=v1", "-z", "--", relative]);
+      if (sourceDirty) {
+        await assertNoSymlinkAncestors(root, relative);
+        await assertNoSymlinkAncestors(evidenceRoot, relative);
+        const before = await readFile(recoveryPath(evidenceRoot, relative)).catch(() => undefined);
+        const after = await readFile(recoveryPath(root, relative)).catch(() => undefined);
+        if (before && after && sha256(before) === sha256(after)) continue;
+      }
+    }
+    paths.push(relative);
   }
-  return paths;
+  return paths.slice(0, 64);
 }
 
 function isDependencyPath(posix: string): boolean {
@@ -183,23 +187,49 @@ async function peelCommit(root: string, object: string): Promise<string | undefi
 }
 
 async function gitOutput(root: string, args: readonly string[]): Promise<string | undefined> {
-  try {
-    const stdout = (await git(root, args)).trim();
-    return stdout.length ? stdout : undefined;
-  } catch {
-    return undefined;
-  }
+  const result = await runProcess({ operation: "recovery_pre_task_git_probe", executableKind: "git", command: "git", args,
+    cwd: root, timeoutMs: 5000, maxOutputBytes: 16 * 1024 * 1024, allowNonzeroExit: true,
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
+  if (result.exitCode === 0) return result.stdout.trim() || undefined;
+  if (/not a git repository|unknown revision|ambiguous argument|bad object|Not a valid object name|Needed a single revision/i.test(result.stderr)) return undefined;
+  throw new ProcessBoundaryError({ operation: "recovery_pre_task_git_probe", executableKind: "git", exitCategory: "nonzero_exit", exitCode: result.exitCode });
 }
 
-async function git(root: string, args: readonly string[]): Promise<string> {
+async function git(root: string, args: readonly string[], signal?: AbortSignal, timeoutMs = 5_000): Promise<string> {
   return (await runProcess({
     operation: "recovery_pre_task_git",
     executableKind: "git",
     command: "git",
     args,
     cwd: root,
-    timeoutMs: 5_000,
-    maxOutputBytes: 64 * 1024,
+    timeoutMs,
+    ...(signal ? { signal } : {}),
+    maxOutputBytes: 16 * 1024 * 1024,
     env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
   })).stdout;
+}
+
+export async function freezeRecoveryGitEvidence(root: string, taskCase: TaskCase, sourceDigest: string, signal?: AbortSignal): Promise<RecoveryFrozenGit> {
+  const commits: Record<string, string> = {};
+  let state: RecoveryFrozenGit["state"] = "unavailable";
+  try {
+    const probe = await runProcess({ operation: "recovery_git_presence", executableKind: "git", command: "git", args: ["rev-parse", "--is-inside-work-tree"], cwd: root, timeoutMs: 15000, allowNonzeroExit: true, ...(signal ? { signal } : {}) });
+    if (probe.exitCode !== 0) {
+      state = existsSync(join(root, ".git")) ? "unavailable" : "non-git";
+    } else {
+      const output = await git(root, ["log", "--all", "HEAD", "--format=%H %T"], signal, 15000);
+      for (const row of output.trim().split("\n")) { const [commit, tree] = row.trim().split(" "); if (commit && tree) commits[commit] = tree; }
+      state = "git";
+    }
+  } catch {
+    // Spawn, corrupt/unborn repository and output-limit failures remain unavailable, never non-Git.
+  }
+  const taskCommits: string[] = [];
+  for (const candidate of state === "git" ? recordedEventCommits(taskCase.historicalEvents) : []) {
+    const matches = Object.keys(commits).filter(commit => commit.startsWith(candidate.toLowerCase()));
+    if (matches.length === 1 && !taskCommits.includes(matches[0]!)) taskCommits.push(matches[0]!);
+  }
+  const result = { schemaVersion: 1 as const, state, commits, taskCommits, sourceDigest };
+  if (!Value.Check(RecoveryFrozenGitSchema, result)) throw new Error("Frozen Git evidence failed schema validation.");
+  return result;
 }

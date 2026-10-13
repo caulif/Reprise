@@ -13,16 +13,12 @@ import { SNAPSHOT_LIMITS } from "../../src/environment/snapshots.js";
 import { now, VerifiedRuntime, input } from "../codex-experiment-support.js";
 
 const exec = promisify(execFile);
-const TOOLS = ["cancel_process", "edit", "exec_command", "find", "grep", "ls", "read", "write", "write_stdin"] as const;
+const TOOLS = ["apply_patch", "cancel_process", "edit", "exec_command", "find", "grep", "ls", "read", "view_image", "write", "write_stdin"] as const;
 
 function readyRecovery(sessionId: string): RecoveryAgentPort {
   return {
     recover: async (_context, tools) => {
       assert.deepEqual(tools.map((tool) => tool.name).sort(), [...TOOLS]);
-      await tools.find((tool) => tool.name === "write")?.execute(
-        { path: "recovery.md", content: "# Recovery\n\nReady.\n" },
-        new AbortController().signal,
-      );
       return {
         status: "completed",
         sessionId,
@@ -355,6 +351,8 @@ test("Git and non-Git sources share the same Recovery tools and envelope", async
     await writeFile(join(source, kind === "git" ? "main.ts" : "notes.xlsx"), "task\n");
     if (kind === "git") {
       await exec("git", ["init"], { cwd: source, windowsHide: true });
+      await exec("git", ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "add", "."], { cwd: source, windowsHide: true });
+      await exec("git", ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "task-start"], { cwd: source, windowsHide: true });
     }
     const base = input(join(root, kind), new VerifiedRuntime());
     const attempt = await recoverExperiment({
@@ -367,7 +365,7 @@ test("Git and non-Git sources share the same Recovery tools and envelope", async
       recovery: readyRecovery(`${kind}-session`),
       now,
     });
-    assert.equal(attempt.baseline.recovery?.status, "ready");
+    assert.equal(attempt.baseline.recovery?.status, "ready", JSON.stringify({kind,recovery:attempt.baseline.recovery,result:attempt.recovery,finalizationFailure:attempt.finalizationFailure,warnings:attempt.baseline.warnings}));
     assert.equal(attempt.recovery.status, "completed");
     if (attempt.recovery.status === "completed") assert.equal(attempt.recovery.value.status, "ready");
   }

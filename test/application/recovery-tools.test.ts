@@ -560,7 +560,7 @@ test("bounded workspace reads retry once and degrade with Host-owned diagnostics
     filesystem: {
       readDirectory: async () => {
         directoryAttempts += 1;
-        throw new Error("simulated directory I/O failure");
+        throw Object.assign(new Error("simulated directory I/O failure"), { code: "EACCES" });
       },
     },
     onOperation: async (operation: unknown) => {
@@ -590,7 +590,7 @@ test("bounded workspace reads retry once and degrade with Host-owned diagnostics
     filesystem: {
       readRegularFile: async () => {
         fileAttempts += 1;
-        throw new Error("simulated file I/O failure");
+        throw Object.assign(new Error("simulated file I/O failure"), { code: "EACCES" });
       },
     },
     onOperation: async (operation: unknown) => {
@@ -602,12 +602,12 @@ test("bounded workspace reads retry once and degrade with Host-owned diagnostics
     new AbortController().signal,
   );
   assert.equal(fileAttempts, 2);
-  assert.equal(result.content, "");
+  assert.match(result.content, /read unavailable: not_readable/);
   assert.deepEqual(result.details, {
     path: "input.txt",
     offset: 0,
     available: false,
-    reason: "filesystem_error",
+    reason: "not_readable",
   });
   assert.deepEqual(reads, [
     {
@@ -970,4 +970,29 @@ test("source mount does not follow an escaping junction as a writable path", asy
     /write_denied/,
   );
   assert.equal(await readFile(join(outside, "secret.txt"), "utf8"), "secret");
+});
+
+test('read feedback survives Pi text conversion and keeps audit/unknown I/O failures fatal', async t => {
+  const root = await workspace();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { toPiTool } = await import('../../src/infrastructure/agent/providers/pi/tool-adapter.js');
+  const read = toPiTool(tool(root, 'read', { role: 'recovery' }));
+  const signal = new AbortController().signal;
+  const text = async (params: { path: string; offset?: number; maxBytes?: number }) => {
+    const response = await read.execute('read-feedback', params, signal);
+    return response.content.filter(item => item.type === 'text').map(item => item.text).join('\n');
+  };
+  assert.match(await text({ path: 'missing.txt' }), /unavailable: not_found.*ls\/find/);
+  await writeFile(join(root, 'empty.txt'), '');
+  assert.match(await text({ path: 'empty.txt' }), /empty_file.*totalBytes=0/);
+  assert.match(await text({ path: 'input.txt', offset: 100 }), /end_of_file/);
+  assert.match(await text({ path: 'input.txt', maxBytes: 3 }), /truncated.*nextCursor=3/);
+  assert.equal(await text({ path: 'input.txt', offset: 3 }), 'ginal\r\n');
+  for (const code of ['EIO', undefined]) {
+    const failure = Object.assign(new Error('actual storage failure'), code ? { code } : {});
+    await assert.rejects(tool(root, 'read', { filesystem: { readRegularFile: async () => { throw failure; } } }).execute({ path: 'input.txt' }, signal), /actual storage failure/);
+  }
+  let operations = 0;
+  await assert.rejects(tool(root, 'read', { onOperation: async () => { operations++; throw new Error('audit persistence failed'); } }).execute({ path: 'input.txt' }, signal), /audit persistence failed/);
+  assert.equal(operations, 1, 'audit failure must not retry file access');
 });
