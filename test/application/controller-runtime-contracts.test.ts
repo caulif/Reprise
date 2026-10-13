@@ -95,3 +95,9 @@ test("precise Controller contracts still reject", async () => {
   assert.equal(oversized.status, "failed");
   if (oversized.status === "failed") assert.match(oversized.failure.message, /exceeds 65536 bytes/);
 });
+
+test('task completion uses one opening request and no historical understanding prefix', async () => {
+  const responses = [JSON.stringify({ type: 'send', message: 'Frozen goal', intent: 'continue' })];
+  const completion = await agent(responses).decide(context({ execution: { mode: 'task_completion', goal: 'Frozen goal', deliverables: ['result'], authorization: 'edit' } }));
+  assert.equal(completion.status, 'completed'); assert.equal(responses.length, 0);
+});

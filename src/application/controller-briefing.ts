@@ -10,8 +10,8 @@ import type { SourceRootKind } from "./replay-conditions.js";
 export const CONTROLLER_PROJECT_MOUNT = "project";
 export const CONTROLLER_NOTES_MOUNT = "notes";
 
-const ISOLATION =
-  "Writes stay in the isolated replica and never land in the original user directory.";
+export const CONTROLLER_ISOLATION =
+  "Replica and controlled file tools separate workspace writes. Arbitrary shell is not OS-isolated: Host-private history and metadata may be readable; fair blind evaluation is not guaranteed.";
 
 export type OutlineRow = {
   id: string;
@@ -101,7 +101,7 @@ export function renderIndexMarkdown(latestTurnRelative: string | undefined): str
     "- run/controller-writes.jsonl: Controller edit/write audit",
     "- run/turns/NNNN/user-view.md, visible.txt, event-index.tsv, changed-paths.txt: one settled candidate turn",
     "- THIS-TURN.txt: relative path of the latest turn directory; empty before the first settlement",
-    "- project/: the current replica for file tools (project/<path>); project/imported-inputs/ may be absent; shell_exec cwd is already that replica — use ./<path>, not project/<path>",
+    "- project/: the current replica for file tools (project/<path>); project/imported-inputs/ may be absent; exec_command cwd is already that replica — use ./<path>, not project/<path>",
     "- notes/: your working notes (file-tool workspace; not shell cwd)",
     "- project-root.txt, replay.txt, manifest.json: Host path and isolation facts",
     "",
@@ -115,7 +115,17 @@ export function controllerPromptContent(input: {
   briefingRoot: string;
   indexMarkdown: string;
   latestTurnRelative?: string;
+  execution?: TaskCase['execution'];
 }): string {
+  if (input.execution?.mode === 'task_completion') {
+    const task = input.execution;
+    return [`mode=task_completion`, `phase=${input.phase}`, `briefingRoot=${input.briefingRoot}`,
+      `Frozen goal:\n${task.goal}`, `Deliverables:\n${task.deliverables.join('\n')}`,
+      `Authorization:\n${task.authorization}`, 'Workspace: project/ for file tools; exec_command cwd is the candidate replica. Permissions: permissions.txt.',
+      input.phase === 'opening' ? 'Send the frozen task directly now. Preserve its wording. Do not read all history or rewrite it as a simulated user. Opening allows send only.'
+        : 'Read current-user-view.md. Assess the delivered work against the frozen task. Continue only for a concrete missing result, evidence gap, or deviation; otherwise finish.',
+    ].join('\n\n');
+  }
   const decision = input.phase === "opening" ? CONTROLLER_TURN_PROMPTS.opening : CONTROLLER_TURN_PROMPTS.steering;
   const header = `${decision}\n\nbriefingRoot=${input.briefingRoot}\nphase=${input.phase}`;
   if (input.phase === "opening") {
@@ -285,7 +295,7 @@ export async function writeOpeningBriefing(input: {
   const cwdLine = input.historicalCwd ? `historicalCwd=${input.historicalCwd}\n` : "";
   await writeAtomic(
     join(input.briefingRoot, "replay.txt"),
-    `sourceRootKind=${input.sourceRootKind}\n${cwdLine}isolation=${ISOLATION}\n`,
+    `sourceRootKind=${input.sourceRootKind}\n${cwdLine}isolation=${CONTROLLER_ISOLATION}\n`,
   );
   await writeAtomic(join(input.briefingRoot, "THIS-TURN.txt"), "");
   await writeAtomic(join(input.briefingRoot, "run", "sent-user-messages.jsonl"), "");
@@ -452,6 +462,7 @@ export function controllerRequestSnapshot(context: SteeringContext, promptDigest
     runId: context.runId,
     runState: context.runState,
     ...(context.phase ? { phase: context.phase } : {}),
+    execution: context.execution ?? { mode: 'historical_simulation' },
     promptContent: context.promptContent ?? "",
     briefingRoot: context.briefingRoot ?? "",
     fileDigests: context.fileDigests ?? {},

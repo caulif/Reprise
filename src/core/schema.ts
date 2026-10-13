@@ -293,3 +293,4 @@ export { CodingTrialImageSchema, CodingTrialRenderSchema, CodingTrialTransformSc
 
 
 export { RecoveryFrozenGitSchema, type RecoveryFrozenGit } from "./schemas/recovery.js";
+export { CandidateProgressCheckpointSchema, CandidateWorkspaceScopeSchema } from './schemas/candidate-progress.js';

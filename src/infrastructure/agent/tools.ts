@@ -1,4 +1,5 @@
 import { sha256 } from "../../core/identity.js";
+import { Value } from '@sinclair/typebox/value';
 import { ToolPreconditionRejected } from "../../core/tool-precondition-rejected.js";
 import { inlineBody, redactToolResultForModel, toolResultBody } from "./model-input.js";
 import type { AgentAuditEvent, AgentAuditSink, AgentToolDefinition, AgentToolResult, InvocationCursor } from "./types.js";
@@ -48,7 +49,15 @@ export function instrumentTools(
               ...(cursor.invocationId ? { invocationId: cursor.invocationId } : {}),
             },
           });
-          const raw = await tool.execute(params, signal, { sessionId, invocationId: cursor.invocationId ?? sessionId }).catch((error: unknown) => {
+          const raw = await (async () => {
+            if (role === 'controller' && !Value.Check(tool.parameters, params)) throw new ToolPreconditionRejected('invalid_arguments', 'Arguments do not match the tool schema. Correct the parameters and retry.');
+            return tool.execute(params, signal, { sessionId, invocationId: cursor.invocationId ?? sessionId });
+          })().catch((error: unknown) => {
+            if (role === 'controller' && error instanceof ToolPreconditionRejected && !signal.aborted &&
+              ['invalid_path', 'invalid_arguments', 'edit_text_mismatch', 'workspace_busy', 'invalid_process_session'].includes(error.reason)) {
+              const failure = { status: 'rejected', code: error.reason, message: error.message, retryable: true };
+              return { content: JSON.stringify(failure), details: failure };
+            }
             if (error instanceof ToolPreconditionRejected && !signal.aborted) rejection = error;
             throw error;
           });

@@ -64,7 +64,7 @@ function formatRunPolicy(policy) {
   return [
     '| 字段 | 默认值 |',
     '|---|---|',
-    `| \`wallClockMs\` | ${policy.wallClockMs}（${hours(policy.wallClockMs)} 小时） |`,
+    `| \`wallClockMs\` | ${policy.wallClockMs === undefined ? '未配置（无总时限）' : `${policy.wallClockMs}（${hours(policy.wallClockMs)} 小时）`} |`,
     `| \`maxTargetTurns\` | ${policy.maxTargetTurns} |`,
     `| \`maxModelCalls\` | ${policy.maxModelCalls}（仅 Target；journal 无数则不截） |`,
     `| \`turnTimeoutMs\` | ${policy.turnTimeoutMs}（${hours(policy.turnTimeoutMs)} 小时） |`,
@@ -94,6 +94,10 @@ function selfTest() {
   });
   if (!policyBody.includes('99') || !policyBody.includes('11') || !policyBody.includes('22') || !policyBody.includes('4')) {
     throw new Error('gen-docs self-test: formatRunPolicy ignored DEFAULT_RUN_POLICY fields');
+  }
+  const unlimitedPolicyBody = formatRunPolicy({ turnTimeoutMs: 3_600_000 });
+  if (!unlimitedPolicyBody.includes('| `wallClockMs` | 未配置（无总时限） |') || /wallClockMs[^\n]*(?:undefined|NaN)/.test(unlimitedPolicyBody)) {
+    throw new Error('gen-docs self-test: missing wallClockMs must describe an unlimited total duration');
   }
   if (!policyBody.includes('Comparison 默认单个自主 Session，整体最多 30 分钟') || policyBody.includes('始终有限')) {
     throw new Error('gen-docs self-test: formatRunPolicy lost the autonomous Comparison deadline');

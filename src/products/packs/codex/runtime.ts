@@ -63,6 +63,7 @@ export function clearCodexCatalogCache(): void {
 
 export class CodexProductRuntime implements ProductRuntime {
   readonly id = 'codex';
+  executionIsolation() { return { hostPrivateReads: 'unrestricted' as const, mechanism: 'workspace_copy_without_host_private_read_boundary' }; }
   readonly #options: CodexRuntimeOptions;
 
   constructor(options: CodexRuntimeOptions = {}) {

@@ -153,7 +153,7 @@ test('internal agents share workspace tools without read_observation', async () 
   assert.doesNotMatch(controllerTools, /没有 shell_exec/);
   const controllerAgent = await readFile(join(SRC, 'agents/controller-agent.ts'), 'utf8');
   assert.doesNotMatch(controllerAgent, /没有 shell_exec/);
-  assert.match(controllerAgent, /shell_exec/);
+  assert.match(controllerAgent, /exec_command/);
   const briefing = await readFile(join(SRC, 'application/controller-briefing.ts'), 'utf8');
   assert.doesNotMatch(briefing, /There is no `shell_exec`/);
   assert.match(briefing, /controller\.shell=allowed/);

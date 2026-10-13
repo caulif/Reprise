@@ -100,6 +100,7 @@ export type ExperimentInput = {
   requireObservations?: boolean;
   signal?: AbortSignal;
   captureArtifacts?: (input: {
+    signal: AbortSignal;
     store: ExperimentStore;
     environment: PreparedEnvironmentRef;
     workspaceProvider: LocalWorkspaceProvider;
@@ -116,13 +117,14 @@ export type ExperimentHandle = {
   skipComparison(): Promise<void>;
   cancel(): Promise<void>;
 };
-type ActiveRun = { cancel(): Promise<unknown> };
+type ActiveRun = { cancel(source?: 'user' | 'supervisor' | 'budget'): Promise<unknown> };
 type ExperimentControl = {
   signal: AbortSignal;
   setActive(run: ActiveRun): void;
   setController(controller: ControllerPort, runId: string): void;
   setComparisonAttempt(attemptId: string): void;
   cancelled(): boolean;
+  cancellationSource(): 'user' | 'supervisor' | 'budget';
   waitForComparison(partial: ExperimentResult): Promise<boolean>;
   ready(): Promise<void>;
 };
@@ -139,6 +141,7 @@ export function startExperiment(
   let activeRunId: string | undefined;
   let comparisonAttemptId: string | undefined;
   let cancelRequested = false;
+  let cancellationSource: 'user' | 'supervisor' | 'budget' = 'user';
   let decideComparison: ((run: boolean) => void) | undefined;
   const comparisonDecision = input.deferComparison
     ? new Promise<boolean>((resolve) => {
@@ -151,8 +154,11 @@ export function startExperiment(
         resolveCandidate = resolve;
       })
     : undefined;
-  const cancel = async (): Promise<void> => {
+  const cancel = async (source: 'user' | 'supervisor' | 'budget' = 'user'): Promise<void> => {
+    if (cancelRequested) return;
+    cancellationSource = source;
     cancelRequested = true;
+    const stopping = active?.cancel(source);
     abort.abort();
     decideComparison?.(false);
     if (comparisonAttemptId) await input.comparison.cancel(comparisonAttemptId);
@@ -161,10 +167,14 @@ export function startExperiment(
         activeRunId,
         `run:${activeRunId}:cancelled`,
       );
-    if (active) await active.cancel();
+    await stopping;
   };
-  if (input.signal?.aborted) void cancel();
-  else input.signal?.addEventListener("abort", () => { void cancel(); }, { once: true });
+  const externalAbort = () => {
+    const reason: unknown = input.signal?.reason;
+    return cancel(reason && typeof reason === 'object' && 'source' in reason && reason.source === 'user' ? 'user' : reason instanceof Error && reason.name === 'TimeoutError' ? 'budget' : 'supervisor');
+  };
+  if (input.signal?.aborted) void externalAbort();
+  else input.signal?.addEventListener("abort", () => { void externalAbort(); }, { once: true });
   const activity = input.activity ?? registerActivity({
     kind: input.compare ? "compare" : "run",
     experimentId: input.experimentId,
@@ -189,6 +199,7 @@ export function startExperiment(
     cancelled() {
       return cancelRequested;
     },
+    cancellationSource() { return cancellationSource; },
     async waitForComparison(partial) {
       resolveCandidate?.(partial);
       if (cancelRequested) return false;
@@ -372,6 +383,7 @@ async function openExperimentSession(input: {
     environment: {
       environmentId: environment.environmentId,
       workspacePath: environment.root,
+      executionIsolation: experiment.runtime.executionIsolation?.() ?? { hostPrivateReads: 'unknown', mechanism: 'undeclared' },
       ...(environment.gitSink ? { gitSink: environment.gitSink } : {}),
     },
     controller: experiment.agentConfig,
@@ -410,6 +422,7 @@ async function startCandidateRun(args: {
   release: () => Promise<{ status: "released" | "already_released" }>;
   targetEvents: string[];
   launch: CandidateLaunchContext;
+  taskCase: TaskCase;
 }): Promise<CandidateRun> {
   const { input, store, checkpoint, resolved, environment, provider, attempt, manifest, release, targetEvents, launch } = args;
   await store.acquireWriter();
@@ -463,9 +476,10 @@ async function startCandidateRun(args: {
       attempt,
       manifest,
       ...(recoveryArtifactRef ? { artifactRefs: [recoveryArtifactRef] } : {}),
-      captureArtifacts: () =>
+      captureArtifacts: signal =>
         input.captureArtifacts
           ? input.captureArtifacts({
+              signal,
               store,
               environment,
               workspaceProvider: provider,
@@ -474,6 +488,8 @@ async function startCandidateRun(args: {
               runId: input.runId,
             })
           : captureWorkspaceScope({
+              signal,
+              ...(args.taskCase.execution?.mode === 'task_completion' && args.taskCase.execution.snapshotRetainPaths ? { snapshotRetainPaths: args.taskCase.execution.snapshotRetainPaths } : {}),
               store,
               environment,
               workspaceProvider: provider,
@@ -501,7 +517,7 @@ async function finishCandidateRun(args: {
   const { input, control, run, store, taskCase, preflight, experimentRoot, targetEvents, startedAt, sourceRootKind, environment, resolved } = args;
   control.setActive(run);
   control.setController(input.controller, input.runId);
-  if (control.cancelled()) await run.cancel();
+  if (control.cancelled()) await run.cancel(control.cancellationSource());
   const controller = control.cancelled()
     ? {
         decision: {
@@ -609,6 +625,7 @@ async function executeExperiment(
       },
       targetEvents,
       launch: session.launch,
+      taskCase,
     });
     return await finishCandidateRun({
       input,
@@ -631,7 +648,7 @@ async function executeExperiment(
     throw error;
   } finally {
     unsubscribe?.();
-    if (!lifetime.released) await release();
+    if (!lifetime.released && !run?.isStopping()) await release();
     try {
       await store.close();
     } catch {

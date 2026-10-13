@@ -103,6 +103,8 @@ export type RecoveryRuntimeCapabilities = {
 
 export interface ProductRuntime {
   readonly id: string;
+  /** Absent on older packs: workspace copies alone never imply Host-private read isolation. */
+  executionIsolation?(): { hostPrivateReads: 'isolated' | 'unrestricted' | 'unknown'; mechanism: string };
   inspectAvailable(): Promise<readonly AvailableRuntime[]>;
   inspectAvailability(): Promise<readonly RuntimeAvailability[]>;
   resolve(request: RuntimeRequest): Promise<ResolvedRuntime>;

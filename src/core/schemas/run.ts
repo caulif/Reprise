@@ -18,7 +18,7 @@ const AgentConfigSchema = Type.Object({
   contextPolicy: Type.Optional(JsonRecord),
 });
 const RunPolicySchema = Type.Object({
-  wallClockMs: Type.Integer({ minimum: 1 }),
+  wallClockMs: Type.Optional(Type.Integer({ minimum: 1 })),
   maxTargetTurns: Type.Integer({ minimum: 1 }),
   maxModelCalls: Type.Integer({ minimum: 1 }),
   turnTimeoutMs: Type.Integer({ minimum: 1 }),
@@ -71,6 +71,7 @@ export const RunManifestSchema = Type.Object({
   environment: Type.Object({
     environmentId: Id,
     workspacePath: Type.String({ minLength: 1 }),
+    executionIsolation: Type.Optional(Type.Object({ hostPrivateReads: Type.Union([Type.Literal('isolated'), Type.Literal('unrestricted'), Type.Literal('unknown')]), mechanism: Type.String({ minLength: 1 }) })),
     gitSink: Type.Optional(Type.Object({
       status: Type.Union([
         Type.Literal("ready"),

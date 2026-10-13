@@ -24,7 +24,7 @@ import {
 test('TUI run policy is a last-resort safety valve, not a completion budget', () => {
   assert.equal(TUI_RUN_POLICY.maxTargetTurns, 256);
   assert.equal(TUI_RUN_POLICY.maxModelCalls, 256);
-  assert.equal(TUI_RUN_POLICY.wallClockMs, 24 * 60 * 60_000);
+  assert.equal(TUI_RUN_POLICY.wallClockMs, undefined);
   assert.equal(TUI_RUN_POLICY.turnTimeoutMs, 2 * 60 * 60_000);
 });
 

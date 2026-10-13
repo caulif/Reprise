@@ -31,6 +31,7 @@ import {
   writeSourceSummary as writeSourceSummary,
   baselineMatchFromRecoveryStatus as baselineMatchFromRecoveryStatus,
   type SourceDirectorySummary,
+  type SnapshotCopyPolicy,
 } from './local-workspace-fs.js';
 import { finalizeGitSinkCatalog, gitSinkRoot, isolateGitTopology, removeGitSink, GitIsolationError, type GitIsolationRecord } from './git-sink.js';
 import { SNAPSHOT_LIMITS, type SnapshotLimits } from './snapshots.js';
@@ -56,7 +57,7 @@ export type RecoveryPlaybookProvenance = { productId: string; version: string; s
 type EnvironmentClue = JsonRecord;
 type EnvironmentPolicy = JsonRecord;
 export type FingerprintEntry = { path: string; kind: 'file' | 'directory'; size: number; contentHash?: string };
-type TreeCopier = (source: string, destination: string) => Promise<void>;
+type TreeCopier = (source: string, destination: string, signal?: AbortSignal, policy?: SnapshotCopyPolicy) => Promise<void>;
 
 export type EnvironmentFingerprint = {
   capturedAt: string;
@@ -721,29 +722,32 @@ export class LocalWorkspaceProvider {
   }
 
   /** Copies the run workspace to an immutable comparison snapshot before release. */
-  async sealCandidateSnapshot(environment: PreparedEnvironmentRef): Promise<{ root: string; status: 'complete' | 'incomplete' }> {
+  async sealCandidateSnapshot(environment: PreparedEnvironmentRef, signal?: AbortSignal, retainPaths: readonly string[] = []): Promise<{ root: string; status: 'complete' | 'incomplete'; omitted: SnapshotCopyPolicy['omitted'] }> {
     this.#assertOwnedEnvironment(environment);
     const snapshotRoot = this.candidateSnapshotRoot(environment.runId);
     const snapshotsRoot = dirname(snapshotRoot);
     const staging = join(snapshotsRoot, `.${environment.runId}.staging-${process.pid}-${randomUUID()}`);
     const completeMarker = join(snapshotsRoot, `${environment.runId}.complete`);
     const incompleteMarker = join(snapshotsRoot, `${environment.runId}.incomplete`);
+    const policy: SnapshotCopyPolicy = { retainPaths, omitted: [] };
     try {
+      signal?.throwIfAborted();
       await finalizeGitSinkCatalog(gitSinkRoot(this.#root, environment.runId));
       await mkdir(snapshotsRoot, { recursive: true });
       await mkdir(staging);
-      await this.#copyTree(environment.root, staging);
+      await this.#copyTree(environment.root, staging, signal, policy);
+      signal?.throwIfAborted();
       await publishDirectory(staging, snapshotRoot);
       await rm(incompleteMarker, { force: true });
       await writeFile(completeMarker, '');
-      return { root: snapshotRoot, status: 'complete' };
+      return { root: snapshotRoot, status: 'complete', omitted: policy.omitted };
     } catch {
       // Staging copy or publish failed; the live run directory must not be treated as a final snapshot.
       await rm(staging, { recursive: true, force: true }).catch(() => undefined);
       await mkdir(snapshotRoot, { recursive: true });
       await writeFile(incompleteMarker, '');
       await rm(completeMarker, { force: true });
-      return { root: snapshotRoot, status: 'incomplete' };
+      return { root: snapshotRoot, status: 'incomplete', omitted: policy.omitted };
     }
   }
 

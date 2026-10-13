@@ -142,7 +142,7 @@ function buildReportFacts(
     run: { runId: run.attempt.runId, outcome: run.outcome.task.status, terminationCode: run.outcome.termination.code, initiatedBy: run.outcome.termination.initiatedBy, ...(inspection?.wallClockMs === undefined ? {} : { candidateElapsedMs: inspection.wallClockMs }) },
     models: comparisonModels(taskCase, run, pricing?.comparisonModel),
     activity: { ...(inspection ? { candidateTurns: inspection.turns } : {}) },
-    limits: { wallClockMs: run.attempt.policy.wallClockMs, maxTargetTurns: run.attempt.policy.maxTargetTurns, maxModelCalls: run.attempt.policy.maxModelCalls, triggered },
+    limits: { ...(run.attempt.policy.wallClockMs === undefined ? {} : { wallClockMs: run.attempt.policy.wallClockMs }), maxTargetTurns: run.attempt.policy.maxTargetTurns, maxModelCalls: run.attempt.policy.maxModelCalls, triggered },
     runtime: { productId: run.attempt.candidate.productId },
     delivery: {
       changedPaths: inspection?.changedPaths ?? [],

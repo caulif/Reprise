@@ -12,13 +12,13 @@ Host 为每次 start/send 提供带 `runId`、turn index 和 client message id �
 
 ## Controller 时机与权限
 
-开场消息由 Controller 在 `created` 状态中生成，这是 opening 例外；后续 steering 只在目标 turn settled 后、状态为 `awaiting_controller` 时发生。Controller 通过 Host 工具观察事件、历史要求、候选工作区和 briefing；其协作工具可以对 `project/` 与 notes 写入，也可以执行受边界限制的 shell。受控写工具禁止写用户 source、凭据目录或实验事实文件；shell 的命令检查不是全局容器沙箱，外部写入审计不能等同于完备隔离。
+开场消息由 Controller 在 `created` 状态中生成，这是 opening 例外；后续 steering 只在目标 turn settled 后、状态为 `awaiting_controller` 时发生。Controller 通过 Host 工具观察事件、历史要求、候选工作区和 briefing；其协作工具可以对 `project/` 与 notes 写入，也可以执行 managed shell。受控写工具禁止写用户 source、凭据目录或实验事实文件；shell 的命令检查不是全局容器沙箱，外部写入审计不能等同于完备隔离。
 
-Controller 的 decision 经过结构化 schema 校验。工具调用和 decision 结果进入事件审计；模型输出不直接改变 CandidateRun 状态。达到 wall-clock、Controller call 或其他 run policy 限制时，Host 停止运行并进入收尾。Controller 的 Agent Session 仍使用 `timeoutMs: 0`；Comparison 使用 harness `budget.callTimeoutMs`（默认 24 小时）作为每轮模型/工具调用的有限截止时间，与 attempt 级 `AbortSignal` 共享取消路径。
+Controller 的 decision 经过结构化 schema 校验。工具调用和 decision 结果进入事件审计；模型输出不直接改变 CandidateRun 状态。达到已配置的 wall-clock、Controller call 或其他 run policy 限制时，Host 停止运行并进入收尾。Controller 的 Agent Session 仍使用 `timeoutMs: 0`；Comparison 使用 harness `budget.callTimeoutMs`（默认 24 小时）作为每轮模型/工具调用的有限截止时间，与 attempt 级 `AbortSignal` 共享取消路径。
 
 ## 终止与结果
 
-RunOutcome 分别保存任务判断、运行终止和清理结果；调用 Runner.stop 时的 completed/cancelled/failed/shutdown 是停止请求语义，不能替代 RunOutcome 的终止类别。终止时先停止等待和 Runner，再捕获允许的 artifacts，释放隔离环境，最后提交 `RunRecord`。cleanup 的 released、already_released、unknown 等事实不能被简化成任务成功。
+RunOutcome 分别保存任务判断、运行终止和清理结果；调用 Runner.stop 时的 completed/cancelled/failed/shutdown 是停止请求语义，不能替代 RunOutcome 的终止类别。终止时先停止等待和已尝试启动的 Runner，分阶段有界地关闭、捕获 artifacts 和释放环境，最后提交 `RunRecord`。cleanup 的 released、already_released、unknown 等事实不能被简化成任务成功。
 
 同一 Experiment 可以有多个 run，Store 的 `operationId` 去重仍是实验级的。Controller、CandidateRun、runtime 和 artifact 等 run 所属操作在写入时由 runId 与局部 ID 派生独立身份；旧日志原样重放。离线 fake Runtime 已验证两次完整运行与副本隔离，真实 Runtime 仍需显式 opt-in 验收；身份取舍见[run 所属操作使用独立身份](../decisions/accepted/2026-09-23-run-operation-identity.md)。
 
@@ -41,6 +41,7 @@ RunOutcome 分别保存任务判断、运行终止和清理结果；调用 Runne
 | `source` | object | 否 |
 | `evidenceLevel` | "transcript" \| "history" | 是 |
 | `initialInput` | object | 否 |
+| `execution` | object \| object | 是 |
 | `transcript` | object[] | 否 |
 | `historicalEvents` | object[] | 否 |
 | `baseline` | object | 否 |
@@ -65,3 +66,15 @@ RunOutcome 分别保存任务判断、运行终止和清理结果；调用 Runne
 | `warnings` | object[] | 否 |
 <!-- END GENERATED record-fields -->
 
+
+## Controller 可靠性与执行模式
+
+TaskCase 可显式选择任务完成模式并冻结目标、交付物与授权，Controller 直接交接；没有 execution 的历史场景继续模拟历史用户，保留信息出现顺序。新任务调用方应明确选择完成模式，Host 不从历史答案自动提炼目标。模式与 prompt 随 controller.requested 进入可重建输入；取舍见 [Controller 执行可靠性](../decisions/accepted/2026-10-13-controller-execution-reliability.md)。
+
+Controller 复用 managed 命令 session，轮询只决定何时返回部分输出，不是命令截止。可纠正的参数/路径错误返回拒绝结果，审计和持久化故障保持致命。总时间预算可省略，配置时主动停止进行中的模型和 Candidate；预算、用户与监督器停止分别记录。未启动 Runner 的清理不会伪造停止生命周期。
+
+收尾的 stop、close、capture、release 分阶段可观察并有独立截止。capture 超时保留 unknown、剩余资源和工作树；不把晚到结果加入已结束记录。封存可省略由清单、锁文件及安装/编译器标记共同确认的可重建目录，记录恢复命令；明确保留的交付路径不省略。指纹和执行树保留原语义，快照完整状态只针对声明的封存策略。
+
+candidate.progress_checkpoint 绑定会话、最近投递确认和下一步；实时进展只投影真实工具事件、后台命令和已有 diff。无事件不是模型失败证据。未知投递不重发。当前没有跨进程自动重连/投递查询，Claude 的 reconnectSession 为 false；checkpoint 不等于已支持进程重启续跑。
+
+RunManifest.environment.executionIsolation 记录 Pack 声明，旧 Pack 未声明为 unknown，内置 Pack 为 unrestricted。当前任意 shell 可以读取工作区之外可读内容，不能保证 Host 私有历史与答案的读取隔离或盲测公平性。禁止凭据读取等工具检查继续有效，但不是 OS 沙箱。

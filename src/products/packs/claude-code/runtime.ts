@@ -44,6 +44,7 @@ export function clearClaudeCatalogCache(): void {
 
 export class ClaudeCodeProductRuntime implements ProductRuntime {
   readonly id = 'claude-code';
+  executionIsolation() { return { hostPrivateReads: 'unrestricted' as const, mechanism: 'workspace_copy_without_read_sandbox' }; }
   readonly #options: ClaudeRuntimeOptions;
 
   constructor(options: ClaudeRuntimeOptions = {}) {

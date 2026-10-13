@@ -3,6 +3,7 @@ import { constants, existsSync } from 'node:fs';
 import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptions } from 'node:child_process';
 import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { isNativeHostPath } from '../../core/paths.js';
+import { captureWindowsProcessIdentity } from '../windows-process-identity.js';
 
 export const DEFAULT_RUNTIME_RPC_TIMEOUT_MS = 120_000;
 export const RUNTIME_PROCESS_STOP_GRACE_MS = 5_000;
@@ -61,7 +62,7 @@ export function spawnRuntimeProcess(
   const { platform, env, cwd, ...spawnOptions } = options;
   const invocation = windowsProcessInvocation(executable, args, platform ?? process.platform);
   const host = platform ?? process.platform;
-  return spawn(invocation.command, [...invocation.args], {
+  const child = spawn(invocation.command, [...invocation.args], {
     ...spawnOptions,
     cwd,
     env: isolateCandidateProcessEnv(env, typeof cwd === 'string' ? cwd : undefined),
@@ -69,6 +70,8 @@ export function spawnRuntimeProcess(
     ...(invocation.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
     ...(host !== 'win32' && spawnOptions.detached === undefined ? { detached: true } : {}),
   }) as ChildProcessWithoutNullStreams;
+  if (process.platform === 'win32') captureWindowsProcessIdentity(child);
+  return child;
 }
 
 const GITHUB_TOKEN_KEYS = new Set(['GITHUB_TOKEN', 'GH_TOKEN']);
