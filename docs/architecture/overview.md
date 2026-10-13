@@ -56,7 +56,7 @@ Core 定义 [schema](../../src/core/schema.ts)、[状态转换](../../src/core/s
 <!-- BEGIN GENERATED default-run-policy (scripts/gen-docs.mjs) — 不要编辑标记之间的内容 -->
 | 字段 | 默认值 |
 |---|---|
-| `wallClockMs` | undefined（NaN 小时） |
+| `wallClockMs` | 未配置（无总时限） |
 | `maxTargetTurns` | 256 |
 | `maxModelCalls` | 256（仅 Target；journal 无数则不截） |
 | `turnTimeoutMs` | 7200000（2 小时） |

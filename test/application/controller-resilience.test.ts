@@ -178,6 +178,42 @@ test('deadline during request persistence never starts a Controller model invoca
   assert.equal(result.record.outcome.termination.code, 'limit.wall_clock');
 });
 
+test('a 30-day budget schedules bounded timer segments and stops only at the absolute deadline', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-long-deadline-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const base = input(root, new VerifiedRuntime());
+  await mkdir(base.sourceRoot, { recursive: true });
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_000 });
+  const maxDelay = 2 ** 31 - 1;
+  const wallClockMs = 30 * 24 * 60 * 60_000;
+  const delays: number[] = [];
+  const setTimer = globalThis.setTimeout;
+  t.mock.method(globalThis, 'setTimeout', (...args: Parameters<typeof setTimeout>) => {
+    delays.push(args[1] ?? 1);
+    assert.ok((args[1] ?? 1) <= maxDelay, 'native Node timers overflow above this delay');
+    return setTimer(...args);
+  });
+  let invoked!: () => void; let resolveDecision!: () => void; let cancellations = 0;
+  const invocation = new Promise<void>(resolve => { invoked = resolve; });
+  const decisionGate = new Promise<void>(resolve => { resolveDecision = resolve; });
+  const pending = startExperiment({ ...base, compare: false, policy: { ...base.policy, wallClockMs },
+    controller: {
+      decide: async () => { invoked(); await decisionGate; return { status: 'cancelled', factRef: 'run:deadline' }; },
+      cancel: async () => { cancellations++; resolveDecision(); },
+    },
+  }).result;
+  await invocation;
+  t.mock.timers.tick(maxDelay);
+  assert.equal(cancellations, 0);
+  assert.ok(delays.includes(wallClockMs - maxDelay));
+  t.mock.timers.tick(wallClockMs - maxDelay - 1);
+  assert.equal(cancellations, 0);
+  t.mock.timers.tick(1);
+  const result = await pending;
+  assert.equal(cancellations, 1);
+  assert.equal(result.record.outcome.termination.code, 'limit.wall_clock');
+});
+
 for (const source of ['budget', 'supervisor', 'user'] as const) test(`external ${source} signal retains its provenance through the experiment workflow`, async t => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-signal-source-'));
   t.after(() => rm(root, { recursive: true, force: true }));

@@ -64,10 +64,17 @@ export async function runControllerLoop(input: {
   );
   try {
     if (input.policy.wallClockMs !== undefined) {
-      deadline = setTimeout(() => {
+      const wallClockMs = input.policy.wallClockMs;
+      const checkDeadline = () => {
+        const remainingMs = wallClockMs - (Date.now() - startedAt);
+        if (remainingMs > 0) {
+          deadline = setTimeout(checkDeadline, Math.min(remainingMs, 2 ** 31 - 1));
+          return;
+        }
         stopping = Promise.all([input.run.stopByHarness('limit.wall_clock'), input.controller.cancel?.(input.runId)]);
         void stopping.catch(() => { /* The finally block awaits and surfaces deadline cleanup failures. */ });
-      }, input.policy.wallClockMs);
+      };
+      checkDeadline();
     }
     await input.store.append({
       type: "controller.started",
