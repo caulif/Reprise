@@ -27,6 +27,7 @@ import { RecoveryValidationError } from "../../environment/local-workspace-provi
 import { assertRecoveryReadyPreconditions } from "../../environment/recovery-pre-task.js";
 import { ProcessBoundaryError } from "../../infrastructure/process-runner.js";
 import { stat } from "node:fs/promises";
+import { safeAgentFailureText } from "../../infrastructure/agent/failure.js";
 
 export function buildRecoveryAgentContext(session: RecoveryRunSession): RecoveryContext {
   const { input, facts, pack, playbook, staging } = session;
@@ -43,6 +44,13 @@ export function buildRecoveryAgentContext(session: RecoveryRunSession): Recovery
       historicalEventCount: input.taskCase.historicalEvents.length,
     },
     clues: recoveryClues(input.taskCase),
+    ...(facts.git ? { sourceGit: {
+      isRepo: facts.git.isRepo,
+      headState: facts.git.headState,
+      ...(facts.git.head ? { head: facts.git.head } : {}),
+      ...(facts.git.historicalCommitPresent !== undefined ? { historicalCommitPresent: facts.git.historicalCommitPresent } : {}),
+      statusAvailable: facts.git.statusAvailable,
+    } } : {}),
     runtimeCapabilities: packRuntime(pack).recoveryCapabilities(),
     playbook,
     staging: {
@@ -298,6 +306,7 @@ export async function enforceRecoveryReadiness(session: RecoveryRunSession): Pro
 function normalizeRecoveryInvocation(
   invocation: StructuredAgentResult<RecoveryDecision>,
 ): StructuredAgentResult<RecoveryResult> {
+  if (invocation.status === "failed") return { ...invocation, failure: { ...invocation.failure, message: safeAgentFailureText(invocation.failure.message) } };
   if (invocation.status !== "completed") return invocation;
   return { ...invocation, value: { ...invocation.value, reportPath: "recovery.md" } };
 }

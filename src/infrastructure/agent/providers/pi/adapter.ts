@@ -26,13 +26,14 @@ import { piToolRejections } from './tool-rejections.js';
 
 export type PiModels = Pick<Models, "getProviders" | "getModels" | "getModel" | "getAuth" | "completeSimple" | "streamSimple">;
 
-type TurnYieldState = { policy: Parameters<ProviderSession['append']>[0]['yieldAfterTurn']; reason: string | undefined; failure: Error | undefined };
+type TurnYieldState = { policy: Parameters<ProviderSession['append']>[0]['yieldAfterTurn']; reason: string | undefined; failure: Error | undefined; progress: number };
 function turnYieldPolicy(usage: { flush(): Promise<void> }, state: TurnYieldState): NonNullable<ConstructorParameters<typeof Agent>[0]['shouldStopAfterTurn']> {
   return async ({ message }) => {
     // Pi requires this hook not to throw. Surface audit/policy failures after its normal agent_end.
     try {
       await usage.flush();
       if (message.stopReason === 'error' || message.stopReason === 'aborted') return false;
+      state.progress++;
       if (message.stopReason === 'length' && state.policy) { state.reason = 'output_limit'; return true; }
       state.reason = await state.policy?.();
       return state.reason !== undefined;
@@ -79,7 +80,7 @@ export class PiProviderAdapter implements ProviderAdapter {
     let toolsEnabled = true;
     const registeredTools = input.tools.map(tool => toPiTool(tool, recordFailure, error => deadline?.recordToolFailure(error)));
     const rejections = piToolRejections(input, recordFailure);
-    const turnYield: TurnYieldState = { policy: undefined, reason: undefined, failure: undefined };
+    const turnYield: TurnYieldState = { policy: undefined, reason: undefined, failure: undefined, progress: 0 };
     const agent = createPiAgent({
       sessionId: input.sessionId,
       streamFn: usage.stream,
@@ -185,7 +186,8 @@ async function appendPiPrompt(args: {
     deadline.assertCanRecover();
     const yieldedReason = yieldReasonAfterPrompt(agent, turnYield, deadline.signal);
     if (yieldedReason !== undefined) { deadline.assertCanYield(); return { status: 'yielded', reason: yieldedReason }; }
-    await recoverAgentResponse(agent, model, models, effort, deadline.signal, input.compactionInstructions, input.onContextCompact, input.onRetry);
+    await recoverAgentResponse(agent, model, models, effort, deadline.signal, input.compactionInstructions, input.onContextCompact, input.onRetry,
+      (retrying) => { deadline.assertCanRecover(retrying); if (turnYield.failure) throw turnYield.failure; return turnYield.progress; });
     await usage.flush();
     const recoveredMessage = lastAssistant(agent.state.messages);
     if (recoveredMessage?.stopReason === 'stop' || (recoveredMessage?.stopReason === 'toolUse'
@@ -268,16 +270,24 @@ async function recoverAgentResponse(
   customInstructions: string | undefined,
   onContextCompact: ((payload: { summary: string; tokensBefore: number; retainedCount: number; reason?: string; retainedTail?: readonly unknown[] }) => Promise<void>) | undefined,
   onRetry: ((payload: { attempt: number; kind: string; delayMs: number }) => Promise<void>) | undefined,
+  progress: (retrying?: boolean) => number,
 ): Promise<void> {
   let overflowRecovered = false;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  let failures = 0;
+  let previousProgress = progress();
+  while (true) {
     signal.throwIfAborted();
+    const currentProgress = progress();
+    if (currentProgress !== previousProgress) failures = 0;
+    previousProgress = currentProgress;
     const message = lastAssistant(agent.state.messages);
     if (!message || message.role !== "assistant" || message.stopReason !== "error") return;
     const overflow = isContextOverflow(message, contextWindowOf(model));
     const kind = classifyAgentFailure(new Error(message.errorMessage ?? "Agent response failed."));
     if (!overflow && kind !== "transient_upstream" && kind !== "transient_network") return;
-    if (attempt === 3 || (overflow && overflowRecovered)) return;
+    progress(true);
+    failures++;
+    if (failures === 3 || (overflow && overflowRecovered)) return;
     const tail = agent.state.messages.at(-1);
     if (tail !== message) throw new Error("Agent failed outside the latest response; cannot safely continue.");
     agent.state.messages.pop();
@@ -289,8 +299,8 @@ async function recoverAgentResponse(
       await onContextCompact?.(compacted.audit);
       overflowRecovered = true;
     }
-    const delayMs = overflow ? 0 : 200 * 2 ** (attempt - 1) + Math.floor(Math.random() * 100);
-    await onRetry?.({ attempt: attempt + 1, kind: overflow ? "context_overflow" : kind, delayMs });
+    const delayMs = overflow ? 0 : 2_000 * 2 ** (failures - 1);
+    await onRetry?.({ attempt: failures + 1, kind: overflow ? "context_overflow" : kind, delayMs });
     await delay(delayMs, undefined, { signal });
     await agent.continue();
   }

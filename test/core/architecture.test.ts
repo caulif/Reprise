@@ -237,7 +237,10 @@ test('Recovery production path does not reintroduce candidate selection or three
   const run = await readFile(join(SRC, 'application/recovery/run.ts'), 'utf8');
   assert.doesNotMatch(run, /tryHostCheckpointRecovery|completeHostCheckpointRecovery/);
   assert.doesNotMatch(run, /isRepo/);
-  assert.doesNotMatch(runModel, /isRepo/);
+  const hasRepositoryPolicy = (source: string) => /isRepo/.test(source.replace(/isRepo:\s*facts\.git\.isRepo,/g, ''));
+  assert.match(runModel, /isRepo:\s*facts\.git\.isRepo,/);
+  assert.equal(hasRepositoryPolicy(runModel), false, 'source Git facts may be projected but must not drive Recovery policy');
+  assert.equal(hasRepositoryPolicy(`${runModel}\nif (facts.git.isRepo) return ready;`), true, 'repository-dependent policy must fail this gate');
   assert.match(runModel, /resetRecoveryWorkspace/);
   assert.match(runModel, /releasePreparation/);
   assert.match(runModel, /workspace_damaged/);

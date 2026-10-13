@@ -862,6 +862,13 @@ test("source mount is readable and not writable; workspace alias writes the copy
   assert.match(deep.content, /needed/);
   const aliased = await tool(root, "read", options).execute({ path: "workspace/input.txt" }, signal);
   assert.match(aliased.content, /original/);
+  for (const path of ["source/", "source\\", "source/deep/", "observations/", "workspace/", "./"]) {
+    const result = await tool(root, "ls", options).execute({ path }, signal);
+    assert.equal((result.details as { available: boolean }).available, true, path);
+  }
+  for (const path of ["source//", "source//deep", "source/../input.txt", "workspace/../input.txt", "/source/", "C:\\source\\", "\\\\server\\source\\"]) {
+    await assert.rejects(tool(root, "ls", options).execute({ path }, signal), /relative path/, path);
+  }
   await tool(root, "write", options).execute({ path: "workspace/copied.txt", content: "from-source" }, signal);
   assert.equal(await readFile(join(root, "copied.txt"), "utf8"), "from-source");
   await assert.rejects(

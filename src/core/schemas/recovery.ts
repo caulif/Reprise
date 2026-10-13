@@ -593,7 +593,7 @@ export const RecoveryEvaluationPreflightSchema = Type.Object({
     Type.Literal("blocked_before_sampling"),
   ]),
   providerId: Id,
-  modelId: Id,
+  modelId: Type.String({ minLength: 1 }),
   checkedAt: Timestamp,
   operation: Id,
   providerReachable: Type.Boolean(),

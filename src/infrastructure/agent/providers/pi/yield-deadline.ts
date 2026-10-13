@@ -39,7 +39,7 @@ export function invocationYieldDeadline(agent: { abort(): void; readonly signal?
     recordProviderFailure(error: unknown) { if (!signal.aborted || !isKnownAbort(error, knownReasons)) providerFailure ??= error instanceof Error ? error : new Error('Provider response failed.', { cause: error }); },
     recordToolFailure(error: unknown) { if (!signal.aborted || !isKnownAbort(error, knownReasons)) toolFailure ??= error instanceof Error ? error : new Error('Pi tool failed.', { cause: error }); },
     providerRecovered() { providerFailure = undefined; },
-    assertCanRecover() { outer.throwIfAborted(); if (failure !== undefined) throw failure; },
+    assertCanRecover(retrying = false) { outer.throwIfAborted(); if (failure !== undefined) throw failure; if (retrying && toolFailure !== undefined) throw toolFailure; },
     reason() {
       outer.throwIfAborted();
       if (!expired) return undefined;

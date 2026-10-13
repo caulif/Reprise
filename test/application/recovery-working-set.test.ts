@@ -73,3 +73,15 @@ test("recovery briefing includes source summary facts without dumping the tree J
   assert.equal(staging.seed, "sparse");
   assert.equal(staging.source.fileCount, 50_001);
 });
+
+test("briefing distinguishes verified source Git facts from historical clues and work-copy state", () => {
+  const context = fatContext();
+  context.clues.historicalCommit = "b".repeat(40);
+  context.sourceGit = { isRepo: true, headState: "present", head: "a".repeat(40), historicalCommitPresent: false, statusAvailable: true };
+  const prompt = recoveryModelPrompt(context);
+  assert.match(prompt, /Verified source Git at preparation: repository=yes; HEAD=a{40}; historical commit object present=no/);
+  assert.match(prompt, /do not establish the task-before boundary or the current work-copy state/);
+  assert.deepEqual(recoveryWorkingSet(context).sourceGit, context.sourceGit);
+  delete context.sourceGit.historicalCommitPresent;
+  assert.match(recoveryModelPrompt(context), /historical commit object present=unknown/);
+});
