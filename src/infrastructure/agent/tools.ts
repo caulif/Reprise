@@ -184,8 +184,5 @@ function safeDetails(value: unknown): Record<string, unknown> {
 }
 
 function redactAuditText(text: string): string {
-  return text
-    .replace(/(authorization\s*[=:]\s*)(?:"?)(?:Bearer\s+)?[^\s"]+/gi, "$1[REDACTED]")
-    .replace(/((?:api[_-]?key|token|password|secret)\s*[=:]\s*)([^\s]+)/gi, "$1[REDACTED]")
-    .replace(/(Bearer\s+)[^\s]+/gi, "$1[REDACTED]");
+  return redactModelVisibleText(text).text;
 }

@@ -40,6 +40,8 @@ Recovery 默认使用 `exec_command`、`write_stdin` 和 `cancel_process`。命�
 
 输出按增量分页返回，待消费缓冲最多 1 MiB；脱敏日志最多 16 MiB，超长行省略。两者的 truncated 与 logTruncated 分别报告，属于诊断资源保护，不是请求次数额度。Recovery 将终态日志提交为 `recovery_process_output` artifact，并记录 `recovery.process_log_committed`，避免 staging 清理后日志引用失效。新增参数、输出和日志引用继续通过工具与 artifact 事件复原。
 
+stdout、stderr 各自增量解码 UTF-8，再将解码文本汇入有状态的输出脱敏器；脱敏发生在分页、模型交付、事件审计与日志写入之前。可能的凭据前缀和未结束值延迟交付，完整记录使用共享脱敏规则，普通交互提示仍可即时返回。敏感待定记录超过 64 Ki 字符时省略并标记截断，命令结束仍未闭合的敏感记录也省略。参数及完成事件统一使用共享规则，覆盖 JSON 凭据与 URL userinfo。日志持久化失败在 poll 和取消收尾中都保持致命，不因取消时序而消失。
+
 ## 隔离边界
 
 Briefing 中的 source Git 事实来自准备时对 source 的既有探测，只提供 repository、HEAD、指定历史 commit 对象是否存在及 status 是否可用；未成功取得的事实保持 unknown。它们不是工作副本当前 Git 状态，也不证明历史任务前起点。事实进入 `recovery.model_input` artifact，并随模型可见文本进入既有请求审计。
