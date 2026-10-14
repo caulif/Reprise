@@ -77,7 +77,11 @@ node dist/scripts/comparison-evaluate.js real $comparisonEvalOutput $comparisonC
 Remove-Item Env:REPRISE_REAL_MODEL
 ```
 
-runner 只读取现有 Harness 配置，不复制凭据；逐项记录实际模型、输入能力、report hash、耗时、请求、工具、压缩、重试、预览、usage 覆盖及估算费用。缺失 usage/价格保持未知；连续三次失败或取消停止，`Ctrl+C` 取消。生产工厂默认调查 12 次模型请求 / 30 次工具 / 120 秒，整体 40 次模型请求 / 120 次工具 / 600 秒；金额上限不默认设置。`AgentBudget.comparisonResources` 完整替换默认值（包括 `{}` 关闭），复杂任务应显式调高，运行前仍须限定总评估范围。异常来源或终稿材料造成的持续调查只能作为资源风险证据，修正输入身份之前不能形成质量基线。单例 `--case` 使用单独 ledger，不自动成为完整矩阵验收。
+runner 只读取现有 Harness 配置，不复制凭据；逐项记录实际模型、输入能力、report hash、耗时、请求、工具、压缩、重试、预览、usage 覆盖及估算费用。缺失 usage/价格保持未知；连续三次失败或取消停止，`Ctrl+C` 取消。默认生产工厂使用一个自主 Comparison Session，由整体时间预算约束调查、编写、预览与修订；当前预算及 override 语义见[Comparison attempt](./architecture/evidence-and-comparison.md#comparison-attempt)。空资源 override 不关闭默认整体截止；显式请求数、工具数和费用限制继续执行，单次调用使用实际剩余整体时间与调用上限的较小值。默认流程没有调查阶段配额或独立来源复审窗口。运行前仍须限定总评估范围。异常来源或终稿材料造成的持续调查只能作为资源风险证据，修正输入身份之前不能形成质量基线。单例 `--case` 使用单独 ledger，不自动成为完整矩阵验收。
+
+当前自主发布回归从实际 Harness 工厂与 Host 工具入口运行，验证 fragment 提交、当前 digest/catalog 的预览回执进入同 Session 后续 generation，以及发布和离线恢复。缺失提交、未交付预览、正文或 catalog 变化、取消、调用失败与审计失败不得通过完成检查；实际生产入口用例见[自主发布回归](../test/application/comparison-autonomous-publication.test.ts)。这些完整性检查不认证报告判断或视觉质量。
+
+以下来源复审、核稿正文检查点和决策摘要要求只适用于旧多阶段 Comparison 兼容端口与对应历史协议回归，不是当前自主流程的前置条件。历史请求按原协议标记校验，不能把缺失独立复审证据的旧报告降级成自主完成；协议范围见[证据与对照](./architecture/evidence-and-comparison.md#comparison-attempt)。
 
 来源复审的局部截止与完整 turn 软让出分别审计：检查调用开始事件的绝对 deadline/reason、真实生成/工具与 usage、idle 后的 yielded 原因及下一次核稿输入。局部中止可能没有可见 assessment，不能把它统计为完成验证；不把普通 Provider timeout、用户取消或整体硬限映射成局部让出。逆例需验证真实 idle/usage 前不开始下一阶段、同 Session 后续调用可用，以及取消与真实错误优先。
 
