@@ -69,7 +69,9 @@ RunOutcome 分别保存任务判断、运行终止和清理结果；调用 Runne
 
 ## Controller 可靠性与执行模式
 
-TaskCase 可显式选择任务完成模式并冻结目标、交付物与授权，Controller 直接交接；没有 execution 的历史场景继续模拟历史用户，保留信息出现顺序。新任务调用方应明确选择完成模式，Host 不从历史答案自动提炼目标。模式与 prompt 随 controller.requested 进入可重建输入；取舍见 [Controller 执行可靠性](../decisions/accepted/2026-10-13-controller-execution-reliability.md)。
+TaskCase 可显式选择任务完成模式并冻结目标、交付物与授权。该模式首次启动 Candidate 时，Host 在 Controller 开场后补上未逐字包含的冻结目标/交付物、实际副本根目录、已复制外部输入映射、交付位置说明与授权原文；同会话后续消息保持 Controller 原文，新会话重新附上。明确任务授权优先于默认本地操作边界及冲突的仓库惯例，依赖安装不扩大授权。默认不主动本地 commit，不操作云端 PR/issue、不 push 或发布；这只是任务层声明，不是运行权限隔离。完整发送文本经 input.submitted 写入事件，并同步保存 sent-user-messages briefing；controller.decision 保留原始决定。缺失 execution 或显式 historical_simulation 的场景不拼接，继续保留历史信息出现顺序。见[首次交接契约](../decisions/accepted/2026-10-14-candidate-opening-task-contract.md)。
+
+新任务调用方应明确选择完成模式，Host 不从历史答案自动提炼目标。模式与 prompt 随 controller.requested 进入可重建输入；取舍见 [Controller 执行可靠性](../decisions/accepted/2026-10-13-controller-execution-reliability.md)。
 
 Controller 复用 managed 命令 session，轮询只决定何时返回部分输出，不是命令截止。可纠正的参数/路径错误返回拒绝结果，审计和持久化故障保持致命。总时间预算可省略，配置时主动停止进行中的模型和 Candidate；预算、用户与监督器停止分别记录。未启动 Runner 的清理不会伪造停止生命周期。
 

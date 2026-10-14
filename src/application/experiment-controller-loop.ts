@@ -28,6 +28,8 @@ import {
   type ControllerObservation,
 } from "./controller-queries.js";
 import { CandidateRun } from "./candidate-run.js";
+import { candidateOpeningMessage } from './candidate-opening-message.js';
+import type { ImportedTaskInput } from './session-start-workspace.js';
 
 export async function runControllerLoop(input: {
   run: CandidateRun;
@@ -38,6 +40,8 @@ export async function runControllerLoop(input: {
   policy: RunPolicy;
   controllerModel: string;
   environment: PreparedEnvironmentRef;
+  sourceRoot: string;
+  importedInputs: readonly ImportedTaskInput[];
   workspaceProvider: import("../environment/local-workspace-provider.js").LocalWorkspaceProvider;
   sourceRootKind: SourceRootKind;
   requestedModel: string;
@@ -131,14 +135,15 @@ async function deliverOpening(
     const state = await abortOpening(input, opening);
     return { finished: true, result: finalizeControllerLoop(state, decisions, 1, false) };
   }
+  const message = { id: `controller-${input.runId}-1`, text: candidateOpeningMessage({
+    message: opening.value.message, taskCase: input.taskCase, workspaceRoot: input.environment.root, sourceRoot: input.sourceRoot,
+    historicalCwd: historicalCwdOf(input.taskCase), importedInputs: input.importedInputs,
+  }) };
   const state = await input.run.start(
-    { id: `controller-${input.runId}-1`, text: opening.value.message },
+    message,
     { runId: input.runId, turnIndex: 0, clientMessageId: `controller-1-${input.runId}` },
   );
-  await appendSentUserMessage(controllerBriefingRoot(input.experimentRoot, input.runId), {
-    id: `controller-${input.runId}-1`,
-    text: opening.value.message,
-  });
+  await appendSentUserMessage(controllerBriefingRoot(input.experimentRoot, input.runId), message);
   return { finished: false, state, controllerCalls: 1 };
 }
 
