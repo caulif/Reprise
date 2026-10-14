@@ -1,3 +1,4 @@
+import { context } from "../support/comparison-fixtures.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Type } from "@sinclair/typebox";
@@ -9,17 +10,6 @@ import { join } from 'node:path';
 import { startExperiment } from '../../src/application/experiment.js';
 import { extractHostZoneSnapshot, renderComparisonReportShell } from '../../src/application/comparison-report-shell.js';
 import { input, patientPolicy, VerifiedRuntime } from '../codex-experiment-support.js';
-
-function context(): ComparisonContext {
-  return {
-    task: { caseId: "case-1", summary: "Compare." },
-    attemptId: "attempt-1",
-    baseline: { summary: "Baseline.", evidenceRefs: [] },
-    candidates: [], telemetry: [], artifactRefs: [], allowModelText: true,
-    replayScope: { historical: "baseline", candidate: "candidate" },
-    reportFacts: { run: { runId: "run-1", outcome: "completed", terminationCode: "completed", initiatedBy: "controller" }, models: { candidate: "fixture" }, activity: {}, limits: { triggered: [] }, runtime: { productId: "codex" }, delivery: { changedPaths: [], targetArtifactStatus: "unavailable", verificationStatus: "unavailable" }, replay: { conditions: [], baselineEvidence: "unavailable", candidateEvidence: "unavailable" } },
-  };
-}
 
 test('experiment cancellation interrupts Comparison without changing the candidate outcome', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-comparison-cancel-'));

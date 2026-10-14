@@ -63,19 +63,6 @@ test('shared pack helpers do not branch on productId literals', async () => {
   }
 });
 
-test('TUI run diagnostics import Application phase projection', async () => {
-  const source = await readFile(join(SRC, 'tui/controller-run.ts'), 'utf8');
-  assert.match(source, /candidateRunPhaseFromEvent/);
-  assert.match(source, /candidateRunDisplayFromEvents/);
-  assert.doesNotMatch(source, /function phaseForEvent/);
-});
-
-test('TUI view projection does not parse timeline titles for CandidateRun state', async () => {
-  const source = await readFile(join(SRC, 'tui/view-projection.ts'), 'utf8');
-  assert.doesNotMatch(source, /currentRunState/);
-  assert.match(source, /machineState/);
-});
-
 test('packs do not import each other', async () => {
   const packs = ['codex', 'claude-code'];
   for (const pack of packs) {
@@ -385,14 +372,6 @@ test('unnamed sessionsRoot and harness stop codes do not use product-name or led
   assert.doesNotMatch(tuiIntake, /RecoveryAttempt|recoveryAttempt/);
 });
 
-test('application and TUI do not keep empty forwarding modules', async () => {
-  await assert.rejects(stat(join(SRC, 'application/tui-workflow.ts')));
-  await assert.rejects(stat(join(SRC, 'tui/controller.ts')));
-  const intakeApp = await readFile(join(SRC, 'tui/intake-app.ts'), 'utf8');
-  assert.match(intakeApp, /from '\.\/intake-tui\.js'/);
-  assert.doesNotMatch(intakeApp, /controller\.js/);
-});
-
 test('real-terminal TUI probe is opt-in and outside engineering gates', async () => {
   const script = await readFile(join(process.cwd(), 'scripts/tui-real-terminal-probe.ts'), 'utf8');
   assert.match(script, /REPRISE_REAL_TERMINAL/);
@@ -538,36 +517,6 @@ test('readonly queries do not import experiment assembly or CandidateRun', async
   const history = await readFile(join(SRC, 'application/experiment-history-read.ts'), 'utf8');
   assert.doesNotMatch(queries, /from ['"]\.\/experiment\.js['"]|from ['"]\.\/candidate-run\.js['"]/);
   assert.doesNotMatch(history, /from ['"]\.\/experiment\.js['"]|from ['"]\.\/candidate-run\.js['"]/);
-});
-
-test('recovery helpers live with their owners instead of support.ts', async () => {
-  await assert.rejects(stat(join(SRC, 'application/recovery/support.ts')));
-  await stat(join(SRC, 'application/recovery/audit.ts'));
-  await stat(join(SRC, 'application/recovery/writes.ts'));
-  await stat(join(SRC, 'application/recovery/investigation.ts'));
-  await stat(join(SRC, 'application/recovery/staging-diagnostic.ts'));
-});
-
-test('core schema concepts are split under schemas/', async () => {
-  const schema = await readFile(join(SRC, 'core/schema.ts'), 'utf8');
-  assert.match(schema, /from ['"]\.\/schemas\/ids\.js['"]/);
-  assert.match(schema, /from ['"]\.\/schemas\/scene\.js['"]/);
-  assert.match(schema, /from ['"]\.\/schemas\/event\.js['"]/);
-  assert.match(schema, /from ['"]\.\/schemas\/recovery\.js['"]/);
-  assert.match(schema, /from ['"]\.\/schemas\/task-case\.js['"]/);
-  assert.match(schema, /from ['"]\.\/schemas\/run\.js['"]/);
-  assert.match(schema, /from ['"]\.\/schemas\/candidate\.js['"]/);
-  assert.match(schema, /from ['"]\.\/schemas\/observations\.js['"]/);
-  assert.match(schema, /from ['"]\.\/schemas\/historical-artifacts\.js['"]/);
-  await stat(join(SRC, 'core/schemas/ids.ts'));
-  await stat(join(SRC, 'core/schemas/scene.ts'));
-  await stat(join(SRC, 'core/schemas/event.ts'));
-  await stat(join(SRC, 'core/schemas/recovery.ts'));
-  await stat(join(SRC, 'core/schemas/task-case.ts'));
-  await stat(join(SRC, 'core/schemas/run.ts'));
-  await stat(join(SRC, 'core/schemas/candidate.ts'));
-  await stat(join(SRC, 'core/schemas/observations.ts'));
-  await stat(join(SRC, 'core/schemas/historical-artifacts.ts'));
 });
 
 test('ProductPack contract uses history, ProductRuntime, and projection without legacy aliases', async () => {

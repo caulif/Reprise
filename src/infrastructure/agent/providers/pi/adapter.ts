@@ -3,7 +3,7 @@ import { createPiAgent, toPiTool } from "./tool-adapter.js";
 import { toPiUserPrompt } from "./message-mapper.js";
 import { isAssistantMessageEnd } from "./event-mapper.js";
 import { Agent, type AgentMessage } from "@earendil-works/pi-agent-core";
-import { setTimeout as delay } from "node:timers/promises";
+import timers from "node:timers/promises";
 import { classifyAgentFailure } from "../../failure.js";
 import { contentText, isContextOverflow, type Api, type Model } from "@earendil-works/pi-ai";
 import { visibleAssistantText } from "../../assistant-visible.js";
@@ -301,7 +301,7 @@ async function recoverAgentResponse(
     }
     const delayMs = overflow ? 0 : 2_000 * 2 ** (failures - 1);
     await onRetry?.({ attempt: failures + 1, kind: overflow ? "context_overflow" : kind, delayMs });
-    await delay(delayMs, undefined, { signal });
+    await timers.setTimeout(delayMs, undefined, { signal });
     await agent.continue();
   }
 }

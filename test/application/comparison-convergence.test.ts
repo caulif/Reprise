@@ -1,19 +1,9 @@
+import { context } from "../support/comparison-fixtures.js";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ComparisonAgent, COMPARISON_TURN_PROMPTS, type ComparisonContext } from "../../src/agents/comparison-agent.js";
+import { ComparisonAgent, COMPARISON_TURN_PROMPTS } from "../../src/agents/comparison-agent.js";
 import { AgentHost, type AgentAuditEvent } from "../../src/infrastructure/agent/host.js";
 import { Type } from "@sinclair/typebox";
-
-function context(): ComparisonContext {
-  return {
-    task: { caseId: "case-1", summary: "Compare." },
-    attemptId: "attempt-1",
-    baseline: { summary: "Baseline.", evidenceRefs: [] },
-    candidates: [], telemetry: [], artifactRefs: [], allowModelText: true,
-    replayScope: { historical: "baseline", candidate: "candidate" },
-    reportFacts: { run: { runId: "run-1", outcome: "completed", terminationCode: "completed", initiatedBy: "controller" }, models: { candidate: "fixture" }, activity: {}, limits: { triggered: [] }, runtime: { productId: "codex" }, delivery: { changedPaths: [], targetArtifactStatus: "unavailable", verificationStatus: "unavailable" }, replay: { conditions: [], baselineEvidence: "unavailable", candidateEvidence: "unavailable" } },
-  };
-}
 
 test('findings convergence rejects no progress and always records resource completion', async () => {
   const events: AgentAuditEvent[] = [];

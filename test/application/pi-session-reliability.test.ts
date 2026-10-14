@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { Type } from '@sinclair/typebox';
 import { createAssistantMessageEventStream, type AssistantMessage, type Model } from '@earendil-works/pi-ai';
@@ -41,7 +41,7 @@ test('context reserve uses current exposure and restores full tool budgeting on 
   assert.equal(seen.length, 1, 'an oversized exposed schema fails before any upstream request');
 });
 
-test('transient continuation keeps tool results and never repeats the prompt or side effects', async () => {
+test('transient continuation keeps tool results and never repeats the prompt or side effects', async t => withBackoffClock(t, async () => {
   const seen: string[] = [];
   const retries: number[] = [];
   let writes = 0;
@@ -63,18 +63,18 @@ test('transient continuation keeps tool results and never repeats the prompt or 
     assert.match(context, /saved-once/);
     assert.equal(context.split('one-prompt').length - 1, 1);
   }
-});
+}));
 
-test('persistent upstream failure has three attempts while authentication never retries', async () => {
+test('persistent upstream failure has three attempts while authentication never retries', async t => withBackoffClock(t, async () => {
   for (const [message, count] of [['Upstream request failed', 3], ['401 unauthorized', 1]] as const) {
     const seen: string[] = [];
     const session = caller(Array.from({ length: count }, () => response('error', [], message)), seen).createSession({ sessionId: 'fail-test', systemPrompt: 'test', tools: [] });
     await assert.rejects(session.append({ content: 'test', signal: new AbortController().signal }), new RegExp(message));
     assert.equal(seen.length, count);
   }
-});
+}));
 
-test('successful turns reset the consecutive failure budget without replaying tools', async () => {
+test('successful turns reset the consecutive failure budget without replaying tools', async t => withBackoffClock(t, async () => {
   const seen: string[] = [];
   const retries: { attempt: number; delayMs: number }[] = [];
   let writes = 0;
@@ -95,9 +95,9 @@ test('successful turns reset the consecutive failure budget without replaying to
   assert.match(seen.at(-1)!, /saved-1/);
   assert.match(seen.at(-1)!, /saved-2/);
   for (const context of seen) assert.equal(context.split('single-prompt').length - 1, 1);
-});
+}));
 
-test('partial failed text is not progress and retains the bounded 2s/4s backoff', async () => {
+test('partial failed text is not progress and retains the bounded 2s/4s backoff', async t => withBackoffClock(t, async () => {
   const seen: string[] = [];
   const delays: number[] = [];
   const session = caller(Array.from({ length: 3 }, (_, index) => response('error', [{ type: 'text', text: `partial-${index}` }], 'fetch failed')), seen)
@@ -105,12 +105,12 @@ test('partial failed text is not progress and retains the bounded 2s/4s backoff'
   await assert.rejects(session.append({ content: 'test', signal: new AbortController().signal }), /fetch failed/);
   assert.equal(seen.length, 3);
   assert.deepEqual(delays, [2_000, 4_000]);
-});
+}));
 
 for (const [errorMessage, failureKind] of [
   ['Stream ended without finish_reason', 'transient_upstream'],
   ['unexpected EOF', 'transient_network'],
-] as const) test(`${errorMessage} safely continues without replaying completed tool side effects`, async () => {
+] as const) test(`${errorMessage} safely continues without replaying completed tool side effects`, async t => withBackoffClock(t, async () => {
   const seen: string[] = [];
   const retries: string[] = [];
   let writes = 0;
@@ -133,7 +133,7 @@ for (const [errorMessage, failureKind] of [
     assert.match(context, /written-once/);
     assert.equal(context.split('single-prompt').length - 1, 1);
   }
-});
+}));
 
 test('cancellation during backoff stops before another provider request', async () => {
   const abort = new AbortController();
@@ -141,6 +141,27 @@ test('cancellation during backoff stops before another provider request', async 
   const session = caller([response('error', [], 'Upstream request failed')], seen).createSession({ sessionId: 'cancel-test', systemPrompt: 'test', tools: [], onRetry: async () => { abort.abort(); } });
   await assert.rejects(session.append({ content: 'test', signal: abort.signal }));
   assert.equal(seen.length, 1);
+});
+
+for (const cancel of [false, true]) test(`backoff waits for its deadline and ${cancel ? 'honors cancellation while sleeping' : 'then retries'}`, async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const seen: string[] = [];
+  const abort = new AbortController();
+  let retryStarted!: () => void;
+  const ready = new Promise<void>(resolve => { retryStarted = resolve; });
+  const session = caller([response('error', [], 'fetch failed'), response('stop', [{ type: 'text', text: 'recovered' }])], seen)
+    .createSession({ sessionId: 'backoff-boundary', systemPrompt: 'test', tools: [], onRetry: async () => { retryStarted(); } });
+  const pending = session.append({ content: 'once', signal: abort.signal });
+  const checked = cancel ? assert.rejects(pending, /abort/i) : pending;
+  await ready;
+  await new Promise<void>(resolve => setImmediate(resolve));
+  t.mock.timers.tick(1_999);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(seen.length, 1, 'No request before the two-second backoff expires');
+  if (cancel) abort.abort();
+  else t.mock.timers.tick(1);
+  await checked;
+  assert.equal(seen.length, cancel ? 1 : 2);
 });
 
 test('the original yield deadline stops backoff without hiding the provider failure', async () => {
@@ -151,7 +172,7 @@ test('the original yield deadline stops backoff without hiding the provider fail
   assert.equal(seen.length, 1);
 });
 
-test('a tool failure during recovered work cannot trigger another network retry', async () => {
+test('a tool failure during recovered work cannot trigger another network retry', async t => withBackoffClock(t, async () => {
   const seen: string[] = [];
   let retries = 0;
   const session = caller([
@@ -163,7 +184,7 @@ test('a tool failure during recovered work cannot trigger another network retry'
   ], onRetry: async () => { retries++; } });
   await assert.rejects(session.append({ content: 'test', signal: new AbortController().signal }), /disk failure/);
   assert.equal(retries, 1);
-});
+}));
 
 test('oversized first input fails before the provider or a doomed summary request', async () => {
   const seen: string[] = [];
@@ -222,3 +243,17 @@ for (const overflow of [false, true]) test(`${overflow ? 'overflow recovery' : '
     assert.doesNotMatch(context, /evidence-0:/);
   }
 });
+
+async function withBackoffClock<T>(t: TestContext, action: () => Promise<T>): Promise<T> {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let settled = false;
+  const pending = action();
+  void pending.then(() => { settled = true; }, () => { settled = true; });
+  // Let the SDK's async turns install timers before advancing the mocked backoff.
+  for (let turn = 0; !settled && turn < 100; turn++) {
+    await new Promise<void>(resolve => setImmediate(resolve));
+    t.mock.timers.tick(1_000);
+  }
+  assert.ok(settled, 'Scripted retries must finish within the bounded virtual clock');
+  return pending;
+}
