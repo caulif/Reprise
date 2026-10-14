@@ -149,14 +149,28 @@ const RecoveryTruthDatasetSchema = Type.Object({
   }), { minItems: 100 }),
 });
 
-test("truth-bearing checkpoint dataset contains 100 isolated baseline/target fixtures", async (t) => {
+test("checkpoint dataset validates every row and restores each distinct content/perturbation", async (t) => {
   const dataset = JSON.parse(await readFile(new URL("../fixtures/recovery-truth-dataset.json", import.meta.url), "utf8")) as unknown;
   assert.equal(Value.Check(RecoveryTruthDatasetSchema, dataset), true);
   if (!Value.Check(RecoveryTruthDatasetSchema, dataset)) return;
   assert.equal(dataset.cases.length, 100);
+  const representatives = new Map<string, (typeof dataset.cases)[number]>();
+  for (const fixture of dataset.cases) {
+    assert.deepEqual(Object.keys(fixture.truthTree).sort(), Object.keys(fixture.baselineFiles).sort());
+    for (const [path, encoded] of Object.entries(fixture.baselineFiles)) {
+      const bytes = Buffer.from(encoded, path === "binary.bin" ? "base64" : "utf8");
+      assert.equal(sha256(bytes), fixture.truthTree[path], fixture.caseId + ": " + path);
+    }
+    assert.equal(fixture.allowedEquivalentPaths.length, 0);
+    // Pack labels do not select a runtime: this suite exercises the shared workspace provider.
+    const shape = JSON.stringify([fixture.perturbation, Object.entries(fixture.baselineFiles)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([path, value]) => [path, path === "binary.bin" ? value : value.replaceAll(fixture.caseId, "<case-id>")])]);
+    if (!representatives.has(shape)) representatives.set(shape, fixture);
+  }
   const root = await mkdtemp(join(tmpdir(), "reprise-truth-dataset-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  for (const fixture of dataset.cases) {
+  for (const fixture of representatives.values()) await t.test(`${fixture.caseId}: ${fixture.perturbation}`, async child => {
     const source = join(root, `${fixture.caseId}-source`);
     const provider = new LocalWorkspaceProvider(join(root, `${fixture.caseId}-provider`));
     for (const [path, encoded] of Object.entries(fixture.baselineFiles)) {
@@ -192,8 +206,8 @@ test("truth-bearing checkpoint dataset contains 100 isolated baseline/target fix
           await symlink("tracked.txt", join(source, "tracked-link.txt"), "file");
         } catch (error) {
           if (error instanceof Error && "code" in error && ["EPERM", "EACCES"].includes(String(error.code))) {
-            t.skip(`${fixture.caseId}: Windows symlink creation is unavailable in this environment`);
-            continue;
+            child.skip("Windows symlink creation is unavailable in this environment");
+            return;
           }
           throw error;
         }
@@ -214,8 +228,7 @@ test("truth-bearing checkpoint dataset contains 100 isolated baseline/target fix
       assert.equal(await readFile(join(staging.root, "tracked.txt"), "utf8"), fixture.baselineFiles["tracked.txt"]);
     if (fixture.perturbation === "large_repo")
       await assert.rejects(readFile(join(staging.root, "generated", "file-0000.txt")));
-    assert.equal(fixture.allowedEquivalentPaths.length, 0);
     await provider.discardRecovery(staging);
-  }
+  });
 });
 

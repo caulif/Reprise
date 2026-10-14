@@ -159,7 +159,9 @@ test('10.7 same cwd sessions all remain visible and freeze independently', async
   t.after(async () => rm(home, { recursive: true, force: true }));
   const sessions = join(home, 'sessions');
   await mkdir(sessions);
-  const cwd = process.cwd();
+  const cwd = join(home, 'project');
+  await mkdir(cwd);
+  await writeFile(join(cwd, 'README.md'), '# isolated project\n');
   await writeFile(join(sessions, 'rollout-a.jsonl'), rollout(THREAD, cwd, 'First title'));
   await writeFile(join(sessions, 'rollout-b.jsonl'), rollout(THREAD_B, cwd, 'Second title'));
   const page = await codexSessionAdapter.discover({ root: sessions });
