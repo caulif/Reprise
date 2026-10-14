@@ -84,6 +84,7 @@ const M = {
   },
   taskLabel: { en: "Task", zh: "任务描述" },
   headlineLabel: { en: "Main conclusion", zh: "主要结论" },
+  keyDifferences: { en: "Key differences", zh: "关键差异" },
   sessionHistorical: { en: "Historical session", zh: "历史会话" },
   sessionCurrent: { en: "Current session", zh: "当前会话" },
   sideHistorical: { en: "unrecorded", zh: "未记录" },

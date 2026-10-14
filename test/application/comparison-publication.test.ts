@@ -12,6 +12,7 @@ import {
 } from "../../src/application/comparison-publication.js";
 import { renderVisualEvidenceSeed } from "../../src/application/comparison-visual-evidence.js";
 import {
+  agentZoneBlank,
   extractHostZoneSnapshot,
   hostZonesMismatch,
   metricsFromReportFacts,
@@ -212,7 +213,7 @@ test("empty media catalog shows an explicit visual-unavailable reason", () => {
   assert.match(renderVisualEvidenceSeed(undefined, "en"), /data-host="visual-unavailable"/);
 });
 
-test("Host seeds paired visual evidence and explicit reasons before publication repair", async () => {
+test("Host leaves initial authoring slots empty while publication still repairs an incomplete legacy draft", async () => {
   const reportFacts = facts();
   const media = [
     {
@@ -241,9 +242,9 @@ test("Host seeds paired visual evidence and explicit reasons before publication 
     media,
     slots: { headline: "候选把讨论推进成了可继续使用的文件。" },
   });
-  assert.match(seeded, /data-host="pairing-candidate"|data-component="page-row"/);
-  assert.match(seeded, /data-media-ref="media-01"/);
-  assert.match(seeded, /data-media-ref="media-02"/);
+  assert.equal(agentZoneBlank(seeded, "comparison"), true);
+  assert.doesNotMatch(seeded, /data-host="pairing-candidate"/);
+  assert.match(seeded, /data-host="media-catalog"/);
   const oneSided = renderComparisonReportShell({
     task: "修复报告。",
     facts: reportFacts,
@@ -251,8 +252,7 @@ test("Host seeds paired visual evidence and explicit reasons before publication 
     media: [media[1]!],
     slots: { headline: "候选把讨论推进成了可继续使用的文件。" },
   });
-  assert.match(oneSided, /data-host="visual-unavailable"/);
-  assert.match(oneSided, /候选侧已有预览图|历史侧终稿图未能/);
+  assert.equal(agentZoneBlank(oneSided, "comparison"), true);
   const emptied = oneSided.replace(
     /<section class="slot" data-agent-zone="comparison" data-id="agent-comparison">[\s\S]*?<\/section>/,
     '<section class="slot" data-agent-zone="comparison" data-id="agent-comparison"></section>',

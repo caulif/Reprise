@@ -64,7 +64,9 @@ Attempt 作用域持有可修订的证据 catalog：权威 revision 落在 `fact
 
 Host 预置 HTML 模板并拥有 header、metrics、cost-note、evidence、process 等区域；新报告 `data-report-format="2"` 的 Agent 区为 `comparison`（主创作）与可选 `details`（可见 `<details>`）。Agent 在 `comparison` 内自主选择并排图、表格、短片段或步骤；无图时不强制空视觉段；单侧真实结果可保留但须就近写明缺失方。Host 从草稿中结构化提取唯一、完整的 Agent 区与允许的槽，以本 attempt 的任务、指标、证据、媒体和受控模板重建整页；不明确的槽边界拒绝提取。Agent 区禁止可执行标签、SVG/MathML、事件属性和危险 URL；只允许链接的 `href` 与图片的 `src` 使用相对 URL，图片仍须经过媒体登记和文件可读性检查，其他资源属性直接拒绝。矢量内容须作为已登记媒体进入报告。重建后仍经过 schema、HTML 契约、evidence/media 引用、模型已见图片和外部资源检查，失败则不发布。展示问题由 Host 确定性修复，无法修复时记录 limitations 并仍可发布，不能把所有样式问题提升为失败门禁。Agent 的自然语言判断不能覆盖确定性事实，证据缺失必须明确说明，不得伪造引用。版式与发布取舍见[自主任务比较报告区与安全发布](../decisions/accepted/2026-09-19-comparison-autonomous-report-zones.md)和[Host 重建报告](../decisions/accepted/2026-09-23-host-rebuilt-comparison-report.md)。
 
-新 format 2 报告在短结论后先显示时间与估算费用，再展示比较正文；Token 总量与分项默认折叠。Host metrics 的 `data-metrics-layout="compact"` 标记约束新顺序；旧无标记的正文先于指标布局和四字段指纹仍可读取，不重写旧报告。时间保留分秒，极小正费用显示 `<0.001` 美元，避免舍入为零。费用说明价格快照、非供应商账单和工具费排除，Token 分项可能重叠或缺失，不能直接当作跨工具效率评分。
+新 format 2 报告以独立结论区突出判断，随后紧凑展示时间、估算费用与 Token 总量，再呈现关键差异；仅 Token 分项默认折叠。初始结论、比较正文与可选详情槽位留空，组件原型只在不可见的 `<template>` 内提供结构，不预填赢家、差异数量、核验标签或媒体引用；已登记媒体仍在 Host 目录中供 Agent 选择，不自动配入正文。Agent 按任务组织实际差异、用户影响、必要证据及重要未知，省略不用的组件。旧整页草稿的缺失内容修复与限制说明继续兼容。理由见[空槽位与结论优先的报告骨架](../decisions/accepted/2026-10-14-comparison-empty-report-template.md)。
+
+Host metrics 的 `data-metrics-layout="compact"` 标记与区域顺序不变；旧无标记的正文先于指标布局和四字段指纹仍可读取，不重写旧报告。时间保留分秒，极小正费用显示 `<0.001` 美元，避免舍入为零。费用说明价格快照、非供应商账单和工具费排除，Token 分项可能重叠或缺失，不能直接当作跨工具效率评分。证据链接具有可见样式与键盘焦点，配对图片按自然比例显示；窄屏将双侧证据纵向排列，不强制表格的桌面最小宽度。
 
 候选 Token 与单模型估算费用仅聚合 `runtime.` 事件，再按候选 Runtime 模型定价；同 run 的 Controller、Recovery、Comparison Agent 用量不计入候选指标，重复比较不得改变原候选成本。没有 Runtime telemetry 时保持未知，不借 Harness 用量补齐。Comparison 开销仍保存在该 attempt 的独立资源记录；新检查从原 journal 重算，不原地改写旧报告或冻结 facts。见[Runtime 用量归属](../decisions/accepted/2026-10-06-runtime-usage-attribution.md)。
 
