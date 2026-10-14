@@ -72,7 +72,7 @@ export const ComparisonMediaDerivationSchema = Type.Object({
     order: Type.Literal('crop_then_resize'),
   }, { additionalProperties: false })),
   captureScope: Type.Optional(Type.Literal('viewport')),
-  scrollOffset: Type.Optional(Type.Object({ x: Type.Number({ minimum: 0 }), y: Type.Number({ minimum: 0 }) })),
+  scrollOffset: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number() })),
   documentHeight: Type.Optional(Type.Number({ minimum: 0 })),
   rendererVersion: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
   viewport: Type.Optional(Type.Object({
