@@ -6,15 +6,14 @@ import { RecoveryMarkerSchema } from '../core/schema.js';
 import { dirname, join, resolve } from 'node:path';
 import { relativeInside } from '../core/paths.js';
 import { isRecoveryPath } from '../infrastructure/recovery-tools.js';
-import { SNAPSHOT_LIMITS, type SnapshotLimits } from './snapshots.js';
-import {
-  type EnvironmentBaseline,
-  type EnvironmentFingerprint,
-  type FingerprintEntry,
-  type SensitiveFileCategory,
-  type WorkspaceBudget,
-  type WorkspaceExclusion,
-  MAX_INLINE_HASH_BYTES,
+import { MAX_INLINE_HASH_BYTES, SNAPSHOT_LIMITS, type SnapshotLimits } from './snapshots.js';
+import type {
+  EnvironmentBaseline,
+  EnvironmentFingerprint,
+  FingerprintEntry,
+  SensitiveFileCategory,
+  WorkspaceBudget,
+  WorkspaceExclusion,
 } from './local-workspace-provider.js';
 
 /** Disk-read `partial` stays recovered_partial; new ready/blocked/failed writes never mint current_state_fallback. */
