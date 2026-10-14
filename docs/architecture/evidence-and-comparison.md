@@ -12,9 +12,13 @@ Recovery 的固定 artifact 与决定、诊断等不可变 JSON 按 `runs/<runId
 
 ## 冻结任务保全
 
-共享冻结入口不删除或重写任何已存在的 case 目录。复用前校验 `TaskCaseSchema`、支持的版本（当前为 1）、完整标记及按 JSON 持久化语义规范化后、除 `provenance.importedAt` 外的冻结内容；同来源同选择的合法重试返回原对象。选择起始消息、证据或隐私条件变化，以及旧数据损坏、版本未知或缺完整标记，均明确拒绝并保留旧目录和字节。并发发布后失败的回读遵循同一条件，不把另一任务当作本次成功。
+共享冻结入口不删除或重写任何已有 case 目录。当前新冻结写入显式版本 2；统一读端支持版本 1 和 2，未知版本拒绝。旧版本保留原 ID、hash、路径与起点，不自动升级或补认证。损坏、缺完整标记或同身份内容冲突均保留旧证据并明确拒绝。历史列表只统计非法 case，执行读端暴露诊断。
 
-当前 case ID 仍由来源 hash 派生，因此同一来源不同起点暂不能在同一 casesRoot 并存；需要保留原 case，待版本化身份方案完成或显式选择另一冻结根。此修复不迁移旧数据，也不声明已经验证所有附件完整性或实现新的目录并发占有协议。取舍见[冻结任务保全](../decisions/accepted/2026-10-14-frozen-case-preservation.md)。
+v2 的 `provenance.sourceHash` 表示脱敏后来源字节，`contentHash` 是 `task-case-v2` 算法对任务内容与保留文件清单的 SHA-256；`caseId` 为 `case-v2-` 加 digest 的前 32 个十六进制字符。同来源不同起点、执行/授权、有效隐私条件、解释版本、证据或文件字节变化形成新身份，可以并存；只改变 importedAt、来源存储路径或 casesRoot 不改变身份。排序对象键但保留消息和事件顺序；正文及 taskContext 中有任务语义的路径保留。自身 caseId/contentHash 和 case-owned artifactRefs 的 caseId 不参加递归 hash。observations 元数据分别提供 case schema/identity 算法和 sourceHash/contentHash；逐消息 source refs 仍使用原行内容 hash，不把 case digest 当作来源行 hash。
+
+v2 读端校验 schema、身份、内部 owner、每个清单文件长度/hash，以及封存 artifact manifest 与绑定文件的关系；私有 case 拒绝清单之外的文件，发布输入也必须准确匹配清单。case.json 必须是常规文件；case root、私有 casesRoot 及绑定文件内部路径不允许 junction/符号链接。配置的数据目录及其上级由操作者选择，不宣称阻止恶意同权限进程替换整棵父目录。显式外部 `--task-case` 可以读取无发布标记的完整 JSON 与绑定文件，但同样要求真实 case root，仅复制清单内文件而不认领外部根的其它文件；读端保存进程内 origin receipt，重新持久化时复制绑定文件并在私有 staging 再核验，不能把旧校验当作后来复制字节的证明。
+
+目录发布先取得同身份的文件系统独占 nonce 租约，失败/并发等待有界，不自动清未知旧锁；再沿用私有 staging、完整标记与 Windows 有界 rename 重试。释放前核对 nonce 和文件身份，替换后的他人租约保留。正常同内容并发幂等，冲突拒绝；读者只列出已发布完整目录。不迁移旧数据，不认证模型语义或新增断电持久性承诺。理由与兼容边界见[版本化冻结身份](../decisions/accepted/2026-10-14-frozen-case-identity.md)。
 
 文件发布原语统一位于 [`identity.ts`](../../src/core/identity.ts)：`writeAtomic` 替换可变投影；`writeImmutable` 和 Store 的 `writeImmutableJson` 创建不可变事实，先写完并关闭同目录私有临时文件，再用 hard link 原子创建目标。目标已存在即拒绝；不支持 hard link 时不回退到覆盖写。失败只清理本次临时文件，清理失败保留原错误及已发布状态；成功发布后不回滚目标。低层不判断内容幂等，schema、owner 与同内容重试仍由各提交边界负责；不新增断电持久性承诺。文件原语不能用于目录发布。理由见[不可变文件无覆盖发布](../decisions/accepted/2026-10-14-immutable-file-publication.md)。
 

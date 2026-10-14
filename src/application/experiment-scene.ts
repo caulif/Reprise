@@ -1,3 +1,4 @@
+import { readTaskCase } from '../products/shared/task-case-reader.js';
 import { basename, dirname, join, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { writeAtomic } from "../core/identity.js";
@@ -65,10 +66,7 @@ export async function loadSealedScene(dataDir: string, experimentId: string): Pr
     throw new CliError("not_found", `Scene ${experimentId} was not found.`, experimentId);
   }
   if (!descriptorValue.sealed) throw new CliError("failed", `${experimentId} is not a sealed scene.`, experimentId);
-  const taskCaseValue = await readJsonFile(join(resolve(dataDir), "cases", descriptorValue.caseId, "case.json"));
-  if (!Value.Check(TaskCaseSchema, taskCaseValue)) {
-    throw new CliError("not_found", `TaskCase ${descriptorValue.caseId} was not found.`, descriptorValue.caseId);
-  }
+  const taskCaseValue = await readTaskCase(join(resolve(dataDir), "cases", descriptorValue.caseId, "case.json"), { expectedCaseId: descriptorValue.caseId, requireComplete: true });
   if (descriptorValue.recoveryProviderLayout && !descriptorValue.recoveryProviderRunId)
     throw new CliError('failed', 'Compact scene is missing its Recovery run identity.', experimentId);
   const providerRoot = descriptorValue.recoveryProviderLayout === 'compact-v1'

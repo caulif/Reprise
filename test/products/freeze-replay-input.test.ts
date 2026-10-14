@@ -80,7 +80,7 @@ test('freezeCase keeps the only user row when it is an instruction block', async
   assert.equal(frozen.taskCase.initialInput.id, 'u1');
 });
 
-test('freezeCase preserves a published instruction selection when automatic task selection changes', async (t) => {
+test('freezeCase publishes a separate task version when automatic selection skips an instruction', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-freeze-replay-rewrite-'));
   t.after(async () => rm(root, { recursive: true, force: true }));
   const session = imported([
@@ -98,7 +98,9 @@ test('freezeCase preserves a published instruction selection when automatic task
   assert.equal(pinned.taskCase.initialInput.id, 'u1');
   const caseDir = join(root, pinned.taskCase.caseId);
   const before = await frozenHashes(caseDir);
-  await assert.rejects(freezeCase(session, root, PRIVACY, NOW), /conflicts with the selected task/);
+  const selected = await freezeCase(session, root, PRIVACY, NOW);
+  assert.notEqual(selected.taskCase.caseId, pinned.taskCase.caseId);
+  assert.equal(selected.taskCase.initialInput.id, "u2");
   assert.deepEqual(await frozenHashes(caseDir), before);
 });
 
@@ -117,7 +119,7 @@ async function frozenHashes(directory: string): Promise<Record<string, string>> 
   return hashes;
 }
 
-test('different selected user input refuses replacement before any injected write failure', async (t) => {
+test('different selected input write failure preserves the prior frozen version', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-freeze-preserve-'));
   t.after(async () => rm(root, { recursive: true, force: true }));
   const session = imported([message('u1', 'user', 'First task'), message('u2', 'user', 'Second task')]);
@@ -127,8 +129,8 @@ test('different selected user input refuses replacement before any injected writ
   let writes = 0;
   await assert.rejects(freezeCase(session, root, PRIVACY, NOW, {
     initialMessageId: 'u2', write: async () => { writes++; throw new Error('Injected write failure'); },
-  }), /conflicts with the selected task/);
-  assert.equal(writes, 0);
+  }), /Injected write failure/);
+  assert.equal(writes, 1);
   assert.deepEqual(await frozenHashes(caseDir), before);
   const again = await freezeCase(session, root, PRIVACY, '2026-10-15T00:00:00.000Z', { initialMessageId: 'u1' });
   assert.equal(again.reused, true);
@@ -144,7 +146,7 @@ for (const variant of ['invalid-json', 'invalid-structure', 'future-version', 'w
     const first = await freezeCase(session, root, PRIVACY, NOW);
     const caseDir = join(root, first.taskCase.caseId);
     const existing = structuredClone(first.taskCase);
-    if (variant === 'future-version') existing.schemaVersion = 2;
+    if (variant === 'future-version') Object.assign(existing, { schemaVersion: 3 });
     if (variant === 'wrong-case-id') existing.caseId = 'case-other';
     if (variant === 'wrong-source') existing.source.sessionId = 'other';
     if (variant === 'wrong-hash') existing.contentHash = 'f'.repeat(64);

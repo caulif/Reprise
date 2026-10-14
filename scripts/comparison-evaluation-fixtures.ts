@@ -6,6 +6,7 @@ import type { RunPolicy } from '../src/core/schema.js';
 import type { ComparisonEvaluationCase } from '../src/core/comparison-evaluation-schema.js';
 import type { ProductRuntime, ResolvedRuntime, TargetEventSink } from '../src/core/runtime.js';
 import { ScriptedRunner } from '../src/infrastructure/scripted-runtime.js';
+import { sealFrozenCase } from '../src/products/shared/frozen-case-files.js';
 import { publishFrozenCase } from '../src/products/shared/freeze.js';
 import type { ControllerPort } from '../src/agents/controller-agent.js';
 import { comparisonEvaluationTask } from './comparison-evaluation-task.js';
@@ -56,9 +57,7 @@ export async function prepareComparisonEvaluationFixture(root: string, item: Com
   const sourceRoot = join(root, 'source');
   await mkdir(sourceRoot, { recursive: true });
   await writeFile(join(sourceRoot, 'README.md'), 'Synthetic Comparison evaluation. No candidate model was executed.\n');
-  const caseId = `case-${item.id}`;
   const sourceHash = sha256(JSON.stringify(item));
-  const task = comparisonEvaluationTask(item);
   const baselineFiles = item.baseline.content === undefined ? [] : [{
     relativePath: 'baseline-artifacts/manifest.json', content: JSON.stringify({ schemaVersion: 1,
       sourceHash, extractorVersion: 'comparison-evaluation-v1', artifacts: [{ artifactId: 'fixture-final',
@@ -66,6 +65,8 @@ export async function prepareComparisonEvaluationFixture(root: string, item: Com
         contentHash: sha256(item.baseline.content), byteLength: Buffer.byteLength(item.baseline.content),
         origin: 'reconstructed_from_history', sourceRefs: ['message:historical-artifact'], finality: 'final' }], issues: [] }),
   }, { relativePath: `baseline-artifacts/files/fixture-bundle/${item.baseline.file}`, content: item.baseline.content }];
+  const task = await sealFrozenCase(comparisonEvaluationTask(item), baselineFiles);
+  const caseId = task.caseId;
   await publishFrozenCase({ taskCase: task, casesRoot: join(dataDir, 'cases'), files: baselineFiles });
   const result = await startExperiment({ dataDir, caseId, experimentId: `eval-${item.id}`, runId: 'fixture-run',
     sourceRoot, taskCase: task, candidate: { candidateId: 'fixture-candidate', productId: 'codex', requestedModel: item.candidate.model },
@@ -77,5 +78,5 @@ export async function prepareComparisonEvaluationFixture(root: string, item: Com
   }).result;
   if (result.comparison.result.status !== 'skipped' || result.record.outcome.termination.kind !== 'completed') throw new Error(`Offline fixture preparation failed: ${JSON.stringify(result.record.outcome)}.`);
   const inputIdentityHash = await captureComparisonEvaluationInputs(root, item);
-  return { dataDir, experimentId: `eval-${item.id}`, runId: 'fixture-run', inputIdentityHash };
+  return { dataDir, taskCaseId: caseId, experimentId: `eval-${item.id}`, runId: 'fixture-run', inputIdentityHash };
 }

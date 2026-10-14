@@ -1,8 +1,9 @@
+import { readTaskCase } from '../products/shared/task-case-reader.js';
 import { access, lstat, readdir, readFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { join, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
-import { ComparisonInvocationSchema, RunRecordSchema, TaskCaseSchema, type RunRecord, type TaskCase } from "../core/schema.js";
+import { ComparisonInvocationSchema, RunRecordSchema, type RunRecord, type TaskCase } from "../core/schema.js";
 import { readCommittedExperimentHistory } from "./experiment-history-read.js";
 import { isPersistedExperimentMetadata, listPersistedRunIds } from "./experiment-layout.js";
 import { comparisonDetailOf, selectComparisonArtifacts } from "./comparison-artifacts.js";
@@ -58,8 +59,12 @@ async function readCases(root: string): Promise<{ cases: readonly HistoryCase[];
   const entries = await listPublishedFrozenCases(directory);
   const cases = await Promise.all(entries.map(async (entry) => {
     const path = join(directory, entry, "case.json");
-    const value = await readJson(path);
-    return Value.Check(TaskCaseSchema, value) ? { taskCase: value, path } : undefined;
+    try {
+      return { taskCase: await readTaskCase(path, { expectedCaseId: entry, requireComplete: true }), path };
+    } catch {
+      // The history list counts unreadable or invalid cases instead of allowing them into executable results.
+      return undefined;
+    }
   }));
   const valid = cases.filter((item): item is HistoryCase => item !== undefined);
   return {

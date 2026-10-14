@@ -1,7 +1,8 @@
+import { readTaskCase } from '../products/shared/task-case-reader.js';
 import { join, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { SAFE_ID } from "../core/identity.js";
-import { RunRecordSchema, TaskCaseSchema, type EventEnvelope, type ExperimentSpec, type RunRecord, type TaskCase } from "../core/schema.js";
+import { RunRecordSchema, type EventEnvelope, type ExperimentSpec, type RunRecord, type TaskCase } from "../core/schema.js";
 import { ExperimentStore } from "../infrastructure/store/experiment-store.js";
 import { LocalWorkspaceProvider } from "../environment/local-workspace-provider.js";
 import { replicaWorkspaceLocation } from "./result-paths.js";
@@ -121,8 +122,7 @@ async function loadFinishedRun(experimentRoot: string, experimentId: string, req
   if (requestedRunId && !SAFE_ID.test(requestedRunId)) throw new CliError("usage", "runId is not a safe identifier.", requestedRunId);
   const recordValue = await readJsonFile(join(experimentRoot, "runs", runId, "record.json"));
   if (!Value.Check(RunRecordSchema, recordValue)) throw new CliError("failed", `Experiment ${experimentId} is not a finished run.`, experimentId);
-  const taskCaseValue = await readJsonFile(join(resolve(experimentRoot, "..", ".."), "cases", metadata.spec.taskCaseId, "case.json"));
-  if (!Value.Check(TaskCaseSchema, taskCaseValue)) throw new CliError("not_found", `TaskCase ${metadata.spec.taskCaseId} was not found.`, metadata.spec.taskCaseId);
+  const taskCaseValue = await readTaskCase(join(resolve(experimentRoot, "..", ".."), "cases", metadata.spec.taskCaseId, "case.json"), { expectedCaseId: metadata.spec.taskCaseId, requireComplete: true });
   const preflightValue = await readRunPreflight(experimentRoot, runId);
   return {
     spec: metadata.spec,

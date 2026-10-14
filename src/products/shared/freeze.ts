@@ -1,13 +1,15 @@
-import { lstat, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { lstat, mkdir, readdir, rm, stat } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { tmpdir } from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { copyAtomic, sha256, sha256File, writeImmutable } from '../../core/identity.js';
-import { TaskCaseSchema, type TaskCase } from '../../core/schema.js';
-import { Value } from '@sinclair/typebox/value';
-import { isDeepStrictEqual } from 'node:util';
+import type { TaskCase } from '../../core/schema.js';
+import { canonicalJson, validateTaskCase, assertFrozenFilePath } from '../../core/task-case-identity.js';
+import { readTaskCase, verifyTaskCaseFiles } from './task-case-reader.js';
+import { sealFrozenCase } from './frozen-case-files.js';
+import { withFrozenCaseLease } from './frozen-case-lease.js';
 import type { JsonRecord } from '../../core/json.js';
 import type {
   HistoricalArtifactExtractInput,
@@ -43,10 +45,23 @@ export type PublishFrozenCaseInput = {
 
 export async function publishFrozenCase(input: PublishFrozenCaseInput): Promise<{ taskCase: TaskCase; reused: boolean }> {
   const casesRoot = resolve(input.casesRoot);
+  validateTaskCase(input.taskCase);
+  for (const file of input.files) assertFrozenFilePath(file.relativePath);
+  if (input.taskCase.schemaVersion === 2 && (await sealFrozenCase(input.taskCase, input.files)).contentHash !== input.taskCase.contentHash) {
+    throw new Error('Publication bytes do not match the frozen TaskCase identity.');
+  }
   const caseId = input.taskCase.caseId;
   const caseDir = join(casesRoot, caseId);
   const write = input.write ?? writeImmutable;
   await mkdir(casesRoot, { recursive: true });
+  const rootInfo = await lstat(casesRoot);
+  if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw new Error('Frozen casesRoot must be a real directory.');
+  return withFrozenCaseLease(caseDir, () => publishOwnedCase(input, caseDir, write));
+}
+
+async function publishOwnedCase(input: PublishFrozenCaseInput, caseDir: string, write: typeof writeImmutable): Promise<{ taskCase: TaskCase; reused: boolean }> {
+  const caseId = input.taskCase.caseId;
+  const casesRoot = resolve(input.casesRoot);
   try {
     await lstat(caseDir);
     if (!input.reuseExisting) throw new Error(`Case already exists: ${caseDir}`);
@@ -65,6 +80,7 @@ export async function publishFrozenCase(input: PublishFrozenCaseInput): Promise<
       if (file.copyFrom) await copyAtomic(file.copyFrom, destination);
       else await write(destination, file.content ?? '');
     }
+    await verifyTaskCaseFiles(input.taskCase, staging);
     await write(join(staging, 'case.complete'), '');
     await publishFrozenDirectory(staging, caseDir, input.publishDependencies);
     return { taskCase: input.taskCase, reused: false };
@@ -193,7 +209,7 @@ export async function freezeCase(
         caseId: `case-${raw.hash.slice(0, 16)}`,
       }));
     }
-    const taskCase = taskCaseFromPrepared(
+    const preparedCase = taskCaseFromPrepared(
       prepared,
       privacy,
       now,
@@ -206,6 +222,7 @@ export async function freezeCase(
       ...(prepared.extraFiles ?? []).map((file) => ({ relativePath: file.relativePath, content: file.bytes })),
       ...extractionFiles,
     ];
+    const taskCase = await sealFrozenCase(preparedCase, files);
     const reuseExisting = options.reuseExisting ?? true;
     return await publishFrozenCase({
       taskCase,
@@ -307,16 +324,12 @@ export async function listPublishedFrozenCases(casesRoot: string): Promise<strin
 
 async function readExistingCase(caseDir: string, expected: TaskCase): Promise<TaskCase> {
   try {
-    const existing: unknown = JSON.parse(await readFile(join(caseDir, 'case.json'), 'utf8'));
-    if (!Value.Check(TaskCaseSchema, existing) || existing.schemaVersion !== 1) {
-      throw new Error('existing case has an invalid structure or unsupported schema version');
-    }
+    const existing = await readTaskCase(join(caseDir, 'case.json'), { expectedCaseId: expected.caseId, requireComplete: true });
     const original = { ...existing, provenance: { ...existing.provenance, importedAt: expected.provenance.importedAt } };
-    const persistedExpected: unknown = JSON.parse(JSON.stringify(expected));
-    if (!isDeepStrictEqual(original, persistedExpected)) {
-      throw new Error('existing case conflicts with the selected task or frozen evidence; preserve it and create a new frozen version');
-    }
-    await stat(join(caseDir, 'case.complete'));
+    const same = existing.schemaVersion === 2
+      ? existing.contentHash === expected.contentHash
+      : canonicalJson(original) === canonicalJson(expected);
+    if (!same) throw new Error('existing case conflicts with the selected task or frozen evidence; preserve it and create a new frozen version');
     return existing;
   } catch (error) {
     throw new Error(`Existing case cannot be safely reused: ${errorMessage(error)}`, { cause: error });

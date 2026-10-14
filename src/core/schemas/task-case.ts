@@ -28,8 +28,12 @@ const BaselineEvidenceSchema = Type.Object({
   artifactRefs: Type.Array(CaseArtifactRefSchema),
   evidenceRefs: Type.Array(EvidenceRefSchema),
 });
-export const TaskCaseSchema = Type.Object({
-  schemaVersion: Type.Integer({ minimum: 1 }),
+const FreezeIdentitySchema = Type.Object({
+  algorithm: Type.Literal('task-case-v2'),
+  files: Type.Array(Type.Object({ relativePath: Type.String({ minLength: 1 }), byteLength: Type.Integer({ minimum: 0 }), contentHash: Hash })),
+});
+const TaskCaseBodySchema = Type.Object({
+  schemaVersion: Type.Union([Type.Literal(1), Type.Literal(2)]),
   caseId: Id,
   source: SessionRefSchema,
   /** Omitted only by cases frozen before history-assisted intake. */
@@ -64,8 +68,12 @@ export const TaskCaseSchema = Type.Object({
     redactions: Type.Array(Type.String()),
   }),
   contentHash: Hash,
+  freezeIdentity: Type.Optional(FreezeIdentitySchema),
 });
-export type TaskCase = Static<typeof TaskCaseSchema>;
+const LegacyTaskCaseSchema = Type.Object({ ...TaskCaseBodySchema.properties, schemaVersion: Type.Literal(1), freezeIdentity: Type.Optional(Type.Never()) });
+const TaskCaseV2Schema = Type.Object({ ...TaskCaseBodySchema.properties, schemaVersion: Type.Literal(2), freezeIdentity: FreezeIdentitySchema });
+export const TaskCaseSchema = Type.Union([LegacyTaskCaseSchema, TaskCaseV2Schema]);
+export type TaskCase = Static<typeof TaskCaseBodySchema>;
 /** Fossil TaskCase key. Host always persists and treats session body text as allowed. */
 export const FROZEN_ALLOW_MODEL_TEXT = true as const;
 export const CandidateSpecSchema = Type.Object({
