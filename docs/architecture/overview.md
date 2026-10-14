@@ -49,6 +49,8 @@ Core 定义 [schema](../../src/core/schema.ts)、[状态转换](../../src/core/s
 
 外部 Pack 通过 dataDir 的 plugins.json 加载已安装包或编译后模块，校验 API major 与 import/runtime 能力；不下载、不热加载、不运行原始 TypeScript。公开入口是 `@caulif/reprise/pack-api`，history/runtime/projection 三个端口分别负责历史、运行和用户可见投影。应用层不按产品名分支，新增 Runtime 能力先改核心端口再改 Pack。
 
+CLI/TUI 组合根将已组装的 `ProductLookup` 传入 workflow。目录、候选校验、preflight、恢复、冻结及历史提取使用该 workflow 的 Pack，不重新查询全局注册表；独立注入的 Pack 无需全局激活。显式 `runtime` 注入覆盖候选目录、可用性、校验及运行所使用的 Runtime，但不能绕过所选 Pack 的 runtime 能力声明。候选校验返回的 productId 必须与候选一致；未校验的 preflight 只采用该产品的可用性信息，缺失时保留 unresolved/pending。
+
 模型执行复用 [AgentHost](../../src/infrastructure/agent/host.ts)，Session 可跨多次 Invocation 连续使用；同一 Session 不并发请求，关闭或取消后不能继续使用。角色之间不共享业务会话，模型与工具输入必须经事件审计。详细失败语义见[执行](./execution.md)、[恢复](./recovery.md)和[证据](./evidence-and-comparison.md)。
 
 ## 默认运行政策

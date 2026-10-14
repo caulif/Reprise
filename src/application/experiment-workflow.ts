@@ -8,7 +8,7 @@ import type { AgentLocale } from '../agents/language.js';
 import { createHarnessAgents, type HarnessAgents } from './harness-agents.js';
 import { readOperatorLocale } from './operator-locale.js';
 import { startExperiment, type ExperimentHandle } from './experiment.js';
-import { preflightExperiment, type ExperimentPreflight } from './experiment-preflight.js';
+import { preflightExperiment, resolveVerifiedCandidate, type ExperimentPreflight } from './experiment-preflight.js';
 import { recoverExperiment } from './recovery/recover.js';
 import type { RecoveryAttempt } from './recovery/types.js';
 import { comparePersistedExperiment } from './experiment-compare-persisted.js';
@@ -93,20 +93,19 @@ export function createExperimentWorkflow(input: {
   const candidate = input.defaults?.candidate;
   const policy = input.defaults?.policy ?? DEFAULT_RUN_POLICY;
   const packFor = (productId: string) => resolvePack(productId, input.pack, input.lookup);
-  const sourceExtractor = (productId: string): HistoricalArtifactExtractFn | undefined => {
-    const history = packHistory(packFor(productId));
-    return history.extractHistoricalArtifacts
-      ? (extractInput) => history.extractHistoricalArtifacts!(extractInput)
-      : undefined;
+  const runtimeFor = (pack: ProductPack) => {
+    const runtime = packRuntime(pack);
+    return input.runtime ?? runtime;
   };
-  const resolve = (taskCase: TaskCase, chosen?: CandidateSpec) => resolveSelection(taskCase, chosen, candidate, packFor, input.runtime);
+  const sourceExtractor = (productId: string) => historicalExtractor(packFor(productId));
+  const resolve = (taskCase: TaskCase, chosen?: CandidateSpec) => resolveSelection(taskCase, chosen, candidate, packFor, runtimeFor);
   const ownedRecoveries = createOwnedRecoveries();
   return {
     ...(candidate ? { candidate } : {}),
     policy,
-    listCatalog: (productId) => packRuntime(packFor(productId)).listCatalog(),
-    inspectAvailability: (productId) => packRuntime(packFor(productId)).inspectAvailability(),
-    verifyCandidate: (spec) => packRuntime(packFor(spec.productId)).validateCandidate(spec),
+    listCatalog: (productId) => runtimeFor(packFor(productId)).listCatalog(),
+    inspectAvailability: (productId) => runtimeFor(packFor(productId)).inspectAvailability(),
+    verifyCandidate: (spec) => resolveVerifiedCandidate(runtimeFor(packFor(spec.productId)), spec),
     preflight: ({ taskCase, sourceRoot, candidate: chosen, verifyCandidate }) => {
       const selected = resolve(taskCase, chosen);
       return preflightExperiment({
@@ -251,6 +250,13 @@ export function createHarnessWorkflow(input: {
 
 function previewExperimentId(caseId: string): string { return `preview-${caseId}`; }
 
+function historicalExtractor(pack: ProductPack): HistoricalArtifactExtractFn | undefined {
+  const history = packHistory(pack);
+  return history.extractHistoricalArtifacts
+    ? (extractInput) => history.extractHistoricalArtifacts!(extractInput)
+    : undefined;
+}
+
 function resolvePack(productId: string, pack: ProductPack | undefined, lookup: ProductLookup | undefined): ProductPack {
   if (pack?.manifest.productId === productId) return pack;
   if (lookup) return lookup.find(productId);
@@ -262,13 +268,13 @@ function resolveSelection(
   chosen: CandidateSpec | undefined,
   fallback: CandidateSpec | undefined,
   packFor: (productId: string) => ProductPack,
-  runtime: ProductRuntime | undefined,
+  runtimeFor: (pack: ProductPack) => ProductRuntime,
 ) {
   const sourcePack = packFor(taskCase.source.productId);
   const spec = chosen ?? fallback;
   const candidatePack = spec ? packFor(spec.productId) : sourcePack;
   const selected = spec?.productId === candidatePack.manifest.productId ? spec : packDefaultCandidate(candidatePack);
-  return { sourcePack, pack: candidatePack, candidate: selected, runtime: runtime ?? packRuntime(candidatePack) };
+  return { sourcePack, pack: candidatePack, candidate: selected, runtime: runtimeFor(candidatePack) };
 }
 
 async function beginOwnedActivity(
