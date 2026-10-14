@@ -15,6 +15,7 @@ import {
 } from '../agents/comparison-agent.js';
 import type { AgentAuditSink, AgentToolDefinition, StructuredAgentResult } from '../infrastructure/agent/host.js';
 import { recoveryEvidenceCatalog } from '../products/history/source-refs.js';
+import { validSessionTimestamp } from '../products/shared/session-files.js';
 import {
   aggregateHistoricalUsage,
   factsFromUsage,
@@ -132,7 +133,15 @@ function buildReportFacts(
   hostReplay: ComparisonContext['hostReplay'],
   pricing?: { dataDir?: string; comparisonModel?: string },
 ): ComparisonReportFacts {
+  const historicalTimes = [taskCase.taskContext?.historyStartedAt, ...taskCase.historicalEvents.map((event) => event.timestamp)]
+    .map(validSessionTimestamp).filter((value): value is string => value !== undefined).sort();
+  const currentTime = validSessionTimestamp(run?.manifest?.startedAt) ?? validSessionTimestamp(run?.attempt.createdAt);
+  const sessionDates = {
+    ...(historicalTimes[0] ? { baseline: historicalTimes[0].slice(0, 10) } : {}),
+    ...(currentTime ? { candidate: currentTime.slice(0, 10) } : {}),
+  };
   if (!run) return {
+    sessionDates,
     run: { runId: 'unavailable', outcome: 'unavailable', terminationCode: 'unavailable', initiatedBy: 'unavailable' },
     models: comparisonModels(taskCase, undefined, pricing?.comparisonModel), activity: {}, limits: { triggered: [] }, runtime: { productId: 'unavailable' },
     delivery: { changedPaths: [], targetArtifactStatus: 'unavailable', verificationStatus: 'unavailable' },
@@ -141,6 +150,7 @@ function buildReportFacts(
   const triggered = run.outcome.termination.kind === 'limit_reached' ? [run.outcome.termination.code] : [];
   const metrics = projectedMetrics(taskCase, inspection, run, pricing?.dataDir);
   return {
+    sessionDates,
     run: { runId: run.attempt.runId, outcome: run.outcome.task.status, terminationCode: run.outcome.termination.code, initiatedBy: run.outcome.termination.initiatedBy, ...(inspection?.wallClockMs === undefined ? {} : { candidateElapsedMs: inspection.wallClockMs }) },
     models: comparisonModels(taskCase, run, pricing?.comparisonModel),
     activity: { ...(inspection ? { candidateTurns: inspection.turns } : {}) },

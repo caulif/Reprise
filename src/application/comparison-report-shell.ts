@@ -183,7 +183,7 @@ export function renderComparisonReportShell(input: {
     ? "Comparison unavailable"
     : reportString(locale, "titleVs", { category, baseline: labels.baseline, candidate: labels.candidate })));
   const slots = input.slots ?? {};
-  const header = slots.header ?? defaultHeader(labels, category, task, locale, input.diagnostic);
+  const header = slots.header ?? defaultHeader(labels, category, task, locale, input.facts.sessionDates, input.diagnostic);
   const headline = slots.headline ?? (input.diagnostic ? escapeHtml(input.diagnostic.reason) : "");
   const comparisonBody = [
     input.diagnostic ? diagnosticDifferences(input.diagnostic, locale) : "",
@@ -516,11 +516,15 @@ function defaultHeader(
   category: string,
   task: string,
   locale: AgentLocale,
+  dates: ComparisonReportFacts['sessionDates'],
   diagnostic?: ComparisonReportDiagnostic,
 ): string {
   const kicker = diagnostic ? `<p class="kicker">Comparison · ${escapeHtml(diagnostic.failureClass)}</p>` : "";
+  const date = (value: string | undefined): string => value
+    ? `<time datetime="${escapeHtml(value)}">${escapeHtml(value)} UTC</time>`
+    : escapeHtml(reportString(locale, "sessionDateUnknown"));
   return `${kicker}<h1><span data-agent-slot="category">${escapeHtml(category)}</span></h1>
-  <p class="sessions" data-host="session-labels"><span>${escapeHtml(reportString(locale, "sessionHistorical"))} · ${escapeHtml(labels.baseline)}</span><span>${escapeHtml(reportString(locale, "sessionCurrent"))} · ${escapeHtml(labels.candidate)}</span></p>
+  <p class="sessions" data-host="session-labels"><span>${escapeHtml(reportString(locale, "sessionHistorical"))} · ${escapeHtml(labels.baseline)} · ${date(dates?.baseline)}</span><span>${escapeHtml(reportString(locale, "sessionCurrent"))} · ${escapeHtml(labels.candidate)} · ${date(dates?.candidate)}</span></p>
   <p class="field-label">${escapeHtml(reportString(locale, "taskLabel"))}</p>
   <p class="task" data-slot="task" data-agent-slot="task">${escapeHtml(task)}</p>`;
 }

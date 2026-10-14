@@ -98,6 +98,7 @@ const M = {
   keyDifferences: { en: "Key differences", zh: "关键差异" },
   sessionHistorical: { en: "Historical session", zh: "历史会话" },
   sessionCurrent: { en: "Current session", zh: "当前会话" },
+  sessionDateUnknown: { en: "Date unknown", zh: "日期未知" },
   sideHistorical: { en: "unrecorded", zh: "未记录" },
   sideCandidate: { en: "unrecorded", zh: "未记录" },
   candidateTaskCompleted: { en: "Candidate task completed", zh: "候选任务已完成" },

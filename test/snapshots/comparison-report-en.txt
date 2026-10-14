@@ -140,7 +140,7 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
 <main class="page" data-report-format="2">
   <article class="share">
     <header data-host-zone="header" data-id="host-header"><h1><span data-agent-slot="category">Comparison</span></h1>
-  <p class="sessions" data-host="session-labels"><span>Historical session · gpt-5</span><span>Current session · unrecorded</span></p>
+  <p class="sessions" data-host="session-labels"><span>Historical session · gpt-5 · Date unknown</span><span>Current session · unrecorded · <time datetime="2026-08-15">2026-08-15 UTC</time></span></p>
   <p class="field-label">Task</p>
   <p class="task" data-slot="task" data-agent-slot="task">Fix the report.</p></header>
     <section class="verdict" aria-label="Main conclusion">
