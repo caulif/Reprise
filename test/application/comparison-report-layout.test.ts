@@ -4,7 +4,7 @@ import type { ComparisonReportFacts } from "../../src/agents/comparison-agent.js
 import {
   extractOuter, extractHostZoneSnapshot, missingComparisonSlots, hostMetricsMismatch,
   hostZonesMismatch, renderComparisonReportShell,
-  formatCost,
+  formatCost, agentZoneBlank, extractInner,
 } from "../../src/application/comparison-report-shell.js";
 
 function facts(): ComparisonReportFacts {
@@ -51,7 +51,7 @@ test("small nonzero costs stay visible and protected while legacy rounding remai
   assert.equal(hostMetricsMismatch(legacy, metrics), undefined);
 });
 
-test("compact metrics keep precise time and token details folded", () => {
+test("compact metrics show all totals once and fold only the token breakdown", () => {
   const html = renderComparisonReportShell({ task: "Compare", facts: facts(), metrics: {
     baseline: { elapsedMs: 105000, tokens: { total: 100, input: 80, output: 20, cached: 30, reasoning: 5 }, costUsd: 0.446 },
     candidate: { elapsedMs: 489000, tokens: { total: 200 }, costUsd: 0.083 },
@@ -67,6 +67,10 @@ test("compact metrics keep precise time and token details folded", () => {
   assert.match(html, /不同工具的 Token 口径不能直接作为模型效率评分/);
   assert.doesNotMatch(html, /<details class="token-details" open/);
   const metricsBlock = extractOuter(html, "data-host-zone", "metrics")!;
+  const totals = metricsBlock.slice(0, metricsBlock.indexOf('<details'));
+  assert.match(totals, />100<\/div>/);
+  assert.match(totals, />200<\/div>/);
+  assert.equal((metricsBlock.match(/>100<\/div>/g) ?? []).length, 1);
   const fingerprint = JSON.stringify({ b: [105000, 100, 0.446, null], c: [489000, 200, 0.083, null] }).replaceAll('"', '&quot;');
   const oldMetrics = metricsBlock.replace(' data-metrics-layout="compact"', "")
     .replace(/data-fingerprint="[^"]*"/, `data-fingerprint="${fingerprint}"`)
@@ -75,4 +79,31 @@ test("compact metrics keep precise time and token details folded", () => {
     baseline: { elapsedMs: 105000, tokens: { total: 100 }, costUsd: 0.446 },
     candidate: { elapsedMs: 489000, tokens: { total: 200 }, costUsd: 0.083 },
   }), undefined);
+});
+
+test("empty shell keeps authoring slots blank without manufacturing a decision or evidence", () => {
+  for (const locale of ["zh", "en"] as const) {
+    const html = renderComparisonReportShell({ task: "Task from Host", facts: facts(), metrics: {}, locale });
+    assert.equal(extractInner(html, "data-agent-slot", "headline"), "");
+    assert.equal(agentZoneBlank(html, "comparison"), true);
+    assert.equal(agentZoneBlank(html, "details"), true);
+    assert.doesNotMatch(extractInner(html, "data-agent-zone", "comparison"), /<img|<table|<article/);
+    assert.doesNotMatch(html, /data-media-ref="media-\d+"/);
+    assert.equal(missingComparisonSlots(html), undefined);
+  }
+});
+
+test("visible metrics distinguish missing measurements from zero in both locales", () => {
+  for (const locale of ["zh", "en"] as const) {
+    const metrics = { candidate: { elapsedMs: 0, tokens: { total: 0 }, costUsd: 0 } };
+    const html = renderComparisonReportShell({ task: "Compare", facts: facts(), metrics, locale, slots: filledSlots() });
+    const block = extractOuter(html, "data-host-zone", "metrics")!;
+    const totals = block.slice(0, block.indexOf('<details'));
+    assert.equal((totals.match(/class="num miss"/g) ?? []).length, 3);
+    assert.match(totals, />0<span class="unit">s<\/span>/);
+    assert.match(totals, />0<\/div>/);
+    assert.match(totals, />0\.00<span class="unit">\$/);
+    assert.equal(hostMetricsMismatch(html, metrics, locale), undefined);
+    assert.equal(hostMetricsMismatch(html.replace('>0.00<span', '>1.00<span'), metrics, locale), "Host metrics numbers were modified.");
+  }
 });

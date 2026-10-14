@@ -261,7 +261,6 @@ test('Host metrics shell matches the projected fingerprint and fails when number
     facts,
     metrics: facts.metrics ?? {},
   });
-  assert.match(html, /white-space:nowrap/);
   assert.doesNotMatch(html, /\.task \{[^}]*white-space:nowrap/);
   assert.doesNotMatch(html, /data-host="status"/);
   assert.match(html, /data-agent-slot="headline"/);
@@ -272,7 +271,7 @@ test('Host metrics shell matches the projected fingerprint and fails when number
   assert.match(html, /13:00<span class="unit">分:秒<\/span>/);
   assert.match(html, /0\.49<span class="unit">\$/);
   assert.match(html, /钉住的价格快照/);
-  assert.match(html, /\.num\.miss \{[^}]*white-space:nowrap/);
+  assert.doesNotMatch(html, /\.num\.miss \{[^}]*white-space:nowrap/);
   assert.match(html, /2026-09-19-cc-switch-seed/);
   assert.match(html, /cacheRead /);
   assert.match(html, /cacheCreation /);
