@@ -39,6 +39,10 @@ const MetricSideSchema = Type.Object({
 });
 
 const ComparisonReportFactsSchema = Type.Object({
+  sessionDates: Type.Optional(Type.Object({
+    baseline: Type.Optional(Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' })),
+    candidate: Type.Optional(Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' })),
+  })),
   run: Type.Object({ runId: Type.String(), outcome: Type.String(), terminationCode: Type.String(), initiatedBy: Type.String(), elapsedMs: Type.Optional(Type.Number()), candidateElapsedMs: Type.Optional(Type.Number()) }),
   models: Type.Object({ candidate: Type.String(), baseline: Type.Optional(Type.String()), controller: Type.Optional(Type.String()), comparison: Type.Optional(Type.String()) }),
   activity: Type.Object({ candidateTurns: Type.Optional(Type.Integer({ minimum: 0 })), controllerCalls: Type.Optional(Type.Integer({ minimum: 0 })), toolCalls: Type.Optional(Type.Object({ total: Type.Integer({ minimum: 0 }), succeeded: Type.Integer({ minimum: 0 }), failed: Type.Integer({ minimum: 0 }), rejectedApprovals: Type.Integer({ minimum: 0 }) })) }),

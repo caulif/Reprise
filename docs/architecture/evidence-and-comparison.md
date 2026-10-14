@@ -72,6 +72,8 @@ Host metrics 的 `data-metrics-layout="compact"` 标记与区域顺序不变；�
 
 Agent 区的内联 `style` 属性和原生 `dialog` / popover 浮层一律拒绝，避免遮盖 Host 的任务、模型与指标。
 
+Host 双侧会话标签同时显示日期（UTC）。历史侧取 `taskContext.historyStartedAt` 与历史事件顶层 `timestamp` 中最早的合法时间，当前侧取 manifest 开始时间，缺失或非法时退回 attempt 创建时间；不使用导入时间、文件修改时间或报告生成时间。日期冻结在可选 `reportFacts.sessionDates` 中，沿现有 `comparison.requested` 输入 artifact 和 briefing 审计链保存、恢复。旧 facts 缺字段时显示“日期未知”，旧已发布报告不原地重写；日期仍由 Host 所有，不能由 Agent 推断或改写。取舍见[双侧会话日期](../decisions/accepted/2026-10-14-comparison-session-dates.md)。
+
 ## 报告发布
 
 正式报告是 experiment 根部的 `report.html` 及其媒体。新流程用 `submit_comparison_draft` 接收 category、headline、comparisonHtml、可选 detailsHtml 和证据不足状态；Host 即时校验并生成完整页面。模型文件工具不能直接改写新流程的 `report.html`，自定义旧端口仍可按旧整页契约写 attempt 草稿并接受末尾发布校验。新流程仅在草稿完整校验通过、当前 catalog revision 与草稿 digest 均匹配成功 `preview_report`、审阅调用正常完成且未取消时发布；末尾自由文本为空不阻止有效版本发布，也不表示模型作过最终质量确认。`publishComparisonArtifacts` 先把被引用媒体拷到内容寻址路径（`media/<hash>.…`）并校验，再写审计 `report-model.json`（含 `formatVersion: 2` 与 `comparison` / `details` slots；旧四区 model 仍可读），最后原子替换根 `report.html`。失败或取消不得覆盖旧成功报告仍引用的资产。
