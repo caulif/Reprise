@@ -8,7 +8,7 @@ import { assertSafeLogicalPath } from '../products/shared/historical-artifact-fi
 import { attemptFinalsRoot } from './prepare-historical-artifacts.js';
 import { mediaTypeForComparisonPath } from './comparison-media.js';
 
-export async function comparisonSealedFinalLinks(attemptRoot: string): Promise<{ links: ComparisonLinkRecord[]; unavailable: string[] }> {
+export async function comparisonSealedFinalLinks(attemptRoot: string, preferredPaths: readonly string[] = []): Promise<{ links: ComparisonLinkRecord[]; unavailable: string[] }> {
   const root = attemptFinalsRoot(attemptRoot);
   const raw = await readFile(join(root, 'manifest.json'), 'utf8').catch((error: unknown) => {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
@@ -20,7 +20,9 @@ export async function comparisonSealedFinalLinks(attemptRoot: string): Promise<{
   const realRoot = await realpath(root);
   const links: ComparisonLinkRecord[] = [];
   const unavailable: string[] = [];
-  for (const artifact of manifest.artifacts) {
+  const preferred = new Set(preferredPaths.map(path => path.replaceAll('\\', '/').toLowerCase()));
+  const artifacts = [...manifest.artifacts].sort((a, b) => Number(preferred.has(b.logicalPath.toLowerCase())) - Number(preferred.has(a.logicalPath.toLowerCase())));
+  for (const artifact of artifacts) {
     assertSafeLogicalPath(artifact.logicalPath);
     const path = join(root, ...artifact.logicalPath.split('/'));
     const actual = await realpath(path).catch((error: unknown) => {
@@ -37,7 +39,8 @@ export async function comparisonSealedFinalLinks(attemptRoot: string): Promise<{
     const inspectPath = `finals/${artifact.logicalPath}`;
     const mediaType = artifact.mediaType ?? mediaTypeForComparisonPath(artifact.logicalPath);
     links.push({ side: 'baseline', inspectPath, reportHref: inspectPath.split('/').map(encodeURIComponent).join('/'),
-      artifactId: artifact.artifactId, evidenceRef: `artifact:${artifact.artifactId}`, label: 'Sealed final delivery; finality from manifest',
+      artifactId: artifact.artifactId, evidenceRef: `artifact:${artifact.artifactId}`, label: artifact.origin === 'user_selected_substitute'
+        ? 'User-selected substitute baseline; NOT the original historical delivery' : `Sealed delivery (${artifact.origin}); finality from manifest`,
       contentHash: artifact.contentHash, byteLength: artifact.byteLength, sourceRefs: [...artifact.sourceRefs], origin: artifact.origin,
       ...(mediaType ? { mediaType } : {}) });
   }

@@ -48,9 +48,12 @@ export function classifyCustomExec(input: string): ShellCommandClass | { readonl
   const literal = String.raw`("(?:\\.|[^"\\])*")`;
   const call = new RegExp(String.raw`^\s*const\s+patch\s*=\s*${literal}\s*;\s*const\s+r\s*=\s*await\s+tools\.apply_patch\(patch\)\s*;\s*text\(r\)\s*;?\s*$`);
   const match = input.match(call);
-  if (match?.[1]) {
+  const inlineVariable = input.match(new RegExp(String.raw`^\s*const\s+patch\s*=\s*${literal}\s*;\s*text\(await\s+tools\.apply_patch\(patch\)\)\s*;?\s*$`));
+  const inlineLiteral = input.match(new RegExp(String.raw`^\s*text\(await\s+tools\.apply_patch\(${literal}\)\)\s*;?\s*$`));
+  const encoded = match?.[1] ?? inlineVariable?.[1] ?? inlineLiteral?.[1];
+  if (encoded) {
     try {
-      const patch: unknown = JSON.parse(match[1]);
+      const patch: unknown = JSON.parse(encoded);
       if (typeof patch === "string" && /^\*\*\* Begin Patch\r?\n/.test(patch)
         && /\r?\n\*\*\* End Patch\r?\n?$/.test(patch)
         && patch.indexOf("*** Begin Patch", 1) === -1

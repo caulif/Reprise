@@ -416,9 +416,13 @@ function pricingEvidence(side: ComparisonMetricSide | undefined): string {
   return `${model} · ${source} · ${version}${rates}`;
 }
 
-function renderEvidenceCatalog(entries: readonly { side: string; inspectPath: string; reportHref?: string; shortRef?: string; label?: string }[] | undefined, locale: AgentLocale): string {
+function renderEvidenceCatalog(entries: readonly { side: string; inspectPath: string; reportHref?: string; shortRef?: string; label?: string; origin?: string }[] | undefined, locale: AgentLocale): string {
   if (!entries?.length) return "";
-  const rows = entries.map((entry) => {
+  const visible = entries.some(entry => entry.origin === 'git_snapshot') ? [
+    ...entries.filter(entry => entry.origin === 'git_snapshot').slice(0, 32),
+    ...entries.filter(entry => entry.origin !== 'git_snapshot').slice(0, 32),
+  ] : entries;
+  const rows = visible.map((entry) => {
     const name = entry.label ?? entry.inspectPath;
     const ref = entry.shortRef ? `${entry.shortRef} ` : "";
     const href = entry.reportHref ? `<a class="path-link" href="${escapeHtml(entry.reportHref)}">${escapeHtml(entry.inspectPath)}</a>` : escapeHtml(entry.inspectPath);

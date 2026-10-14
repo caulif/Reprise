@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { sha256, writeAtomic } from "../core/identity.js";
@@ -16,8 +16,11 @@ import {
   assertSafeLogicalPath,
   frozenRelativePathForArtifact,
   validateHistoricalExtraction,
+  validateHistoricalArtifactBytes,
 } from "../products/shared/historical-artifact-files.js";
 import { historicalCwdOf } from "./replay-conditions.js";
+import { selectedHistoricalDelivery, readCapturedHistoricalFile } from './historical-delivery.js';
+import { pathContainedBy } from '../core/paths.js';
 
 export const DERIVED_HISTORY_DIR = "derived-history";
 export const CASE_BASELINE_ARTIFACTS_DIR = "baseline-artifacts";
@@ -54,7 +57,7 @@ export type PrepareHistoricalArtifactsResult = {
   /** Names for openable-baseline discovery (artifactId, logicalPath, basename). */
   readonly openableNames: readonly string[];
   readonly issues: readonly PrepareHistoricalIssue[];
-  readonly source: "case-manifest" | "derived" | "unavailable";
+  readonly source: "case-manifest" | "derived" | "unavailable" | "selected-delivery";
 };
 
 export function attemptFinalsRoot(attemptRoot: string): string {
@@ -179,6 +182,7 @@ async function materializeAttemptFinals(
     }
     await mkdir(dirname(destination), { recursive: true });
     await writeFile(destination, bytes);
+    if (artifact.gitMode === '100755' && process.platform !== 'win32') await chmod(destination, 0o755);
   }
   return issues;
 }
@@ -219,6 +223,22 @@ export async function prepareHistoricalArtifacts(
   input: PrepareHistoricalArtifactsInput,
 ): Promise<PrepareHistoricalArtifactsResult> {
   const finalsRoot = attemptFinalsRoot(input.attemptRoot);
+  const selected = await selectedHistoricalDelivery(input.caseDir, input.taskCase);
+  if (selected) {
+    const files: { artifactId: string; bytes: Buffer }[] = [];
+    for (const artifact of selected.manifest.artifacts) {
+      const file = nestedArtifactPath(selected.root, artifact);
+      if (!file || !pathContainedBy(await realpath(selected.root), await realpath(file))) throw new Error('Selected historical file escapes its capture.');
+      const bytes = await readCapturedHistoricalFile(file);
+      if (!input.taskCase.privacy.allowBinary && (bytes.includes(0) || !Buffer.from(bytes.toString('utf8')).equals(bytes))) throw new Error('Selected historical binary is not authorized by this case.');
+      files.push({ artifactId: artifact.artifactId, bytes });
+    }
+    validateHistoricalArtifactBytes({ manifest: selected.manifest, files });
+    const contents = new Map(files.map(file => [file.artifactId, file.bytes]));
+    const issues = await materializeAttemptFinals(finalsRoot, selected.manifest, async artifact => contents.get(artifact.artifactId));
+    if (issues.length) throw new Error('Selected historical delivery failed materialization.');
+    return { finalsRoot, manifest: selected.manifest, openableNames: openableNamesFromManifest(selected.manifest), issues: [], source: 'selected-delivery' };
+  }
   const caseArtifactsRoot = join(input.caseDir, CASE_BASELINE_ARTIFACTS_DIR);
   const caseManifest = await readHistoricalManifest(join(caseArtifactsRoot, "manifest.json"));
 

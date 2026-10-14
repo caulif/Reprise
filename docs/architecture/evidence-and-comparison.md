@@ -1,5 +1,9 @@
 # 证据、持久化与 Comparison
 
+历史交付可以通过 `capture-history` 显式增补。v1 保留日志重建；v2 表达捕获文件、精确 Git 终点或用户替代基准。独立选择绑定 case/source 与 manifest hash，不覆盖冻结 case；新 attempt 校验后物化自己的 finals，并记录 `comparison.historical_delivery_prepared` artifact/事件，旧报告重开不读取新选择。替代品不是原件，终点不进入候选起点。契约见[历史交付采集决策](../decisions/accepted/2026-10-14-historical-delivery-capture.md)。
+
+冻结 observations 的 `event-timeline/` 提供历史/候选事件索引、100条分页、原始 JSON 与相邻记录，`COVERAGE.txt` 标明选定范围及预览截断。完整索引不等于工具搜索不截断，片段无命中不能证明没有执行；正文判断回到原始载荷。
+
 ## 事件日志与文件
 
 每个 Experiment 目录由 [`ExperimentStore`](../../src/infrastructure/store/experiment-store.ts) 管理：`events.jsonl` 追加事件，`writer.lock` 保证单写者，`runs/<runId>/attempt.json` 和 `manifest.json` 通过 `writeImmutableJson` 保存不可变快照，artifacts 旁有 manifest。Store 重开时会读取并校验事件；只读打开不改日志，取得 writer 锁后才按字节截掉不完整尾行，保留完整事件的原始字节。这提供 replay 能力，不等于应用启动会自动安全续跑未完成实验。

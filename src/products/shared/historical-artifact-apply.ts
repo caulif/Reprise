@@ -4,7 +4,6 @@ import type {
   HistoricalArtifact,
   HistoricalArtifactIssue,
   HistoricalArtifactIssueCode,
-  HistoricalArtifactManifest,
 } from "../../core/schema.js";
 import type { HistoricalArtifactExtractResult, HistoricalArtifactFile } from "../contract.js";
 
@@ -112,7 +111,7 @@ export class HistoricalArtifactBuilder {
   }
 
   finish(): HistoricalArtifactExtractResult {
-    const artifacts: HistoricalArtifact[] = [];
+    const artifacts: (HistoricalArtifact & { origin: 'reconstructed_from_history' })[] = [];
     const files: HistoricalArtifactFile[] = [];
     for (const [logicalPath, state] of [...this.files.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
       if (state.status !== "known") continue;
@@ -139,7 +138,7 @@ export class HistoricalArtifactBuilder {
         if (!already) this.issue(state.reason, state.sourceRefs, logicalPath);
       }
     }
-    const manifest: HistoricalArtifactManifest = {
+    const manifest: HistoricalArtifactExtractResult['manifest'] = {
       schemaVersion: 1,
       sourceHash: this.sourceHash,
       extractorVersion: this.extractorVersion,

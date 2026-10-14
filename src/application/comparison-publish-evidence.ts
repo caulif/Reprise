@@ -8,6 +8,7 @@ import { pathContainedBy } from "../core/paths.js";
 import { sha256, writeAtomic } from "../core/identity.js";
 import { unsafeDerivedMarkup } from "./comparison-derived-content.js";
 import { historicalFinalDependencies } from "./comparison-final-bundle-dependencies.js";
+import { isHistoricalFinalLink } from './comparison-historical-origin.js';
 
 export async function loadDerivedEvidence(attemptRoot: string, link: ComparisonLinkRecord): Promise<{
   href: string; hash: string; bytes: Buffer;
@@ -66,7 +67,7 @@ export async function stagePublishedHistoricalFinals(input: {
   const attemptRootReal = await realpath(input.attemptRoot);
   const linkedHrefs = comparisonAnchorHrefs(html);
   const linked = input.evidence.filter((link) =>
-    link.origin === "historical_artifact" && link.reportHref?.startsWith("finals/") && linkedHrefs.has(link.reportHref));
+    isHistoricalFinalLink(link) && link.reportHref?.startsWith("finals/") && linkedHrefs.has(link.reportHref));
   if (linked.length === 0) return { html, hrefMap };
   const dependencies = await historicalFinalDependencies(input.attemptRoot, linked);
   const digest = sha256(JSON.stringify(dependencies.map(({ href, hash }) => ({ href, hash }))));

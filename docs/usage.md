@@ -46,6 +46,7 @@ reprise recover-comparison --experiment <id> --attempt <id> [--publish --status 
 reprise products|models|projects|sessions|inspect|import|history|events|auth
 reprise config get|set
 reprise cancel <operationId|experimentId|runId>
+reprise capture-history --task-case <case.json> --basis <reason> (--repository <dir> --commit <fullSHA> | --file <path> --logical-path <name> --expected-hash <sha256>)
 ```
 
 `--product` 与 `--model` 必须成对提供。`prepare` 只准备和封存，不接受候选选择；`run` 从封存场景或 TaskCase 启动候选；`compare` 对已保存运行生成对照。不要把 API 密钥放进命令行参数；`--json` 与 `--jsonl` 互斥。
@@ -54,6 +55,12 @@ reprise cancel <operationId|experimentId|runId>
 
 - `--experiment <id>`（可选 `--run <runId>`）— 对**已有**实验目录中的封存运行生成对照；`experimentId` 来自先前 `prepare`/`run` 的输出或 `dataDir` 下的实验目录名。
 - `--source-root` + `--task-case` — 从指定 TaskCase 文件启动新的对照流程，不依赖已保存的 experiment ID。
+
+### 增补历史交付（无模型费用）
+
+`capture-history` 显式捕获并选择一个历史基准，`--task-case` 必须与 `--data-dir` 下冻结 case 一致。Git 模式只读取本地完整提交；文件模式必须给逻辑路径及预期 SHA256。用户选定替代品另加 `--substitute --user-instruction <text>`，确认原件缺失才加 `--original-unavailable`；否则原件状态为未核实。`--basis` 写明选择依据，不填写凭据。
+
+命令把终点字节与来源冻结到独立目录，不修改 case、原文件、原仓库或候选起点，也不启动模型。新 Comparison 使用选定版本，旧报告仍用自己的冻结输入。替代品不是历史模型原始交付；捕获普通文件也不能仅凭路径存在认证其历史身份。超预算、Git链接/LFS或内容变化拒绝采集，不自动安装或联网。详细契约见[历史交付采集决策](./decisions/accepted/2026-10-14-historical-delivery-capture.md)。
 
 ### 无费用查询示例
 

@@ -261,15 +261,11 @@ async function compareExperimentOutcome(
       attemptRoot,
     }), { recursive: true });
   }
-  const preparedHistory = await prepareHistoricalArtifacts({
-    taskCase: input.taskCase,
-    caseDir: join(input.input.dataDir, "cases", input.taskCase.caseId),
-    attemptRoot,
-    ...(input.input.extractHistoricalArtifacts
-      ? { extract: input.input.extractHistoricalArtifacts }
-      : {}),
-  });
+  const prepared = await prepareComparisonHistory(input, record, inspection, attemptId, attemptRoot);
+  if ('comparisonResult' in prepared) return prepared;
+  const preparedHistory = prepared;
   await mkdir(preparedHistory.finalsRoot, { recursive: true });
+  await auditHistoricalDelivery(input.store, input.input.runId, attemptId, preparedHistory.manifest);
   const events = input.store.events(input.input.runId);
   const locale = await readOperatorLocale(input.input.dataDir);
   const comparisonModel = (input.input.comparisonAgentConfig ?? input.input.agentConfig).requestedModel;
@@ -281,6 +277,11 @@ async function compareExperimentOutcome(
     attemptId,
     ownedEvidenceRefs: comparisonOwnedObservationRefs(input.taskCase, events),
   };
+  if (preparedHistory.manifest?.schemaVersion === 2 && preparedHistory.manifest.capture.kind === 'user_selected_substitute') {
+    context.reportFacts.replay.conditions = [...context.reportFacts.replay.conditions, locale === 'zh'
+      ? '历史侧材料是用户指定替代基准，不是历史原件；历史运行指标仍来自原会话。'
+      : 'Baseline material is a user-selected substitute, not the historical original; historical metrics still describe the original session.'];
+  }
   let comparisonResult: AgentInvocation<ComparisonResult>;
   try {
     const briefingContext = briefingComparisonContext(context);
@@ -329,6 +330,28 @@ async function compareExperimentOutcome(
     task: context.task.summary,
     locale,
   });
+}
+
+async function prepareComparisonHistory(input: Parameters<typeof finishExperiment>[0], record: NonNullable<ReturnType<CandidateRun['result']>['record']>, inspection: Awaited<ReturnType<typeof inspectRun>>, attemptId: string, attemptRoot: string) {
+  try {
+    return await prepareHistoricalArtifacts({ taskCase: input.taskCase, caseDir: join(input.input.dataDir, 'cases', input.taskCase.caseId),
+      attemptRoot, ...(input.input.extractHistoricalArtifacts ? { extract: input.input.extractHistoricalArtifacts } : {}) });
+  } catch (error) {
+    const context = buildComparisonContext(input.taskCase, [record], [inspection], { dataDir: input.input.dataDir,
+      comparisonModel: (input.input.comparisonAgentConfig ?? input.input.agentConfig).requestedModel });
+    return persistComparisonInvocation({ store: input.store, runId: input.input.runId, experimentRoot: input.experimentRoot,
+      attemptId, attemptRoot, comparisonResult: mapBriefingErrorToComparisonResult(error), facts: context.reportFacts,
+      task: context.task.summary, locale: await readOperatorLocale(input.input.dataDir) });
+  }
+}
+
+async function auditHistoricalDelivery(store: ExperimentStore, runId: string, attemptId: string, manifest: import('../core/schema.js').HistoricalArtifactManifest | undefined): Promise<void> {
+  if (manifest?.schemaVersion !== 2) return;
+  const artifact = await store.commitArtifact({ artifactId: `historical-delivery-${attemptId}`, runId,
+    kind: 'comparison_historical_delivery', mediaType: 'application/json', bytes: Buffer.from(JSON.stringify(manifest)) });
+  await store.append({ type: 'comparison.historical_delivery_prepared', runId,
+    operationId: `historical-delivery-${attemptId}`, payload: { attemptId, selectionId: manifest.selectionId,
+      sourceHash: manifest.sourceHash, capture: manifest.capture, artifactId: artifact.artifactId, contentHash: artifact.contentHash } });
 }
 
 async function runComparisonAttempt(input: {

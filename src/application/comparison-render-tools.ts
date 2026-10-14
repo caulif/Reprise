@@ -41,7 +41,7 @@ export type ComparisonRenderSource = {
   entryRelativePath: string;
   contentHash: string;
   mediaType?: string;
-  origin: "historical_artifact" | "reconstructed_from_history" | "candidate" | "derived" | "host";
+  origin: "historical_artifact" | "reconstructed_from_history" | "captured_file" | "git_snapshot" | "user_selected_substitute" | "candidate" | "derived" | "host";
 };
 
 export type RegisterDerivedMediaInput = {
