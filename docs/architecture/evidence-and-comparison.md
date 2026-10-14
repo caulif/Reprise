@@ -10,6 +10,12 @@
 
 Recovery 的固定 artifact 与决定、诊断等不可变 JSON 按 `runs/<runId>/` 保存；默认 Recovery Provider 的 baseline 按 `environment/recovery/<runId>/` 隔离。baseline marker 的 `reportRunId` 指向 run 所属报告，旧 marker 缺字段时只查实验级报告；旧 scene 缺 `recoveryProviderRunId` 时继续使用 `environment/baselines/`。旧根级文件不迁移、不覆写，新读端按明确 owner 读取，不能用另一 run 的同名 artifact 填补缺失。
 
+## 冻结任务保全
+
+共享冻结入口不删除或重写任何已存在的 case 目录。复用前校验 `TaskCaseSchema`、支持的版本（当前为 1）、完整标记及按 JSON 持久化语义规范化后、除 `provenance.importedAt` 外的冻结内容；同来源同选择的合法重试返回原对象。选择起始消息、证据或隐私条件变化，以及旧数据损坏、版本未知或缺完整标记，均明确拒绝并保留旧目录和字节。并发发布后失败的回读遵循同一条件，不把另一任务当作本次成功。
+
+当前 case ID 仍由来源 hash 派生，因此同一来源不同起点暂不能在同一 casesRoot 并存；需要保留原 case，待版本化身份方案完成或显式选择另一冻结根。此修复不迁移旧数据，也不声明已经验证所有附件完整性或实现新的目录并发占有协议。取舍见[冻结任务保全](../decisions/accepted/2026-10-14-frozen-case-preservation.md)。
+
 ## 模型输入可追溯
 
 Controller、Recovery、Comparison 都通过 Agent Session Host 生成模型请求。Host 把 system prompt、用户消息、工具结果和结构化结果写入审计事实；普通 generation 另保存 Pi 转换与裁剪后、经过凭据脱敏的实际上下文快照，保留原生工具参数及 SDK 拒绝消息；[`model-input.ts`](../../src/infrastructure/agent/model-input.ts) 从事件日志重建请求。上下文压缩必须追加 `agent.context_compacted`，其中 summary 与 retained tail 是后续请求可见的输入来源。新增模型可见事实必须先写入事件审计（必要时再由 briefing 做可读投影），不能只存在内存变量。
