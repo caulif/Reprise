@@ -2,7 +2,7 @@ import type { ComparisonResources } from '../core/schema.js';
 import type { AgentAuditEvent } from '../infrastructure/agent/host.js';
 
 export const DEFAULT_COMPARISON_RESOURCES: Readonly<ComparisonResources> = Object.freeze({
-  maxElapsedMs: 1_800_000,
+  maxElapsedMs: 24 * 60 * 60_000,
 });
 
 class ComparisonResourceLimit extends Error {}

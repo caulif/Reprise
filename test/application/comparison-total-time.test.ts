@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { ComparisonResourceTracker, DEFAULT_COMPARISON_RESOURCES, comparisonUsesTotalTimeOnly } from '../../src/agents/comparison-resources.js';
 import { comparisonTimeout, comparisonWorkDeadline, comparisonOutputContinuation } from '../../src/agents/comparison-invocation-boundaries.js';
 
-test('default Comparison has only a thirty-minute total limit across requests, tools and save phases', t => {
+test('default Comparison has only a twenty-four-hour total limit across requests, tools and save phases', t => {
   t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
-  assert.deepEqual(DEFAULT_COMPARISON_RESOURCES, { maxElapsedMs: 1_800_000 });
+  assert.deepEqual(DEFAULT_COMPARISON_RESOURCES, { maxElapsedMs: 24 * 60 * 60_000 });
   const tracker = new ComparisonResourceTracker(DEFAULT_COMPARISON_RESOURCES, { boundedStages: true, totalTimeOnly: comparisonUsesTotalTimeOnly(DEFAULT_COMPARISON_RESOURCES) });
   assert.equal(tracker.totalTimeOnly, true);
   assert.equal(comparisonUsesTotalTimeOnly({}), false);
@@ -22,8 +22,9 @@ test('default Comparison has only a thirty-minute total limit across requests, t
   }
   assert.equal(tracker.snapshot().remainingRequests, null);
   assert.equal(tracker.snapshot().remainingTools, null);
-  assert.equal(comparisonTimeout(tracker, DEFAULT_COMPARISON_RESOURCES, 5_000), 240_000);
-  t.mock.timers.tick(239_999);
+  const remainingMs = 24 * 60 * 60_000 - 12 * 130_000;
+  assert.equal(comparisonTimeout(tracker, DEFAULT_COMPARISON_RESOURCES, 5_000), remainingMs);
+  t.mock.timers.tick(remainingMs - 1);
   assert.equal(tracker.beforeTool('preview_report'), undefined, 'no hidden finishing reserve');
   t.mock.timers.tick(1);
   assert.throws(() => tracker.beforeTool('preview_report'), /maxElapsedMs/);

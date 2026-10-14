@@ -23,7 +23,7 @@ export async function recoverExperiment(
   input: RecoveryAttemptInput,
 ): Promise<RecoveryAttempt> {
   const localAbort = new AbortController();
-  const deadline = AbortSignal.timeout(30 * 60_000);
+  const deadline = AbortSignal.timeout(24 * 60 * 60_000);
   const signal = AbortSignal.any([...(input.signal ? [input.signal] : []), localAbort.signal, deadline]);
   const activity = input.activity ?? registerActivity({
     kind: "prepare",

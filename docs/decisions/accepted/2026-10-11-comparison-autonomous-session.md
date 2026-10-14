@@ -2,6 +2,8 @@
 
 状态：accepted
 
+默认时间预算由[24 小时与 256k 默认预算](2026-10-14-agent-default-budgets.md)更新；下文保留当时的选择理由。
+
 取代默认生产 Comparison 的多阶段、强制 findings 保存和独立 reviewer 调度；旧端口及旧事件恢复契约保持兼容。[整体时间预算](2026-10-11-comparison-total-time-budget.md)中的默认三十分钟继续适用，周期保存与独立审阅不再是默认要求。
 
 ## 问题

@@ -32,7 +32,7 @@ History 从已校验的提交日志前缀构造只读附件读取器，每个 Se
 
 下文关于多阶段、独立审阅、findings、inspection、decisionSummary/disposition、周期 source-save 与字符配额的规则只描述旧 `ComparisonAgent` 兼容端口及历史恢复契约，不再是默认生产流程。旧请求仍按原标记验证，不自动降级成自主模式。共享的授权、证据、原生图片、审计、安全 shell 和原子发布规则继续适用。
 
-默认 Comparison 仅有整体 30 分钟预算，不默认限制请求数、工具数、费用、来源阶段时间、保存累计耗时或续查次数。自主模式的空资源 override 也保留默认整体截止；显式请求/工具/费用限制仍执行，但不引入阶段截止。每次调用使用整体实际剩余时间与单次调用 timeout 的较小值。取消、数据授权、工具大小和并发容量及发布完整性检查继续有效。详见[整体时间预算](../decisions/accepted/2026-10-11-comparison-total-time-budget.md)。
+默认 Comparison 仅有整体 24 小时预算，不默认限制请求数、工具数、费用、来源阶段时间、保存累计耗时或续查次数。自主模式的空资源 override 也保留默认整体截止；显式请求/工具/费用限制仍执行，但不引入阶段截止。每次调用使用整体实际剩余时间与单次调用 timeout 的较小值。取消、数据授权、工具大小和并发容量及发布完整性检查继续有效。详见[整体时间预算](../decisions/accepted/2026-10-14-agent-default-budgets.md)。
 
 严格三会话路径向模型提供单一 schema 的 `update_comparison_findings_delta`，专用端点允许省略重复 `kind`，由 Host 补为 delta 并校验；通用工具仍要求原判别字段。范围字段允许字面标签名且在报告中转义，仍限制非空单行、长度及数量。delta 的 `addedFindings` / `addedQuestions` 可新增观察或问题；已有每个 ID 仍须完整且恰好一次 retain/replace，新增不能覆盖旧身份。Host 根据真实当前记录合成 canonical submission，继续经过原 `Value.Check`、来源及 catalog/findings 绑定校验，不补造语义内容。完整工具保留兼容，两个名称在全部阶段、完成回调和副作用入口服从相同守卫。
 
@@ -187,7 +187,7 @@ Comparison 的 `view_image({ref})` 只观察当前 catalog 注册的 PNG 媒体�
 
 ## Comparison 并行与阶段续查
 
-Comparison 的独立 read/ls/grep/view_image/render_artifact 使用 Pi 原生并行批次；其它工具省略执行模式时保持串行，混合批整体串行。渲染采用独立输出目录、最多两路并发，媒体登记沿用有序队列。默认仅整体 30 分钟截止，不设置来源或保存阶段配额。显式旧配额模式才使用累计保存窗口、来源活动时间暂停及最多两次有界续查；授予及拒绝进入 comparison.sources_continued。
+Comparison 的独立 read/ls/grep/view_image/render_artifact 使用 Pi 原生并行批次；其它工具省略执行模式时保持串行，混合批整体串行。渲染采用独立输出目录、最多两路并发，媒体登记沿用有序队列。默认仅整体 24 小时截止，不设置来源或保存阶段配额。显式旧配额模式才使用累计保存窗口、来源活动时间暂停及最多两次有界续查；授予及拒绝进入 comparison.sources_continued。
 
 transform_image 裁剪/缩放已有冻结 PNG，使用原图像素坐标并记录父 hash 和变换顺序；返回派生 media ref，再由 view_image 交付图片。工具不重新渲染来源，不证明视觉理解。source-save 的 evidence 投影保留全部 user 材料、工具结果与调用配对，仅省略 assistant 叙述，实际输入仍按 generation 快照恢复。首流事件、首文本 delta 与工具执行计时用于诊断，不把首 SDK 事件当网络 TTFT。详见[并行与续查决定](../decisions/accepted/2026-10-11-comparison-parallel-continuation.md)。
 
