@@ -100,19 +100,25 @@ async function ensureHost(
   const ownerInstanceId = `own-${randomUUID()}`;
   const token = randomBytes(32).toString("hex");
   const ipcDir = controlIpcDir(dataDir, ownerInstanceId);
-  await writeControlToken(ipcDir, token);
-  const endpoint = controlEndpointFor(ownerInstanceId, ipcDir);
-  const listener = await listenControlEndpoint({
-    ipcDir,
-    endpoint,
-    onRequest: async (request) => {
-      if (request.token !== token || request.ownerInstanceId !== ownerInstanceId) {
-        return { protocolVersion: CONTROL_PROTOCOL_VERSION, status: "auth_failed", operationId: request.operationId };
-      }
-      return onCancel(request.operationId);
-    },
-  });
-  const created = { ownerInstanceId, dataDir: key, endpoint, close: listener.close };
-  hosts.set(key, created);
-  return created;
+  try {
+    await writeControlToken(ipcDir, token);
+    const endpoint = controlEndpointFor(ownerInstanceId, ipcDir);
+    const listener = await listenControlEndpoint({
+      ipcDir,
+      endpoint,
+      onRequest: async (request) => {
+        if (request.token !== token || request.ownerInstanceId !== ownerInstanceId) {
+          return { protocolVersion: CONTROL_PROTOCOL_VERSION, status: "auth_failed", operationId: request.operationId };
+        }
+        return onCancel(request.operationId);
+      },
+    });
+    const created = { ownerInstanceId, dataDir: key, endpoint, close: listener.close };
+    hosts.set(key, created);
+    return created;
+  } catch (error) {
+    try { await removeOwnerIpc(ipcDir); }
+    catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Control host startup and IPC cleanup failed.', { cause: cleanupError }); }
+    throw error;
+  }
 }

@@ -1,4 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
+export { RunStartupFailureSchema, RunCleanupFailureSchema, type RunStartupFailure, type RunCleanupFailure } from './schemas/run-startup.js';
+export { ExperimentWriterLeaseSchema, type ExperimentWriterLease } from './schemas/run-startup.js';
 export { RecoveryGitStartSchema, type RecoveryGitStart } from './recovery-git-start.js';
 export { ComparisonAutonomousContractSchema } from './comparison-review-schema.js';
 import { EvidenceRefSchema, Hash, Id } from "./schemas/ids.js";

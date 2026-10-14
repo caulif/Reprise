@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createExperimentWorkflow, createHarnessWorkflow, TUI_RUN_POLICY } from '../../src/application/experiment-workflow.js';
 import { beginRun, candidateStartBlocked, startRunSetup } from '../../src/tui/controller-run.js';
 import { fakeProductPack } from '../fixtures/fake-pack/pack.js';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PiModelCaller } from '../../src/infrastructure/agent/model-caller.js';
@@ -14,6 +14,8 @@ import type { RecoveryView } from '../../src/application/recovery/view.js';
 import { mockTui } from '../../scripts/tui-audit-lib.js';
 import { renderWorkbench } from '../../src/tui/workbench.js';
 import { waitFor } from '../codex-intake-support.js';
+import { input, VerifiedRuntime } from '../codex-experiment-support.js';
+import { codexProductPack } from '../../src/products/packs/codex/pack.js';
 import {
   createFakeClock,
   createScriptedSyntheticWorkflow,
@@ -34,8 +36,10 @@ test('connection probe failures preserve their phase and show localized retry gu
   await saveHarnessModelConfig(dataDir, defaultHarnessModelConfig());
   const cause = Object.assign(new Error('Upstream request failed: provider detail'), { status: 503 });
   t.mock.method(PiModelCaller.prototype, 'validate', async () => { throw cause; });
-  const workflow = createHarnessWorkflow({ dataDir, now: () => new Date().toISOString() });
-  await assert.rejects(workflow.recover({ taskCase: {} as never, sourceRoot: dataDir }), (error: unknown) => {
+  const base = input(dataDir, new VerifiedRuntime());
+  await mkdir(base.sourceRoot);
+  const workflow = createHarnessWorkflow({ dataDir, pack: codexProductPack, now: () => new Date().toISOString() });
+  await assert.rejects(workflow.recover({ taskCase: base.taskCase, sourceRoot: base.sourceRoot }), (error: unknown) => {
     assert.ok(error instanceof Error);
     assert.equal(error.name, 'HarnessProbeError');
     assert.equal(error.cause, cause);
@@ -57,10 +61,12 @@ test('recover publishes activity before the billable connection probe', async (t
     order.push('probe');
     throw new Error('stop-after-probe-order');
   });
-  const workflow = createHarnessWorkflow({ dataDir, now: () => new Date().toISOString() });
+  const base = input(dataDir, new VerifiedRuntime());
+  await mkdir(base.sourceRoot);
+  const workflow = createHarnessWorkflow({ dataDir, pack: codexProductPack, now: () => new Date().toISOString() });
   await assert.rejects(workflow.recover({
-    taskCase: { caseId: 'case-order', source: { productId: 'codex', sessionId: 's' } } as never,
-    sourceRoot: dataDir,
+    taskCase: base.taskCase,
+    sourceRoot: base.sourceRoot,
     onActivity: () => { order.push('activity'); },
   }), /stop-after-probe-order|HarnessProbeError/);
   assert.deepEqual(order, ['activity', 'probe']);
@@ -80,8 +86,10 @@ test('production Recovery forwards cancellation to the probe and does not miscla
     await new Promise<void>((_resolve, reject) => signal?.addEventListener('abort', () => reject(new DOMException('Operation cancelled', 'AbortError')), { once: true }));
     return {};
   });
-  const workflow = createHarnessWorkflow({ dataDir, now: () => new Date().toISOString() });
-  const pending = workflow.recover({ taskCase: {} as never, sourceRoot: dataDir, signal: abort.signal });
+  const base = input(dataDir, new VerifiedRuntime());
+  await mkdir(base.sourceRoot);
+  const workflow = createHarnessWorkflow({ dataDir, pack: codexProductPack, now: () => new Date().toISOString() });
+  const pending = workflow.recover({ taskCase: base.taskCase, sourceRoot: base.sourceRoot, signal: abort.signal });
   await ready;
   abort.abort();
   await assert.rejects(pending, { name: 'AbortError' });
@@ -393,20 +401,31 @@ test('controller event handling clears a previous comparison end when another at
   assert.equal(app.page, 'error');
 });
 
-test('startup cancellation reaches the Harness probe and prevents experiment creation', async () => {
+test('startup cancellation reaches the Harness probe and preserves an admitted cancelled attempt', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-startup-probe-cancel-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const base = input(root, new VerifiedRuntime());
+  await mkdir(base.sourceRoot);
   const abort = new AbortController();
   let release!: () => void;
   const pending = new Promise<void>((resolve) => { release = resolve; });
   let observed: AbortSignal | undefined;
-  const workflow = createExperimentWorkflow({ dataDir: 'unused', now: () => '2026-09-06T00:00:00.000Z',
+  const workflow = createExperimentWorkflow({ dataDir: base.dataDir, pack: codexProductPack, now: () => base.now,
+    defaults: { candidate: base.candidate, policy: base.policy },
     agents: async (signal) => { observed = signal; await pending; return {} as never; },
   });
-  const started = workflow.start({ taskCase: {} as never, sourceRoot: 'unused', onEvent: () => {}, signal: abort.signal });
+  const started = workflow.start({ taskCase: base.taskCase, sourceRoot: base.sourceRoot, onEvent: () => {}, signal: abort.signal,
+    experimentId: base.experimentId, runId: base.runId });
+  await waitFor(() => observed !== undefined);
   abort.abort();
   const failure = assert.rejects(started, { name: 'AbortError' });
   release();
   await failure;
   assert.equal(observed?.aborted, true);
+  const failureRecord: unknown = JSON.parse(await readFile(join(base.dataDir, 'experiments', base.experimentId, 'runs', base.runId, 'startup-failure.json'), 'utf8'));
+  assert.ok(failureRecord && typeof failureRecord === 'object' && 'status' in failureRecord && 'stage' in failureRecord);
+  assert.equal(failureRecord.status, 'cancelled');
+  assert.equal(failureRecord.stage, 'agents');
 });
 
 test('source blockedReasons do not block a recovered candidate', () => {

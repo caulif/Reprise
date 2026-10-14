@@ -9,6 +9,10 @@ import { ComparisonResourceSummarySchema, ComparisonSourceContinuationSchema, Ag
 import { SAFE_ID, sha256, eventEnvelopeChecksum, runOperationId, writeAtomic, writeImmutable } from '../../core/identity.js';
 import {
   ArtifactRefSchema,
+  RunStartupFailureSchema,
+  RunCleanupFailureSchema,
+  ExperimentWriterLeaseSchema,
+  type ExperimentWriterLease,
   ArtifactManifestSchema,
   EventEnvelopeSchema,
   ComparisonPhaseRequestedPayloadSchema,
@@ -72,13 +76,7 @@ export interface ReplayedRun {
   readonly eventIds: readonly string[];
 }
 
-interface LockInfo {
-  readonly experimentId: string;
-  readonly pid: number;
-  readonly nonce: string;
-  readonly startedAt: string;
-  readonly host: string;
-}
+type LockInfo = ExperimentWriterLease;
 
 function eventChecksum(event: Omit<EventEnvelope, 'checksum'>): string {
   return eventEnvelopeChecksum(event);
@@ -99,9 +97,7 @@ function freezeEvent(event: EventEnvelope): EventEnvelope {
 }
 
 function isLockInfo(value: unknown): value is LockInfo {
-  if (!value || typeof value !== 'object') return false;
-  const lock = value as Partial<LockInfo>;
-  return typeof lock.experimentId === 'string' && typeof lock.pid === 'number' && Number.isInteger(lock.pid) && lock.pid > 0 && typeof lock.nonce === 'string' && typeof lock.startedAt === 'string' && typeof lock.host === 'string';
+  return Value.Check(ExperimentWriterLeaseSchema, value);
 }
 
 function assertId(value: string, name: string): void {
@@ -171,6 +167,7 @@ export class ExperimentStore {
       startedAt: new Date().toISOString(),
       host: hostname(),
     };
+    if (!Value.Check(ExperimentWriterLeaseSchema, lock)) throw new Error('Invalid writer lease.');
     try {
       await writeFile(this.#lockPath, `${JSON.stringify(lock)}\n`, { encoding: 'utf8', flag: 'wx' });
       this.#lockHeld = true;
@@ -187,16 +184,20 @@ export class ExperimentStore {
 
   async close(): Promise<void> {
     if (!this.#lockHeld) return;
-    let tailError: unknown;
+    const errors: unknown[] = [];
     try {
       await this.#artifactTail;
       await this.#appendTail;
     } catch (error) {
-      tailError = error;
-    } finally {
-      await this.#releaseWriterLock();
+      errors.push(error);
     }
-    if (tailError !== undefined) throw tailError instanceof Error ? tailError : new Error('Experiment store close failed.');
+    try {
+      await this.#releaseWriterLock();
+    } catch (error) {
+      errors.push(error);
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) throw new AggregateError(errors, 'Experiment store flush and lock release failed.', { cause: errors[0] });
   }
 
   async #releaseWriterLock(): Promise<void> {
@@ -213,12 +214,14 @@ export class ExperimentStore {
       let value: unknown;
       try {
         value = JSON.parse(raw) as unknown;
-      } catch {
-        value = undefined;
+      } catch (error) {
+        throw new Error('Writer lock is malformed; ownership cannot be verified.', { cause: error });
       }
-      if (isLockInfo(value) && (value.experimentId !== this.#experimentId || value.nonce !== nonce)) owned = false;
+      if (!isLockInfo(value)) throw new Error('Writer lock is invalid; ownership cannot be verified.');
+      if (value.experimentId !== this.#experimentId || value.nonce !== nonce) owned = false;
     } catch (error: unknown) {
       if (errorCode(error) === 'ENOENT') return;
+      throw error;
     }
     if (!owned) return;
     await rm(this.#lockPath, { force: true });
@@ -367,6 +370,16 @@ export class ExperimentStore {
     if (event.type === 'comparison.resources_completed' && !Value.Check(ComparisonResourceSummarySchema, event.payload)) throw new Error('comparison.resources_completed payload does not satisfy its schema.');
     if ((event.type === 'comparison.plan_requested' || event.type === 'comparison.report_requested') && !Value.Check(ComparisonPhaseRequestedPayloadSchema, event.payload)) throw new Error(`${event.type} payload does not satisfy its schema.`);
     if (event.type === 'candidate.user_view_persisted' && !Value.Check(UserVisibleTurnSchema, event.payload)) throw new Error('candidate.user_view_persisted payload does not satisfy its schema.');
+    if (event.type === 'run.startup_failed' || event.type === 'run.cleanup_failed') {
+      const schema = event.type === 'run.startup_failed' ? RunStartupFailureSchema : RunCleanupFailureSchema;
+      if (!Value.Check(schema, event.payload) || event.payload.experimentId !== this.#experimentId || event.payload.runId !== event.runId) {
+        throw new Error(`${event.type} payload does not satisfy its schema and owner.`);
+      }
+      const attempt = this.#events.find(item => item.type === 'run.attempt_created' && item.runId === event.runId)?.payload;
+      if (!Value.Check(RunAttemptSchema, attempt) || attempt.caseId !== event.payload.caseId) {
+        throw new Error(`${event.type} must belong to a committed RunAttempt.`);
+      }
+    }
     freezeEvent(event);
     if (persist) await writeFile(this.#eventsPath, `${JSON.stringify(event)}\n`, { encoding: 'utf8', flag: 'a' });
     this.#events.push(event);

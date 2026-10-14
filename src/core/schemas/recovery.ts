@@ -325,6 +325,7 @@ export const RecoveryLifecycleAttemptSchema = Type.Object({
     Type.Literal("validated"),
   ]),
   operation: Type.Union([
+    Type.Literal("initialize"),
     Type.Literal("begin_staging"),
     Type.Literal("restore_confirmed_git_start"),
     Type.Literal("resolve_facts"),
