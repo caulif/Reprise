@@ -28,7 +28,7 @@ export type PiCompactionAudit = {
 
 export function contextWindowOf(model: { contextWindow?: number }): number {
   const window = model.contextWindow;
-  return typeof window === "number" && window > 0 ? window : 128_000;
+  return typeof window === "number" && window > 0 ? window : 256_000;
 }
 
 export function estimatedMessageTokens(messages: readonly AgentMessage[]): number {

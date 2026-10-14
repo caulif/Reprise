@@ -105,7 +105,7 @@ node dist/scripts/comparison-coding-trial.js C:/trial/inputs C:/trial/run-01 C:/
 Remove-Item Env:REPRISE_REAL_MODEL
 ```
 
-真实调用可能计费。输入不得使用生产工作区或凭据目录；Shell 沿用现有命令检查，不是操作系统沙箱。工具中的 `source/` 是只读文件挂载，Shell 使用 `REPRISE_SOURCE_MOUNT`。工作文件在输出的 `work/`，完整模型输入与图片审计在 `audit/`；输入前后 hash、耗时和执行状态在 `summary.json`。仅设三十分钟整体截止，没有请求或工具次数配额。正常结束、完整 HTML 存在且输入未变才记为 completed，语义质量仍需独立检查。
+真实调用可能计费。输入不得使用生产工作区或凭据目录；Shell 沿用现有命令检查，不是操作系统沙箱。工具中的 `source/` 是只读文件挂载，Shell 使用 `REPRISE_SOURCE_MOUNT`。工作文件在输出的 `work/`，完整模型输入与图片审计在 `audit/`；输入前后 hash、耗时和执行状态在 `summary.json`。仅设24 小时整体截止，没有请求或工具次数配额。正常结束、完整 HTML 存在且输入未变才记为 completed，语义质量仍需独立检查。
 
 仓库提供[通用报告骨架](../scripts/comparison-report-template.html)与[配套提示词](../scripts/comparison-report-prompt.txt)。将骨架复制到专用输入副本的 `report-template.html`，并按实际输入调整提示词末尾的任务描述，再将提示词绝对路径作为第四个参数。骨架仅保留总体判断、关键差异和运行指标，证据紧邻对应差异，不设置补充详情或方法附录；指标使用 h/m/s、总 Tokens 的 k/M 缩写及美元估算费用。具体展示约定由提示词拥有。模板与计量材料和其他输入一样纳入 hash 与模型输入审计，不包含本机样本结论；调用者也可使用自己的 prompt 和骨架。
 

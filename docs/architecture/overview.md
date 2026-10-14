@@ -62,6 +62,8 @@ Core 定义 [schema](../../src/core/schema.ts)、[状态转换](../../src/core/s
 | `turnTimeoutMs` | 7200000（2 小时） |
 | `maxConsecutiveNoProgress` | 2 |
 
-token 与成本上限默认不启用。Controller 单次 `timeoutMs` 为 0；Comparison 默认单个自主 Session，整体最多 30 分钟，单次调用还受 harness `budget.callTimeoutMs` 约束（默认 24 小时）。
+token 与成本上限默认不启用。Controller 单次 `timeoutMs` 为 0；Comparison 默认单个自主 Session，整体最多 24 小时，单次调用还受 harness `budget.callTimeoutMs` 约束（默认 24 小时）。
 <!-- END GENERATED default-run-policy -->
+
+自定义 OpenAI-compatible 模型未显式配置时，上下文窗口默认 256,000 tokens，单次最大输出仍为 16,384 tokens；目录模型与显式配置保留原值。
 

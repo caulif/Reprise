@@ -2,12 +2,25 @@ import { AgentHost } from '../../src/infrastructure/agent/host.js';
 import { comparisonWorkDeadline } from '../../src/agents/comparison-invocation-boundaries.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ComparisonResourceTracker } from '../../src/agents/comparison-resources.js';
+import { ComparisonResourceTracker, DEFAULT_COMPARISON_RESOURCES } from '../../src/agents/comparison-resources.js';
 import type { AgentAuditEvent } from '../../src/infrastructure/agent/host.js';
 
 function event(type: AgentAuditEvent['type'], payload: Record<string, unknown> = {}): AgentAuditEvent {
   return { type, payload, role: 'comparison', sessionId: 'session' };
 }
+
+test('default Comparison permits work beyond thirty minutes and stops at twenty-four hours', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  const tracker = new ComparisonResourceTracker(DEFAULT_COMPARISON_RESOURCES, { totalTimeOnly: true });
+  t.mock.timers.tick(30 * 60_000);
+  assert.equal(tracker.beforeTool('read'), undefined);
+  assert.equal(tracker.snapshot().remainingMs, 23.5 * 60 * 60_000);
+  tracker.phase('review');
+  t.mock.timers.tick(23.5 * 60 * 60_000 - 1);
+  assert.equal(tracker.beforeTool('preview_report'), undefined);
+  t.mock.timers.tick(1);
+  assert.throws(() => tracker.beforeTool('preview_report'), /maxElapsedMs/);
+});
 
 test('hard model limit rejects the next generation or compaction before counting it', () => {
   const tracker = new ComparisonResourceTracker({ maxModelRequests: 1 });

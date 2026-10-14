@@ -49,7 +49,7 @@ export function createCodingComparisonTools(input: { sourceRoot: string; workRoo
   const tools = workspaceTools(input.workRoot, {
     role: 'comparison', allowBinary: true, allowShell: true,
     mounts: { source: input.sourceRoot }, allowWrite: () => true, completionPaths: new Set(),
-    homeRoot: join(input.workRoot, '.home'), shellTimeoutMs: 30 * 60_000,
+    homeRoot: join(input.workRoot, '.home'), shellTimeoutMs: 24 * 60 * 60_000,
     shellEnv: { REPRISE_SOURCE_MOUNT: input.sourceRoot },
   }).map(tool => ({ ...tool, ...(['read', 'ls', 'grep', 'find'].includes(tool.name) ? { executionMode: 'parallel' as const } : {}) }));
   return withCodingShellBoundary([...tools, {
