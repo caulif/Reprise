@@ -16,6 +16,7 @@ import { AgentHost, type ProviderAdapter } from '../../src/infrastructure/agent/
 import { sha256 } from '../../src/core/identity.js';
 import { startExperiment } from '../../src/application/experiment.js';
 import { input, VerifiedRuntime } from '../codex-experiment-support.js';
+import { protocolPreviewRenderer } from '../support/protocol-preview-renderer.js';
 
 async function fixture(t: { after: (fn: () => Promise<void>) => void }, persist?: (record: ComparisonDiscoveryRecord) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), 'reprise-findings-delta-')); t.after(() => rm(root, { recursive: true, force: true }));
@@ -297,12 +298,12 @@ for (const changed of [false, true]) test(`production ${changed ? 'replacement' 
         await call('inspect_comparison_draft', {}, signal);
       } else if (content.includes('This is the preview-only closure')) {
         assert.ok(actualDelta); assert.deepEqual(allowedToolNames, ['preview_report']);
-        const receipt = JSON.parse((await call('preview_report', {}, signal)).content) as { status: string }; assert.equal(receipt.status, 'ok');
+        const receipt = JSON.parse((await call('preview_report', {}, signal)).content) as { status: string }; assert.equal(receipt.status, 'ok', JSON.stringify(receipt));
       }
       const reason = await yieldAfterTurn?.(); return reason ? { status: 'yielded' as const, reason } : '';
     }, cancel() {} };
   } }) });
-  const result = await startExperiment({ ...base, comparison }).result;
+  const result = await startExperiment({ ...base, comparison, comparisonPreviewRenderer: protocolPreviewRenderer(message => t.diagnostic(message)) }).result;
   assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result)); assert.equal(turns, 9); assert.ok(actualDelta);
   const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { sequence: number; type: string; payload: Record<string, unknown> });
   assert.equal(events.filter(event => event.type === 'comparison.findings_updated').length, changed ? 2 : 1);
