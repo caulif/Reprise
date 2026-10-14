@@ -228,7 +228,7 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
       }
       const capturedAt = (deps.now ?? (() => new Date()))().toISOString();
       const registrations = await deps.catalog.registerDerivedMediaBatch(
-        artifactFrameRegistrations(source, rendered.frames, rendered.measured.viewport, capturedAt, rendered.measured.layout));
+        artifactFrameRegistrations(source, rendered.frames, rendered.measured.viewport, capturedAt));
       if (!registrations.ok) return finish("capture_failed", {
         status: "capture_failed",
         sourceRef: params.sourceRef,
@@ -310,7 +310,7 @@ function bindGeometrySample(frame: RenderFrame, queries: readonly RenderGeometry
   return { geometrySample: structuredClone(sample) };
 }
 
-function artifactFrameRegistrations(source: ComparisonRenderSource, frames: readonly RenderFrame[], viewport: RenderViewport, capturedAt: string, layout?: import("../infrastructure/artifact-render-types.js").RenderLayout): RegisterDerivedMediaInput[] {
+function artifactFrameRegistrations(source: ComparisonRenderSource, frames: readonly RenderFrame[], viewport: RenderViewport, capturedAt: string): RegisterDerivedMediaInput[] {
   return frames.map((frame) => ({
     side: source.side === "derived" ? "host" : source.side,
     pngPath: frame.pngPath,
@@ -325,7 +325,7 @@ function artifactFrameRegistrations(source: ComparisonRenderSource, frames: read
       actualTimeMs: frame.actualTimeMs,
       capturedAt,
       captureScope: "viewport",
-      ...(layout ? { documentHeight: layout.documentHeight, ...(layout.scrollOffset ? { scrollOffset: layout.scrollOffset } : {}) } : {}),
+      ...(frame.layout ? { documentHeight: frame.layout.documentHeight, ...(frame.layout.scrollOffset ? { scrollOffset: frame.layout.scrollOffset } : {}) } : {}),
     },
   }));
 }

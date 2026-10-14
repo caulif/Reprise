@@ -40,6 +40,8 @@ export type RenderFrame = {
   byteLength: number;
   contentHash: string;
   geometrySample?: RenderGeometrySample;
+  /** Observed immediately after this frame, not after the entire sample batch. */
+  layout?: RenderLayout;
 };
 
 export type RenderDiagnostic = {

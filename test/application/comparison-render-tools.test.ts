@@ -63,6 +63,8 @@ test("render_artifact registers frames through catalog and dedupes identical der
         pngPath,
         byteLength: bytes.byteLength,
         contentHash: sha256(bytes),
+        ...(index === 0 ? { layout: { viewportWidth: request.viewport.width, viewportHeight: request.viewport.height,
+          scrollWidth: request.viewport.width, documentHeight: 1600, scrollOffset: { x: 0, y: 0 }, imagesLoaded: 1, imagesFailed: 0, elements: {} } } : {}),
       });
     }
     return {
@@ -97,7 +99,11 @@ test("render_artifact registers frames through catalog and dedupes identical der
   assert.ok(registeredMeta && typeof registeredMeta === "object" && "derivation" in registeredMeta);
   assert.ok(Value.Check(Type.Object({ captureScope: Type.Literal("viewport"), scrollOffset: Type.Object({ x: Type.Number(), y: Type.Number() }) }), registeredMeta.derivation));
   assert.equal(registeredMeta.derivation.captureScope, "viewport");
-  assert.deepEqual(registeredMeta.derivation.scrollOffset, { x: 0, y: 800 });
+  assert.deepEqual(registeredMeta.derivation.scrollOffset, { x: 0, y: 0 });
+  const missingLayout: unknown = JSON.parse(await readFile(join(root, "media", "media-02.meta.json"), "utf8"));
+  assert.ok(Value.Check(Type.Object({ derivation: Type.Object({ documentHeight: Type.Optional(Type.Number()), scrollOffset: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number() })) }) }), missingLayout));
+  assert.equal(missingLayout.derivation.scrollOffset, undefined);
+  assert.equal(missingLayout.derivation.documentHeight, undefined);
   assert.equal(payload.media.length, 2);
   assert.equal(payload.media[0]?.shortRef, "media-01");
   assert.equal(payload.media[1]?.shortRef, "media-02");

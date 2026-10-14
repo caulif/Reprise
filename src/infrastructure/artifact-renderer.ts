@@ -246,14 +246,7 @@ async function renderDocumentBundle(request: RenderRequest): Promise<RenderResul
     const originMs = request.actions ? await evaluateJson<number>(opened.cdp, opened.pageSessionId, 'performance.now()') : navigated.originMs;
     const frames = await captureSampledFrames(opened.cdp, opened.pageSessionId, request, originMs, watchdog, diagnostics, navigated.geometryContextId);
     if (!frames.ok) return frames.result;
-    let layout: import("./artifact-render-types.js").RenderLayout | undefined;
-    if (request.layoutSelectors) {
-      try {
-        layout = await inspectDocumentLayout(opened.cdp, opened.pageSessionId, request.layoutSelectors);
-      } catch (error) {
-        diagnostics.push({ code: "layout_inspection_failed", message: error instanceof Error ? error.message : String(error) });
-      }
-    }
+    const layout = frames.frames.at(-1)?.layout;
     appendGuardDiagnostics(diagnostics, opened.guards);
     return {
       ok: true,
@@ -448,6 +441,14 @@ async function captureSampledFrames(
       ? await collectGeometrySample(session, pageSessionId, geometryContextId, request.geometryQueries, originMs, actualTimeMs, watchdog)
       : undefined;
     const data = await capturePngBase64(session, pageSessionId);
+    let layout: import("./artifact-render-types.js").RenderLayout | undefined;
+    if (request.layoutSelectors) {
+      try {
+        layout = await inspectDocumentLayout(session, pageSessionId, request.layoutSelectors);
+      } catch (error) {
+        diagnostics.push({ code: "layout_inspection_failed", message: error instanceof Error ? error.message : String(error) });
+      }
+    }
     const bytes = Buffer.from(data, "base64");
     if (bytes.byteLength <= 0) {
       return {
@@ -467,6 +468,7 @@ async function captureSampledFrames(
       byteLength: bytes.byteLength,
       contentHash: sha256(bytes),
       ...(geometrySample ? { geometrySample } : {}),
+      ...(layout ? { layout } : {}),
     });
   }
   return { ok: true, frames };
