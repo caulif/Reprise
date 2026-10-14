@@ -16,7 +16,7 @@ test('Harness agent factory shares one Pi session caller and persisted model cho
     providerId: 'openai-codex',
     requestedModel: 'gpt-5.6-terra',
     budget: { callTimeoutMs: 24 * 60 * 60_000, maxStructuredRepairAttempts: 1, comparisonResources: DEFAULT_COMPARISON_RESOURCES },
-    recoveryBudget: { callTimeoutMs: 30 * 60_000, maxStructuredRepairAttempts: 1 },
+    recoveryBudget: { callTimeoutMs: 24 * 60 * 60_000, maxStructuredRepairAttempts: 1 },
   });
 });
 

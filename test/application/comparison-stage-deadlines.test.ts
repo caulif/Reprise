@@ -23,7 +23,7 @@ test('slow investigation/save no longer compresses author work to nine seconds',
 
 test('larger budgets expand actual stage windows and saving protects a complete author window', t => {
   t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
-  assert.equal(DEFAULT_COMPARISON_RESOURCES.maxElapsedMs, 1_800_000);
+  assert.equal(DEFAULT_COMPARISON_RESOURCES.maxElapsedMs, 24 * 60 * 60_000);
   for (const total of [60_000, 1_200_000, 2_400_000]) {
     const tracker = bounded(total), scale = total / 1_200_000;
     assert.equal(tracker.investigationRemainingMs(), Math.min(240_000 * scale, 240_000));

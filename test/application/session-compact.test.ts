@@ -1,12 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Type } from '@sinclair/typebox';
-import { compactPiMessages, needsPiCompaction, prunePiMessagesForBudget, stripThinkMarkup } from '../../src/infrastructure/agent/compaction.js';
+import { compactPiMessages, contextWindowOf, needsPiCompaction, prunePiMessagesForBudget, stripThinkMarkup } from '../../src/infrastructure/agent/compaction.js';
 import { AgentHost, type AgentAuditEvent } from '../../src/infrastructure/agent/host.js';
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
 import type { Api, Model, Models } from '@earendil-works/pi-ai';
 
 const tinyWindowModel = { contextWindow: 1_000 } as Model<Api>;
+
+test('context window falls back to 256k while preserving explicit model windows', () => {
+  assert.equal(contextWindowOf({}), 256_000);
+  for (const contextWindow of [0, -1, NaN]) {
+    assert.equal(contextWindowOf({ contextWindow }), 256_000);
+  }
+  assert.equal(contextWindowOf({ contextWindow: 128_000 }), 128_000);
+});
 
 test('pruning preserves native image bytes larger than the text stub budget and bounds older frames', () => {
   const image = { type: 'image' as const, mimeType: 'image/png', data: Buffer.alloc(32_768).toString('base64') };

@@ -70,7 +70,7 @@ function formatRunPolicy(policy) {
     `| \`turnTimeoutMs\` | ${policy.turnTimeoutMs}（${hours(policy.turnTimeoutMs)} 小时） |`,
     `| \`maxConsecutiveNoProgress\` | ${policy.maxConsecutiveNoProgress} |`,
     '',
-    'token 与成本上限默认不启用。Controller 单次 `timeoutMs` 为 0；Comparison 默认单个自主 Session，整体最多 30 分钟，单次调用还受 harness `budget.callTimeoutMs` 约束（默认 24 小时）。',
+    'token 与成本上限默认不启用。Controller 单次 `timeoutMs` 为 0；Comparison 默认单个自主 Session，整体最多 24 小时，单次调用还受 harness `budget.callTimeoutMs` 约束（默认 24 小时）。',
   ].join('\n');
 }
 
@@ -99,7 +99,7 @@ function selfTest() {
   if (!unlimitedPolicyBody.includes('| `wallClockMs` | 未配置（无总时限） |') || /wallClockMs[^\n]*(?:undefined|NaN)/.test(unlimitedPolicyBody)) {
     throw new Error('gen-docs self-test: missing wallClockMs must describe an unlimited total duration');
   }
-  if (!policyBody.includes('Comparison 默认单个自主 Session，整体最多 30 分钟') || policyBody.includes('始终有限')) {
+  if (!policyBody.includes('Comparison 默认单个自主 Session，整体最多 24 小时') || policyBody.includes('始终有限')) {
     throw new Error('gen-docs self-test: formatRunPolicy lost the autonomous Comparison deadline');
   }
   console.log('gen-docs self-test: replaceRegion updates marked regions');

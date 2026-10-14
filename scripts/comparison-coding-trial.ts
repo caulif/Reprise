@@ -50,11 +50,11 @@ const audit: AgentAuditSink = {
     return { artifactId, contentHash, byteLength: bytes.length };
   },
 };
-const started = Date.now(), deadline = started + 30 * 60_000;
+const started = Date.now(), deadline = started + 24 * 60 * 60_000;
 const controller = new AbortController();
 const interrupt = () => controller.abort();
 process.once('SIGINT', interrupt);
-const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30 * 60_000)]);
+const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(24 * 60 * 60_000)]);
 const tools = createCodingComparisonTools({ sourceRoot, workRoot });
 const session = await new AgentHost(new PiModelCaller(config)).createSession({
   role: 'comparison', allowModelText: true, audit, tools,
