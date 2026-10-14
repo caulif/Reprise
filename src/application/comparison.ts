@@ -17,7 +17,6 @@ import type { AgentAuditSink, AgentToolDefinition, StructuredAgentResult } from 
 import { recoveryEvidenceCatalog } from '../products/history/source-refs.js';
 import {
   aggregateHistoricalUsage,
-  busyMsFromHistoricalEvents,
   factsFromUsage,
   usagePricing,
 } from './session-usage.js';
@@ -25,6 +24,8 @@ import { loadOperatorPricingOverride, MODEL_PRICING_TABLE_VERSION } from './mode
 import type { ComparisonMetricSide } from '../agents/comparison-agent.js';
 import { extractHostZoneSnapshot, metricsFromReportFacts, renderComparisonReportShell } from './comparison-report-shell.js';
 import { readOperatorLocale } from './operator-locale.js';
+import type { TimingFacts } from '../core/timing-schema.js';
+import { historicalTurnTiming, timingComparable } from './session-timing.js';
 
 export type RunInspection = {
   runId: string;
@@ -37,6 +38,7 @@ export type RunInspection = {
   rejectedApprovals: number;
   turns: number;
   wallClockMs?: number;
+  turnTiming?: TimingFacts;
   tokenCount?: number;
   tokenUsage?: { total?: number; input?: number; output?: number; cached?: number; reasoning?: number };
   costUsd?: number;
@@ -179,7 +181,7 @@ function usableComparisonModel(value: string | undefined): string | undefined {
 
 function projectedMetrics(taskCase: TaskCase, inspection: RunInspection | undefined, run: RunRecord, dataDir?: string): ComparisonReportFacts['metrics'] {
   const baselineUsage = aggregateHistoricalUsage(taskCase.historicalEvents);
-  const baselineBusy = busyMsFromHistoricalEvents(taskCase.historicalEvents);
+  const baselineTiming = historicalTurnTiming(taskCase.historicalEvents);
   const baselineTokens = factsFromUsage(baselineUsage);
   const override = dataDir ? loadOperatorPricingOverride(dataDir) : undefined;
   const baselinePriced = usagePricing(baselineUsage, taskCase.sourceRuntimeEvidence.model, undefined, {
@@ -189,13 +191,13 @@ function projectedMetrics(taskCase: TaskCase, inspection: RunInspection | undefi
   const lastHistorical = taskCase.historicalEvents.at(-1);
   const baselineCollectedAt = typeof lastHistorical?.timestamp === "string" ? lastHistorical.timestamp : undefined;
   return {
-    baseline: sideMetrics(baselineBusy, baselineTokens, baselinePriced.costUsd, {
+    baseline: { ...sideMetrics(baselineTiming.valueMs, baselineTokens, baselinePriced.costUsd, {
       provider: taskCase.source.productId,
       usagePresent: baselineUsage !== undefined,
       ...(baselineCollectedAt ? { collectedAt: baselineCollectedAt } : {}),
       ...pricingFields(baselinePriced),
-    }),
-    candidate: sideMetrics(inspection?.wallClockMs, inspection?.tokenUsage, inspection?.costUsd, {
+    }), timing: baselineTiming },
+    candidate: { ...sideMetrics(inspection?.turnTiming ? inspection.turnTiming.valueMs : inspection?.wallClockMs, inspection?.tokenUsage, inspection?.costUsd, {
       provider: run.attempt.candidate.productId,
       usagePresent: inspection?.tokenUsage !== undefined || inspection?.costUsd !== undefined,
       collectedAt: run.attempt.createdAt,
@@ -207,6 +209,14 @@ function projectedMetrics(taskCase: TaskCase, inspection: RunInspection | undefi
         ...(inspection?.pricingRates ? { rates: inspection.pricingRates } : {}),
       }),
     }),
+      ...(inspection?.turnTiming ? { timing: inspection.turnTiming } : inspection?.wallClockMs === undefined ? {} : {
+        timing: { valueMs: inspection.wallClockMs, basis: 'run_wall_clock_span' as const,
+          coverage: { completedTurns: inspection.turns, measuredTurns: 0, openTurns: 0, status: 'unavailable' as const },
+          sources: [{ kind: 'run_span' as const, refs: [`run:${run.attempt.runId}`] }], diagnostics: ['legacy_run_span_only'] },
+      }),
+      ...(inspection?.wallClockMs === undefined ? {} : { spanElapsedMs: inspection.wallClockMs }),
+    },
+    timingComparable: timingComparable(baselineTiming, inspection?.turnTiming, { baseline: taskCase.source.productId, candidate: run.attempt.candidate.productId }),
   };
 }
 

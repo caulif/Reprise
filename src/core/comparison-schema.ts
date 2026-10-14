@@ -1,3 +1,4 @@
+import { TimingFactsSchema } from "./timing-schema.js";
 import { Type, type Static } from "@sinclair/typebox";
 const EvidenceRefSchema = Type.String({ pattern: "^(event|artifact):[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" });
 const ComparisonMediaRefSchema = Type.String({ pattern: "^media:[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" });
@@ -5,6 +6,8 @@ export type ComparisonMediaRef = Static<typeof ComparisonMediaRefSchema>;
 
 const MetricSideSchema = Type.Object({
   elapsedMs: Type.Optional(Type.Number()),
+  timing: Type.Optional(TimingFactsSchema),
+  spanElapsedMs: Type.Optional(Type.Number()),
   tokens: Type.Optional(Type.Object({
     total: Type.Number(),
     input: Type.Optional(Type.Number()),
@@ -40,13 +43,14 @@ const MetricSideSchema = Type.Object({
 
 const ComparisonReportFactsSchema = Type.Object({
   run: Type.Object({ runId: Type.String(), outcome: Type.String(), terminationCode: Type.String(), initiatedBy: Type.String(), elapsedMs: Type.Optional(Type.Number()), candidateElapsedMs: Type.Optional(Type.Number()) }),
-  models: Type.Object({ candidate: Type.String(), baseline: Type.Optional(Type.String()), controller: Type.Optional(Type.String()), comparison: Type.Optional(Type.String()) }),
+  models: Type.Object({ candidate: Type.String(), candidateRequested: Type.Optional(Type.String()), candidateResolved: Type.Optional(Type.String()), baseline: Type.Optional(Type.String()), controller: Type.Optional(Type.String()), comparison: Type.Optional(Type.String()) }),
   activity: Type.Object({ candidateTurns: Type.Optional(Type.Integer({ minimum: 0 })), controllerCalls: Type.Optional(Type.Integer({ minimum: 0 })), toolCalls: Type.Optional(Type.Object({ total: Type.Integer({ minimum: 0 }), succeeded: Type.Integer({ minimum: 0 }), failed: Type.Integer({ minimum: 0 }), rejectedApprovals: Type.Integer({ minimum: 0 }) })) }),
   limits: Type.Object({ wallClockMs: Type.Optional(Type.Number()), maxTargetTurns: Type.Optional(Type.Integer({ minimum: 0 })), maxModelCalls: Type.Optional(Type.Integer({ minimum: 0 })), triggered: Type.Array(Type.String()) }),
   runtime: Type.Object({ productId: Type.String(), sandbox: Type.Optional(Type.String()), approvalPolicy: Type.Optional(Type.String()), network: Type.Optional(Type.String()) }),
   delivery: Type.Object({ changedPaths: Type.Array(Type.String()), targetArtifactStatus: Type.String(), verificationStatus: Type.String(), changedPathsIndexed: Type.Optional(Type.Integer({ minimum: 0 })), changedPathsOmitted: Type.Optional(Type.Integer({ minimum: 0 })) }),
   replay: Type.Object({ sourceRootKind: Type.Optional(Type.String()), conditions: Type.Array(Type.String()), baselineEvidence: Type.String(), candidateEvidence: Type.String() }),
   metrics: Type.Optional(Type.Object({
+    timingComparable: Type.Optional(Type.Boolean()),
     baseline: Type.Optional(MetricSideSchema),
     candidate: Type.Optional(MetricSideSchema),
   })),
@@ -67,6 +71,9 @@ export const ComparisonMediaDerivationSchema = Type.Object({
     outputWidth: Type.Integer({ minimum: 1, maximum: 4096 }), outputHeight: Type.Integer({ minimum: 1, maximum: 4096 }),
     order: Type.Literal('crop_then_resize'),
   }, { additionalProperties: false })),
+  captureScope: Type.Optional(Type.Literal('viewport')),
+  scrollOffset: Type.Optional(Type.Object({ x: Type.Number({ minimum: 0 }), y: Type.Number({ minimum: 0 }) })),
+  documentHeight: Type.Optional(Type.Number({ minimum: 0 })),
   rendererVersion: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
   viewport: Type.Optional(Type.Object({
     width: Type.Integer({ minimum: 1, maximum: 8192 }),
@@ -97,10 +104,12 @@ export const ComparisonMediaRecordSchema = Type.Object({
   derivation: Type.Optional(ComparisonMediaDerivationSchema),
 });
 export type ComparisonMediaRecord = Static<typeof ComparisonMediaRecordSchema>;
-export const ComparisonReportModelSchema = Type.Object({
+export const ComparisonReportModelSchema = Type.Intersect([Type.Object({
   schemaVersion: Type.Literal(1),
   /** 2 = autonomous comparison/details zones. Absent or 1 = legacy four-zone audit files (readable, not rewritten). */
-  formatVersion: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2)])),
+  formatVersion: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2), Type.Literal(3)])),
+  boundary: Type.Optional(Type.String()),
+  differences: Type.Optional(Type.Array(Type.String(), { maxItems: 3 })),
   headline: Type.Optional(Type.String({ minLength: 1, maxLength: 280 })),
   task: Type.String(),
   status: Type.Object({
@@ -110,6 +119,7 @@ export const ComparisonReportModelSchema = Type.Object({
     terminationCode: Type.String(),
   }),
   metrics: Type.Optional(Type.Object({
+    timingComparable: Type.Optional(Type.Boolean()),
     baseline: Type.Optional(MetricSideSchema),
     candidate: Type.Optional(MetricSideSchema),
   })),
@@ -133,7 +143,10 @@ export const ComparisonReportModelSchema = Type.Object({
   }))),
   mediaRefs: Type.Array(ComparisonMediaRefSchema),
   limitationCodes: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
-});
+}), Type.Union([
+  Type.Object({ formatVersion: Type.Literal(3), headline: Type.String({ minLength: 1 }), boundary: Type.String(), differences: Type.Array(Type.String({ minLength: 1, pattern: "\\S" }), { maxItems: 3 }) }),
+  Type.Object({ formatVersion: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2)])) }),
+])]);
 export type ComparisonReportModel = Static<typeof ComparisonReportModelSchema>;
 export const ComparisonBriefingContextSchema = Type.Object({
   task: Type.Object({ caseId: Type.String(), summary: Type.String() }), baseline: Type.Object({ summary: Type.String(), evidenceRefs: Type.Array(Type.String()) }),
@@ -143,6 +156,9 @@ export const ComparisonBriefingContextSchema = Type.Object({
 });
 export const ComparisonShortRefSchema = Type.String({ pattern: "^ev-[0-9]{2,6}$" });
 export const ComparisonDraftSubmissionSchema = Type.Object({
+  formatVersion: Type.Optional(Type.Literal(3)),
+  boundary: Type.Optional(Type.String()),
+  differences: Type.Optional(Type.Array(Type.String({ minLength: 1, pattern: "\\S" }), { maxItems: 3 })),
   status: Type.Union([Type.Literal("completed"), Type.Literal("insufficient_evidence")]),
   category: Type.String({ minLength: 1, maxLength: 200 }),
   headline: Type.String({ minLength: 1, maxLength: 280 }),
@@ -173,7 +189,7 @@ export const ComparisonDecisionDraftSubmissionSchema = Type.Object({
     ref: ComparisonMediaShortRefSchema,
     caption: Type.String({ minLength: 1, maxLength: 160, pattern: '\\S' }),
   }, { additionalProperties: false }), { maxItems: 4, description: 'Optional registered screenshots that explain the decisive differences. Use matching conditions on both sides, concise captions and current media refs. Omit for nonvisual tasks. Captions count toward the main text budget and are unverified presentation, not certification.' })),
-  ...Type.Required(Type.Omit(ComparisonDraftSubmissionSchema, ['comparisonHtml', 'detailsHtml', 'decisionBasis'])).properties,
+  ...Type.Required(Type.Omit(ComparisonDraftSubmissionSchema, ['comparisonHtml', 'detailsHtml', 'decisionBasis', 'formatVersion', 'boundary', 'differences'])).properties,
 }, { additionalProperties: false, description: 'Plain decision variant. Host renders summary, boundary and provided scope summaries once and derives decisionBasis from basis dispositions. Independent review checks those scope summaries against the complete saved findings; structural acceptance is not semantic approval. Do not submit HTML or a second copy of basis IDs. All current findings and decisive unknowns remain mandatory; original report length and publication gates apply.' });
 export type ComparisonDecisionDraftSubmission = Static<typeof ComparisonDecisionDraftSubmissionSchema>;
 const ComparisonOutputSchema = Type.Object({

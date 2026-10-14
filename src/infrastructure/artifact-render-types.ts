@@ -27,6 +27,7 @@ export type RenderLayout = {
   viewportHeight: number;
   scrollWidth: number;
   documentHeight: number;
+  scrollOffset?: { x: number; y: number };
   imagesLoaded: number;
   imagesFailed: number;
   elements: Record<string, { top: number; height: number; laidOut: boolean; inViewport: boolean } | null>;

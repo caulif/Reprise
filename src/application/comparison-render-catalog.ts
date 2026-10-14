@@ -241,6 +241,9 @@ async function registerPreviewMedia(
     rendererVersion: entry.derivation.rendererVersion,
     viewport: entry.derivation.viewport,
     sampleTimesMs: [entry.derivation.sampleTimeMs],
+    ...(entry.derivation.captureScope ? { captureScope: entry.derivation.captureScope } : {}),
+    ...(entry.derivation.scrollOffset ? { scrollOffset: entry.derivation.scrollOffset } : {}),
+    ...(entry.derivation.documentHeight !== undefined ? { documentHeight: entry.derivation.documentHeight } : {}),
   };
   const registered = await catalog.registerMedia({
     record: {
@@ -297,6 +300,9 @@ async function registerPreviewMediaBatch(
         rendererVersion: entry.derivation.rendererVersion,
         viewport: entry.derivation.viewport,
         sampleTimesMs: [entry.derivation.sampleTimeMs],
+        ...(entry.derivation.captureScope ? { captureScope: entry.derivation.captureScope } : {}),
+        ...(entry.derivation.scrollOffset ? { scrollOffset: entry.derivation.scrollOffset } : {}),
+        ...(entry.derivation.documentHeight !== undefined ? { documentHeight: entry.derivation.documentHeight } : {}),
       };
       inputs.push({
         record: {

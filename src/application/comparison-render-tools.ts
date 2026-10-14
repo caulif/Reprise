@@ -57,6 +57,9 @@ export type RegisterDerivedMediaInput = {
     sampleTimeMs: number;
     actualTimeMs: number;
     capturedAt: string;
+    captureScope?: "viewport";
+    scrollOffset?: { x: number; y: number };
+    documentHeight?: number;
   };
 };
 
@@ -184,6 +187,7 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
         sampleTimesMs,
         outputRoot,
         signal,
+        layoutSelectors: [],
         ...(params.geometryQueries ? { geometryQueries: params.geometryQueries } : {}),
         ...(params.actions ? { actions: params.actions } : {}),
         ...(params.media ? { media: params.media } : {}),
@@ -224,7 +228,7 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
       }
       const capturedAt = (deps.now ?? (() => new Date()))().toISOString();
       const registrations = await deps.catalog.registerDerivedMediaBatch(
-        artifactFrameRegistrations(source, rendered.frames, rendered.measured.viewport, capturedAt));
+        artifactFrameRegistrations(source, rendered.frames, rendered.measured.viewport, capturedAt, rendered.measured.layout));
       if (!registrations.ok) return finish("capture_failed", {
         status: "capture_failed",
         sourceRef: params.sourceRef,
@@ -242,15 +246,28 @@ export function createRenderArtifactTool(deps: ComparisonRenderToolBaseDeps): Ag
         media: mediaRefs,
         sampleTimesMs,
         viewport: rendered.measured.viewport,
+        ...captureCoverage(rendered.measured.layout),
         loadMs: rendered.measured.loadMs,
         diagnostics: rendered.diagnostics,
         limitations: summarizeLimitations(rendered.diagnostics),
       });
-      const images = registrations.items.flatMap((registered, index) => registered.readPath && rendered.frames[index]
-        ? [{ path: registered.readPath, contentHash: rendered.frames[index].contentHash, shortRef: registered.shortRef }] : []);
+      const images = registeredFrameImages(registrations.items, rendered.frames);
       return attachComparisonImages({ result, requested: params.includeImages === true, authorized: deps.allowImages === true, attemptRoot: deps.attemptRoot, signal, images: images.length === rendered.frames.length ? images : [] });
     },
   };
+}
+
+function captureCoverage(layout?: import("../infrastructure/artifact-render-types.js").RenderLayout) {
+  return {
+    captureScope: "viewport",
+    ...(layout ? { pageCoverage: { documentHeight: layout.documentHeight, scrollOffset: layout.scrollOffset, observedAfterCapture: true } } : {}),
+    captureNote: "Each image preserves the complete viewport, not the complete document. For long pages, replay overlapping scroll positions and inspect the measured coverage. Separate calls sample different moments; lazy loading or motion can change the page.",
+  };
+}
+
+function registeredFrameImages(items: Extract<RegisterDerivedMediaBatchResult, { ok: true }>["items"], frames: readonly RenderFrame[]) {
+  return items.flatMap((registered, index) => registered.readPath && frames[index]
+    ? [{ path: registered.readPath, contentHash: frames[index].contentHash, shortRef: registered.shortRef }] : []);
 }
 
 function artifactMediaRefs(registrations: Extract<RegisterDerivedMediaBatchResult, { ok: true }>["items"], frames: readonly RenderFrame[]) {
@@ -293,7 +310,7 @@ function bindGeometrySample(frame: RenderFrame, queries: readonly RenderGeometry
   return { geometrySample: structuredClone(sample) };
 }
 
-function artifactFrameRegistrations(source: ComparisonRenderSource, frames: readonly RenderFrame[], viewport: RenderViewport, capturedAt: string): RegisterDerivedMediaInput[] {
+function artifactFrameRegistrations(source: ComparisonRenderSource, frames: readonly RenderFrame[], viewport: RenderViewport, capturedAt: string, layout?: import("../infrastructure/artifact-render-types.js").RenderLayout): RegisterDerivedMediaInput[] {
   return frames.map((frame) => ({
     side: source.side === "derived" ? "host" : source.side,
     pngPath: frame.pngPath,
@@ -307,6 +324,8 @@ function artifactFrameRegistrations(source: ComparisonRenderSource, frames: read
       sampleTimeMs: frame.sampleTimeMs,
       actualTimeMs: frame.actualTimeMs,
       capturedAt,
+      captureScope: "viewport",
+      ...(layout ? { documentHeight: layout.documentHeight, ...(layout.scrollOffset ? { scrollOffset: layout.scrollOffset } : {}) } : {}),
     },
   }));
 }
@@ -423,7 +442,11 @@ async function renderReportPreview(input: {
     outputRoot,
     signal,
     layoutSelectors: [
+      { name: "historicalModel", selector: '[data-model-side="baseline"]' },
+      { name: "currentModel", selector: '[data-model-side="candidate"]' },
       { name: "headline", selector: '[data-agent-slot="headline"]' },
+      { name: "boundary", selector: '[data-agent-slot="boundary"]' },
+      { name: "differences", selector: '[data-agent-zone="differences"]' },
       { name: "comparison", selector: '[data-agent-zone="comparison"]' },
       { name: "firstImage", selector: '[data-agent-zone="comparison"] img' },
       { name: "metrics", selector: '[data-host-zone="metrics"]' },
@@ -462,13 +485,23 @@ async function renderReportPreview(input: {
     previewMedia: { shortRef: registered.shortRef, mediaRef: registered.mediaRef, kind: "report_review",
       ...(registered.readPath ? { read: { path: registered.readPath, format: "image", mimeType: "image/png" } } : {}) },
     mechanics: inspectPreparedReportMechanics(prepared.html),
-    ...(rendered.measured.layout ? { layout: rendered.measured.layout } : {}),
+    ...(rendered.measured.layout ? { layout: rendered.measured.layout, layoutFeedback: reportLayoutFeedback(rendered.measured.layout) } : {}),
     diagnostics: rendered.diagnostics,
     note: "preview media uses review-* refs only; it is not baseline/candidate comparison evidence",
   };
   cache.set(cacheKey, { payload, pngPath: frame.pngPath, contentHash: frame.contentHash, registration });
   if (cache.size > 8) cache.delete(cache.keys().next().value!);
   return textResult(payload);
+}
+
+function reportLayoutFeedback(layout: import("../infrastructure/artifact-render-types.js").RenderLayout) {
+  const desktop = layout.viewportWidth >= 1024;
+  return {
+    horizontalOverflow: layout.scrollWidth > layout.viewportWidth,
+    ...(desktop ? { exceedsTargetHeight: layout.documentHeight > 1350, exceedsProtectionHeight: layout.documentHeight > 1800, targetHeight: 1350, protectionHeight: 1800 } : {}),
+    imagesFailed: layout.imagesFailed,
+    scope: "Measured layout only; these flags do not certify image completeness, legibility, evidence or recommendation quality. Preserve full source images and important limitations when shortening the report.",
+  };
 }
 
 function summarizeLimitations(diagnostics: readonly { code: string; message: string }[]): string[] {

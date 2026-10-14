@@ -2,7 +2,8 @@ import type { AgentLocale } from "../agents/language.js";
 import { parse, serializeOuter } from "parse5";
 import type { ComparisonMetricSide, ComparisonReportFacts } from "../agents/comparison-agent.js";
 import {
-  AGENT_ZONES,
+  comparisonAgentZones,
+  comparisonReportFormat,
   hostZoneIntegrityError,
   extractOuter,
   type AgentZoneName,
@@ -15,7 +16,6 @@ import { reportString } from "./comparison-report-strings.js";
 import { actualModelName } from "./actual-model-name.js";
 
 export {
-  AGENT_ZONES,
   agentZoneBlank,
   extractHostZoneSnapshot,
   extractInner,
@@ -26,10 +26,13 @@ export type { AgentZoneName, HostZoneName, HostZoneSnapshot };
 
 export type MetricSideProjection = {
   elapsedMs?: number;
+  timing?: ComparisonMetricSide["timing"];
   tokens?: { total: number; input?: number; output?: number; cached?: number; reasoning?: number };
   costUsd?: number;
   pricingStatus?: "collected" | "not_collected" | "pricing_unavailable" | "unknown";
 };
+
+type ReportSlots = Partial<Record<Exclude<AgentZoneName, "differences"> | HostZoneName | "headline" | "boundary" | "category" | "task", string>> & { differences?: readonly string[] };
 
 export type ComparisonReportDiagnostic = {
   failureClass: string;
@@ -96,7 +99,7 @@ export function agentUnsafeContentError(html: string): string | undefined {
 }
 
 export function agentContentFromDraft(html: string):
-  | { slots: Partial<Record<AgentZoneName | "headline" | "category", string>> }
+  | { formatVersion?: 3; slots: ReportSlots }
   | { error: string } {
   const errors: string[] = [];
   const root = parse(html, { onParseError: (error) => errors.push(error.code) }) as unknown as HtmlNode;
@@ -112,8 +115,9 @@ export function agentContentFromDraft(html: string):
   };
   visit(root);
   const expected = [
-    ...AGENT_ZONES.map((name) => `data-agent-zone:${name}`),
+    ...comparisonAgentZones(html).map((name) => `data-agent-zone:${name}`),
     "data-agent-slot:headline", "data-agent-slot:category", "data-agent-slot:task",
+    ...(comparisonReportFormat(html) === 3 ? ["data-agent-slot:boundary"] : []),
   ];
   for (const key of markers.keys()) {
     if (!expected.includes(key)) return { error: `Comparison report contains unsupported ${key}.` };
@@ -138,6 +142,16 @@ export function agentContentFromDraft(html: string):
   }
   const textOf = (node: HtmlNode): string => node.value ?? (node.childNodes ?? []).map(textOf).join("");
   const innerOf = (node: HtmlNode): string => (node.childNodes ?? []).map((child) => serializeOuter(child as never)).join("");
+  if (comparisonReportFormat(html) === 3) {
+    const differenceNodes = descendants(markers.get("data-agent-zone:differences")![0]!).filter(node => node.attrs?.some(attr => attr.name === "data-difference"));
+    return { formatVersion: 3, slots: {
+      comparison: innerOf(markers.get("data-agent-zone:comparison")![0]!),
+      headline: escapeHtml(textOf(markers.get("data-agent-slot:headline")![0]!)),
+      boundary: textOf(markers.get("data-agent-slot:boundary")![0]!),
+      differences: differenceNodes.map(textOf),
+      category: textOf(markers.get("data-agent-slot:category")![0]!),
+    } };
+  }
   return { slots: {
     comparison: innerOf(markers.get("data-agent-zone:comparison")![0]!),
     details: innerOf(markers.get("data-agent-zone:details")![0]!),
@@ -147,6 +161,7 @@ export function agentContentFromDraft(html: string):
 }
 
 export function renderComparisonReportShell(input: {
+  formatVersion?: 3;
   title?: string;
   task: string;
   facts: ComparisonReportFacts;
@@ -156,7 +171,7 @@ export function renderComparisonReportShell(input: {
   };
   evidence?: readonly { side: string; inspectPath: string; reportHref?: string }[];
   media?: readonly ComparisonMediaRecord[];
-  slots?: Partial<Record<AgentZoneName | HostZoneName | "headline" | "category" | "task", string>>;
+  slots?: ReportSlots;
   diagnostic?: ComparisonReportDiagnostic;
   locale?: AgentLocale;
 }): string {
@@ -179,6 +194,7 @@ export function renderComparisonReportShell(input: {
       input.diagnostic ? diagnosticDelivery(input.diagnostic, locale) : "",
       input.diagnostic ? diagnosticLimitations(input.diagnostic) : "",
     ].filter(Boolean).join("");
+  if (input.formatVersion === 3) return renderCompactReport({ ...input, category, task, title, headline, comparisonBody, locale, labels });
   return `<!DOCTYPE html>
 <html lang="${escapeHtml(reportString(locale, "htmlLang"))}">
 <head>
@@ -227,6 +243,7 @@ export function renderComparisonReportFromModel(input: {
 }): string {
   const mapped = mapLegacyModelSlots(input.model);
   return renderComparisonReportShell({
+    ...(input.model.formatVersion === 3 ? { formatVersion: 3 as const } : {}),
     ...(input.diagnostic ? { title: "Comparison unavailable" } : {}),
     task: input.model.task,
     facts: input.facts,
@@ -236,6 +253,7 @@ export function renderComparisonReportFromModel(input: {
     slots: {
       ...mapped,
       ...(input.model.headline ? { headline: escapeHtml(input.model.headline) } : {}),
+      ...(input.model.formatVersion === 3 ? { boundary: input.model.boundary ?? "", differences: input.model.differences ?? [] } : {}),
     },
     ...(input.diagnostic ? { diagnostic: input.diagnostic } : {}),
     ...(input.locale ? { locale: input.locale } : {}),
@@ -243,19 +261,28 @@ export function renderComparisonReportFromModel(input: {
 }
 
 /** Map legacy audit slots into format-2 comparison/details without rewriting on-disk models. */
-function mapLegacyModelSlots(model: ComparisonReportModel): Partial<Record<AgentZoneName | HostZoneName | "headline" | "category" | "task", string>> {
+function mapLegacyModelSlots(model: ComparisonReportModel): ReportSlots {
   const slots = model.slots;
   const comparison = slots.comparison
     ?? [slots["visual-evidence"], slots["key-differences"]].filter(Boolean).join("");
   const details = slots.details
     ?? [slots.delivery, slots.limitations].filter(Boolean).join("");
+  const category = model.formatVersion === 3 && slots.header ? categoryFromHeader(slots.header) : undefined;
   return {
     ...(slots.header ? { header: slots.header } : {}),
+    ...(category !== undefined ? { category } : {}),
     ...(comparison ? { comparison } : {}),
     ...(details ? { details } : {}),
     ...(slots.process ? { process: slots.process } : {}),
     ...(slots.evidence ? { evidence: slots.evidence } : {}),
   };
+}
+
+function categoryFromHeader(header: string): string | undefined {
+  const textOf = (node: HtmlNode): string => node.value ?? (node.childNodes ?? []).map(textOf).join("");
+  const visit = (node: HtmlNode): string | undefined => node.attrs?.some(attr => attr.name === "data-agent-slot" && attr.value === "category")
+    ? textOf(node) : descendants(node).map(visit).find(value => value !== undefined);
+  return visit(parse(header) as unknown as HtmlNode);
 }
 
 function hostMetricsFingerprint(metrics: {
@@ -276,7 +303,8 @@ export function hostMetricsMismatch(html: string, metrics: {
     ?? extractOuter(html, "data-host", "metrics");
   if (!block) return "Host metrics block is missing.";
   const fingerprint = attributeValue(block, "data-fingerprint");
-  const legacy = attributeValue(block, "data-metrics-layout") !== "compact";
+  const compactTable = comparisonReportFormat(html) === 3;
+  const legacy = !compactTable && attributeValue(block, "data-metrics-layout") !== "compact";
   const expected = hostMetricsFingerprint(metrics);
   if (!fingerprint) return "Host metrics numbers were modified.";
   try {
@@ -290,7 +318,7 @@ export function hostMetricsMismatch(html: string, metrics: {
     return "Host metrics numbers were modified.";
   }
   const normalizedBlock = block.replace(/\s+/g, " ");
-  const visibleTexts = visibleMetricTexts(metrics, locale);
+  const visibleTexts = compactTable ? compactMetricTexts(metrics, locale) : visibleMetricTexts(metrics, locale);
   if (legacy) {
     visibleTexts[0] = legacyTime(metrics.baseline?.elapsedMs, locale);
     visibleTexts[1] = legacyTime(metrics.candidate?.elapsedMs, locale);
@@ -379,18 +407,58 @@ function renderTokenBreakdown(side: MetricSideProjection | undefined, label: str
   return `<div class="col"><span class="who">${escapeHtml(label)}</span><ul>${rows}</ul></div>`;
 }
 
+function compactMetricTexts(metrics: { baseline?: MetricSideProjection; candidate?: MetricSideProjection }, locale: AgentLocale): FormattedMetric[] {
+  const time = (ms: number | undefined): FormattedMetric => ms === undefined
+    ? { text: reportString(locale, "missing"), missing: true }
+    : { text: `${Math.floor(Math.round(ms / 1000) / 60)}:${String(Math.round(ms / 1000) % 60).padStart(2, "0")}`, missing: false };
+  const tokens = (total: number | undefined): FormattedMetric => total === undefined
+    ? { text: reportString(locale, "missing"), missing: true }
+    : { text: total > 0 && total < 50 ? "<0.1" : (total / 1000).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }), missing: false };
+  return [time(metrics.baseline?.elapsedMs), time(metrics.candidate?.elapsedMs), tokens(metrics.baseline?.tokens?.total), tokens(metrics.candidate?.tokens?.total), formatCost(metrics.baseline, locale), formatCost(metrics.candidate, locale)];
+}
+
+function renderCompactReport(input: Parameters<typeof renderComparisonReportShell>[0] & {
+  category: string; task: string; title: string; headline: string; comparisonBody: string; locale: AgentLocale;
+  labels: { baseline: string; candidate: string };
+}): string {
+  const { locale, labels } = input;
+  const values = compactMetricTexts(input.metrics, locale);
+  const metricRows = (["compactTime", "compactTokens", "compactCost"] as const).map((key, index) =>
+    `<tr><th scope="row">${escapeHtml(reportString(locale, key))}</th><td>${escapeHtml(values[index * 2]!.text)}</td><td>${escapeHtml(values[index * 2 + 1]!.text)}</td></tr>`).join("");
+  return `<!DOCTYPE html>
+<html lang="${reportString(locale, "htmlLang")}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(input.title)}</title>
+<style data-host-zone="style" data-id="host-style">${REPORT_CSS}\n${COMPACT_REPORT_CSS}</style></head><body>
+<main class="page" data-report-format="3"><article class="share">
+<header data-host-zone="header" data-id="host-header"><div class="mast"><span class="brand">REPRISE / <span data-agent-slot="category">${escapeHtml(input.category)}</span></span><p class="task" data-agent-slot="task">${escapeHtml(input.task)}</p></div>
+<div class="models" data-host="session-labels"><div class="model" data-model-side="baseline"><span class="role">${escapeHtml(reportString(locale, "sessionHistorical"))}</span><strong>${escapeHtml(labels.baseline)}</strong></div><div class="model current" data-model-side="candidate"><span class="role">${escapeHtml(reportString(locale, "sessionCurrent"))}</span><strong>${escapeHtml(labels.candidate)}</strong></div></div></header>
+<section class="verdict"><p class="field-label">${escapeHtml(reportString(locale, "recommendation"))}</p><h1 data-agent-slot="headline">${input.headline}</h1><p class="boundary" data-agent-slot="boundary">${escapeHtml(input.slots?.boundary ?? "")}</p></section>
+<section class="slot" data-agent-zone="comparison" data-id="agent-comparison">${input.comparisonBody}</section>
+<section class="differences" data-agent-zone="differences" aria-label="${escapeHtml(reportString(locale, "keyDifferences"))}">${(input.slots?.differences ?? []).map(text => `<p data-difference>${escapeHtml(text)}</p>`).join("")}</section>
+<section class="metric-table" data-host-zone="metrics" data-id="host-metrics" data-host="metrics" data-metrics-layout="table-k" data-fingerprint="${escapeHtml(hostMetricsFingerprint(input.metrics))}"><table><thead><tr><th scope="col">${escapeHtml(reportString(locale, "runtimeMetrics"))}</th><th scope="col">${escapeHtml(reportString(locale, "sessionHistorical"))}</th><th scope="col">${escapeHtml(reportString(locale, "sessionCurrent"))}</th></tr></thead><tbody>${metricRows}</tbody></table></section>
+<footer data-host-zone="cost-note" data-id="host-cost-note"><p class="metric-note">${escapeHtml(compactTimingNote(input.metrics, input.facts.metrics?.timingComparable, locale))}${escapeHtml(reportString(locale, "compactNote"))}</p><p class="analysis-model">${escapeHtml(reportString(locale, "analysisModel"))} · ${escapeHtml(actualModelName(input.facts.models.comparison) ?? reportString(locale, "missing"))}</p></footer>
+</article></main></body></html>`;
+}
+
+function compactTimingNote(metrics: { baseline?: MetricSideProjection; candidate?: MetricSideProjection }, comparable: boolean | undefined, locale: AgentLocale): string {
+  const notes: string[] = [];
+  for (const [key, side] of [["sessionHistorical", metrics.baseline], ["sessionCurrent", metrics.candidate]] as const) {
+    if (!side?.timing) continue;
+    const timing = side.timing;
+    const basis = reportString(locale, timing.basis === "turn_wall_clock_sum" ? "timingTurns" : "timingSpan");
+    const coverage = timing.coverage.status === "complete" ? "" : reportString(locale, "timingCoverage", { measured: timing.coverage.measuredTurns, completed: timing.coverage.completedTurns, open: timing.coverage.openTurns });
+    notes.push(`${reportString(locale, key)}${locale === "zh" ? "：" : ": "}${basis}${coverage}`);
+  }
+  if (comparable === false || (metrics.baseline?.elapsedMs !== undefined && metrics.candidate?.elapsedMs !== undefined && (!metrics.baseline.timing || !metrics.candidate.timing))) notes.push(reportString(locale, "timingNotComparable"));
+  return notes.length ? `${notes.join(locale === "zh" ? "；" : "; ")}${locale === "zh" ? "。" : ". "}` : "";
+}
+
 function comparisonSideLabels(facts: ComparisonReportFacts, locale: AgentLocale): { baseline: string; candidate: string } {
   const candidate = actualModelName(facts.models.candidateResolved)
     ?? (!facts.models.candidateRequested ? actualModelName(facts.models.candidate) : undefined);
   return {
-    baseline: usableModelId(facts.models.baseline) ?? reportString(locale, "sideHistorical"),
+    baseline: actualModelName(facts.models.baseline) ?? reportString(locale, "sideHistorical"),
     candidate: candidate ?? reportString(locale, "sideCandidate"),
   };
-}
-
-function usableModelId(value: string | undefined): string | undefined {
-  if (!value || value === "unavailable") return undefined;
-  return value;
 }
 
 function renderRunDiagnostics(facts: ComparisonReportFacts, locale: AgentLocale): string {
@@ -605,6 +673,42 @@ function componentTemplateHtml(locale: AgentLocale): string {
 </template>
 `;
 }
+
+const COMPACT_REPORT_CSS = `
+[data-report-format="3"].page { max-width:1040px; padding:24px 24px 22px; }
+[data-report-format="3"] .mast { display:flex; justify-content:space-between; gap:16px; align-items:center; margin-bottom:18px; }
+[data-report-format="3"] .brand { font-size:12px; font-weight:750; letter-spacing:.12em; }
+[data-report-format="3"] .task { margin:0; font-size:14px; text-align:right; }
+.models { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+.model { border-top:3px solid #87562d; padding:10px 16px 12px; background:#fff; border-radius:0 0 8px 8px; min-width:0; }
+.model.current { border-color:#405bb8; }
+.model .role { display:block; color:#87562d; font-size:12px; font-weight:650; }
+.model.current .role { color:#405bb8; }
+.model strong { display:block; font-size:25px; line-height:1.3; margin-top:3px; overflow-wrap:anywhere; }
+[data-report-format="3"] .verdict { margin:20px 0 17px; padding:0; border:0; background:transparent; }
+[data-report-format="3"] [data-agent-slot="headline"] { font-size:29px; line-height:1.4; margin:5px 0 6px; }
+.boundary { margin:0; color:var(--soft); font-size:13px; line-height:1.6; }
+[data-report-format="3"] [data-agent-zone="comparison"] img { display:block; width:100%; height:auto; max-height:none; object-fit:contain; }
+[data-report-format="3"] figure { margin:0; min-width:0; }
+[data-report-format="3"] [data-component="difference-card"] { padding:12px 16px; margin:10px 0; }
+.differences { margin:17px 0 15px; display:grid; gap:9px; counter-reset:difference; }
+.differences p { margin:0; display:flex; gap:12px; font-size:14px; line-height:1.6; }
+.differences p::before { counter-increment:difference; content:counter(difference, decimal-leading-zero); flex:0 0 18px; font:12px Consolas,monospace; color:var(--faint); padding-top:4px; }
+.metric-table { border-top:1px solid var(--line); margin-top:16px; }
+.metric-table table { width:100%; table-layout:fixed; border-collapse:collapse; text-align:left; }
+.metric-table th,.metric-table td { padding:7px 16px; font-size:12px; border-bottom:1px solid var(--line); overflow-wrap:anywhere; font-weight:400; }
+.metric-table th:first-child { width:40%; }
+.metric-table td { font-variant-numeric:tabular-nums; }
+.metric-note,.analysis-model { font-size:11px; color:var(--faint); margin:8px 0 0; line-height:1.6; }
+@media(max-width:650px) {
+  [data-report-format="3"].page { padding:20px 18px; }
+  [data-report-format="3"] .mast { align-items:flex-start; }
+  [data-report-format="3"] .task { font-size:12px; }
+  .models { gap:10px; } .model { padding:9px 10px 11px; } .model strong { font-size:19px; }
+  [data-report-format="3"] [data-agent-slot="headline"] { font-size:24px; }
+  .metric-table th,.metric-table td { padding:7px 8px; } .metric-table th:first-child { width:34%; }
+}
+`;
 
 const REPORT_CSS = `
 :root { color-scheme:light; --paper:#f3f5f1; --card:#fff; --ink:#24332e; --soft:#526057; --faint:#64726b; --line:#dfe5df; --hair:#d3ddd2; --accent:#285c45; --risk:#9a3434; --ok:#2f6944; }

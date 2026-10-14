@@ -1,5 +1,5 @@
 import type { ComparisonLinkRecord, ComparisonMediaRecord } from '../core/schema.js';
-import { AGENT_ZONES } from '../core/comparison-html.js';
+import { comparisonAgentZones } from '../core/comparison-html.js';
 import { evidenceQuoteMarkupOnly } from '../core/comparison-html.js';
 
 type ReferenceFailure = { failureClass: 'evidence'; code: 'evidence_unresolved'; message: string }
@@ -21,7 +21,7 @@ export function invalidAgentReferences(html: string, evidence: readonly Comparis
 export function unexpectedAgentZones(html: string): string | undefined {
   html = evidenceQuoteMarkupOnly(html);
   const found = [...html.matchAll(/\bdata-agent-zone\s*=\s*(["'])([^"']+)\1/gi)].map((match) => match[2] ?? '');
-  const extra = found.find((zone) => zone && !(AGENT_ZONES as readonly string[]).includes(zone));
+  const extra = found.find((zone) => zone && !(comparisonAgentZones(html) as readonly string[]).includes(zone));
   if (!extra) return undefined;
   return `Comparison report contains unsupported data-agent-zone="${extra}".`;
 }

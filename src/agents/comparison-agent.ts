@@ -17,6 +17,7 @@ import { composeComparisonAuthorSystemPrompt, COMPARISON_AUTHOR_COMPOSE_PROMPT }
 import { comparisonProtocol } from './comparison-stage-policy.js';
 import { ComparisonStages } from './comparison-stages.js';
 import { ComparisonInitialFindings, COMPARISON_INITIAL_FINDINGS_PROMPT, composeComparisonInvestigatorSystemPrompt } from './comparison-initial-findings.js';
+import type { TimingFacts } from '../core/timing-schema.js';
 export type { ComparisonAgentEnvelope } from '../core/schema.js';
 export type ComparisonResult = Omit<ComparisonAgentEnvelope, 'reportPath'> & { reportPath: 'report.html' };
 export type ComparisonContext = {
@@ -56,11 +57,14 @@ export type ComparisonReportFacts = {
   metrics?: {
     baseline?: ComparisonMetricSide;
     candidate?: ComparisonMetricSide;
+    timingComparable?: boolean;
   };
 };
 
 export type ComparisonMetricSide = {
   elapsedMs?: number;
+  timing?: TimingFacts;
+  spanElapsedMs?: number;
   tokens?: { total: number; input?: number; output?: number; cached?: number; reasoning?: number };
   costUsd?: number;
   usageStatus?: "collected" | "not_collected" | "unknown";

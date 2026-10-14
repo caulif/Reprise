@@ -288,6 +288,7 @@ async function inspectDocumentLayout(
     const images = [...document.images];
     return { viewportWidth: innerWidth, viewportHeight: innerHeight,
       scrollWidth: document.documentElement.scrollWidth, documentHeight: document.documentElement.scrollHeight,
+      scrollOffset: { x: window.scrollX, y: window.scrollY },
       imagesLoaded: images.filter(image => image.complete && image.naturalWidth > 0).length,
       imagesFailed: images.filter(image => image.complete && image.naturalWidth === 0).length,
       elements };

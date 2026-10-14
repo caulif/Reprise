@@ -295,6 +295,7 @@ async function compareExperimentOutcome(
       ...(input.signal ? { signal: input.signal } : {}),
     });
     const reportShellHtml = renderComparisonReportShell({
+      ...(input.input.comparison.workflow === 'autonomous' ? { formatVersion: 3 as const } : {}),
       task: context.task.summary,
       facts: context.reportFacts,
       metrics: metricsFromReportFacts(context.reportFacts),
@@ -810,7 +811,7 @@ function comparisonAudit(
 
 async function persistComparisonRequest(store: ExperimentStore, runId: string, attemptId: string, context: unknown, reviewInspectionRequired = false, workflow?: 'autonomous'): Promise<void> {
   const reviewContract = reviewInspectionRequired ? { attemptId, reviewInspectionContractVersion: 2 as const } : undefined;
-  const autonomousContract = workflow === 'autonomous' ? { attemptId, autonomousContractVersion: 1 as const } : undefined;
+  const autonomousContract = workflow === 'autonomous' ? { attemptId, autonomousContractVersion: 2 as const } : undefined;
   if (autonomousContract && (!Value.Check(ComparisonAutonomousContractSchema, autonomousContract) || reviewContract)) throw new Error('Invalid autonomous Comparison request contract.');
   if (reviewContract && !Value.Check(ComparisonReviewRequestSchema, reviewContract)) throw new Error('Invalid Comparison review request contract.');
   const bytes = Buffer.from(JSON.stringify(context), "utf8");
