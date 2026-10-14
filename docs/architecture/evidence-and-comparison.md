@@ -10,6 +10,8 @@
 
 Recovery 的固定 artifact 与决定、诊断等不可变 JSON 按 `runs/<runId>/` 保存；默认 Recovery Provider 的 baseline 按 `environment/recovery/<runId>/` 隔离。baseline marker 的 `reportRunId` 指向 run 所属报告，旧 marker 缺字段时只查实验级报告；旧 scene 缺 `recoveryProviderRunId` 时继续使用 `environment/baselines/`。旧根级文件不迁移、不覆写，新读端按明确 owner 读取，不能用另一 run 的同名 artifact 填补缺失。
 
+文件发布原语统一位于 [`identity.ts`](../../src/core/identity.ts)：`writeAtomic` 替换可变投影；`writeImmutable` 和 Store 的 `writeImmutableJson` 创建不可变事实，先写完并关闭同目录私有临时文件，再用 hard link 原子创建目标。目标已存在即拒绝；不支持 hard link 时不回退到覆盖写。失败只清理本次临时文件，清理失败保留原错误及已发布状态；成功发布后不回滚目标。低层不判断内容幂等，schema、owner 与同内容重试仍由各提交边界负责；不新增断电持久性承诺。文件原语不能用于目录发布。理由见[不可变文件无覆盖发布](../decisions/accepted/2026-10-14-immutable-file-publication.md)。
+
 ## 模型输入可追溯
 
 Controller、Recovery、Comparison 都通过 Agent Session Host 生成模型请求。Host 把 system prompt、用户消息、工具结果和结构化结果写入审计事实；普通 generation 另保存 Pi 转换与裁剪后、经过凭据脱敏的实际上下文快照，保留原生工具参数及 SDK 拒绝消息；[`model-input.ts`](../../src/infrastructure/agent/model-input.ts) 从事件日志重建请求。上下文压缩必须追加 `agent.context_compacted`，其中 summary 与 retained tail 是后续请求可见的输入来源。新增模型可见事实必须先写入事件审计（必要时再由 briefing 做可读投影），不能只存在内存变量。

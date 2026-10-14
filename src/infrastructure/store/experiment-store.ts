@@ -6,7 +6,7 @@ import { Value } from '@sinclair/typebox/value';
 import { ComparisonFindingsUpdatedSchema, ComparisonDraftAcceptedSchema, ComparisonInvestigationClosedSchema } from '../../core/comparison-discovery-schema.js';
 import { AgentUsageFactsSchema } from '../../core/schema.js';
 import { ComparisonResourceSummarySchema, ComparisonSourceContinuationSchema, AgentModelStreamSchema } from '../../core/comparison-resources-schema.js';
-import { SAFE_ID, sha256, eventEnvelopeChecksum, runOperationId, writeAtomic } from '../../core/identity.js';
+import { SAFE_ID, sha256, eventEnvelopeChecksum, runOperationId, writeAtomic, writeImmutable } from '../../core/identity.js';
 import {
   ArtifactRefSchema,
   ArtifactManifestSchema,
@@ -120,13 +120,7 @@ function inside(root: string, candidate: string): string {
 
 /** Writes a JSON artifact once, leaving an existing acceptance/fact file untouched. */
 export async function writeImmutableJson(path: string, value: unknown): Promise<void> {
-  try {
-    await stat(path);
-    throw new Error(`Immutable file already exists: ${path}.`);
-  } catch (error: unknown) {
-    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
-  }
-  await writeAtomic(path, `${JSON.stringify(value)}\n`);
+  await writeImmutable(path, `${JSON.stringify(value)}\n`);
 }
 
 export class ExperimentStore {
