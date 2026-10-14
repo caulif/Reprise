@@ -672,6 +672,10 @@ function mediaDerivationKey(derivation: ComparisonMediaDerivation | undefined): 
     viewport,
     samples,
     derivation.capturedAt ?? "",
+    derivation.captureScope ?? "",
+    derivation.scrollOffset?.x ?? "",
+    derivation.scrollOffset?.y ?? "",
+    derivation.documentHeight ?? "",
   ].join("|");
 }
 

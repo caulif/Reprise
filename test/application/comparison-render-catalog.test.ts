@@ -10,7 +10,69 @@ import { ComparisonEvidenceCatalog } from "../../src/application/comparison-evid
 import { createComparisonRenderCatalogPort } from "../../src/application/comparison-render-catalog.js";
 import { ARTIFACT_RENDERER_VERSION } from "../../src/infrastructure/artifact-renderer.js";
 import { DEFAULT_RENDER_VIEWPORT } from "../../src/infrastructure/artifact-render-types.js";
+import type { RegisterDerivedMediaInput } from "../../src/application/comparison-render-tools.js";
 const PNG_A = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+for (const mode of ["single", "batch", "separate-batches"] as const) {
+  test(`render ${mode} keeps identical pixels with different coverage distinct and retries stable`, async t => {
+    const root = await mkdtemp(join(tmpdir(), "reprise-render-coverage-dedupe-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const pngPath = join(root, "frame.png");
+    await writeFile(pngPath, PNG_A);
+    const catalog = await ComparisonEvidenceCatalog.create({ attemptId: "coverage", attemptRoot: root,
+      links: [{ side: "baseline", inspectPath: "finals/page.html", shortRef: "ev-01" }], media: [] });
+    const port = createComparisonRenderCatalogPort({ catalog, attemptRoot: root,
+      mounts: { finals: join(root, "finals"), candidate: join(root, "candidate"), history: join(root, "history"), evidence: join(root, "evidence") } });
+    const coverage = [{}, { captureScope: "viewport" as const },
+      { captureScope: "viewport" as const, scrollOffset: { x: 0, y: 0 } },
+      { captureScope: "viewport" as const, scrollOffset: { x: -500, y: 0 } },
+      { captureScope: "viewport" as const, scrollOffset: { x: 0, y: 1000 } },
+      { captureScope: "viewport" as const, scrollOffset: { x: 0, y: 1000 }, documentHeight: 0 },
+      { captureScope: "viewport" as const, scrollOffset: { x: 0, y: 1000 }, documentHeight: 3000 }];
+    const entries: RegisterDerivedMediaInput[] = coverage.map(item => ({
+      side: "baseline", pngPath, label: "frame", sourceRef: "ev-01", contentHash: sha256(PNG_A), kind: "artifact_preview",
+      derivation: { rendererVersion: ARTIFACT_RENDERER_VERSION, viewport: DEFAULT_RENDER_VIEWPORT,
+        sampleTimeMs: 0, actualTimeMs: 0, capturedAt: "2026-10-14T00:00:00.000Z", ...item },
+    }));
+    const register = async (items: RegisterDerivedMediaInput[]) => {
+      if (mode === "batch") {
+        const result = await port.registerDerivedMediaBatch(items);
+        assert.ok(result.ok, JSON.stringify(result));
+        return result.items;
+      }
+      const results = [];
+      for (const item of items) {
+        if (mode === "single") {
+          const result = await port.registerDerivedMedia(item);
+          assert.ok(result.ok, JSON.stringify(result));
+          results.push(result);
+        } else {
+          const result = await port.registerDerivedMediaBatch([item]);
+          assert.ok(result.ok, JSON.stringify(result));
+          results.push(result.items[0]!);
+        }
+      }
+      return results;
+    };
+    const first = await register(entries);
+    assert.equal(new Set(first.map(item => item.shortRef)).size, entries.length);
+    assert.equal(new Set(first.map(item => item.mediaRef)).size, entries.length);
+    const originalMedia = catalog.snapshot().media;
+    const retry = await register(entries.map(item => ({ ...item, derivation: { ...item.derivation, capturedAt: "2026-10-14T00:00:01.000Z" } })));
+    assert.deepEqual(retry.map(item => [item.shortRef, item.mediaRef]), first.map(item => [item.shortRef, item.mediaRef]));
+    assert.deepEqual(catalog.snapshot().media, originalMedia);
+    const persisted: unknown = JSON.parse(await readFile(join(root, "facts", "media.json"), "utf8"));
+    assert.ok(Array.isArray(persisted));
+    assert.equal(persisted.length, entries.length);
+    for (const [index, value] of persisted.entries()) {
+      const record: unknown = value;
+      assert.ok(Value.Check(ComparisonMediaRecordSchema, record));
+      const expected = entries[index]!.derivation;
+      assert.deepEqual([record.derivation?.captureScope, record.derivation?.scrollOffset, record.derivation?.documentHeight],
+        [expected.captureScope, expected.scrollOffset, expected.documentHeight]);
+    }
+  });
+}
+
 test("render batch registration persists signed browser scroll offsets", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-render-signed-scroll-"));
   t.after(() => rm(root, { recursive: true, force: true }));

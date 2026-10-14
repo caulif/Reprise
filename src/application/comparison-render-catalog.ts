@@ -247,7 +247,7 @@ async function registerPreviewMedia(
   };
   const registered = await catalog.registerMedia({
     record: {
-      ref: `media:render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}`,
+      ref: `media:${fileName.slice(0, -4)}`,
       side: entry.side,
       inspectPath,
       reportHref: inspectPath,
@@ -274,7 +274,7 @@ async function registerPreviewMedia(
   return {
     ok: true,
     shortRef: registered.shortRef,
-    mediaRef: recorded?.ref ?? `media:render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}`,
+    mediaRef: recorded?.ref ?? `media:${fileName.slice(0, -4)}`,
     revision: registered.revision,
     readPath: inspectPath,
   };
@@ -306,7 +306,7 @@ async function registerPreviewMediaBatch(
       };
       inputs.push({
         record: {
-          ref: `media:render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}`,
+          ref: `media:${fileName.slice(0, -4)}`,
           side: entry.side,
           inspectPath,
           reportHref: inspectPath,
