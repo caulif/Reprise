@@ -439,3 +439,13 @@ test('CandidateRun commits the attempt before the runtime sees the first message
     await rm(root, { recursive: true, force: true });
   }
 });
+
+
+test('CandidateRun accepts MAX_SAFE_INTEGER turn timeout without immediately timing out', async () => {
+  const runner = new ScriptedRunner([{ delivery: 'accepted', evidence: 'native_admission' }], [
+    new Promise(resolve => setTimeout(() => resolve(settled('waiting_input')), 10)),
+  ]);
+  const run = new CandidateRun({ runner, policy: { ...policy, turnTimeoutMs: Number.MAX_SAFE_INTEGER } });
+  assert.equal(await run.start(initial, identity), 'awaiting_controller');
+  await run.cancel();
+});

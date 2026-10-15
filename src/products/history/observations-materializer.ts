@@ -9,7 +9,7 @@ import {
   type ObservationSessionManifest,
   type TaskCase,
 } from "../../core/schema.js";
-import { recoveryEvidenceCatalog } from "./source-refs.js";
+import { recoveryEvidenceCatalog } from "../../core/recovery-evidence.js";
 import type { ObservationOwnedFile } from "./types.js";
 import { writeObservationNavigation } from "./observations-navigation.js";
 import { writeObservationEventNavigation } from './observations-event-navigation.js';

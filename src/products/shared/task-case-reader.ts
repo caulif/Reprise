@@ -4,10 +4,18 @@ import { sha256File } from '../../core/identity.js';
 import { validateTaskCase } from '../../core/task-case-identity.js';
 import { HistoricalArtifactManifestSchema, type TaskCase } from '../../core/schema.js';
 import { Value } from '@sinclair/typebox/value';
+import { frozenSnapshot } from '../../core/json.js';
 
 const origins = new WeakMap<TaskCase, string>();
 
 export function taskCaseOrigin(task: TaskCase): string | undefined { return origins.get(task); }
+
+export function snapshotTaskCase(task: TaskCase): TaskCase {
+  const snapshot = frozenSnapshot(validateTaskCase(task));
+  const origin = origins.get(task);
+  if (origin) origins.set(snapshot, origin);
+  return snapshot;
+}
 
 export async function readTaskCase(path: string, options: { expectedCaseId?: string; requireComplete?: boolean } = {}): Promise<TaskCase> {
   const task = await readTaskCaseMetadata(path, options);

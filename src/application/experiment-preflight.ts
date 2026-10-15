@@ -5,20 +5,12 @@ import { LocalWorkspaceProvider, type EnvironmentBaseline } from "../environment
 import {
   contaminationWarnings,
   detectContamination,
-  type ContaminationSignals,
 } from "../environment/contamination.js";
 import type { ExperimentInput } from "./experiment.js";
 import { assertPaths } from "./experiment-helpers.js";
 
-export type ExperimentPreflight = {
-  sourceBaseline: "available" | "partial" | "unavailable";
-  resolved: ResolvedRuntime;
-  sourceFingerprint?: string;
-  workspace?: EnvironmentBaseline["budget"];
-  limitations: readonly string[];
-  comparisonClass: "observational" | "recovered" | "recovered_partial";
-  contamination?: ContaminationSignals;
-};
+export type { ExperimentPreflight } from '../core/schema.js';
+import type { ExperimentPreflight } from '../core/schema.js';
 
 /** Read-only admission check. It never creates a Candidate workspace or calls a target model. */
 export async function preflightExperiment(
@@ -100,6 +92,9 @@ export function preflightFromBaseline(
   baseline: EnvironmentBaseline,
   resolved: ResolvedRuntime,
 ): ExperimentPreflight {
+  resolved = { productId: resolved.productId, executable: resolved.executable,
+    ...(resolved.version === undefined ? {} : { version: resolved.version }),
+    requestedModel: resolved.requestedModel, resolvedModel: resolved.resolvedModel };
   if (baseline.readiness.runnable === "unsupported")
     return {
       sourceBaseline: "unavailable",

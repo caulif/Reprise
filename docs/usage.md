@@ -98,7 +98,7 @@ node dist/src/cli/main.js compare --experiment <experimentId> --json
 
 算法目标、自检和实际输出仍应分开核对，无法验证的保证应收缩。旧多阶段报告继续按自己的 findings、inspection 和独立复审契约认证，不能因为执行器退役而降级成自主完成；历史报告不自动重写。
 
-默认 Comparison 只有整体时间预算，没有调查软额度或默认请求/工具次数上限；集成调用方传空资源 override 不关闭整体截止。显式请求、工具与费用限制仍执行，普通 CLI/TUI 尚无独立预算设置入口；硬限、失败或取消不覆盖旧成功报告。启用费用保护而 usage/价格未知时停止继续调用，在途费用不能精确封顶。实际默认值及单次/整体关系见[预算规则](./architecture/evidence-and-comparison.md#comparison-attempt)，真实评估入口与授权见[开发与验证](./development.md#comparison-产品质量评估)。
+Recovery 与 Comparison 默认整体时间预算为 24 小时；Controller 单次调用保持 `timeoutMs: 0`。自定义模型未声明上下文窗口时默认使用 256k，目录模型和显式窗口仍优先。Comparison 没有调查软额度或默认请求/工具次数上限；集成调用方传空资源 override 不关闭整体截止。显式请求、工具与费用限制仍执行，普通 CLI/TUI 尚无独立预算设置入口；硬限、失败或取消不覆盖旧成功报告。启用费用保护而 usage/价格未知时停止继续调用，在途费用不能精确封顶。实际默认值及单次/整体关系见[预算规则](./architecture/evidence-and-comparison.md#comparison-attempt)，真实评估入口与授权见[开发与验证](./development.md#comparison-产品质量评估)。
 
 旧来源阶段的局部让出、独立审阅和只读正文检查点属于历史协议，不是当前自主流程的执行步骤；保留的读取与认证范围见[执行器退役决策](./decisions/accepted/2026-10-15-comparison-executor-retirement.md)。
 
@@ -143,7 +143,7 @@ Recovery、Controller、Comparison 会将完成任务所需的历史内容、工
 
 ## 当前试用限制
 
-- 已接纳启动的早期准备失败会保存 attempt 诊断；接纳前拒绝和持久化本身失败不保证产生记录。同一 Experiment 的不同 run 已用离线 fake Runtime 验证可从同一封存起点运行；真实 Runtime 的重复运行仍需显式 opt-in 验收。实验身份剩余问题与验证范围见[路线图](./roadmap.md#已知实现问题)。
+- 已接纳启动的早期准备失败会保存 attempt 诊断；接纳前拒绝和持久化本身失败不保证产生记录。同一 Experiment 的不同 run 已用离线 fake Runtime 验证可从同一封存起点运行；真实 Runtime 的重复运行仍需显式 opt-in 验收。固定实验身份与旧格式边界见[执行流程](./architecture/execution.md#配置与证据)，剩余真实验证目标见[路线图](./roadmap.md#开放目标)。
 
 不要把离线验证当作真实 Runtime 的完成证据。
 

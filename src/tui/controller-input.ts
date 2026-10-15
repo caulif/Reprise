@@ -9,7 +9,7 @@ import type { ExperimentPreflight } from '../application/experiment-preflight.js
 import type { RecoveryView } from '../application/recovery/view.js';
 import type { ExperimentWorkflow } from '../application/experiment-workflow.js';
 import type { TaskCase } from '../core/schema.js';
-import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
+import type { HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import type { ProductPack, SessionInspection, SessionPrivacy, SessionSummary } from '../products/contract.js';
 import { artifactsFromResult, listActions } from './action-model.js';
 import { coveringFoldIds, selectedIndexAfterFold } from './fold-process.js';
@@ -58,6 +58,7 @@ import {
 import type { ActivityIndexState } from './activity-index.js';
 import type { CanvasFind } from './canvas-find.js';
 import type { RunDiagnostics } from './run-diagnostics.js';
+import type { ConfigSession } from './config-session.js';
 import { type TimelineEntry } from './timeline.js';
 import type { WorkbenchView } from './workbench.js';
 import { measureWorkbenchGeometry } from './workbench.js';
@@ -156,8 +157,7 @@ export type ControllerHandle = {
   modelConfig: HarnessModelConfig;
   hasSavedModelConfig: boolean;
   harnessAuthOk: boolean;
-  configDraft: HarnessConfigDraft;
-  configEditing: boolean;
+  readonly configSession: ConfigSession;
   render(immediate?: boolean): void;
   showError(error: unknown, page: Exclude<Page, 'error' | 'running' | 'loading'>): void;
   beginNavigation(): number;

@@ -1,7 +1,7 @@
 import { freezeCodexSession } from "../../src/products/packs/codex/sessions.js";
 import { extractCodexHistoricalArtifacts } from "../../src/products/packs/codex/historical-artifacts.js";
 import { prepareHistoricalArtifacts } from "../../src/application/prepare-historical-artifacts.js";
-import { assertSafeLogicalPath } from "../../src/products/shared/historical-artifact-files.js";
+import { assertSafeLogicalPath } from "../../src/core/logical-paths.js";
 import { asPosixPath } from "../../src/core/paths.js";
 import {
   collectHistoricalDeliverableNames,

@@ -93,8 +93,8 @@ export function startRunSetup(c: ControllerHandle, input: { afterFreeze?: boolea
     c.page = 'home';
     return c.setHomeMessage(t(c.locale, 'runUnavailable'));
   }
-  if (!hasFileApiKey(c.modelConfig) && !hasFileApiKey(c.configDraft)) {
-    const envName = envNameFromConfig(c.modelConfig, c.configDraft);
+  if (!hasFileApiKey(c.modelConfig) && !hasFileApiKey(c.configSession.state.draft)) {
+    const envName = envNameFromConfig(c.modelConfig, c.configSession.state.draft);
     if (envName && !process.env[envName]) {
       c.page = 'home';
       return c.setHomeMessage(t(c.locale, 'envNotSetRun', { name: envName }));

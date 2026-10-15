@@ -13,7 +13,7 @@ export type HarnessConfigurationScope = {
 };
 
 export function harnessConfigurationScope(store: ExperimentStore, owner: Pick<HarnessConfigurationReference, 'experimentId' | 'runId' | 'operation' | 'comparisonAttemptId'>,
-  onBound?: (reference: HarnessConfigurationReference) => void): HarnessConfigurationScope {
+  onBound?: (reference: HarnessConfigurationReference, configuration: EffectiveHarnessConfiguration) => void): HarnessConfigurationScope {
   return {
     async bind(configuration) {
       if (!Value.Check(EffectiveHarnessConfigurationSchema, configuration)) throw new Error('Invalid effective Harness configuration.');
@@ -25,7 +25,7 @@ export function harnessConfigurationScope(store: ExperimentStore, owner: Pick<Ha
       const payload = { schemaVersion: 1 as const, reference, configuration };
       if (!Value.Check(HarnessConfigurationBoundSchema, payload)) throw new Error('Invalid Harness configuration ownership.');
       await store.append({ type: 'harness.configuration_bound', runId: owner.runId, payload });
-      onBound?.(reference);
+      onBound?.(reference, configuration);
       return { reference, probeAudit: {
         async requested(request) {
           const payload = { schemaVersion: 1 as const, reference, ...request };

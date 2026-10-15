@@ -1,3 +1,4 @@
+import { DEFAULT_AGENT_DEADLINE_MS } from '../core/agent-defaults.js';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
@@ -49,7 +50,7 @@ export function createCodingComparisonTools(input: { sourceRoot: string; workRoo
   const tools = workspaceTools(input.workRoot, {
     role: 'comparison', allowBinary: true, allowShell: true,
     mounts: { source: input.sourceRoot }, allowWrite: () => true, completionPaths: new Set(),
-    homeRoot: join(input.workRoot, '.home'), shellTimeoutMs: 24 * 60 * 60_000,
+    homeRoot: join(input.workRoot, '.home'), shellTimeoutMs: DEFAULT_AGENT_DEADLINE_MS,
     shellEnv: { REPRISE_SOURCE_MOUNT: input.sourceRoot },
   }).map(tool => ({ ...tool, ...(['read', 'ls', 'grep', 'find'].includes(tool.name) ? { executionMode: 'parallel' as const } : {}) }));
   return withCodingShellBoundary([...tools, {

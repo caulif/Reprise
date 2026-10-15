@@ -32,6 +32,14 @@ v2 读端校验 schema、身份、内部 owner、每个清单文件长度/hash�
 
 首页与历史列表使用 v2 轻量查询：实验 `modelInputAudit: not_checked`，空间 `storageSizeStatus: not_collected`，数值缺失不代表零。列表仍核对提交前缀和运行/报告归属；冻结 case 的元数据读取保留真实目录、普通 JSON、完整标记、owner 和内容描述校验，`filesVerified: false` 不认证绑定文件。打开任务详情才完整校验冻结文件，打开实验详情只审计所选实验的模型输入；独立空间统计返回采集时间。条目 I/O 错误和日志前缀诊断保持可见，读取并发有界、过期导航不回写页面。旧完整查询仍供显式审计使用。见[列表与显式审计](../decisions/accepted/2026-10-15-history-listing-and-explicit-audit.md)。
 
+固定身份的实验轻列表另标 `taskCaseFilesVerified: false`，只确认元数据描述与固定身份一致，不读取绑定附件或认证它们的现存字节。所选实验详情改用完整 reader，成功才置 true；失败保留原 run 与诊断。任务使用和重比仍须完整验证，不能根据轻列表的标题或 fixed-v2 标记跳过文件检查。组合边界见[固定身份与有效总预算](../decisions/accepted/2026-10-15-remediation-integration-boundaries.md)。
+
+新 ExperimentSpec v2 只绑定固定 TaskCase 身份：冻结 v2 case 使用完整内容 hash，旧 v1 使用旧 hash 和仅忽略 importedAt 的当前 canonical 观察。旧 metadata（无版本或版本 1）完整校验后原样读取，不重写、不补历史认证；History 明示旧身份未认证。新的当前绑定与保留 case 不一致时显示具体诊断，不展示替换内容的标题。候选、policy 和 Agent 实际配置仍属于每个 run，首轮配置不是永久约束。
+
+metadata 与 preflight 读端分派 missing/corrupt/unsupported/legacy/current；非正整数版本为损坏，合法未知版本为不支持。新 preflight wrapper 绑定 experimentId/runId 并完整校验嵌套内容；只有 nested missing 可读旧根级文件，损坏或未知版本不能回退。缺失旧预检的运行重比明确 sourceBaseline unknown 与证据限制。固定场景和接纳顺序见[固定实验身份决策](../decisions/accepted/2026-10-15-fixed-experiment-identity-and-persisted-comparison-context.md)。
+
+对已结束 RunRecord，inspection、模型可见运行事实与 Target 引用只读 record.trace 的原日志窗口，后续同 run 的 runtime 追加不能改变旧答案、usage 或 settlement；无 record 的运行中查询保持读取当前日志。
+
 启动失败仅按 core schema 与已提交 attempt owner 匹配的 run.startup_failed 显示 failed/cancelled、stage 和诊断；没有 experiment.json 时保留最小身份与 missing_metadata，孤立失败文件不认证。已接纳 attempt 的任务与固定实验元数据冲突时，History 保留真实 attempt 任务和启动诊断，并显式展示原元数据任务 ID 与冲突。元数据缺失或损坏且事件日志发生 I/O 错误时，列表保留损坏条目、unknown 和安全错误码，不生成运行事实；打开详情仍报告实际日志读取错误。
 
 History 的默认运行按已提交 `run.attempt_created` 顺序选择，日志校验后再按选中 run 重建模型输入及终态，另一 run 的完成不能补成当前 run 的完成。缺少该 run 生命周期日志的旧运行按经过 schema 和身份校验的 attempt/record 时间排序；其他 run 或后续 Comparison 事件不改变其旧格式资格；缺有效时间或最新时间并列时只给确定性的选择并标 `runOrdering: unknown`，不宣称时间上的最新。重比默认倒序查找合法 finished RunRecord；多条 legacy 的时间未知或最新并列时必须显式选 runId，唯一合法 finished 仍可默认选择。显式 runId 精确选择且不回退。record.attempt、manifest.attempt 与已提交 attempt 必须一致；该 run 存在生命周期日志时还须匹配已提交 run.finished 的运行事实，不能以孤立 record 认定完成。已提交 artifactRefs 保持原值和顺序；无本 run 提交锚点的旧 record 仅接受精确本 case 或本实验/本 run 的单 owner refs，跨 run、双 owner 与未绑定 run 的引用拒绝认证；仅允许额外一个精确属于本实验、本 run 的 host-trace.json，并须对应晚于 finished 的 artifact.created，实际读取仍校验 Store manifest、提交来源与 hash。
@@ -46,7 +54,7 @@ History 的默认运行按已提交 `run.attempt_created` 顺序选择，日志�
 
 默认 Pi Harness 为每次 Candidate、Recovery 与持久化重比提交版本 1 的有效配置 DTO：先提交 run-owned 配置 artifact，再写 `harness.configuration_bound`，其中保留同一配置正文、hash 和 owner 引用。该事件先于本操作的连接 probe；artifact 残留不能认证配置。RunManifest 的角色配置、Recovery initialize 记录和 Comparison 操作绑定准确引用；重用 Agent 或连接检查缓存时仍提交本次 owner，引用不写回共享 Agent 实例。自定义 Port 与旧记录缺有效引用时保持未记录，不从 requested budget 推断已经生效。
 
-快照区分 Controller 单次无限、Recovery 单次上限与固定 24 小时操作截止，以及自主 Comparison 配置单次上限、整体截止和逐请求 `min(剩余整体时间, 单次上限)` 规则。空 Comparison resources override 保留默认整体截止；未在自主模式执行的旧阶段限额只放 requestedResources，不冒充 enforcedResources。快照与 Agent 构造共用预算解析，Candidate/policy 以及 Pi 私有配置、首次解析模型使用冻结副本，后续调用方对象或模型注册表变化不能改写本次执行条件。
+快照区分 Controller 单次无限、Recovery 的实际单次上限与操作总限，以及自主 Comparison 配置单次上限、整体截止和逐请求 `min(剩余整体时间, 单次上限)` 规则。内置 Recovery 的两项预算使用本次 recoveryBudget.callTimeoutMs；整体计时、配置绑定前后及显式冲突边界见[Recovery 预算](./recovery.md#recovery-agent-单任务会话)。空 Comparison resources override 保留默认整体截止；未在自主模式执行的旧阶段限额只放 requestedResources，不冒充 enforcedResources。快照与 Agent 构造共用预算解析，Candidate/policy 以及 Pi 私有配置、首次解析模型使用冻结副本，后续调用方对象或模型注册表变化不能改写本次执行条件。
 
 模型 DTO 显式挑选 provider/model、API、上下文和输出窗口、输入能力、reasoning/effort、已知无敏感标量 compat override 与已安装 SDK 版本。嵌套 schema 拒绝未知字段；不展开本机配置，不保存 apiKey、keyRef、headers 或 endpoint。SDK 按 URL 推导的默认 compat、复杂未记录参数和网络路由明确不完整；fingerprint 仅供比对，不能重建这些内容或凭据。此 DTO 记录 Harness 可控制条件，不宣称完整重建 Provider wire 请求；普通 generation 的实际输入仍以 Host 快照为准。
 
@@ -186,7 +194,7 @@ Comparison 每次使用独立 attempt。严格三会话路径的调查、短作�
 
 严格三会话路径独立 reviewer 使用专用短系统提示，保留实际来源、输出链、反证、支持范围、问题历史、Host指标和版本发布约束；首次source输入隔离作者对话，但包含当前saved findings的绑定及待证假设，保存记录始终不作事实认证，优先绑定 delta 与紧凑 decision，减少重复输入和输出。旧端口保留通用提示，不调整模型参数。严格核稿仅 completed 或明确 final_inspection_ready 才进入预览，output_limit 或阶段截止不能凭旧 inspection 发布。
 
-严格三会话路径且配置 maxElapsedMs 时，初存、调查及 findings 收尾共享调查绝对截止。默认1200秒基准下调查/调查保存/作者上限240/120/180秒，后续预留780/660/480秒；保存预留包含完整作者窗口，避免保存与作者共享同一截止。来源复审/来源保存/正文交付/最终发现/audit/preview上限300/120/120/120/180/120秒，后续预留360/300/270/210/90/30秒。来源初查另限240秒、唯一补查另限60秒，不越过共享来源截止。所有阶段首次进入后截止不重置；调查保存仅累计实际保存时间，返回来源不续期。显式总额度同比缩放（含大额度），更小 investigationMs 保持有效。正文交付超时立即失败，不认证未完成调用；保存中断后仍须实际取得正文、完成必要的真实最终发现更新再核稿。过期不发新请求，修复也不豁免；取消、真实错误和整体硬限优先。未产出可发布检查点的bounded让出失败保留 agent_timeout/timeout和阶段原因；专用闭合器已处理的超时保留业务code和timeout类别，不自动重放整个attempt；其它让出保持协议失败。阶段快照记录 workStage/workDeadlineAt/workRemainingMs，控制从 invocation-start 的 yieldDeadline 复原。非严格端口保留局部截止兼容策略。见[稳定性与阶段保留](../decisions/accepted/2026-10-10-comparison-stability-reserves.md)。
+以下阶段截止仅适用于严格三会话路径、启用阶段边界并显式配置阶段资源的情况；默认仅含 `maxElapsedMs` 的 24 小时策略只检查整体时间，不启用这些阶段截止。1200 秒是显式阶段策略的比例缩放基准，不是当前默认总预算；阶段上限与预留按配置的 `maxElapsedMs / 1_200_000` 缩放。此时初存、调查及 findings 收尾共享调查绝对截止。1200秒基准下调查/调查保存/作者上限240/120/180秒，后续预留780/660/480秒；保存预留包含完整作者窗口，避免保存与作者共享同一截止。来源复审/来源保存/正文交付/最终发现/audit/preview上限300/120/120/120/180/120秒，后续预留360/300/270/210/90/30秒。来源初查另限240秒、唯一补查另限60秒，不越过共享来源截止。所有阶段首次进入后截止不重置；调查保存仅累计实际保存时间，返回来源不续期。显式总额度同比缩放（含大额度），更小 investigationMs 保持有效。正文交付超时立即失败，不认证未完成调用；保存中断后仍须实际取得正文、完成必要的真实最终发现更新再核稿。过期不发新请求，修复也不豁免；取消、真实错误和整体硬限优先。未产出可发布检查点的bounded让出失败保留 agent_timeout/timeout和阶段原因；专用闭合器已处理的超时保留业务code和timeout类别，不自动重放整个attempt；其它让出保持协议失败。阶段快照记录 workStage/workDeadlineAt/workRemainingMs，控制从 invocation-start 的 yieldDeadline 复原。非严格端口保留局部截止兼容策略。见[稳定性与阶段保留](../decisions/accepted/2026-10-10-comparison-stability-reserves.md)。
 
 宿主在已提交来源工具完成回执之后自动追加 comparison.evidence_checkpoint，引用 sourceToolCallId、hash及字节数并标明 not_certified。原始证据不依赖模型语义保存才能保留；进度索引不证明检查成功、不编造结论、不支持任意阶段续跑。机械 inspection/final-inspection/preview 可通过已审计 maxOutputTokens 限制generation输出（默认4096），不影响compaction额度；一次有界output_limit续写和实际工具/发布认证不变。几何 missing/ambiguous 的可选 selectorDiagnostics 只包含匹配数与最多4个元素身份，过schema/字节/绑定校验，帮助修正查询而不证明对象角色。
 

@@ -4,7 +4,7 @@ import type { ComparisonAgentPort, ComparisonResult } from "../agents/comparison
 import { type ControllerDecision, type ControllerPort } from "../agents/controller-agent.js";
 import { materializeIsolatedStart } from "./session-start-workspace.js";
 import { commitCandidateLaunchContext } from "./recovery/launch-context.js";
-import { persistExperimentSpec, persistRunPreflight } from "./experiment-layout.js";
+import { persistRunPreflight } from "./experiment-layout.js";
 import { CandidateRun } from "./candidate-run.js";
 import { createCandidateRuntimeSink } from "./candidate-run-events.js";
 import { progressDigestFromFingerprint } from "./candidate-run-safety.js";
@@ -26,7 +26,7 @@ import {
   inferSourceRootKind,
   type SourceRootKind,
 } from "./replay-conditions.js";
-import { assertIds, assertPaths, persistTaskCase, sourceDirectoryExists } from "./experiment-helpers.js";
+import { assertIds, assertPaths, sourceDirectoryExists } from "./experiment-helpers.js";
 import { captureWorkspaceScope } from "./controller-queries.js";
 import { runControllerLoop } from "./experiment-controller-loop.js";
 import {
@@ -50,9 +50,9 @@ export type ExperimentResult = {
   reportPath: string;
   preflight: ExperimentPreflight;
   record: RunRecord;
-  decision: StructuredAgentResult<ControllerDecision>;
+  decision: StructuredAgentResult<ControllerDecision> | { status: 'not_reconstructed' };
   comparison: { result: StructuredAgentResult<ComparisonResult> | { status: "skipped" } };
-  followupSubmission: boolean;
+  followupSubmission?: boolean;
   targetEvents: readonly string[];
   checkpoint?: RecoveryCheckpoint;
   facts: {
@@ -73,7 +73,7 @@ export type ExperimentInput = {
   runId: string;
   sourceRoot: string;
   sourceRootKind?: SourceRootKind;
-  taskCase: TaskCase | ((baseline: EnvironmentBaseline) => TaskCase);
+  taskCase: TaskCase;
   candidate: CandidateSpec;
   policy: RunPolicy;
   agentConfig: ExperimentAgentConfig;
@@ -140,6 +140,7 @@ type ExperimentControl = {
 export function startExperiment(
   input: ExperimentInput,
 ): ExperimentHandle {
+  input = { ...input };
   const abort = new AbortController();
   let active: ActiveRun | undefined;
   let activeController: ControllerPort | undefined;
@@ -240,7 +241,6 @@ async function captureExperimentContext(
   assertPaths(input.dataDir, input.sourceRoot);
   assertIds(input);
   if (
-    typeof input.taskCase !== "function" &&
     input.caseId !== input.taskCase.caseId
   )
     throw new Error("Experiment caseId must match TaskCase.caseId.");
@@ -278,10 +278,7 @@ async function captureExperimentContext(
       "The selected source changed after preflight. Run preflight again before starting the Candidate.",
     );
   }
-  const taskCase =
-    typeof input.taskCase === "function"
-      ? input.taskCase(baseline)
-      : input.taskCase;
+  const taskCase = startup.taskCase;
   if (taskCase.caseId !== input.caseId)
     throw new Error(
       "Recovered TaskCase.caseId must match the experiment caseId.",
@@ -294,10 +291,6 @@ async function captureExperimentContext(
   });
   startup.stage = 'metadata';
   const preflight = preflightFromBaseline(baseline, resolved);
-  await persistTaskCase(
-    join(resolve(input.dataDir), "cases", input.caseId, "case.json"),
-    taskCase,
-  );
   await persistRunPreflight(experimentRoot, input.runId, preflight);
   if (preflight.sourceBaseline === "unavailable")
     throw new Error(
@@ -341,16 +334,6 @@ async function openExperimentSession(input: {
   const { input: experiment, experimentRoot, provider, resolved, baseline, taskCase, historicalCwd } = input;
   let sourceRootKind = input.sourceRootKind;
   const comparisonAgentConfig = experiment.comparisonAgentConfig ?? experiment.agentConfig;
-  const spec = {
-    experimentId: experiment.experimentId,
-    taskCaseId: experiment.caseId,
-    candidates: [experiment.candidate],
-    controller: resolvedAgentConfiguration(experiment.agentConfig),
-    comparison: resolvedAgentConfiguration(comparisonAgentConfig),
-    runPolicy: experiment.policy,
-    outputRoot: experimentRoot,
-  };
-  await persistExperimentSpec(experimentRoot, spec);
   input.startup.stage = 'prepare';
   let environment = await provider.prepareRun(baseline, experiment.runId);
   input.onPrepared(environment);
@@ -593,9 +576,9 @@ async function executeExperiment(
   input: ExperimentInput,
   control: ExperimentControl,
 ): Promise<ExperimentResult> {
-  if (typeof input.taskCase !== 'function' && input.taskCase.caseId !== input.caseId) throw new Error('Experiment caseId must match TaskCase.caseId.');
+  if (input.taskCase.caseId !== input.caseId) throw new Error('Experiment caseId must match TaskCase.caseId.');
   const startup = input.startup ?? await ExperimentStartup.admit(input);
-  input = { ...input, candidate: startup.attempt.candidate, policy: startup.attempt.policy };
+  input = { ...input, taskCase: startup.taskCase, candidate: startup.attempt.candidate, policy: startup.attempt.policy };
   let acquired: { provider: LocalWorkspaceProvider; environment: PreparedEnvironmentRef } | undefined;
   let released: Promise<{ status: 'released' | 'already_released' }> | undefined;
   const release = () => released ??= acquired!.provider.release(acquired!.environment);

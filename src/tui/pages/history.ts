@@ -102,6 +102,7 @@ export function renderHistoryDetailWithHits(
       : item.formatError === 'invalid_metadata' ? 'historyInvalidMetadata'
         : item.formatError === 'metadata_case_mismatch' ? 'historyMetadataCaseMismatch'
         : item.formatError === 'unreadable_entry' ? 'historyUnreadableEntry'
+        : item.formatError === 'fixed_task_identity_mismatch' ? 'historyFixedTaskMismatch'
         : item.formatError === 'unreadable_record' ? 'historyUnreadableRecord' : 'unsupportedSchema';
     push(kv(theme, t(locale, 'historyFormat'), t(locale, key), width - 2));
   }
@@ -122,10 +123,12 @@ export function renderHistoryDetailWithHits(
   push(theme.style.muted(` ${t(locale, 'historyTechnical')}`));
   push(kv(theme, t(locale, 'historyRecordId'), item.experimentId, width - 2));
   push(kv(theme, t(locale, 'historyTaskId'), item.taskCaseId, width - 2));
+  if (item.taskIdentity) push(kv(theme, t(locale, 'historyTaskIdentity'), t(locale, item.taskIdentity === 'fixed-v2' ? 'historyFixedV2Identity' : 'historyLegacyIdentity'), width - 2));
   if (item.metadataTaskCaseId) push(kv(theme, t(locale, 'historyMetadataTaskId'), item.metadataTaskCaseId, width - 2));
   push(kv(theme, t(locale, 'historyRunId'), missing(item.runId), width - 2));
   push(kv(theme, t(locale, 'historyStoredSize'), item.sizeBytes === undefined ? t(locale, 'historySizeNotCollected') : formatBytes(item.sizeBytes), width - 2));
   if (item.modelInputAudit === 'not_checked') push(kv(theme, t(locale, 'modelInputLabel'), t(locale, 'historyInputNotChecked'), width - 2));
+  if (item.taskCaseFilesVerified === false) push(kv(theme, t(locale, 'historyTaskIdentity'), t(locale, 'historyTaskFilesNotVerified'), width - 2));
   if (item.eventLogDiagnostic) push(kv(theme, t(locale, 'historyEventLogError'), item.eventLogDiagnostic, width - 2));
   pushLink(kvLinkBlock(theme, t(locale, 'historyLocation'), item.path, item.path, width), item.path);
   return panelWithHits(theme, t(locale, 'historyRunTitle'), body, width, bodyHits);

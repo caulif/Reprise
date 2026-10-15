@@ -1,6 +1,6 @@
 import { isAbsolute } from "node:path";
 import { sha256 } from "../core/identity.js";
-import { recoveryEvidenceCatalog, type RecoveryEvidenceCatalogEntry } from "../products/history/source-refs.js";
+import { recoveryEvidenceCatalog, type RecoveryEvidenceCatalogEntry } from "../core/recovery-evidence.js";
 import { sameLiveFsPath } from "../core/paths.js";
 import { type TaskCase } from "../core/schema.js";
 import { ProcessBoundaryError, runProcess } from "./process-runner.js";

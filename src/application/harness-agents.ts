@@ -1,3 +1,4 @@
+import { DEFAULT_AGENT_DEADLINE_MS } from '../core/agent-defaults.js';
 import { AutonomousComparisonAgent } from '../agents/comparison-autonomous.js';
 import { DEFAULT_COMPARISON_RESOURCES, resolveAutonomousComparisonResources } from '../agents/comparison-resources.js';
 import { RecoveryAgent } from '../agents/recovery-agent.js';
@@ -27,7 +28,7 @@ export type HarnessAgents = {
  * Constructs all internal agents from the one persisted, non-sensitive Pi choice.
  * Credentials remain entirely in Pi's provider layer.
  */
-const DEFAULT_BUDGET: AgentBudget = { callTimeoutMs: 24 * 60 * 60_000, maxStructuredRepairAttempts: 1 };
+const DEFAULT_BUDGET: AgentBudget = { callTimeoutMs: DEFAULT_AGENT_DEADLINE_MS, maxStructuredRepairAttempts: 1 };
 
 export function createHarnessAgents(
   config: HarnessModelConfig,
@@ -66,7 +67,7 @@ function effectiveHarnessConfiguration(caller: PiModelCaller, budget: AgentBudge
     controller: { singleCall: { kind: 'unlimited' }, maxStructuredRepairAttempts: budget.maxStructuredRepairAttempts,
       decisionLimitScope: 'candidate-controller-loop', ...(budget.maxCalls === undefined ? {} : { decisionLimit: budget.maxCalls }) },
     recovery: { singleCall: { kind: 'finite', milliseconds: recoveryBudget.callTimeoutMs },
-      operationTotal: { kind: 'finite', milliseconds: 24 * 60 * 60_000 }, maxStructuredRepairAttempts: recoveryBudget.maxStructuredRepairAttempts },
+      operationTotal: { kind: 'finite', milliseconds: recoveryBudget.callTimeoutMs }, maxStructuredRepairAttempts: recoveryBudget.maxStructuredRepairAttempts },
     comparison: { configuredCallCap: { kind: 'finite', milliseconds: budget.callTimeoutMs },
       operationTotal: { kind: 'finite', milliseconds: resources.maxElapsedMs! }, mode: 'autonomous-total',
       requestDeadlineRule: 'min-remaining-operation-and-configured-call-cap',

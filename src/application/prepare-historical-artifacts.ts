@@ -1,6 +1,7 @@
 import { chmod, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
+import { assertSafeLogicalPath } from "../core/logical-paths.js";
 import { sha256, writeAtomic } from "../core/identity.js";
 import {
   HistoricalArtifactManifestSchema,
@@ -13,7 +14,6 @@ import {
 import type { HistoricalArtifactExtractResult } from "../products/contract.js";
 import type { HistoricalArtifactExtractFn } from "../products/shared/freeze.js";
 import {
-  assertSafeLogicalPath,
   frozenRelativePathForArtifact,
   validateHistoricalExtraction,
   validateHistoricalArtifactBytes,

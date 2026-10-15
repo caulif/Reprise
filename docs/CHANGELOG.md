@@ -14,6 +14,7 @@
 
 - Comparison 自主会话在完成、失败或取消后关闭模型 Session；同时保留原始错误与收尾错误，并统一 Provider 失败诊断。离线评测允许当前 Comparison 模型流审计事件追加到冻结输入之后。
 - Comparison 新自主报告采用推荐优先的格式3：突出历史/当前实际模型，最多三条短差异，取消详情展开区；耗时、Token（k）与估算费用集中为三行表。限制推荐和作者正文长度，保留旧报告读取与原有预览/发布完整性检查。历史完成事件的耗时可从 duration_ms 恢复，轮次累计与整体区间分别记录，缺失或不可比明确提示。详见[兼容与验证边界](decisions/accepted/2026-10-14-comparison-compact-report.md)。
+- 实验在接纳前固定并校验 TaskCase 身份，旧 ID/hash 下不同任务不会先触发模型探测；后续 run 仍可选择不同候选与 policy。预检按版本、完整结构与 run owner 读取，损坏不回退，旧预检缺失明确未知。持久化重比使用真实完成运行上下文，移除假 Controller/Runtime/Session，History 明示旧身份与固定内容冲突。
 
 - Harness 为每次运行、Recovery 和重比提交无凭据的有效配置快照，区分 Controller 无限单次、Recovery 与 Comparison 的实际预算；连接检查先记录本次配置与请求。预算变更不再复用旧 Agent，凭据轮换仍触发重新探测。重比初始化失败拥有独立 attempt，History 保留此前确认报告并显示本次失败。
 

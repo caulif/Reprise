@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
-import { assertSafeLogicalPath } from '../products/shared/historical-artifact-files.js';
+import { assertSafeLogicalPath } from '../core/logical-paths.js';
 
 const execute = promisify(execFile);
 const MAX_FILE = 32 * 1024 * 1024;

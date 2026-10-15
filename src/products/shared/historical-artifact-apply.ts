@@ -1,3 +1,4 @@
+import { validateLogicalPath, type PathRejectReason } from "../../core/logical-paths.js";
 import { sha256 } from "../../core/identity.js";
 import { asPosixPath, isFsAbsolute, relativeInside } from "../../core/paths.js";
 import type {
@@ -17,8 +18,6 @@ export type NormalizedWrite = {
   readonly bytes?: Uint8Array;
   readonly sourceRefs: readonly string[];
 };
-
-export type PathRejectReason = "absolute" | "traversal" | "unc" | "drive" | "ads" | "empty" | "charset";
 
 type FileState =
   | { readonly status: "known"; readonly bytes: Uint8Array; readonly sourceRefs: string[] }
@@ -205,23 +204,6 @@ function isAbsoluteHistoricalPath(posix: string): boolean {
   return posix.startsWith("//") || /^[A-Za-z]:/.test(posix) || posix.startsWith("/") || isFsAbsolute(posix);
 }
 
-export function validateLogicalPath(raw: string): { ok: true; path: string } | { ok: false; reason: PathRejectReason } {
-  const trimmed = raw.trim();
-  if (!trimmed) return { ok: false, reason: "empty" };
-  if (trimmed.includes("\\") || /[\0\r\n*?"<>|]/.test(trimmed)) return { ok: false, reason: "charset" };
-  const posix = asPosixPath(trimmed);
-  if (posix.startsWith("//")) return { ok: false, reason: "unc" };
-  if (/^[A-Za-z]:/.test(posix)) return { ok: false, reason: "drive" };
-  if (posix.includes(":")) return { ok: false, reason: "ads" };
-  if (posix.startsWith("/") || isFsAbsolute(posix)) return { ok: false, reason: "absolute" };
-  const parts = posix.split("/");
-  if (parts.some((part) => part === "" || part === "..")) {
-    return { ok: false, reason: parts.includes("..") ? "traversal" : "charset" };
-  }
-  const normalized = parts.filter((part) => part !== ".").join("/");
-  if (!normalized) return { ok: false, reason: "empty" };
-  return { ok: true, path: normalized };
-}
 
 function artifactIdForPath(logicalPath: string): string {
   return `ha-${sha256(logicalPath).slice(0, 24)}`;

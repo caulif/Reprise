@@ -72,7 +72,7 @@ test('effective configuration records enforced budgets and only allowlisted non-
   assert.equal(effective.controller.decisionLimitScope, 'candidate-controller-loop');
   assert.equal(agents.comparison.timeoutMs, 5000);
   assert.equal(agents.recovery.timeoutMs, 7000);
-  assert.deepEqual(effective.recovery.operationTotal, { kind: 'finite', milliseconds: 86_400_000 });
+  assert.deepEqual(effective.recovery.operationTotal, { kind: 'finite', milliseconds: 7000 });
   assert.deepEqual(effective.comparison.operationTotal, { kind: 'finite', milliseconds: 20 });
   assert.deepEqual(effective.comparison.configuredCallCap, { kind: 'finite', milliseconds: 5000 });
   assert.equal(effective.comparison.requestDeadlineRule, 'min-remaining-operation-and-configured-call-cap');

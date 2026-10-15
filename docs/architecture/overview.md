@@ -24,7 +24,7 @@ Core 定义 [schema](../../src/core/schema.ts)、[状态转换](../../src/core/s
 4. `CandidateRun` 记录投递、turn settlement、任务判断、终止和 cleanup。Controller 在 opening 以及后续 settled turn 上参与，Controller 工具可以按规则读写工作副本和记录观察。
 5. 候选完成后保留 `RunRecord`。Comparison 是独立的、可选的 attempt，读取冻结观察和候选证据并生成报告。
 
-启动接纳先校验 ID、路径与 attempt，再取得 writer 并提交 `RunAttempt`；此后的 Runtime 校验与准备失败按启动协议保存诊断。接纳前的非法输入、锁竞争及持久化本身失败不保证形成 attempt 或终态，不能把它们和已接纳请求混为一类。所有权及失败边界见[执行流程](./execution.md#candidaterun-生命周期)。
+启动接纳先校验 ID、路径、attempt 与冻结 TaskCase，再在 writer 内确认固定场景身份并提交 `RunAttempt`；此后的 Runtime 校验与准备失败按启动协议保存诊断。接纳前的非法输入、固定身份冲突、锁竞争及持久化本身失败不保证形成 attempt 或终态，不能把它们和已接纳请求混为一类。所有权及失败边界见[执行流程](./execution.md#candidaterun-生命周期)。
 
 ## Pack 边界
 
@@ -43,6 +43,8 @@ Core 定义 [schema](../../src/core/schema.ts)、[状态转换](../../src/core/s
 - 模型可见输入必须能从事件和持久化 briefing 重建；压缩使用 `agent.context_compacted` 的 summary 与 retained tail。
 - TUI 只投影事件和结果，不伪造未公开的推理过程。查找编辑和退出恢复快照由局部 [CanvasFind](../../src/tui/canvas-find.ts) 持有，不接收整个控制器；timeline 选择与导航仍由原控制器负责，异步结果继续受 generation/request token 约束。
 - 事件诊断与阶段时钟由 [RunDiagnostics](../../src/tui/run-diagnostics.ts) 持有，页面读取只读快照；它复用既有事件推导，不持有 workflow、实验 handle、页面或取消生命周期，不执行 CandidateRun 状态变化。
+- 同层跨模块导入仅允许 agents、environment、products 指向 infrastructure；infrastructure 不反向依赖这些模块，证据引用目录由 core 持有。
+- 配置编辑与测试局部状态由 [ConfigSession](../../src/tui/config-session.ts) 持有，以 draftVersion 和 request ticket 区分草稿/请求归属；保存、探测和 navigation generation 的副作用与提交 guard 仍由 adapter 负责。
 
 ## 实现入口
 
@@ -69,4 +71,3 @@ token 与成本上限默认不启用。Controller 单次 `timeoutMs` 为 0；Com
 <!-- END GENERATED default-run-policy -->
 
 自定义 OpenAI-compatible 模型未显式配置时，上下文窗口默认 256,000 tokens，单次最大输出仍为 16,384 tokens；目录模型与显式配置保留原值。
-

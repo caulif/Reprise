@@ -13,7 +13,7 @@ import {
   writeOpeningBriefing,
   writeSettledTurnBriefing,
 } from "../../src/application/controller-briefing.js";
-import { recoveryEvidenceCatalog } from "../../src/products/history/source-refs.js";
+import { recoveryEvidenceCatalog } from "../../src/core/recovery-evidence.js";
 import { workspaceTools } from "../../src/infrastructure/recovery-tools.js";
 import type { EventEnvelope, RunRecord, TaskCase } from "../../src/core/schema.js";
 import { sha256 } from '../../src/core/identity.js';

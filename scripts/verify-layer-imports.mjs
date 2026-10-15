@@ -16,6 +16,11 @@ const RANK = {
   tui: 3,
   cli: 4,
 };
+const SAME_RANK_DEPENDENCIES = {
+  agents: ['infrastructure'],
+  environment: ['infrastructure'],
+  products: ['infrastructure'],
+};
 
 export function layerOf(posixPath) {
   const [, folder] = posixPath.split("/");
@@ -31,7 +36,9 @@ export function forbiddenImport(fromPath, specifier) {
   const rel = relative(ROOT, resolved).replaceAll("\\", "/");
   const toLayer = layerOf(rel);
   if (!toLayer) return undefined;
-  if (RANK[fromLayer] < RANK[toLayer]) {
+  if (RANK[fromLayer] < RANK[toLayer]
+    || (fromLayer !== toLayer && RANK[fromLayer] === RANK[toLayer]
+      && !SAME_RANK_DEPENDENCIES[fromLayer]?.includes(toLayer))) {
     return `${from} 的 ${fromLayer} 不得 import ${toLayer} (${specifier})`;
   }
   return undefined;
@@ -63,6 +70,18 @@ function selfTest() {
   if (!violation) throw new Error("core→tui 应当被拒绝");
   if (forbiddenImport("src/tui/controller.ts", "../application/experiment.ts")) {
     throw new Error("tui→application 应当允许");
+  }
+  for (const target of ['products', 'agents', 'environment']) {
+    if (!forbiddenImport('src/infrastructure/recovery-tools.ts', `../${target}/example.js`)) {
+      throw new Error(`infrastructure→${target} 应当被拒绝，避免同层反向依赖环`);
+    }
+    if (forbiddenImport(`src/${target}/example.ts`, '../infrastructure/example.js')) {
+      throw new Error(`${target}→infrastructure 应当允许`);
+    }
+  }
+  if (!forbiddenImport('src/agents/example.ts', '../products/example.js')
+    || forbiddenImport('src/products/history/read.ts', '../contract.js')) {
+    throw new Error('同层跨模块只允许显式依赖边；模块内部引用允许');
   }
   const fromImport = relativeSpecifiers('import x from "./tui/page.ts";');
   const fromExport = relativeSpecifiers('export { x } from "./tui/page.ts";');
