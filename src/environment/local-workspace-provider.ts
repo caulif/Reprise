@@ -42,8 +42,6 @@ export {
 } from './local-workspace-fs.js';
 
 
-export const MAX_INLINE_HASH_BYTES = 8 * 1024 * 1024;
-
 export class RecoveryValidationError extends Error {
   constructor(readonly code: 'source_tripwire_failed' | 'provider_validation_failed', message: string) {
     super(message);

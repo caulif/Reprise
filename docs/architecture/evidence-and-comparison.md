@@ -14,7 +14,50 @@
 
 Recovery 的固定 artifact 与决定、诊断等不可变 JSON 按 `runs/<runId>/` 保存；默认 Recovery Provider 的 baseline 按 `environment/recovery/<runId>/` 隔离。baseline marker 的 `reportRunId` 指向 run 所属报告，旧 marker 缺字段时只查实验级报告；旧 scene 缺 `recoveryProviderRunId` 时继续使用 `environment/baselines/`。旧根级文件不迁移、不覆写，新读端按明确 owner 读取，不能用另一 run 的同名 artifact 填补缺失。
 
+## 冻结任务保全
+
+共享冻结入口不删除或重写任何已有 case 目录。当前新冻结写入显式版本 2；统一读端支持版本 1 和 2，未知版本拒绝。旧版本保留原 ID、hash、路径与起点，不自动升级或补认证。损坏、缺完整标记或同身份内容冲突均保留旧证据并明确拒绝。历史列表只统计非法 case，执行读端暴露诊断。
+
+v2 的 `provenance.sourceHash` 表示脱敏后来源字节，`contentHash` 是 `task-case-v2` 算法对任务内容与保留文件清单的 SHA-256；`caseId` 为 `case-v2-` 加 digest 的前 32 个十六进制字符。同来源不同起点、执行/授权、有效隐私条件、解释版本、证据或文件字节变化形成新身份，可以并存；只改变 importedAt、来源存储路径或 casesRoot 不改变身份。排序对象键但保留消息和事件顺序；正文及 taskContext 中有任务语义的路径保留。自身 caseId/contentHash 和 case-owned artifactRefs 的 caseId 不参加递归 hash。observations 元数据分别提供 case schema/identity 算法和 sourceHash/contentHash；逐消息 source refs 仍使用原行内容 hash，不把 case digest 当作来源行 hash。
+
+v2 读端校验 schema、身份、内部 owner、每个清单文件长度/hash，以及封存 artifact manifest 与绑定文件的关系；私有 case 拒绝清单之外的文件，发布输入也必须准确匹配清单。case.json 必须是常规文件；case root、私有 casesRoot 及绑定文件内部路径不允许 junction/符号链接。配置的数据目录及其上级由操作者选择，不宣称阻止恶意同权限进程替换整棵父目录。显式外部 `--task-case` 可以读取无发布标记的完整 JSON 与绑定文件，但同样要求真实 case root，仅复制清单内文件而不认领外部根的其它文件；读端保存进程内 origin receipt，重新持久化时复制绑定文件并在私有 staging 再核验，不能把旧校验当作后来复制字节的证明。
+
+目录发布先取得同身份的文件系统独占 nonce 租约，失败/并发等待有界，不自动清未知旧锁；再沿用私有 staging、完整标记与 Windows 有界 rename 重试。释放前核对 nonce 和文件身份，替换后的他人租约保留。正常同内容并发幂等，冲突拒绝；读者只列出已发布完整目录。不迁移旧数据，不认证模型语义或新增断电持久性承诺。理由与兼容边界见[版本化冻结身份](../decisions/accepted/2026-10-14-frozen-case-identity.md)。
+
+文件发布原语统一位于 [`identity.ts`](../../src/core/identity.ts)：`writeAtomic` 替换可变投影；`writeImmutable` 和 Store 的 `writeImmutableJson` 创建不可变事实，先写完并关闭同目录私有临时文件，再用 hard link 原子创建目标。目标已存在即拒绝；不支持 hard link 时不回退到覆盖写。失败只清理本次临时文件，清理失败保留原错误及已发布状态；成功发布后不回滚目标。低层不判断内容幂等，schema、owner 与同内容重试仍由各提交边界负责；不新增断电持久性承诺。文件原语不能用于目录发布。理由见[不可变文件无覆盖发布](../decisions/accepted/2026-10-14-immutable-file-publication.md)。
+
+候选启动在首次实验事实写入与工作区准备之前取得 writer，RunAttempt 成为接纳点；构造前终态使用启动失败协议，详见[执行与结果](./execution.md#candidaterun-生命周期)。Store 的启动/清理补充事件同时校验 schema、envelope owner 与已提交 attempt 的 case；writer lease 读写使用 core schema，锁无法读取、解析或确认合法身份时保留原锁并报告失败。释放只处理本次 owner/nonce，不删除替换 owner 的锁；关闭与 flush 错误不能相互覆盖。
+
+## 运行与报告归属
+
+首页与历史列表使用 v2 轻量查询：实验 `modelInputAudit: not_checked`，空间 `storageSizeStatus: not_collected`，数值缺失不代表零。列表仍核对提交前缀和运行/报告归属；冻结 case 的元数据读取保留真实目录、普通 JSON、完整标记、owner 和内容描述校验，`filesVerified: false` 不认证绑定文件。打开任务详情才完整校验冻结文件，打开实验详情只审计所选实验的模型输入；独立空间统计返回采集时间。条目 I/O 错误和日志前缀诊断保持可见，读取并发有界、过期导航不回写页面。旧完整查询仍供显式审计使用。见[列表与显式审计](../decisions/accepted/2026-10-15-history-listing-and-explicit-audit.md)。
+新 ExperimentSpec v2 只绑定固定 TaskCase 身份：冻结 v2 case 使用完整内容 hash，旧 v1 使用旧 hash 和仅忽略 importedAt 的当前 canonical 观察。旧 metadata（无版本或版本 1）完整校验后原样读取，不重写、不补历史认证；History 明示旧身份未认证。新的当前绑定与保留 case 不一致时显示具体诊断，不展示替换内容的标题。候选、policy 和 Agent 实际配置仍属于每个 run，首轮配置不是永久约束。
+
+metadata 与 preflight 读端分派 missing/corrupt/unsupported/legacy/current；非正整数版本为损坏，合法未知版本为不支持。新 preflight wrapper 绑定 experimentId/runId 并完整校验嵌套内容；只有 nested missing 可读旧根级文件，损坏或未知版本不能回退。缺失旧预检的运行重比明确 sourceBaseline unknown 与证据限制。固定场景和接纳顺序见[固定实验身份决策](../decisions/accepted/2026-10-15-fixed-experiment-identity-and-persisted-comparison-context.md)。
+
+对已结束 RunRecord，inspection、模型可见运行事实与 Target 引用只读 record.trace 的原日志窗口，后续同 run 的 runtime 追加不能改变旧答案、usage 或 settlement；无 record 的运行中查询保持读取当前日志。
+
+启动失败仅按 core schema 与已提交 attempt owner 匹配的 run.startup_failed 显示 failed/cancelled、stage 和诊断；没有 experiment.json 时保留最小身份与 missing_metadata，孤立失败文件不认证。已接纳 attempt 的任务与固定实验元数据冲突时，History 保留真实 attempt 任务和启动诊断，并显式展示原元数据任务 ID 与冲突。元数据缺失或损坏且事件日志发生 I/O 错误时，列表保留损坏条目、unknown 和安全错误码，不生成运行事实；打开详情仍报告实际日志读取错误。
+
+History 的默认运行按已提交 `run.attempt_created` 顺序选择，日志校验后再按选中 run 重建模型输入及终态，另一 run 的完成不能补成当前 run 的完成。缺少该 run 生命周期日志的旧运行按经过 schema 和身份校验的 attempt/record 时间排序；其他 run 或后续 Comparison 事件不改变其旧格式资格；缺有效时间或最新时间并列时只给确定性的选择并标 `runOrdering: unknown`，不宣称时间上的最新。重比默认倒序查找合法 finished RunRecord；多条 legacy 的时间未知或最新并列时必须显式选 runId，唯一合法 finished 仍可默认选择。显式 runId 精确选择且不回退。record.attempt、manifest.attempt 与已提交 attempt 必须一致；该 run 存在生命周期日志时还须匹配已提交 run.finished 的运行事实，不能以孤立 record 认定完成。已提交 artifactRefs 保持原值和顺序；无本 run 提交锚点的旧 record 仅接受精确本 case 或本实验/本 run 的单 owner refs，跨 run、双 owner 与未绑定 run 的引用拒绝认证；仅允许额外一个精确属于本实验、本 run 的 host-trace.json，并须对应晚于 finished 的 artifact.created，实际读取仍校验 Store manifest、提交来源与 hash。
+
+每次 Comparison 将最终发布 HTML 保存为实验根目录下唯一的 `report-<attemptId>.html` 或 `comparison-failure-<attemptId>.html`。这些文件与便利投影同深度，保持内容寻址 media/evidence 与 attempt 独占 historical finals 的相对链接；最终发布模型另存在 attempt 的 `published-report-model.json`。`comparison-attempts/<attemptId>/result.json` 经核心 schema 校验，绑定 experiment/run/attempt、invocation、相对报告路径与完整 SHA-256。只有匹配的已提交 `report.created.reportOwner`、此前完成事件、owner 清单及实际文件 hash 都成立才确认归属；无提交、错配、损坏或逃逸路径不采用根级文件补缺。失败重比只展示当前 run 的诊断及该 run 的此前成功报告。
+
+根级 `report.html`、`comparison-failure.html`、`comparison.json` 仍供既有工具访问，但只是可替换便利投影。旧格式缺 owner 的报告可打开，History 标为 unknown/unconfirmed；不迁移旧字节，不将根级 completed 归到当前选择。协议取舍见[运行与报告归属](../decisions/accepted/2026-10-14-run-report-ownership.md)。
+
+结果页与 History 共用最小只读展示输入；unknown/pending 是合法展示事实，不构造不存在的 Session、报告或 Agent failure。应用层在既有 comparisonDetail 中保留实际 value.status（包含 completed），缺失详情不作为成功的缩写。失败诊断仅展示已保存的 token；报告路径与 owner 继续由上面的查询协议决定，展示层不补造。取舍见[诚实的结果展示输入](../decisions/accepted/2026-10-15-honest-result-presentation.md)。
+
 ## 模型输入可追溯
+
+默认 Pi Harness 为每次 Candidate、Recovery 与持久化重比提交版本 1 的有效配置 DTO：先提交 run-owned 配置 artifact，再写 `harness.configuration_bound`，其中保留同一配置正文、hash 和 owner 引用。该事件先于本操作的连接 probe；artifact 残留不能认证配置。RunManifest 的角色配置、Recovery initialize 记录和 Comparison 操作绑定准确引用；重用 Agent 或连接检查缓存时仍提交本次 owner，引用不写回共享 Agent 实例。自定义 Port 与旧记录缺有效引用时保持未记录，不从 requested budget 推断已经生效。
+
+快照区分 Controller 单次无限、Recovery 单次上限与固定 24 小时操作截止，以及自主 Comparison 配置单次上限、整体截止和逐请求 `min(剩余整体时间, 单次上限)` 规则。空 Comparison resources override 保留默认整体截止；未在自主模式执行的旧阶段限额只放 requestedResources，不冒充 enforcedResources。快照与 Agent 构造共用预算解析，Candidate/policy 以及 Pi 私有配置、首次解析模型使用冻结副本，后续调用方对象或模型注册表变化不能改写本次执行条件。
+
+模型 DTO 显式挑选 provider/model、API、上下文和输出窗口、输入能力、reasoning/effort、已知无敏感标量 compat override 与已安装 SDK 版本。嵌套 schema 拒绝未知字段；不展开本机配置，不保存 apiKey、keyRef、headers 或 endpoint。SDK 按 URL 推导的默认 compat、复杂未记录参数和网络路由明确不完整；fingerprint 仅供比对，不能重建这些内容或凭据。此 DTO 记录 Harness 可控制条件，不宣称完整重建 Provider wire 请求；普通 generation 的实际输入仍以 Host 快照为准。
+
+`harness.probe_requested` 在每次实际 outer 调用前保存版本化模板、实际 timestamp、reasoning 与配置引用，结果事件只保存通过、空响应、失败或取消分类。连接检查最多三次 outer 调用，每次允许 Pi SDK 内部重试；日志不虚构 SDK 未公开的各次传输。请求审计失败不调用模型；传输与完成审计同时失败时保留两者，成功响应后的审计失败也不标记连接验证成功。连接验证缓存包含凭据变更，Agent 缓存另包含 locale、budget 与 recoveryBudget。
+
+持久化重比先在 writer 下保留 `comparison.started` attempt，再初始化 Harness。准备/Host 失败保存该 attempt 的不可变 `operation-failure.json`、版本化 `comparison.operation_failed` 和失败/取消完成事实，不挤入候选启动协议，不伪造 Comparison Session。History 显示当前 attempt 失败并保留同 run 此前确认报告。只有明确连接 probe 来源才归为 Provider 失败，配置绑定/磁盘/审计失败保持 Host 初始化失败。
 
 Controller、Recovery、Comparison 都通过 Agent Session Host 生成模型请求。Host 把 system prompt、用户消息、工具结果和结构化结果写入审计事实；普通 generation 另保存 Pi 转换与裁剪后、经过凭据脱敏的实际上下文快照，保留原生工具参数及 SDK 拒绝消息；[`model-input.ts`](../../src/infrastructure/agent/model-input.ts) 从事件日志重建请求。上下文压缩必须追加 `agent.context_compacted`，其中 summary 与 retained tail 是后续请求可见的输入来源。新增模型可见事实必须先写入事件审计（必要时再由 briefing 做可读投影），不能只存在内存变量。
 
@@ -28,13 +71,17 @@ History 从已校验的提交日志前缀构造只读附件读取器，每个 Se
 
 ## Comparison attempt
 
+Comparison 的共享 Context、Port、Result、Facts 与输出校验由 [`comparison-contract.ts`](../../src/agents/comparison-contract.ts) 持有；应用、脚本和默认自主实现直接依赖该中立模块。旧 ComparisonAgent 内置 executor、阶段策略和兼容 re-export 已退役；历史 schema、reader、已提交报告认证及注入历史协议 Port 继续保留。共享不变量迁移与旧策略退役清单见[执行器退役决策](../decisions/accepted/2026-10-15-comparison-executor-retirement.md)。
+
 默认自主 Session 的输入以用户需求和实际交付物为先，完整导航与过程材料按需展开。`render_artifact` 支持一次调用中重放受控点击、表单输入、按键、滚动、等待和 DOM 状态观察，加载前可设置弱动效和主题偏好。每次新开冻结页面，传完整动作序列；带动作的帧时间相对序列完成，观察对应其动作位置。工具回执记录动作、条件及观察，沿现有审计和测量分页保存；不开放任意脚本、任意网址或用户浏览器。初始和工具后的剩余时间与实际整体截止保持一致。见[交付优先与浏览器检查](../decisions/accepted/2026-10-11-comparison-browser-actions.md)。
 
 默认由 [`AutonomousComparisonAgent`](../../src/agents/comparison-autonomous.ts) 执行单个自主 Session、一个初始任务 prompt。模型自主调查、验证、编写、预览及修订；read/search、write/edit、shell、受控渲染、图片读取/变换及证据登记工具全程可用，独立只读工具仍按已有声明并行。没有强制 understand/investigate/compose/review 阶段、周期语义保存、独立 reviewer 或 findings/disposition 提交要求；原始交付只读，工作文件写入 scratch/。模型选择证据与判断，Host 不对任务语义增加专用判题规则。
 
+Host 指标固定在已审计的自主 Session system prompt，压缩摘要丢失指标时，后续实际请求与 History 重建仍可取得原值。当前 Port 的 completed 结果必须实际具有 `reportPath=report.html`；assert 不通过临时副本替调用方填充字段，旧历史 envelope schema/reader 继续兼容原记录。见[指标输入与结果断言](../decisions/accepted/2026-10-15-comparison-pinned-input-and-result-validation.md)。
+
 `submit_report` 从 scratch/ 读取 UTF-8 证据片段，另提交推荐、必要边界及最多三条差异，复用安全 shell 和原有来源验证。新报告 formatVersion=3：突出历史/当前实际模型，推荐最多80个非空白码点、每条差异60、全部作者正文900，含表格/图注/代码；不提供详情展开区。Host 生成耗时、Token（k）和估算费用三行表，未知不作零，计时来源或覆盖不一致时短句提示。完整视口图优先、裁剪保留来源，长页沿受控滚动观察，视口图不等于全文。接受后须 `preview_report` 当前 digest/catalog，实际回执进入同 Session 后续 generation 快照并正常完成才可发布。新 `comparison.requested` 标记 `autonomousContractVersion=2`，旧1及报告1/2按原契约恢复，不与独立复审标记混用。版本完整性不认证语义或审美，见[紧凑报告决策](../decisions/accepted/2026-10-14-comparison-compact-report.md)。
 
-下文关于多阶段、独立审阅、findings、inspection、decisionSummary/disposition、周期 source-save 与字符配额的规则只描述旧 `ComparisonAgent` 兼容端口及历史恢复契约，不再是默认生产流程。旧请求仍按原标记验证，不自动降级成自主模式。共享的授权、证据、原生图片、审计、安全 shell 和原子发布规则继续适用。
+旧内置阶段执行器已退役。下文关于多阶段、独立审阅、findings、inspection、decisionSummary/disposition、周期 source-save 与字符配额的文字保留退休前的协议背景及历史恢复认证要求，不提供可构造的旧内置 executor，也不再是默认生产流程。旧请求仍按原标记验证，不自动降级成自主模式。共享的授权、证据、原生图片、审计、安全 shell 和原子发布规则继续适用。
 
 默认 Comparison 仅有整体 24 小时预算，不默认限制请求数、工具数、费用、来源阶段时间、保存累计耗时或续查次数。自主模式的空资源 override 也保留默认整体截止；显式请求/工具/费用限制仍执行，但不引入阶段截止。每次调用使用整体实际剩余时间与单次调用 timeout 的较小值。取消、数据授权、工具大小和并发容量及发布完整性检查继续有效。详见[整体时间预算](../decisions/accepted/2026-10-14-agent-default-budgets.md)。
 
@@ -116,11 +163,11 @@ TaskCase 通过 case.complete 发布，缺少标记的半成品不能作为完�
 
 进入模型的正文先经过秘密过滤，再持久化并发送；超出内联预算的内容使用带 hash/长度的附件，重建时校验。Pi 内存 transcript 不是另一份持久化真相。角色工具读取的正文同样需要可复原的事件／附件记录，仅保存可变文件路径或 digest 不足以重建输入。
 
-Comparison 每次使用独立 attempt。严格三会话路径的调查、短作者、独立 source/review 各自新建 Session；作者仅用原任务及实际保存假设，独立 source 初始输入不携带作者对话。其他新提交端口仍由调查与作者共用 Session、首次审阅另建 Session；后续修正复用其独立 Session。旧直接报告端口仍保持连续 Session。新提交路径按定向调查、提交、审阅三轮推进；首轮先读取确定性 briefing 索引，只追查会改变结论的问题。`comparison.phase_completed` 记录每段耗时、模型请求、工具调用、压缩和预览次数；旧四轮 JSON 信封仅保留给旧端口。可执行 Prompt 以 [`comparison-agent.ts`](../../src/agents/comparison-agent.ts) 与 [`comparison-review-findings.ts`](../../src/agents/comparison-review-findings.ts) 为文本源：以任务成功标准选证据形式，点名 `render_artifact` / `register_evidence` / `preview_report`；截图与页面查看只走这两个受控工具，禁止经 `shell_exec` 启动 Chrome/Edge/Firefox 或做 `--version` / `--dump-dom` / 用户 profile 探测；渲染失败则记录 limitation 并继续文本证据，不得用等价浏览器 shell 重试。Prompt 是第二道防线，不能替代 Comparison 工具装配层的 shell 边界。提交时 Host 检查短引用、媒体、结构和安全内容；review 须预览且改稿后重检。取舍见[草稿提交与版本发布](../decisions/accepted/2026-09-26-comparison-draft-publication.md)与[禁止直接浏览器 shell](../decisions/accepted/2026-09-20-comparison-prompt-no-direct-browser-shell.md)。Host 持有确定性指标和模板区域，Agent 写本次任务的差异与判断；未知 token、价格或用量不是零。候选 snapshot 缺失或不完整时明确 unavailable，不能悄悄改读可变运行副本。
+Comparison 每次使用独立 attempt。严格三会话路径的调查、短作者、独立 source/review 各自新建 Session；作者仅用原任务及实际保存假设，独立 source 初始输入不携带作者对话。其他新提交端口仍由调查与作者共用 Session、首次审阅另建 Session；后续修正复用其独立 Session。旧直接报告端口仍保持连续 Session。新提交路径按定向调查、提交、审阅三轮推进；首轮先读取确定性 briefing 索引，只追查会改变结论的问题。`comparison.phase_completed` 记录每段耗时、模型请求、工具调用、压缩和预览次数；旧四轮 JSON 信封仅保留给旧端口。可执行 Prompt 以 [`comparison-agent.ts`](https://github.com/caulif/Reprise/blob/8d528d5/src/agents/comparison-agent.ts) 与 [`comparison-review-findings.ts`](https://github.com/caulif/Reprise/blob/8d528d5/src/agents/comparison-review-findings.ts) 为文本源：以任务成功标准选证据形式，点名 `render_artifact` / `register_evidence` / `preview_report`；截图与页面查看只走这两个受控工具，禁止经 `shell_exec` 启动 Chrome/Edge/Firefox 或做 `--version` / `--dump-dom` / 用户 profile 探测；渲染失败则记录 limitation 并继续文本证据，不得用等价浏览器 shell 重试。Prompt 是第二道防线，不能替代 Comparison 工具装配层的 shell 边界。提交时 Host 检查短引用、媒体、结构和安全内容；review 须预览且改稿后重检。取舍见[草稿提交与版本发布](../decisions/accepted/2026-09-26-comparison-draft-publication.md)与[禁止直接浏览器 shell](../decisions/accepted/2026-09-20-comparison-prompt-no-direct-browser-shell.md)。Host 持有确定性指标和模板区域，Agent 写本次任务的差异与判断；未知 token、价格或用量不是零。候选 snapshot 缺失或不完整时明确 unavailable，不能悄悄改读可变运行副本。
 
 生产 `requireFindings` 路径在初始调查实际 `bounded_investigation_timeout` 后，若 findings 未 ready，由 Host 串行关闭已接受 snapshot 中的 pending 问题：仅改为 unavailable 并注明调查截止，保留原身份、decisionImpact、引用、nextCheck、观察和限制。复用原当前 catalog 校验与 artifact/event 持久化；没有保存、引用失效、取消或持久化/审计失败不得 compose，不付费重写占位。`comparison.investigation_closed` 记录前后绑定、问题 IDs 和非语义认证的过程来源；下一真实模型输入明确带入该来源，不伪造模型 tool call。独立 source、实际 reviewer findings 更新、重新正式 inspect 和 preview 链保持必需。取舍见[Host 调查截止闭合](../decisions/accepted/2026-10-06-comparison-host-investigation-closure.md)。
 
-阶段工具面由 `comparison-stage-policy.ts` 的显式阶段策略统一定义；同一策略决定模型曝光、执行与完成回调守卫及退出条件，资源计量独立保留。旧端口的默认曝光保持兼容，严格路径使用阶段允许列表；参数相关的报告路径、修复读取和当前检查绑定仍在执行时核对。`ComparisonAgentPort.requireFindings` 显式声明 findings 协议，统一选择草稿绑定、findings 工具与回调、持久化独立审阅契约；代理或装饰器无需继承内置类。可选 `reviewInspectionRequired` 保留不启用 findings 的旧内置全文检查协议。引文正文是已注册原文，媒体枚举与路径重写跳过其正文；真实 markup 的网络资源和未注册媒体仍被拒绝。见[统一阶段策略与端口能力](../decisions/accepted/2026-10-06-comparison-stage-policy-and-port-capability.md)。
+退役前的阶段工具面由 `comparison-stage-policy.ts` 的显式阶段策略统一定义；同一策略决定模型曝光、执行与完成回调守卫及退出条件，资源计量独立保留。旧端口的默认曝光保持兼容，严格路径使用阶段允许列表；参数相关的报告路径、修复读取和当前检查绑定仍在执行时核对。`ComparisonAgentPort.requireFindings` 显式声明 findings 协议，统一选择草稿绑定、findings 工具与回调、持久化独立审阅契约；代理或装饰器无需继承内置类。可选 `reviewInspectionRequired` 保留不启用 findings 的旧内置全文检查协议。引文正文是已注册原文，媒体枚举与路径重写跳过其正文；真实 markup 的网络资源和未注册媒体仍被拒绝。见[统一阶段策略与端口能力](../decisions/accepted/2026-10-06-comparison-stage-policy-and-port-capability.md)。
 
 严格新审阅首轮得到原context导航及当前saved findings绑定、ID和待证假设，独立读取原任务、决定性来源及实际交付链，不携带作者对话或打开作者稿。source实际工具面仅含合法source工具与发现更新，提示优先使用delta；查证后立即保存，不以文字总结代替持久化。独立source marker只记本次精确accepted回执和实际非空saved state，正文检查点不重置它；当前state须仍完全一致，ready须重新检查。只有source正常completed或明确independent_findings_ready/pending边界才可使用该保存事实，旧ready、缺失state、拒绝、伪回执、超时及output_limit不能跳closure。实际accepted-ready在完整工具turn让出independent_findings_ready，取得真实完整草稿后直接full audit；accepted-pending让出independent_findings_pending，取得草稿后仅一次补查再最终closure。没有有效source保存证据则执行原最多两次review-findings，每次重置closure accepted标记；只准update及严格修复read，实际accepted且当前ready才能进入audit，相同合法snapshot可幂等接受。第一次closure接受pending也仅开放一次review-supplement，不写稿、提交、更新findings或预览，之后最后closure必须从真实证据解决问题或保留身份、历史、decisionImpact并明确unavailable；仍不ready就失败，无第三次。source保存不认证事实，不豁免实际稿件checkpoint、full audit、新正式inspect、后续generation和matching preview。旧source端口不注入作者findings、继续禁止source更新，并保持原两次closure。见[有界审阅收敛](../decisions/accepted/2026-10-06-comparison-bounded-review-convergence.md)。工具、catalog、draft、阶段状态、审计与资源 tracker 仍属于同一 attempt，模型请求、工具、累计费用和开始时间不因换 Session 重置。创作失败不创建审阅 Session；attempt级取消signal跨会话存在，cancel与进行中的release先取消attempt再关闭当前缓存Session；旧Session关闭空档中取消也不创建付费review，新Session图片交付权限从空集开始，不继承旧Session图片。取消与release指向当前缓存的新Session，返回的 sessionId 来自实际审阅，模型输入仍逐请求审计。换会话本身不增加审阅轮数或并行模型调用，也不放宽预览、digest 与原生图片交付要求。
 

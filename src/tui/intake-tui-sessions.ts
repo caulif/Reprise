@@ -2,7 +2,7 @@ import type { IntakeTui } from "./intake-tui.js";
 import { importPacks } from "../application/intake-catalog.js";
 import { type DiscoveryDiagnostic, type SessionSummary } from "../products/contract.js";
 import { type SessionProject, selectDefaultProjectIndex } from "./pages/intake.js";
-import { readLocalHistory } from "./local-history.js";
+import { readLocalHistoryListing } from "./local-history.js";
 import {
   groupedProjects as groupIntakeProjects,
   visibleProjects as listVisibleProjects,
@@ -23,10 +23,9 @@ export async function IntakeTui_loadHome(this: IntakeTui, initialMessage?: strin
     void this.refreshProductAuth();
     const token = this.beginNavigation();
     try {
-      this.recentExperiment = (
-        await readLocalHistory(this.dataDir)
-      ).experiments[0];
+      const history = await readLocalHistoryListing(this.dataDir);
       if (token !== this.generation) return;
+      this.recentExperiment = history.experiments[0];
     } catch {
       if (token !== this.generation) return;
       this.recentExperiment = undefined;

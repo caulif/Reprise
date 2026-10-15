@@ -1,4 +1,12 @@
 import { Type, type Static } from "@sinclair/typebox";
+export { EffectiveHarnessConfigurationSchema, HarnessSdkPackageSchema, HarnessConfigurationReferenceSchema, HarnessConfigurationBoundSchema,
+  HarnessProbeRequestedSchema, HarnessProbeCompletedSchema, type EffectiveHarnessConfiguration,
+  type HarnessConfigurationReference, type HarnessProbeRequested, HARNESS_COMPAT_BOOLEAN_KEYS, HARNESS_COMPAT_SCALAR_KEYS,
+  ComparisonOperationFailureSchema, type ComparisonOperationFailure } from './schemas/harness-configuration.js';
+export { RunStartupFailureSchema, RunCleanupFailureSchema, type RunStartupFailure, type RunCleanupFailure } from './schemas/run-startup.js';
+export { ExperimentWriterLeaseSchema, type ExperimentWriterLease } from './schemas/run-startup.js';
+
+export { ComparisonAttemptReferenceSchema, ComparisonReportOwnerSchema, ComparisonAttemptResultSchema, type ComparisonReportOwner, type ComparisonAttemptResult } from './comparison-report-owner-schema.js';
 export { RecoveryGitStartSchema, type RecoveryGitStart } from './recovery-git-start.js';
 export { ComparisonAutonomousContractSchema } from './comparison-review-schema.js';
 import { EvidenceRefSchema, Hash, Id } from "./schemas/ids.js";
@@ -14,7 +22,6 @@ import {
   ComparisonMediaRecordSchema,
   ComparisonMediaShortRefSchema,
   ComparisonReportModelSchema,
-  ComparisonShortRefSchema,
 } from "./comparison-schema.js";
 export { EvidenceRefSchema, type EvidenceRef } from "./schemas/ids.js";
 export { SceneDescriptorSchema, type SceneDescriptor } from "./schemas/scene.js";
@@ -100,7 +107,7 @@ export {
   type HistoricalArtifactFinality,
 } from "./schemas/historical-artifacts.js";
 export {
-  ExperimentSpecSchema,
+  FixedExperimentSpecSchema,
   type ExperimentSpec,
   type AgentBudget,
   type AgentConfig,
@@ -114,6 +121,8 @@ export {
   RunRecordSchema,
   type RunRecord,
 } from "./schemas/run.js";
+export { PersistedExperimentMetadataSchema, type PersistedExperimentMetadata, ExperimentPreflightSchema,
+  type ExperimentPreflight, RunPreflightRecordSchema } from './schemas/experiment-metadata.js';
 export {
   CandidateLaunchContextSchema,
   type CandidateLaunchContext,
@@ -278,7 +287,6 @@ export {
   ComparisonMediaRecordSchema,
   ComparisonMediaShortRefSchema,
   ComparisonReportModelSchema,
-  ComparisonShortRefSchema,
 };
 export type { ComparisonDraftSubmission, ComparisonMediaDerivation, ComparisonMediaRecord, ComparisonMediaRef, ComparisonReportModel } from "./comparison-schema.js";
 export { ComparisonDecisionDraftSubmissionSchema, type ComparisonDecisionDraftSubmission } from './comparison-schema.js';

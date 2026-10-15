@@ -5,12 +5,18 @@ import { t, type Locale, type MessageKey } from './i18n.js';
 
 /** Minimal read-only facts for result presentation; avoids copying business enums. */
 export type ResultPresentationInput = {
-  readonly task: Pick<RunOutcome['task'], 'status'>;
-  readonly termination: Pick<RunOutcome['termination'], 'kind' | 'code'>;
+  readonly task: { readonly status: RunOutcome['task']['status'] | 'unknown' };
+  readonly termination: { readonly kind: PresentationTerminationKind };
   readonly cleanup?: Pick<RunOutcome['cleanup'], 'status'> | undefined;
-  readonly comparison: ExperimentResult['comparison']['result'];
-  readonly comparePending?: boolean;
+  readonly comparison: ComparisonPresentationInput;
 };
+
+type PresentationTerminationKind = RunOutcome['termination']['kind'] | 'unknown' | 'interrupted' | 'record_unread';
+type ComparisonResult = ExperimentResult['comparison']['result'];
+export type ComparisonPresentationInput =
+  | { readonly status: Exclude<ComparisonResult['status'], 'completed' | 'failed'> | 'unknown' | 'pending' }
+  | { readonly status: 'completed'; readonly detail: Extract<ComparisonResult, { status: 'completed' }>['value']['status'] | 'unknown' }
+  | { readonly status: 'failed'; readonly failureDetail?: string };
 
 export type ResultTone = 'ok' | 'warn' | 'danger' | 'neutral';
 export type ReportArtifactKind = 'report' | 'diagnostic' | 'none';
@@ -45,10 +51,9 @@ function resultPresentationInputFrom(
   const outcome = result.record.outcome;
   return {
     task: { status: outcome.task.status },
-    termination: { kind: outcome.termination.kind, code: outcome.termination.code },
+    termination: { kind: outcome.termination.kind },
     ...(outcome.cleanup ? { cleanup: { status: outcome.cleanup.status } } : {}),
-    comparison: result.comparison.result,
-    ...(comparePending ? { comparePending: true } : {}),
+    comparison: comparePending ? { status: 'pending' } : comparisonInputFromResult(result.comparison.result),
   };
 }
 
@@ -64,12 +69,9 @@ export function deriveResultPresentationFromResult(
 function resultPresentationInputFromHistory(item: HistoryExperiment): ResultPresentationInput {
   return {
     task: { status: historyTaskStatus(item.taskStatus) },
-    termination: {
-      kind: historyTerminationKind(item.outcome),
-      code: item.outcome?.trim() || 'history.unknown',
-    },
+    termination: { kind: historyTerminationKind(item.outcome) },
     cleanup: { status: historyCleanupStatus(item.cleanupStatus) },
-    comparison: historyComparisonResult(item),
+    comparison: comparisonInputFromHistory(item),
   };
 }
 
@@ -80,8 +82,8 @@ export function deriveResultPresentationFromHistory(
   return deriveResultPresentation(resultPresentationInputFromHistory(item), locale);
 }
 
-function deriveResultPresentation(input: ResultPresentationInput, locale: Locale): ResultPresentation {
-  const comparisonKind = classifyComparison(input.comparison, input.comparePending === true);
+export function deriveResultPresentation(input: ResultPresentationInput, locale: Locale): ResultPresentation {
+  const comparisonKind = classifyComparison(input.comparison);
   const terminationTone = terminationToneOf(input.termination.kind);
   const reportKind = reportKindOf(comparisonKind);
   const status = composeStatus(input.termination.kind, comparisonKind, terminationTone);
@@ -96,7 +98,7 @@ function deriveResultPresentation(input: ResultPresentationInput, locale: Locale
     statusLabelKey: overallStatus.labelKey,
     statusTone: overallStatus.tone,
     taskLabel: taskLabelOf(input.task.status, locale),
-    terminationLabel: t(locale, statusKeyForTermination(input.termination.kind)),
+    terminationLabel: t(locale, input.termination.kind === 'interrupted' ? 'historyInterrupted' : statusKeyForTermination(input.termination.kind)),
     cleanupLabel: cleanupLabelOf(input.cleanup?.status, locale),
     comparisonLabel: comparisonLabelOf(comparisonKind, input.comparison, locale),
     comparisonKind,
@@ -123,13 +125,11 @@ export function classifyComparisonStatus(
 }
 
 function classifyComparison(
-  comparison: ExperimentResult['comparison']['result'],
-  comparePending = false,
+  comparison: ComparisonPresentationInput,
 ): ComparisonPresentationKind {
-  if (comparePending) return 'pending';
+  if (comparison.status === 'pending') return 'pending';
   if (comparison.status === 'completed') {
-    const valueStatus = 'value' in comparison && comparison.value ? comparison.value.status : undefined;
-    return classifyComparisonStatus(comparison.status, valueStatus);
+    return classifyComparisonStatus(comparison.status, comparison.detail);
   }
   return classifyComparisonStatus(comparison.status);
 }
@@ -160,17 +160,14 @@ function reportKindOf(kind: ComparisonPresentationKind): ReportArtifactKind {
   return 'none';
 }
 
-function terminationToneOf(kind: RunOutcome['termination']['kind']): ResultTone {
+function terminationToneOf(kind: PresentationTerminationKind): ResultTone {
   if (kind === 'completed') return 'ok';
   if (kind === 'failed') return 'danger';
-  if (kind === 'cancelled' || kind === 'blocked' || kind === 'limit_reached' || kind === 'stalled' || kind === 'uncertain') {
-    return 'warn';
-  }
-  return 'neutral';
+  return 'warn';
 }
 
 function composeStatus(
-  termination: RunOutcome['termination']['kind'],
+  termination: PresentationTerminationKind,
   comparison: ComparisonPresentationKind,
   terminationTone: ResultTone,
 ): { labelKey: MessageKey; tone: ResultTone } {
@@ -196,19 +193,19 @@ function composeStatus(
   return { labelKey: statusKeyForTermination(termination), tone: terminationTone };
 }
 
-function statusKeyForTermination(kind: RunOutcome['termination']['kind']): MessageKey {
+function statusKeyForTermination(kind: PresentationTerminationKind): MessageKey {
   if (kind === 'completed') return 'resultStatusCandidateEnded';
   if (kind === 'failed') return 'resultStatusCandidateFailed';
   if (kind === 'cancelled') return 'resultStatusCandidateCancelled';
   if (kind === 'blocked') return 'resultStatusCandidateBlocked';
   if (kind === 'stalled') return 'resultStatusCandidateStalled';
-  if (kind === 'uncertain') return 'resultStatusCandidateUncertain';
+  if (kind === 'uncertain' || kind === 'unknown' || kind === 'interrupted' || kind === 'record_unread') return 'resultStatusCandidateUncertain';
   if (kind === 'limit_reached') return 'resultStatusCandidateLimit';
   return 'resultStatusCandidateOther';
 }
 
 function messageKeyOf(
-  termination: RunOutcome['termination']['kind'],
+  termination: PresentationTerminationKind,
   comparison: ComparisonPresentationKind,
 ): MessageKey {
   if (comparison === 'cancelled') return 'resultCompareCancelled';
@@ -225,12 +222,11 @@ function messageKeyOf(
   return 'resultOther';
 }
 
-function taskLabelOf(status: RunOutcome['task']['status'], locale: Locale): string {
+function taskLabelOf(status: ResultPresentationInput['task']['status'], locale: Locale): string {
   if (status === 'apparently_completed') return t(locale, 'taskApparentlyCompleted');
   if (status === 'incomplete') return t(locale, 'taskIncomplete');
   if (status === 'indeterminate') return t(locale, 'taskIndeterminate');
-  if (status === 'not_assessed') return t(locale, 'taskNotAssessed');
-  return status;
+  return t(locale, 'taskNotAssessed');
 }
 
 function cleanupLabelOf(status: RunOutcome['cleanup']['status'] | undefined, locale: Locale): string {
@@ -243,12 +239,11 @@ function cleanupLabelOf(status: RunOutcome['cleanup']['status'] | undefined, loc
 
 function comparisonLabelOf(
   kind: ComparisonPresentationKind,
-  comparison: ExperimentResult['comparison']['result'],
+  comparison: ComparisonPresentationInput,
   locale: Locale,
 ): string {
   if (kind === 'failed') {
-    const failure = comparison.status === 'failed' ? comparison.failure : undefined;
-    const detail = failure?.kind ?? failure?.code;
+    const detail = comparison.status === 'failed' ? comparison.failureDetail : undefined;
     return detail
       ? `${t(locale, 'comparisonFailedWord')} (${detail})`
       : t(locale, 'comparisonFailedWord');
@@ -285,91 +280,42 @@ const CLEANUP_STATUSES = new Set<RunOutcome['cleanup']['status']>([
   'unknown',
 ]);
 
-type FailureKind = NonNullable<
-  Extract<ExperimentResult['comparison']['result'], { status: 'failed' }>['failure']['kind']
->;
-type FailureCode = Extract<ExperimentResult['comparison']['result'], { status: 'failed' }>['failure']['code'];
-
-const FAILURE_KINDS = new Set<string>([
-  'authentication',
-  'rate_limited',
-  'transient_network',
-  'transient_upstream',
-  'tool',
-  'timeout',
-  'protocol',
-  'cancelled',
-  'unknown',
-]);
-
-const FAILURE_CODES = new Set<string>([
-  'agent_timeout',
-  'agent_failure',
-  'invalid_output',
-  'privacy_blocked',
-  'host_zone_modified',
-  'invalid_envelope',
-  'evidence_unresolved',
-  'media_unavailable',
-  'report_incomplete',
-  'publication_failed',
-]);
-
-function historyTaskStatus(status: string | undefined): RunOutcome['task']['status'] {
-  if (status && TASK_STATUSES.has(status as RunOutcome['task']['status'])) {
-    return status as RunOutcome['task']['status'];
-  }
-  return 'not_assessed';
+function isSetMember<T>(values: ReadonlySet<T>, value: unknown): value is T {
+  return [...values].some((member) => member === value);
 }
 
-function historyTerminationKind(outcome: string | undefined): RunOutcome['termination']['kind'] {
-  if (outcome && TERMINATION_KINDS.has(outcome as RunOutcome['termination']['kind'])) {
-    return outcome as RunOutcome['termination']['kind'];
-  }
-  // interrupted / record unread / unknown committed outcomes are not success.
-  return 'uncertain';
+function historyTaskStatus(status: string | undefined): ResultPresentationInput['task']['status'] {
+  return isSetMember(TASK_STATUSES, status) ? status : 'unknown';
 }
 
-function historyCleanupStatus(status: string | undefined): RunOutcome['cleanup']['status'] {
-  if (status && CLEANUP_STATUSES.has(status as RunOutcome['cleanup']['status'])) {
-    return status as RunOutcome['cleanup']['status'];
-  }
+function historyTerminationKind(outcome: string | undefined): PresentationTerminationKind {
+  if (isSetMember(TERMINATION_KINDS, outcome)) return outcome;
+  if (outcome === 'interrupted') return outcome;
+  if (outcome === 'record unread') return 'record_unread';
   return 'unknown';
 }
 
-function historyComparisonResult(
-  item: HistoryExperiment,
-): ExperimentResult['comparison']['result'] {
+function historyCleanupStatus(status: string | undefined): RunOutcome['cleanup']['status'] {
+  return isSetMember(CLEANUP_STATUSES, status) ? status : 'unknown';
+}
+
+function comparisonInputFromResult(comparison: ComparisonResult): ComparisonPresentationInput {
+  if (comparison.status === 'completed') return { status: 'completed', detail: comparison.value?.status ?? 'unknown' };
+  if (comparison.status === 'failed') return { status: 'failed', failureDetail: comparison.failure.kind ?? comparison.failure.code };
+  return { status: comparison.status };
+}
+
+function comparisonInputFromHistory(item: HistoryExperiment): ComparisonPresentationInput {
   const status = item.comparisonStatus;
-  if (!status) {
-    // Missing comparison.json is not "skipped success"; leave classify as unknown via non-union cast.
-    return { status: 'unknown' } as unknown as ExperimentResult['comparison']['result'];
-  }
-  if (status === 'skipped') return { status: 'skipped' };
-  if (status === 'cancelled') return { status: 'cancelled' };
+  if (status === 'skipped' || status === 'cancelled' || status === 'pending') return { status };
   if (status === 'failed') {
-    const stored = item.comparisonFailure?.trim();
-    const kind = stored && FAILURE_KINDS.has(stored) ? (stored as FailureKind) : undefined;
-    const code = stored && FAILURE_CODES.has(stored)
-      ? (stored as FailureCode)
-      : ('agent_failure' as FailureCode);
-    return {
-      status: 'failed',
-      failure: {
-        code,
-        message: stored ?? 'history',
-        attempts: 0,
-        ...(kind ? { kind } : {}),
-      },
-    };
+    const failureDetail = item.comparisonFailure?.trim();
+    return { status: 'failed', ...(failureDetail ? { failureDetail } : {}) };
   }
   if (status === 'completed') {
-    const valueStatus = item.comparisonDetail === 'insufficient_evidence' ? 'insufficient_evidence' : 'completed';
-    return {
-      status: 'completed',
-      sessionId: 'history',
-      value: { status: valueStatus, reportPath: 'report.html', evidenceRefs: [] },
-    };
+    const detail = item.comparisonDetail === 'completed' || item.comparisonDetail === 'insufficient_evidence'
+      ? item.comparisonDetail : 'unknown';
+    return { status: 'completed', detail };
   }
-  return { status: 'unknown' } as unknown as ExperimentResult['comparison']['result'];
+  return { status: 'unknown' };
 }

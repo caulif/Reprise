@@ -39,6 +39,7 @@ export type ParsedActivityId = {
 
 const activities = new Map<string, ExperimentActivity>();
 const publishes = new WeakMap<ExperimentActivity, Promise<void>>();
+const retirements = new WeakMap<ExperimentActivity, Promise<void>>();
 
 export function parseActivityId(id: string): ParsedActivityId {
   if (!SAFE_ID.test(id)) return { id, kind: "ambiguous" };
@@ -59,7 +60,9 @@ export function registerActivity(input: {
   cancel: () => Promise<void>;
   dataDir?: string;
 }): ExperimentActivity {
-  void finishExperimentActivity(input.experimentId);
+  if (listRunningActivities().some(activity => activity.experimentId === input.experimentId && activity.dataDir === input.dataDir)) {
+    throw new Error(`Experiment ${input.experimentId} already has an active operation.`);
+  }
   const activity: ExperimentActivity = {
     operationId: `op-${input.kind}-${randomUUID()}`,
     kind: input.kind,
@@ -82,22 +85,33 @@ export function activityControlReady(activity: ExperimentActivity): Promise<void
 }
 
 export function finishExperimentActivity(experimentId: string): Promise<void> {
+  return Promise.all([...activities.values()].filter(activity => activity.experimentId === experimentId && activity.status !== 'finished')
+    .map(activity => finishActivity(activity))).then(() => undefined);
+}
+
+export function finishActivity(activity: ExperimentActivity): Promise<void> {
+  const existing = retirements.get(activity);
+  if (existing) return existing;
   const pending: Promise<void>[] = [];
-  for (const activity of activities.values()) {
-    if (activity.experimentId !== experimentId || activity.status === "finished") continue;
+  if (activity.status !== "finished") {
     activity.status = "finished";
     const dataDir = activity.dataDir;
-    if (!dataDir) continue;
+    if (!dataDir) return Promise.resolve();
     const job = enqueueControlWork(async () => {
-      await retireActivityControl(activity, dataDir, listRunningActivities().some((item) => item.experimentId === experimentId));
+      const errors: unknown[] = [];
       const live = liveDataDirKey(dataDir);
-      await stopControlHostIfIdle(
+      try { await retireActivityControl(activity, dataDir, listRunningActivities().some((item) => item.experimentId === activity.experimentId && item.dataDir && liveDataDirKey(item.dataDir) === live)); }
+      catch (error) { errors.push(error); }
+      try { await stopControlHostIfIdle(
         listRunningActivities().filter((item) => item.dataDir && liveDataDirKey(item.dataDir) === live).length,
         dataDir,
-      );
+      ); } catch (error) { errors.push(error); }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, 'Activity control cleanup failed.', { cause: errors[0] });
     });
     publishes.set(activity, job);
     pending.push(job);
+    retirements.set(activity, job);
   }
   return Promise.all(pending).then(() => undefined);
 }

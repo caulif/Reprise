@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ComparisonAgentPort } from "../../src/agents/comparison-agent.js";
+import type { ComparisonAgentPort } from "../../src/agents/comparison-contract.js";
 import { ControllerAgent, type ControllerPort } from "../../src/agents/controller-agent.js";
 import { reconstructControllerRequest } from "../../src/application/controller-request.js";
 import { preflightExperiment } from "../../src/application/experiment-preflight.js";
@@ -14,6 +14,7 @@ import { LocalWorkspaceProvider } from "../../src/environment/local-workspace-pr
 import { ExperimentStore } from "../../src/infrastructure/store/experiment-store.js";
 import type { ResolvedRuntime, TargetEventSink, TargetRunner } from "../../src/core/runtime.js";
 import { runtimeTargetEvent } from "../../src/core/runtime.js";
+import { readExperimentMetadata } from '../../src/application/experiment-metadata.js';
 import { sha256 } from "../../src/core/identity.js";
 import { now, VerifiedRuntime, input, terminationOf, sendingController, patientPolicy, readJson, comparisonHtmlWithHostShell } from "../codex-experiment-support.js";
 
@@ -107,17 +108,16 @@ test("preflight is read-only and successful comparison writes a persisted narrat
       (ref) => ref.artifactId === "host-trace.json",
     ),
   );
-  const persistedExperiment = await readJson(
+  const persistedExperiment = await readExperimentMetadata(
     join(result.experimentRoot, "experiment.json"),
+    result.record.attempt.experimentId,
   );
-  assert.equal(
-    persistedExperiment.spec?.controller?.requestedModel,
-    "test-model",
-  );
-  assert.equal(
-    persistedExperiment.spec?.comparison?.requestedModel,
-    "test-model",
-  );
+  assert.equal(persistedExperiment.kind, 'current');
+  if (persistedExperiment.kind !== 'current') throw new Error('Expected current fixed metadata.');
+  assert.equal(persistedExperiment.value.spec.schemaVersion, 2);
+  assert.equal('controller' in persistedExperiment.value.spec, false);
+  assert.equal('comparison' in persistedExperiment.value.spec, false);
+  assert.equal(persistedExperiment.value.spec.taskCaseId, result.taskCase.caseId);
   const manifest = await readJson(
     join(result.experimentRoot, "runs", "run-2", "manifest.json"),
   );

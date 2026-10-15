@@ -14,8 +14,8 @@ export function historyExperimentFromResult(
   const comparison = result.comparison.result;
   const skipped = comparison.status === "skipped";
   const reportPath = presentableLiveReportPath(result.reportPath, input.experimentRoot);
-  const isDiagnostic = reportPath !== undefined && basename(reportPath).toLowerCase() === "comparison-failure.html";
-  const isSuccessReport = reportPath !== undefined && basename(reportPath).toLowerCase() === "report.html";
+  const isDiagnostic = reportPath !== undefined && comparison.status !== "completed";
+  const isSuccessReport = reportPath !== undefined && comparison.status === "completed";
   const artifacts = skipped
     ? {}
     : selectComparisonArtifacts({
@@ -47,8 +47,8 @@ export function historyExperimentFromResult(
     cleanupStatus: result.record.outcome.cleanup.status,
     startedAt: result.record.attempt.createdAt,
     path: input.experimentRoot,
-    sizeBytes: input.sizeBytes ?? 0,
-    ...(!skipped ? { comparisonStatus: comparison.status } : {}),
+    sizeBytes: input.sizeBytes,
+    comparisonStatus: comparison.status,
     ...(failure ? { comparisonFailure: failure } : {}),
     ...(detail ? { comparisonDetail: detail } : {}),
     ...artifacts,

@@ -11,14 +11,14 @@ export type CommittedExperimentHistory = {
 };
 
 /** Read-only committed facts for History. Does not acquire writer lock, start a candidate, or load a Product Pack. */
-export async function readCommittedExperimentHistory(experimentRoot: string, experimentId = basename(experimentRoot)): Promise<CommittedExperimentHistory> {
+export async function readCommittedExperimentHistory(experimentRoot: string, experimentId = basename(experimentRoot), runId?: string): Promise<CommittedExperimentHistory> {
   try {
     const log = await readCommittedModelLog(join(experimentRoot, "events.jsonl"), {
       forEvents: (events) => {
         const store = ExperimentStore.committedReader(experimentRoot, experimentId, events);
         return Object.assign(experimentModelInputResolver(store), { forRun: (runId: string | undefined) => experimentModelInputResolver(store, runId) });
       },
-    });
+    }, runId ? { runId } : undefined);
     return {
       runStatus: log.runStatus,
       ...(log.diagnostic ? { diagnosticCode: log.diagnostic.code } : {}),

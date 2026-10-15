@@ -23,7 +23,7 @@
 
 ## 影响
 
-- 可执行文本：[`comparison-agent.ts`](../../../src/agents/comparison-agent.ts) 的 `COMPARISON_SYSTEM_PROMPT`。
+- 可执行文本：[`comparison-agent.ts`](https://github.com/caulif/Reprise/blob/8d528d5/src/agents/comparison-agent.ts) 的 `COMPARISON_SYSTEM_PROMPT`。
 - 快照：`test/snapshots/comparison-system-prompt.txt`。
 - 事实层：[证据与 Comparison](../../architecture/evidence-and-comparison.md)。
 

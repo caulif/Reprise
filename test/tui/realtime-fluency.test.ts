@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it, beforeEach } from 'node:test';
 import { IntakeTui_scheduleTimelineRender, IntakeTui_visibleTimeline } from '../../src/tui/intake-tui-nav.js';
 import type { IntakeTui } from '../../src/tui/intake-tui.js';
+import { RunDiagnostics } from '../../src/tui/run-diagnostics.js';
 import { foldProcessEntries, resetFoldProcessCache } from '../../src/tui/fold-process.js';
 import { layoutScrollback, resetScrollbackLayoutCache } from '../../src/tui/scrollback.js';
 import { createTheme } from '../../src/tui/theme.js';
@@ -23,13 +24,15 @@ function sampleEntries(): TimelineEntry[] {
 }
 
 function mockVisibleHost(timeline: TimelineEntry[], revision: TimelineRevisionState): IntakeTui {
+  const runDiagnostics = new RunDiagnostics();
+  runDiagnostics.beginPhase('recovery');
   return {
     timeline,
     timelineRevision: revision.timelineRevision,
     timelineFilterIndex: 0,
     page: 'running',
     preparePhase: undefined,
-    runPhase: 'recovery',
+    runDiagnostics,
     expandedFolds: [],
     visibleTimelineCache: undefined,
   } as unknown as IntakeTui;

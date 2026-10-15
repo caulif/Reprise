@@ -30,6 +30,7 @@ import {
 import { CandidateRun } from "./candidate-run.js";
 import { candidateOpeningMessage } from './candidate-opening-message.js';
 import type { ImportedTaskInput } from './session-start-workspace.js';
+import type { ProductPack } from '../products/contract.js';
 
 export async function runControllerLoop(input: {
   run: CandidateRun;
@@ -47,6 +48,7 @@ export async function runControllerLoop(input: {
   requestedModel: string;
   resolvedModel: string;
   candidateProductId: string;
+  candidatePack?: ProductPack;
   experimentRoot: string;
   dataDir?: string;
   maxControllerCalls?: number;
@@ -293,7 +295,7 @@ async function packControllerBriefing(
   const inspection = await inspectRun(
     input.store,
     undefined,
-    input.candidateProductId,
+    input.candidatePack ?? input.candidateProductId,
     {
       runId: input.runId,
       environment: input.environment,

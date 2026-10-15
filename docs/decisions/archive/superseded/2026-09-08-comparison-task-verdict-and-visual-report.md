@@ -11,7 +11,7 @@
 
 用户希望运行结束后知道：这个模型在自己的真实任务上好不好用，是否值得用于下一次类似任务，以及相比历史方案究竟改变了什么。报告需要直接作出有依据的取舍，并用易读的 HTML 呈现两边差异。
 
-[当前 Comparison 设计](../../../architecture/evidence-and-comparison.md)以调查差异、供用户自行判断为目标。[提示词](../../../../src/agents/comparison-agent.ts)明确禁止评分、排名和选赢家；[事实投影](../../../../src/application/comparison.ts)提供运行与交付线索。这些能力能支撑调查，但没有要求评委回答“是否值得使用”。仅改页面样式不足以填补这个目标差距。
+[当前 Comparison 设计](../../../architecture/evidence-and-comparison.md)以调查差异、供用户自行判断为目标。[提示词](https://github.com/caulif/Reprise/blob/8d528d5/src/agents/comparison-agent.ts)明确禁止评分、排名和选赢家；[事实投影](../../../../src/application/comparison.ts)提供运行与交付线索。这些能力能支撑调查，但没有要求评委回答“是否值得使用”。仅改页面样式不足以填补这个目标差距。
 
 本提案承接已确认的方向：依据任务性质作出取舍，展示时间、token、速度等硬指标，最终仍由 Comparison 生成可视化 HTML。下文定义目标方案，不表示这些能力已经存在；本次只形成设计文档，不变更运行行为。
 

@@ -1,7 +1,7 @@
+import { validateTaskCase } from '../core/task-case-identity.js';
 import { Value } from '@sinclair/typebox/value';
 import {
   RunRecordSchema,
-  TaskCaseSchema,
   type RunRecord,
   type TaskCase,
 } from '../core/schema.js';
@@ -12,7 +12,7 @@ import {
   type ComparisonFactsContext,
   type ComparisonReportFacts,
   type ComparisonResult,
-} from '../agents/comparison-agent.js';
+} from '../agents/comparison-contract.js';
 import type { AgentAuditSink, AgentToolDefinition, StructuredAgentResult } from '../infrastructure/agent/host.js';
 import { recoveryEvidenceCatalog } from '../core/recovery-evidence.js';
 import { validSessionTimestamp } from '../products/shared/session-files.js';
@@ -22,7 +22,7 @@ import {
   usagePricing,
 } from './session-usage.js';
 import { loadOperatorPricingOverride, MODEL_PRICING_TABLE_VERSION } from './model-pricing.js';
-import type { ComparisonMetricSide } from '../agents/comparison-agent.js';
+import type { ComparisonMetricSide } from '../agents/comparison-contract.js';
 import { extractHostZoneSnapshot, metricsFromReportFacts, renderComparisonReportShell } from './comparison-report-shell.js';
 import { readOperatorLocale } from './operator-locale.js';
 import type { TimingFacts } from '../core/timing-schema.js';
@@ -316,7 +316,7 @@ function evidenceLevel(refs: readonly string[]): string {
 }
 
 function assertFacts(taskCase: TaskCase, runs: readonly RunRecord[]): void {
-  if (!Value.Check(TaskCaseSchema, taskCase)) throw new Error('Invalid TaskCase for comparison.');
+  validateTaskCase(taskCase);
   for (const run of runs) {
     if (!Value.Check(RunRecordSchema, run)) throw new Error('Invalid RunRecord for comparison.');
     if (run.attempt.caseId !== taskCase.caseId) throw new Error(`Run ${run.attempt.runId} does not belong to case ${taskCase.caseId}.`);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Type } from '@sinclair/typebox';
 import { AutonomousComparisonAgent } from '../../src/agents/comparison-autonomous.js';
 import { AgentHost, type AgentAuditEvent } from '../../src/infrastructure/agent/host.js';
-import type { ComparisonContext, ComparisonResult } from '../../src/agents/comparison-agent.js';
+import type { ComparisonContext, ComparisonResult } from '../../src/agents/comparison-contract.js';
 
 const context: ComparisonContext = {
   attemptId: 'attempt', task: { caseId: 'case', summary: 'Compare text deliveries.' },
@@ -48,9 +48,93 @@ test('autonomous Comparison uses one prompt and leaves all tools available witho
   assert.equal(sessions, 1);
   assert.equal(calls, 1);
   assert.deepEqual(used, names);
-  assert.equal(events.at(-1)?.type, 'comparison.resources_completed');
+  assert.ok(events.some(event => event.type === 'comparison.resources_completed'));
+  assert.equal(events.at(-1)?.type, 'agent.session_completed');
   assert.ok(events.some(event => event.type === 'agent.tool_completed' && JSON.stringify(event.payload.body).includes('Host total-time budget remaining')));
   await agent.release('attempt');
+});
+
+for (const primary of ['provider', 'cancelled', 'publication'] as const) {
+  test(`autonomous finalization retains ${primary}, resource audit and close failures`, async () => {
+    const abort = new AbortController();
+    let closes = 0;
+    const agent = new AutonomousComparisonAgent({ timeoutMs: 0, host: new AgentHost({ createSession: () => ({
+      append: async () => {
+        if (primary === 'cancelled') abort.abort();
+        if (primary === 'provider') throw Object.assign(new Error('Original upstream failure'), { status: 503 });
+        return '';
+      },
+      cancel() { closes++; throw new Error('Session close failure'); },
+    }) }) });
+    await assert.rejects(agent.compare(context, [], { append: async event => {
+      if (event.type === 'comparison.resources_completed') throw new Error('Resources audit failure');
+    } }, abort.signal), (error: unknown) => {
+      assert.ok(error instanceof AggregateError);
+      assert.equal(error.errors.length, 3);
+      const errors = error.errors as Error[];
+      assert.match(errors[0]!.message, primary === 'provider' ? /Original upstream failure/ : primary === 'cancelled' ? /Comparison cancelled/ : /No current submitted/);
+      assert.equal(errors[1]!.message, 'Resources audit failure');
+      assert.equal(errors[2]!.message, 'Session close failure');
+      return true;
+    });
+    assert.equal(closes, 1);
+    await agent.release(context.attemptId);
+    assert.equal(closes, 1, 'Outer release remains idempotent after finalization failure');
+  });
+}
+
+test('autonomous attempt remains active through delayed failing finalization and clears afterward', async () => {
+  let releaseAudit!: () => void;
+  let auditStarted!: () => void;
+  const started = new Promise<void>(resolve => { auditStarted = resolve; });
+  const blocked = new Promise<void>(resolve => { releaseAudit = resolve; });
+  let sessions = 0;
+  const agent = new AutonomousComparisonAgent({ timeoutMs: 0, host: new AgentHost({ createSession: () => {
+    sessions++;
+    return { append: async () => '', cancel() {} };
+  } }) });
+  const first = agent.compare(context, [], { append: async event => {
+    if (event.type === 'comparison.resources_completed') {
+      auditStarted();
+      await blocked;
+      throw new Error('Delayed finalization failure');
+    }
+  } });
+  await started;
+  await assert.rejects(agent.compare(context), /unique active attempt ID/);
+  assert.equal(sessions, 1);
+  releaseAudit();
+  await assert.rejects(first, AggregateError);
+  assert.equal((await agent.compare(context)).status, 'failed');
+  assert.equal(sessions, 2, 'A completed failed finalization must not leave active state or reuse the closed Session');
+});
+
+test('autonomous finalization retains a thrown undefined primary cause', async () => {
+  const agent = new AutonomousComparisonAgent({ timeoutMs: 0, host: new AgentHost({ createSession: () => ({ append: async () => '', cancel() {} }) }) });
+  await assert.rejects(agent.compare(context, [], { append: async event => {
+    if (event.type === 'comparison.resources_completed') throw new Error('Audit failed after undefined');
+  } }, undefined, { getSubmittedResult: async () => {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error -- Inject a legal JavaScript throw value to verify error preservation.
+    throw undefined;
+  } }), (error: unknown) => {
+    assert.ok(error instanceof AggregateError);
+    assert.equal(error.errors.length, 2);
+    assert.equal(error.errors[0], undefined);
+    assert.equal((error.errors[1] as Error).message, 'Audit failed after undefined');
+    return true;
+  });
+});
+
+test('cancellation during asynchronous autonomous publication validation cannot return completed', async () => {
+  const abort = new AbortController();
+  const agent = new AutonomousComparisonAgent({ timeoutMs: 0,
+    host: new AgentHost({ createSession: () => ({ append: async () => '', cancel() {} }) }) });
+  const result = await agent.compare(context, [], undefined, abort.signal, { getSubmittedResult: async () => {
+    await new Promise<void>(resolve => setImmediate(resolve));
+    abort.abort();
+    return report;
+  } });
+  assert.equal(result.status, 'cancelled');
 });
 
 test('autonomous budget feedback respects a shorter invocation timeout and preserves structured tool results', async () => {

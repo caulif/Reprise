@@ -3,6 +3,7 @@ import type { EventEnvelope, TaskCase, RecoveryGitStart } from "../../core/schem
 import type { LocalWorkspaceProvider } from "../../environment/local-workspace-provider.js";
 import type { ProductPack } from "../../products/contract.js";
 import type { ExperimentActivity } from "../experiment-activity.js";
+import type { HarnessConfigurationScope } from '../harness-configuration.js';
 
 export type RecoveryAttemptMode =
   | "maximum-effort-safe"
@@ -24,6 +25,8 @@ export type RecoveryAttemptInput = {
   gitStart?: RecoveryGitStart;
   taskCase: TaskCase;
   recovery: RecoveryAgentPort;
+  resolveRecovery?: (signal: AbortSignal, scope: HarnessConfigurationScope) => Promise<RecoveryAgentPort>;
+  onActivity?: (activity: ExperimentActivity) => void;
   /** Defaults to safe maximum-effort investigation in isolated staging. */
   attemptMode?: RecoveryAttemptMode;
   /** Bounds retries after transient Recovery model failures; each attempt is independently audited. */

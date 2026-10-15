@@ -4,7 +4,7 @@ import { Value } from "@sinclair/typebox/value";
 import { Type } from "@sinclair/typebox";
 import { parseFragment } from "parse5";
 import { comparisonDetailsTextCharacters, comparisonDetailsText, comparisonMainTextCharacters, comparisonVisibleMainText, comparisonCompactTextCharacters, nonWhitespaceCodePoints } from "./comparison-report-text.js";
-import type { ComparisonReportFacts, ComparisonResult } from "../agents/comparison-agent.js";
+import type { ComparisonReportFacts, ComparisonResult } from "../agents/comparison-contract.js";
 import { sha256, writeAtomic } from "../core/identity.js";
 import { extractInner } from "../core/comparison-html.js";
 import { ComparisonDraftSubmissionSchema, ComparisonDecisionDraftSubmissionSchema, ComparisonReportModelSchema, ComparisonFindingsSubmissionSchema, type ComparisonDraftSubmission } from "../core/schema.js";

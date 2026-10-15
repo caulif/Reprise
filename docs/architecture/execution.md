@@ -4,6 +4,10 @@
 
 ## CandidateRun 生命周期
 
+CandidateRun 构造之前由 [`ExperimentStartup`](../../src/application/experiment-startup.ts) 接纳候选请求：先无副作用校验 ID、路径、attempt 与 TaskCase 冻结快照，再取得实验 writer，校验并无覆盖保存固定场景身份和 case，最后提交 RunAttempt 接纳；activity/control 发布、Agent 初始化、Runtime 校验、baseline、工作区和启动上下文准备随后执行。固定身份或既有 case 冲突在 Agent/probe 和新 run 事实之前拒绝并释放 writer；接纳前残留的 case/spec 不能认证 run。相同实验的竞争请求在写入自己的 attempt 或准备资源之前拒绝；相同 run ID 不用作新的启动。该 admission 不是第二份候选状态机。
+
+构造前失败通过 `run.startup_failed` 与 run 目录内不可变的 `startup-failure.json` 保存诊断阶段、失败或取消、原始错误及清理错误，字段以[启动 schema](../../src/core/schemas/run-startup.ts)为准。它绑定已提交 attempt，不伪造 RunRecord、manifest、Runner 会话或已完成的 Controller；只有文件而未提交事件属于残留，不能作为可信终态。持久化本身失败时调用方收到真实错误，不承诺任何故障都能写入日志。
+
 状态顺序由 [`state-machine.ts`](../../src/core/state-machine.ts) 和 [`candidate-run.ts`](../../src/application/candidate-run.ts) 实现：`created → preparing → launching → awaiting_target ↔ awaiting_controller → finalizing → finished`。取消、准备失败、Runner 失败或策略限制可以从尚未完成的阶段进入 `finalizing`；非法跳转由 `assertTransition` 拒绝。`CandidateRunState` 是这些状态的实现枚举，不把任务判断或 cleanup 当成额外状态。
 
 Host 为每次 start/send 提供带 `runId`、turn index 和 client message id 的身份。Runner 返回 `accepted`、`rejected` 或 `unknown`，并带证据来源；receipt 不等于任务成功。收到 turn settlement 后，Host 记录 completed/failed/waiting_input/aborted 及其置信度，再决定继续、收尾或停止。
@@ -20,11 +24,13 @@ Controller 的 decision 经过结构化 schema 校验。工具调用和 decision
 
 RunOutcome 分别保存任务判断、运行终止和清理结果；调用 Runner.stop 时的 completed/cancelled/failed/shutdown 是停止请求语义，不能替代 RunOutcome 的终止类别。终止时先停止等待和已尝试启动的 Runner，分阶段有界地关闭、捕获 artifacts 和释放环境，最后提交 `RunRecord`。cleanup 的 released、already_released、unknown 等事实不能被简化成任务成功。
 
+构造之前已取得的 Candidate 工作区登记独立释放动作，借用的 Recovery baseline 保留；CandidateRun 接管后的 capture/cleanup 未完成时仍按原协议保留资源，不由外层强行再次释放。activity 按准确对象收尾并在 writer 释放之前撤下 control；重复取消或收尾共享已有动作，外部 AbortSignal listener 在退出时移除。封存记录之后出现的释放错误用 `run.cleanup_failed` 补充，不改写原 record；关键清理或 Store.close 失败会拒绝结果，原始业务错误与各收尾错误一并保留。见[启动所有权决策](../decisions/accepted/2026-10-14-startup-ownership-and-failure.md)。
+
 同一 Experiment 可以有多个 run，Store 的 `operationId` 去重仍是实验级的。Controller、CandidateRun、runtime 和 artifact 等 run 所属操作在写入时由 runId 与局部 ID 派生独立身份；旧日志原样重放。离线 fake Runtime 已验证两次完整运行与副本隔离，真实 Runtime 仍需显式 opt-in 验收；身份取舍见[run 所属操作使用独立身份](../decisions/accepted/2026-09-23-run-operation-identity.md)。
 
 ## 配置与证据
 
-候选启动上下文写入 experiment/run 目录，至少绑定 experimentId、runId、产品、请求模型、解析模型、隔离工作区和权限。实验配置的保存与执行目前没有完整冻结闭环：相同 experiment ID 的冲突 spec 可能被静默忽略，而 workflow 仍读取当前 Harness 配置。Comparison 可使用独立的已记录配置，不应把它混入候选条件。
+候选启动上下文写入 experiment/run 目录，至少绑定 experimentId、runId、产品、请求模型、解析模型、隔离工作区和权限。新 ExperimentSpec v2 只固定 TaskCase 身份；候选、policy 与有效 Harness 配置逐 run 记录，允许后续轮次变化，执行使用本次冻结快照。旧 spec 保留原字节，不能将其中的首次配置当作后续执行事实；旧 v1 case 仅核对当前保留内容，不补历史或 v2 认证。Comparison 使用独立的操作所属配置，不混入候选条件。持久化重比通过中立的已结束运行上下文进入报告层，不构造 Runtime、Controller、CandidateRun 或假 Session；未重建 Controller 决定明确为 not_reconstructed，未记录的起点类别保持未知。契约见[固定实验身份与重比上下文](../decisions/accepted/2026-10-15-fixed-experiment-identity-and-persisted-comparison-context.md)。
 
 实际编排见 [Controller loop](../../src/application/experiment-controller-loop.ts)、[cleanup](../../src/application/candidate-run-cleanup.ts) 和 [Run schema](../../src/core/schemas/run.ts)。已知缺口与完成条件集中在[路线图](../roadmap.md#已知实现问题)。
 
@@ -34,9 +40,11 @@ RunOutcome 分别保存任务判断、运行终止和清理结果；调用 Runne
 <!-- BEGIN GENERATED record-fields (scripts/gen-docs.mjs) — 不要编辑标记之间的内容 -->
 ### TaskCase
 
+当前新冻结使用 v2；v1 保留原身份，由兼容读端读取。下表为 v2。
+
 | 字段 | 类型 | 可选 |
 |---|---|---|
-| `schemaVersion` | integer | 否 |
+| `schemaVersion` | 2 | 否 |
 | `caseId` | string | 否 |
 | `source` | object | 否 |
 | `evidenceLevel` | "transcript" \| "history" | 是 |
@@ -50,6 +58,7 @@ RunOutcome 分别保存任务判断、运行终止和清理结果；调用 Runne
 | `provenance` | object | 否 |
 | `privacy` | object | 否 |
 | `contentHash` | string | 否 |
+| `freezeIdentity` | object | 否 |
 
 ### RunRecord
 

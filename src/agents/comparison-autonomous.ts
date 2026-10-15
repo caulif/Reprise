@@ -1,8 +1,9 @@
-import type { ComparisonAgentPort, ComparisonCompareOptions, ComparisonContext, ComparisonResult } from './comparison-agent.js';
+import type { ComparisonAgentPort, ComparisonCompareOptions, ComparisonContext, ComparisonResult } from './comparison-contract.js';
 import { AgentHost, type AgentAuditSink, type AgentInvocation, type AgentToolDefinition } from '../infrastructure/agent/host.js';
 import { RoleSessions } from '../infrastructure/agent/role-sessions.js';
-import { ComparisonResourceTracker, DEFAULT_COMPARISON_RESOURCES } from './comparison-resources.js';
+import { ComparisonResourceTracker, resolveAutonomousComparisonResources } from './comparison-resources.js';
 import { comparisonOutputContinuation } from './comparison-invocation-boundaries.js';
+import { comparisonToolFeedback } from './comparison-tool-feedback.js';
 import { withLanguageBlock, type AgentLocale } from './language.js';
 import type { ComparisonResources } from '../core/schema.js';
 
@@ -33,10 +34,8 @@ export class AutonomousComparisonAgent implements ComparisonAgentPort {
     const controller = new AbortController();
     this.#active.set(id, controller);
     const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
-    const limits = { ...DEFAULT_COMPARISON_RESOURCES, ...this.input.resources };
-    limits.maxElapsedMs = Math.min(limits.maxElapsedMs ?? DEFAULT_COMPARISON_RESOURCES.maxElapsedMs!, this.timeoutMs > 0 ? this.timeoutMs : Infinity);
-    const resources = new ComparisonResourceTracker(limits, { totalTimeOnly: true });
-    resources.phase('compose');
+    const limits = resolveAutonomousComparisonResources(this.timeoutMs, this.input.resources);
+    const resources = new ComparisonResourceTracker(limits);
     const measured: AgentAuditSink = {
       append: async event => {
         if (event.type === 'agent.usage_reported') {
@@ -49,19 +48,22 @@ export class AutonomousComparisonAgent implements ComparisonAgentPort {
       ...(audit?.commitModelInput ? { commitModelInput: (bytes: Uint8Array) => audit.commitModelInput!(bytes) } : {}),
     };
     let sessionId = '';
+    let primaryError: { error: unknown } | undefined;
+    const finish = (result: AgentInvocation<ComparisonResult>): AgentInvocation<ComparisonResult> => {
+      if (result.status === 'failed') primaryError = { error: new Error(result.failure.message, { cause: result.failure }) };
+      else if (result.status === 'cancelled') primaryError = { error: new DOMException('Comparison cancelled.', 'AbortError') };
+      return result;
+    };
     try {
       const { session } = await this.#sessions.get(id, () => this.input.host.createSession({
         role: 'comparison', allowModelText: context.allowModelText,
-        systemPrompt: withLanguageBlock(AUTONOMOUS_COMPARISON_PROMPT, this.input.locale ?? 'zh', 'comparison'),
+        systemPrompt: withLanguageBlock(`${AUTONOMOUS_COMPARISON_PROMPT}\n\nPinned Host metrics: ${JSON.stringify(context.reportFacts.metrics ?? {})}\nThese recorded estimates are not invoices or semantic approval. Unknown is not zero; elapsed time does not establish cost.`, this.input.locale ?? 'zh', 'comparison'),
         compactionInstructions: 'Preserve the user task, decisive observations and counterexamples with source refs, important unknowns, working file paths, current report/catalog and preview bindings, and the next useful action. Drop rereadable source bodies and obsolete plans. There are no workflow stages to resume.',
         tools: tools.map(tool => ({ ...tool, execute: async (params, toolSignal) => {
-          resources.checkHard(tool.name);
+          resources.beforeTool(tool.name);
           combined.throwIfAborted();
           const result = await tool.execute(params, toolSignal);
-          return { ...result, contentBlocks: [
-            ...(result.contentBlocks ?? [{ type: 'text' as const, text: result.content }]),
-            { type: 'text' as const, text: `Host total-time budget remaining: ${String(resources.snapshot().remainingMs)} ms. Plan investigation, reporting and revision within this remaining time; no separate stage allowance is reserved.` },
-          ] };
+          return comparisonToolFeedback(result, resources, tool.name);
         } })), audit: measured,
       }));
       sessionId = session.sessionId;
@@ -73,26 +75,34 @@ export class AutonomousComparisonAgent implements ComparisonAgentPort {
         return session.work({ promptContent, timeoutMs, signal: combined, yieldAfterTurn: () => undefined });
       };
       const outcome = await comparisonOutputContinuation(invoke,
-        `Task: ${context.task.summary}\n\nDeliverable: a concise HTML comparison of the actual deliveries against the complete user requirements, highlighting key differences, user impact and consequential uncertainty. Write scratch/report.html, submit_report, preview_report and inspect the result before finishing.\nTotal remaining session budget: ${String(resources.snapshot().remainingMs)} ms. Complete investigation, writing, preview and any revision within this total time. Choose a useful scope and finish a valid report before it expires; do not treat an unfinished investigation as a completed report.\n\n${context.promptContent ?? ''}\n\nOptional Host metrics (already presented by the report shell): ${JSON.stringify(context.reportFacts.metrics ?? {})}`, undefined, true);
-      if (combined.aborted) return { status: 'cancelled', sessionId };
-      if (outcome.status !== 'completed') return outcome.status === 'yielded'
-        ? { status: 'failed', sessionId, failure: { code: 'report_incomplete', message: `Unfinished autonomous session: ${outcome.reason}`, attempts: 0 } } : outcome;
+        `Task: ${context.task.summary}\n\nDeliverable: a concise HTML comparison of the actual deliveries against the complete user requirements, highlighting key differences, user impact and consequential uncertainty. Write scratch/report.html, submit_report, preview_report and inspect the result before finishing.\nTotal remaining session budget: ${String(resources.snapshot().remainingMs)} ms. Complete investigation, writing, preview and any revision within this total time. Choose a useful scope and finish a valid report before it expires; do not treat an unfinished investigation as a completed report.\n\n${context.promptContent ?? ''}\n\nOptional Host metrics (already presented by the report shell): ${JSON.stringify(context.reportFacts.metrics ?? {})}`);
+      if (combined.aborted) return finish({ status: 'cancelled', sessionId });
+      if (outcome.status !== 'completed') {
+        if (outcome.status === 'yielded') return finish({ status: 'failed', sessionId,
+          failure: { code: 'report_incomplete', message: `Unfinished autonomous session: ${outcome.reason}`, attempts: 0 } });
+        if (outcome.status === 'failed' && ['authentication', 'rate_limited', 'transient_network', 'transient_upstream'].includes(outcome.failure.kind ?? '')) {
+          return finish({ ...outcome, failure: { ...outcome.failure, code: 'provider_failure' } });
+        }
+        return finish(outcome);
+      }
       resources.checkHard('publication');
       const value = await options?.getSubmittedResult?.();
-      if (combined.aborted) return { status: 'cancelled', sessionId };
+      if (combined.aborted) return finish({ status: 'cancelled', sessionId });
       resources.checkHard('publication validation');
-      return value ? { status: 'completed', sessionId, value } : { status: 'failed', sessionId,
-        failure: { ...(options?.getSubmissionFailure?.() ?? { code: 'report_incomplete' as const, message: 'No current submitted and previewed report.' }), attempts: 0 } };
+      return finish(value ? { status: 'completed', sessionId, value } : { status: 'failed', sessionId,
+        failure: { ...(options?.getSubmissionFailure?.() ?? { code: 'report_incomplete' as const, message: 'No current submitted and previewed report.' }), attempts: 0 } });
     } catch (error) {
-      if (combined.aborted) return { status: 'cancelled', sessionId };
+      if (combined.aborted) return finish({ status: 'cancelled', sessionId });
+      primaryError = { error };
       throw error;
     } finally {
-      this.#active.delete(id);
-      await audit?.append({ type: 'comparison.resources_completed', role: 'comparison', sessionId, payload: resources.snapshot() });
+      try { await finalizeComparison(audit, sessionId, resources, () => this.#sessions.release(id), primaryError); }
+      finally { this.#active.delete(id); }
     }
   }
 
   async cancel(id: string, factRef?: string): Promise<void> {
+    if (!id) throw new Error('Comparison cancel requires attemptId.');
     this.#active.get(id)?.abort();
     await this.#sessions.cancel(id, session => session.cancel(factRef));
   }
@@ -100,4 +110,14 @@ export class AutonomousComparisonAgent implements ComparisonAgentPort {
     this.#active.get(id)?.abort();
     await this.#sessions.release(id);
   }
+}
+
+async function finalizeComparison(audit: AgentAuditSink | undefined, sessionId: string, resources: ComparisonResourceTracker,
+  release: () => Promise<void>, primaryError: { error: unknown } | undefined): Promise<void> {
+  const cleanupErrors: unknown[] = [];
+  try { await audit?.append({ type: 'comparison.resources_completed', role: 'comparison', sessionId, payload: resources.snapshot() }); }
+  catch (error) { cleanupErrors.push(error); }
+  try { await release(); }
+  catch (error) { cleanupErrors.push(error); }
+  if (cleanupErrors.length) throw new AggregateError([...(primaryError ? [primaryError.error] : []), ...cleanupErrors], 'Comparison finalization failed.');
 }

@@ -67,7 +67,7 @@ export function IntakeTui_visibleTimeline(this: IntakeTui): readonly TimelineEnt
       && cache.filterIndex === filterIndex
       && cache.page === this.page
       && cache.preparePhase === this.preparePhase
-      && cache.runPhase === this.runPhase
+      && cache.runPhase === this.runDiagnostics.state.runPhase
       && cache.expandedFoldsKey === foldsKey
       && cache.surfaceScope === this.surfaceScope
       && cache.processExpanded === this.processExpanded
@@ -75,7 +75,7 @@ export function IntakeTui_visibleTimeline(this: IntakeTui): readonly TimelineEnt
       return cache.result;
     }
     const comparing = this.preparePhase === "compare";
-    const recovering = this.runPhase === "recovery" || this.preparePhase === "check";
+    const recovering = this.runDiagnostics.state.runPhase === "recovery" || this.preparePhase === "check";
     const surface = this.page === "candidate-product" || this.page === "candidate-model"
       ? "picker"
       : this.page === "result"
@@ -98,7 +98,7 @@ export function IntakeTui_visibleTimeline(this: IntakeTui): readonly TimelineEnt
       filterIndex,
       page: this.page,
       preparePhase: this.preparePhase,
-      runPhase: this.runPhase,
+      runPhase: this.runDiagnostics.state.runPhase,
       expandedFoldsKey: foldsKey,
       surfaceScope: this.surfaceScope,
       processExpanded: this.processExpanded,
@@ -121,24 +121,7 @@ export async function IntakeTui_setLocale(this: IntakeTui, typed: string): Promi
 export function IntakeTui_showError(this: IntakeTui, error: unknown, returnPage: Exclude<Page, "error" | "running" | "loading">): void {
     this.preparePhase = undefined;
     this.prepareDetail = undefined;
-    this.runPhase = undefined;
-    this.machineState = undefined;
-    this.runFailed = false;
-    this.cleanupStatus = undefined;
-    this.lastRuntimeEventAt = undefined;
-    this.lastObservedEventAt = undefined;
-    this.lastVisibleActivityAt = undefined;
-    this.lastRuntimeEventKind = undefined;
-    this.modelOutputSeen = false;
-    this.reconnectCount = 0;
-    this.reconnectTotal = 0;
-    this.comparisonAttemptId = undefined;
-    this.recoveryStartedAt = 0;
-    this.recoveryEndedAt = 0;
-    this.candidateStartedAt = 0;
-    this.candidateEndedAt = 0;
-    this.comparisonStartedAt = 0;
-    this.comparisonEndedAt = 0;
+    this.runDiagnostics.reset();
     stopRunClock(this);
     this.errorReturnPage = returnPage;
     this.page = "error";
@@ -160,11 +143,7 @@ export function IntakeTui_backToHome(this: IntakeTui): { consume: true } {
     this.discoveryAbort?.abort();
     this.recoveryAbort?.abort();
     this.generation += 1;
-    this.configEditing = false;
-    this.configBuffer = "";
-    this.configCursor = 0;
-    this.configDraft = this.hasSavedModelConfig ? draftForConfig(this.modelConfig) : emptyHarnessConfigDraft();
-    this.configPendingToggle = false;
+    this.configSession.reset(this.hasSavedModelConfig ? draftForConfig(this.modelConfig) : emptyHarnessConfigDraft());
     this.historyDetail = undefined;
     this.hideHelp();
     this.hideActivityDetail();
@@ -178,10 +157,7 @@ export function IntakeTui_backToHome(this: IntakeTui): { consume: true } {
     this.searching = false;
     this.searchQuery = "";
     this.searchCursor = 0;
-    this.finding = false;
-    this.findQuery = "";
-    this.findCursor = 0;
-    this.findRestore = undefined;
+    this.canvasFind.reset();
     this.readingMode = false;
     this.intakeLevel = "projects";
     this.preparePhase = undefined;
@@ -237,22 +213,22 @@ export function IntakeTui_beginNavigation(this: IntakeTui): number {
 
 export function IntakeTui_isEditingText(this: IntakeTui): boolean {
     return (
-      this.configEditing ||
+      this.configSession.state.editing ||
       this.searching ||
-      this.finding ||
+      this.canvasFind.state.finding ||
       this.page === "source" ||
       (this.page === "home" && this.composer.length > 0)
     );
   }
 
 export function IntakeTui_showHelp(this: IntakeTui): { consume: true } {
-    const preparing = this.preparePhase === 'check' || this.preparePhase === 'copy' || this.runPhase === 'recovery';
+    const preparing = this.preparePhase === 'check' || this.preparePhase === 'copy' || this.runDiagnostics.state.runPhase === 'recovery';
     const actions = listActions({
       page: this.page,
       locale: this.locale,
       mode: {
         processExpanded: this.processExpanded,
-        finding: this.finding,
+        finding: this.canvasFind.state.finding,
         reading: this.readingMode,
         preparing,
         comparePending: Boolean(this.compareChoice),

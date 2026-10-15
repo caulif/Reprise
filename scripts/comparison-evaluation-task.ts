@@ -1,6 +1,6 @@
-import { Value } from '@sinclair/typebox/value';
 import { sha256 } from '../src/core/identity.js';
-import { TaskCaseSchema, type TaskCase } from '../src/core/schema.js';
+import { sealTaskCase } from '../src/core/task-case-identity.js';
+import { type TaskCase } from '../src/core/schema.js';
 import type { ComparisonEvaluationCase } from '../src/core/comparison-evaluation-schema.js';
 
 export function comparisonEvaluationTask(item: ComparisonEvaluationCase): TaskCase {
@@ -20,6 +20,5 @@ export function comparisonEvaluationTask(item: ComparisonEvaluationCase): TaskCa
     provenance: { packVersion: 'comparison-evaluation-v1', importedAt: '2026-10-04T00:00:00.000Z', sourceHash },
     privacy: { allowModelText: true, allowBinary: false, redactions: [] }, contentHash: sourceHash,
   };
-  if (!Value.Check(TaskCaseSchema, task)) throw new Error('Evaluation TaskCase failed schema validation.');
-  return task;
+  return sealTaskCase(task, []);
 }

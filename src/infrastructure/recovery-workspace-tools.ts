@@ -16,7 +16,7 @@ import {
 import type { AgentToolDefinition } from "./agent/host.js";
 import { ProcessBoundaryError, runProcess, type ProcessSpawner } from "./process-runner.js";
 import { shellExecutableAvailable, shellInvocation } from "./platform.js";
-import { integer, requiredString } from "./recovery-tools.js";
+import { integer, requiredString } from "./recovery-tool-parameters.js";
 import { boundedPng, IMAGE_LIMITS } from './image-limits.js';
 import { startProcessSession } from './process-session.js';
 import { workspaceProcessTools } from './workspace-process-tools.js';

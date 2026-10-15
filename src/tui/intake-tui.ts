@@ -4,11 +4,10 @@ import type { ExperimentResult, ExperimentHandle } from "../application/experime
 import type { ExperimentPreflight } from "../application/experiment-preflight.js";
 import type { RecoveryView } from "../application/recovery/view.js";
 import type { ExperimentWorkflow } from "../application/experiment-workflow.js";
-import type { TaskCase, CandidateSpec, CandidateRunState } from "../core/schema.js";
+import type { TaskCase, CandidateSpec } from "../core/schema.js";
 import type { RuntimeAvailabilityStatus, RuntimeModelOffer } from "../core/runtime.js";
 import {
   defaultHarnessModelConfig,
-  emptyHarnessConfigDraft,
   type HarnessConfigDraft,
   type HarnessModelConfig,
 } from "../infrastructure/harness-model-config.js";
@@ -23,14 +22,15 @@ import type {
 import { initializeIntakeTui } from "./intake-tui-state.js";
 import * as intakeMethods from "./intake-tui-methods.js";
 import type { ConfigReturnTarget } from "./intake-tui-config.js";
-import type { ConfigBusy, ConfigConnectionTestStatus } from "./pages/config.js";
 import type { Locale } from "./i18n.js";
 import type { HistoryCase, HistoryExperiment } from "./local-history.js";
 import type { IntakeLevel, ProductIntakeItem, SessionProject } from "./pages/intake.js";
 import type { Option } from "./types.js";
 import type { TimelineEntry } from "./timeline.js";
 import { createActivityIndex, type ActivityIndexState } from "./activity-index.js";
-import type { FindRestoreSnapshot } from "./timeline-read.js";
+import { CanvasFind } from "./canvas-find.js";
+import { RunDiagnostics } from './run-diagnostics.js';
+import { ConfigSession } from './config-session.js';
 import { type Workbench, type WorkbenchView } from "./workbench.js";
 import type { IntakeProductMemory } from "./intake-layer-memory.js";
 import type { PreparePhase } from "./widgets.js";
@@ -111,10 +111,9 @@ export class IntakeTui {
   searchQuery = "";
   searchCursor = 0;
   searching = false;
-  finding = false;
-  findQuery = "";
-  findCursor = 0;
-  findRestore: FindRestoreSnapshot | undefined;
+  readonly canvasFind = new CanvasFind();
+  readonly runDiagnostics = new RunDiagnostics();
+  readonly configSession = new ConfigSession();
   readingMode = false;
   readingVisibleAt = 0;
   timelineAnchor: string | undefined;
@@ -128,14 +127,6 @@ export class IntakeTui {
   preparedInspectionSnapshot: string | undefined;
   modelConfig: HarnessModelConfig = defaultHarnessModelConfig();
   hasSavedModelConfig = false;
-  configDraft: ConfigDraft = emptyHarnessConfigDraft();
-  configSelected = 0;
-  configAdvanced = false;
-  configEditing = false;
-  configBuffer = "";
-  configCursor = 0;
-  configPendingToggle = false;
-  configLeaveConfirm = false;
   readonly intakeMemory = new Map<string, IntakeProductMemory>();
   readonly productAuth = new Map<string, boolean>();
   sessionLimitReached = false;
@@ -148,7 +139,7 @@ export class IntakeTui {
   taskCase: TaskCase | undefined;
   historyCases: readonly HistoryCase[] = [];
   historyExperiments: readonly HistoryExperiment[] = [];
-  historyTotalBytes = 0;
+  historyTotalBytes: number | undefined = undefined;
   invalidHistoryCaseCount = 0;
   historyTab: "runs" | "cases" = "runs";
   historySelected = 0;
@@ -188,10 +179,6 @@ export class IntakeTui {
   timelineFollowing = true;
   cancelUi: import("./controller-run.js").CancelUi = "idle";
   cancelling = false;
-  configBusy: ConfigBusy = "idle";
-  configDraftVersion = 0;
-  configTestStatus: ConfigConnectionTestStatus = "idle";
-  configTestDetail: string | undefined;
   configReturnTarget: ConfigReturnTarget | undefined;
   generation = 0;
   timelineRenderQueued = false;
@@ -209,26 +196,7 @@ export class IntakeTui {
         result: readonly TimelineEntry[];
       }
     | undefined;
-  runStartedAt = 0;
-  recoveryStartedAt = 0;
-  recoveryEndedAt = 0;
-  candidateStartedAt = 0;
-  candidateEndedAt = 0;
-  comparisonStartedAt = 0;
-  comparisonEndedAt = 0;
-  comparisonAttemptId: string | undefined;
   runClock: ReturnType<typeof setInterval> | undefined;
-  runPhase: CandidateRunPhase | undefined;
-  machineState: CandidateRunState | undefined;
-  runFailed = false;
-  cleanupStatus: string | undefined;
-  lastRuntimeEventAt: string | undefined;
-  lastObservedEventAt: string | undefined;
-  lastVisibleActivityAt: string | undefined;
-  lastRuntimeEventKind: string | undefined;
-  modelOutputSeen = false;
-  reconnectCount = 0;
-  reconnectTotal = 0;
   preparePhase: PreparePhase | undefined;
   prepareDetail: string | undefined;
   runFromSource = false;
@@ -259,7 +227,6 @@ export class IntakeTui {
         catalogProjects: readonly SessionDiscoveryProject[];
       }
     | undefined;
-  dirtyCache: { draft: ConfigDraft; config: HarnessModelConfig; dirty: boolean } | undefined;
 
   constructor(options: IntakeTuiOptions) {
     initializeIntakeTui(this, options);

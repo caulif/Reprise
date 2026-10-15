@@ -1,17 +1,15 @@
-import { mkdir, readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { SAFE_ID } from "../core/identity.js";
 import { pathContainedBy } from "../core/paths.js";
-import { ExperimentSpecSchema, type ExperimentSpec } from "../core/schema.js";
+import { FixedExperimentSpecSchema, RunPreflightRecordSchema, type ExperimentSpec, type ExperimentPreflight, type PersistedExperimentMetadata } from "../core/schema.js";
 import { writeImmutableJson } from "../infrastructure/store/experiment-store.js";
 import { CliError } from "./cli-error.js";
 import { isMissing } from "./experiment-helpers.js";
-
-export type PersistedExperimentMetadata = {
-  readonly spec: ExperimentSpec;
-  readonly runIds?: readonly string[];
-};
+import { committedRunOrder, legacyRunOrder, readCommittedRunEvents } from "./experiment-run-history.js";
+import { readExperimentMetadata, readPreflightRecord, type PersistedRead } from './experiment-metadata.js';
+import { canonicalJson } from '../core/task-case-identity.js';
 
 export function resolvedExperimentRoot(dataDir: string, experimentId: string): string {
   if (!SAFE_ID.test(experimentId)) {
@@ -25,60 +23,48 @@ export function resolvedExperimentRoot(dataDir: string, experimentId: string): s
   return root;
 }
 
-export function isPersistedExperimentMetadata(value: unknown): value is PersistedExperimentMetadata {
-  if (typeof value !== "object" || value === null || !("spec" in value)) return false;
-  const record = value as { spec: unknown; runIds?: unknown };
-  if (!Value.Check(ExperimentSpecSchema, record.spec)) return false;
-  if (record.runIds === undefined) return true;
-  return Array.isArray(record.runIds) && record.runIds.every((id) => typeof id === "string" && SAFE_ID.test(id));
-}
-
-export async function persistExperimentSpec(experimentRoot: string, spec: ExperimentSpec): Promise<void> {
+export async function persistExperimentSpec(experimentRoot: string, spec: Extract<ExperimentSpec, { schemaVersion: 2 }>): Promise<void> {
   const path = join(experimentRoot, "experiment.json");
-  try {
-    const existing = JSON.parse(await readFile(path, "utf8")) as unknown;
-    if (!isPersistedExperimentMetadata(existing)) {
-      throw new Error(`Corrupt experiment metadata: ${path}.`);
-    }
-    if (existing.spec.experimentId !== spec.experimentId || existing.spec.taskCaseId !== spec.taskCaseId) {
+  if (!Value.Check(FixedExperimentSpecSchema, spec)) throw new Error('Invalid fixed experiment metadata.');
+  const existing = await readExperimentMetadata(path, spec.experimentId);
+  if (existing.kind === 'current' || existing.kind === 'legacy') {
+    if (existing.value.spec.taskCaseId !== spec.taskCaseId || (existing.value.spec.schemaVersion === 2 && canonicalJson(existing.value.spec) !== canonicalJson(spec))) {
       throw new Error(`Experiment ${spec.experimentId} metadata does not match the sealed scene.`);
     }
     return;
-  } catch (error) {
-    if (!isMissing(error)) throw error;
   }
+  if (existing.kind !== 'missing') throw new Error(`${existing.diagnostic}: ${path}.`);
   await writeImmutableJson(path, { spec });
 }
 
 export async function listPersistedRunIds(experimentRoot: string, metadata?: PersistedExperimentMetadata): Promise<readonly string[]> {
+  const { events } = await readCommittedRunEvents(experimentRoot);
+  const committed = committedRunOrder(experimentRoot, events);
+  let legacy = metadata?.runIds ?? [];
   try {
-    const names = await readdir(join(experimentRoot, "runs"));
-    const ids = names.filter((name) => SAFE_ID.test(name)).sort();
-    if (ids.length) return ids;
+    const names = await readdir(join(experimentRoot, "runs"), { withFileTypes: true });
+    const ids = names.filter((entry) => entry.isDirectory() && SAFE_ID.test(entry.name)).map((entry) => entry.name).sort();
+    if (ids.length) legacy = ids;
   } catch (error) {
     if (!isMissing(error)) throw error;
   }
-  return metadata?.runIds ?? [];
+  return [...await legacyRunOrder(experimentRoot, legacy.filter((id) => !committed.includes(id))), ...committed];
 }
 
-export async function persistRunPreflight(experimentRoot: string, runId: string, preflight: unknown): Promise<void> {
+export async function persistRunPreflight(experimentRoot: string, runId: string, preflight: ExperimentPreflight): Promise<void> {
   if (!SAFE_ID.test(runId)) throw new Error("runId must be a safe identifier.");
+  const record = { schemaVersion: 1 as const, experimentId: basename(experimentRoot), runId, preflight };
+  if (!Value.Check(RunPreflightRecordSchema, record)) throw new Error('Invalid run preflight.');
   const directory = join(experimentRoot, "runs", runId);
   await mkdir(directory, { recursive: true });
-  await writeImmutableJson(join(directory, "preflight.json"), preflight);
+  await writeImmutableJson(join(directory, "preflight.json"), record);
 }
 
-export async function readRunPreflight(experimentRoot: string, runId: string): Promise<unknown> {
-  const nested = await readOptionalJson(join(experimentRoot, "runs", runId, "preflight.json"));
-  if (nested !== undefined) return nested;
-  return readOptionalJson(join(experimentRoot, "preflight.json"));
-}
-
-async function readOptionalJson(path: string): Promise<unknown> {
-  try {
-    return JSON.parse(await readFile(path, "utf8")) as unknown;
-  } catch (error) {
-    if (isMissing(error)) return undefined;
-    throw error;
-  }
+export async function readRunPreflight(experimentRoot: string, runId: string): Promise<PersistedRead<ExperimentPreflight>> {
+  const owner = basename(experimentRoot);
+  const nested = await readPreflightRecord(join(experimentRoot, 'runs', runId, 'preflight.json'), owner, runId);
+  if (nested.kind !== 'missing') return nested;
+  const root = await readPreflightRecord(join(experimentRoot, 'preflight.json'), owner, runId);
+  if (root.kind === 'current') return { kind: 'corrupt', diagnostic: 'versioned_preflight_at_legacy_path' };
+  return root;
 }

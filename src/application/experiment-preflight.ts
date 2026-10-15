@@ -5,21 +5,12 @@ import { LocalWorkspaceProvider, type EnvironmentBaseline } from "../environment
 import {
   contaminationWarnings,
   detectContamination,
-  type ContaminationSignals,
 } from "../environment/contamination.js";
-import { findProductPack } from "../products/index.js";
 import type { ExperimentInput } from "./experiment.js";
 import { assertPaths } from "./experiment-helpers.js";
 
-export type ExperimentPreflight = {
-  sourceBaseline: "available" | "partial" | "unavailable";
-  resolved: ResolvedRuntime;
-  sourceFingerprint?: string;
-  workspace?: EnvironmentBaseline["budget"];
-  limitations: readonly string[];
-  comparisonClass: "observational" | "recovered" | "recovered_partial";
-  contamination?: ContaminationSignals;
-};
+export type { ExperimentPreflight } from '../core/schema.js';
+import type { ExperimentPreflight } from '../core/schema.js';
 
 /** Read-only admission check. It never creates a Candidate workspace or calls a target model. */
 export async function preflightExperiment(
@@ -34,7 +25,6 @@ export async function preflightExperiment(
   > & { taskCase: TaskCase; verifyCandidate?: boolean },
 ): Promise<ExperimentPreflight> {
   assertPaths(input.dataDir, input.sourceRoot);
-  if (input.verifyCandidate !== false) findProductPack(input.candidate.productId);
   if (input.caseId !== input.taskCase.caseId)
     throw new Error("Experiment caseId must match TaskCase.caseId.");
   const resolved = input.verifyCandidate === false
@@ -78,13 +68,15 @@ export async function resolveVerifiedCandidate(
   candidate: CandidateSpec,
 ): Promise<ResolvedRuntime> {
   const resolved = await runtime.validateCandidate(candidate);
+  if (resolved.productId !== candidate.productId)
+    throw new Error(`Candidate product '${candidate.productId}' does not match resolved runtime product '${resolved.productId}'.`);
   if (resolved.resolvedModel === "unknown")
     throw new Error("Candidate model is not verified by the target runtime.");
   return resolved;
 }
 
 async function pendingResolved(runtime: ProductRuntime, candidate: CandidateSpec): Promise<ResolvedRuntime> {
-  const available = (await runtime.inspectAvailable())[0];
+  const available = (await runtime.inspectAvailable()).find((item) => item.productId === candidate.productId);
   if (available) {
     return { ...available, requestedModel: candidate.requestedModel, resolvedModel: "pending" };
   }
@@ -100,6 +92,9 @@ export function preflightFromBaseline(
   baseline: EnvironmentBaseline,
   resolved: ResolvedRuntime,
 ): ExperimentPreflight {
+  resolved = { productId: resolved.productId, executable: resolved.executable,
+    ...(resolved.version === undefined ? {} : { version: resolved.version }),
+    requestedModel: resolved.requestedModel, resolvedModel: resolved.resolvedModel };
   if (baseline.readiness.runnable === "unsupported")
     return {
       sourceBaseline: "unavailable",

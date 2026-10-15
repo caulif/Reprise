@@ -10,16 +10,18 @@ import {
 export async function readCommittedModelLog(
   eventsPath: string,
   resolveArtifact?: ModelInputResolver | { forEvents(events: readonly EventEnvelope[]): ModelInputResolver },
+  scope?: { readonly runId: string },
 ) {
   const parsed = parseCommittedEventLog(await readFile(eventsPath, "utf8"));
   const resolver = typeof resolveArtifact === 'function' ? resolveArtifact : resolveArtifact?.forEvents(parsed.events);
-  const rebuilt = await reconstructModelRequests(parsed.events, resolver);
+  const events = scope ? parsed.events.filter((event) => event.runId === scope.runId) : parsed.events;
+  const rebuilt = await reconstructModelRequests(events, resolver);
   return {
-    events: parsed.events,
+    events,
     requests: rebuilt.requests,
     ...(rebuilt.compactionRequests ? { compactionRequests: rebuilt.compactionRequests } : {}),
     diagnostic: rebuilt.diagnostic ?? parsed.diagnostic,
-    runStatus: historicalRunStatus(parsed.events),
+    runStatus: historicalRunStatus(events),
   };
 }
 

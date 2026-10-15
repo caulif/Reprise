@@ -17,3 +17,14 @@ export function record(value: unknown): JsonRecord {
 export function text(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
+
+export function frozenSnapshot<T>(value: T): T {
+  const snapshot = structuredClone(value);
+  const freeze = (item: unknown): void => {
+    if (item === null || typeof item !== 'object') return;
+    for (const child of Object.values(item)) freeze(child);
+    Object.freeze(item);
+  };
+  freeze(snapshot);
+  return snapshot;
+}

@@ -8,6 +8,7 @@ import type {
 import { Value } from '@sinclair/typebox/value';
 import { RecoveryGitStartSchema } from '../../core/schema.js';
 import { compactRecoveryProviderRoot } from '../recovery-provider-layout.js';
+import { cleanupOperation, throwFailures, type CleanupFailure } from '../experiment-startup.js';
 import {
   LocalWorkspaceProvider,
   type EnvironmentBaseline,
@@ -182,6 +183,7 @@ export async function failRecoveryRunSession(
 }
 
 export async function closeRecoveryRunSession(session: RecoveryRunSession): Promise<void> {
+  const failures: CleanupFailure[] = [];
   if (session.writerAcquired) {
     const terminalStatus = session.failureStage === "preflight_failed" ? "failed" : "completed";
     try {
@@ -190,20 +192,19 @@ export async function closeRecoveryRunSession(session: RecoveryRunSession): Prom
         terminalStatus,
       });
     } catch (error: unknown) {
-      // Cleanup is best effort after the terminal record; a cleanup failure must not rewrite the Recovery outcome.
-      try {
+      failures.push({ resource: 'recovery_artifacts', error });
+      await cleanupOperation(failures, 'cleanup_audit', async () => {
         await session.store.append({
           type: "recovery.artifact_cleanup_failed",
           runId: session.input.runId,
           operationId: runOperationId(session.input.runId, "recovery-artifact-cleanup-terminal-failed"),
           payload: { terminalStatus, reasonCode: error instanceof Error ? error.name : "unknown" },
         });
-      } catch {
-        // The writer may already be unusable; the terminal record remains authoritative.
-      }
+      });
     }
   }
   session.unsubscribe?.();
-  await Promise.resolve(session.input.recovery.releasePreparation?.(session.input.experimentId));
-  await session.store.close();
+  await cleanupOperation(failures, 'preparation', async () => session.input.recovery.releasePreparation?.(session.input.experimentId));
+  await cleanupOperation(failures, 'store_close', () => session.store.close());
+  throwFailures(failures.map(item => item.error), 'Recovery session cleanup failed.');
 }

@@ -69,18 +69,18 @@ test('local history reports experiment and total persisted data sizes', async (t
   const history = await readLocalHistory(root);
   assert.equal(history.experiments.length, 1);
   assert.ok((history.experiments[0]?.sizeBytes ?? 0) >= 12);
-  assert.ok(history.totalBytes >= history.experiments[0]!.sizeBytes);
+  assert.ok(history.totalBytes >= (history.experiments[0]!.sizeBytes ?? 0));
   await writeFile(join(experiment, 'comparison.json'), JSON.stringify({ status: 'failed', failure: { code: 'agent_failure', message: 'context_length_exceeded', kind: 'protocol', attempts: 1 } }));
   const failed = (await readLocalHistory(root)).experiments[0]!;
-  assert.equal(failed.comparisonStatus, 'failed');
-  assert.equal(failed.comparisonFailure, 'protocol');
+  assert.equal(failed.comparisonStatus, 'unknown');
+  assert.equal(failed.comparisonFailure, undefined);
   assert.equal(failed.reportAttemptUnconfirmed, true);
   assert.equal(failed.reportPath, join(experiment, 'report.html'));
   await writeFile(join(experiment, 'comparison-failure.html'), 'failure diagnosis');
   const diagnostic = (await readLocalHistory(root)).experiments[0]!;
   assert.equal(diagnostic.reportPath, join(experiment, 'comparison-failure.html'));
   assert.equal(diagnostic.previousReportPath, join(experiment, 'report.html'));
-  assert.equal(diagnostic.reportAttemptUnconfirmed, undefined);
+  assert.equal(diagnostic.reportAttemptUnconfirmed, true);
   assert.equal(await readFile(join(experiment, 'report.html'), 'utf8'), 'report bytes');
 });
 
@@ -114,7 +114,7 @@ test('local history treats cancelled comparison like failed for report selection
   await writeFile(join(experiment, 'report.html'), 'old success');
   await writeFile(join(experiment, 'comparison.json'), JSON.stringify({ status: 'cancelled' }));
   const cancelledOnlyReport = (await readLocalHistory(root)).experiments[0]!;
-  assert.equal(cancelledOnlyReport.comparisonStatus, 'cancelled');
+  assert.equal(cancelledOnlyReport.comparisonStatus, 'unknown');
   assert.equal(cancelledOnlyReport.cleanupStatus, 'unknown');
   assert.equal(cancelledOnlyReport.reportAttemptUnconfirmed, true);
   assert.equal(cancelledOnlyReport.reportPath, join(experiment, 'report.html'));
@@ -122,7 +122,7 @@ test('local history treats cancelled comparison like failed for report selection
   const cancelledDiagnostic = (await readLocalHistory(root)).experiments[0]!;
   assert.equal(cancelledDiagnostic.reportPath, join(experiment, 'comparison-failure.html'));
   assert.equal(cancelledDiagnostic.previousReportPath, join(experiment, 'report.html'));
-  assert.equal(cancelledDiagnostic.reportAttemptUnconfirmed, undefined);
+  assert.equal(cancelledDiagnostic.reportAttemptUnconfirmed, true);
 });
 
 test('local history records nested insufficient_evidence without promoting failure', async (t) => {
@@ -138,10 +138,10 @@ test('local history records nested insufficient_evidence without promoting failu
     value: { status: 'insufficient_evidence', reportPath: 'report.html', evidenceRefs: ['ev-01'] },
   }));
   const item = (await readLocalHistory(root)).experiments[0]!;
-  assert.equal(item.comparisonStatus, 'completed');
-  assert.equal(item.comparisonDetail, 'insufficient_evidence');
+  assert.equal(item.comparisonStatus, 'unknown');
+  assert.equal(item.comparisonDetail, undefined);
   assert.equal(item.reportPath, join(experiment, 'report.html'));
-  assert.equal(item.reportAttemptUnconfirmed, undefined);
+  assert.equal(item.reportAttemptUnconfirmed, true);
 });
 
 test('local history marks unreadable comparison leftovers as unconfirmed', async (t) => {
@@ -153,7 +153,7 @@ test('local history marks unreadable comparison leftovers as unconfirmed', async
   await writeFile(join(experiment, 'report.html'), 'leftover');
   await writeFile(join(experiment, 'comparison.json'), JSON.stringify({ status: 'nope' }));
   const item = (await readLocalHistory(root)).experiments[0]!;
-  assert.equal(item.comparisonStatus, undefined);
+  assert.equal(item.comparisonStatus, 'unknown');
   assert.equal(item.reportAttemptUnconfirmed, true);
   assert.equal(item.reportPath, join(experiment, 'report.html'));
 });
@@ -192,8 +192,7 @@ test('history detail uses shared result fact labels for cleanup and previous rep
   const zh = renderHistoryDetail(createTheme(120, false), 120, item, 'zh').join('\n');
   assert.match(zh, /清理/);
   assert.match(zh, /清理\s+未知/);
-  assert.match(zh, /比较已取消/);
-  assert.match(zh, /诊断/);
+  assert.match(zh, /版本未确认/);
   assert.match(zh, /此前报告/);
 });
 
@@ -206,9 +205,9 @@ test('history detail shows stored comparison failure kind not agent_failure plac
   await writeFile(join(experiment, 'comparison-failure.html'), 'diag');
   await writeFile(join(experiment, 'comparison.json'), JSON.stringify({ status: 'failed', failure: { code: 'agent_failure', message: 'context_length_exceeded', kind: 'protocol', attempts: 1 } }));
   const item = (await readLocalHistory(root)).experiments[0]!;
-  assert.equal(item.comparisonFailure, 'protocol');
+  assert.equal(item.comparisonFailure, undefined);
   const en = renderHistoryDetail(createTheme(120, false), 120, item, 'en').join('\n');
-  assert.match(en, /Comparison failed \(protocol\)/);
+  assert.equal(item.reportAttemptUnconfirmed, true);
   assert.doesNotMatch(en, /Comparison failed \(agent_failure\)/);
 });
 
@@ -236,7 +235,7 @@ test('local history classifies a crashed run from committed events and ignores t
   await writeFile(join(experiment, 'writer.lock'), JSON.stringify({ experimentId: 'exp-crash', pid: process.pid, nonce: 'live', startedAt: new Date().toISOString(), host: 'other-host' }));
   const occurredAt = '2026-09-08T00:00:00.000Z';
   const line = (sequence: number, type: string, payload: Record<string, unknown>) => {
-    const body = { schemaVersion: 1, sequence, eventId: `event${sequence}`, occurredAt, type, payload };
+    const body = { schemaVersion: 1, runId: 'run-1', sequence, eventId: `event${sequence}`, occurredAt, type, payload };
     return `${JSON.stringify({ ...body, checksum: sha256(JSON.stringify(body)) })}\n`;
   };
   await writeFile(join(experiment, 'events.jsonl'), `${line(1, 'run.attempt_created', { runId: 'run-1' })}${line(2, 'agent.session_started', { sessionId: 'session-1', role: 'recovery', systemPrompt: 'x', tools: [] })}${line(3, 'agent.message_appended', { sessionId: 'session-1', invocationId: 'inv-1', requestIndex: 1, repair: false, byteLength: 4 })}`);

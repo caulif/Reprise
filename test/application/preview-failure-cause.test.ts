@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ComparisonAgent, type ComparisonContext } from "../../src/agents/comparison-agent.js";
+import { AutonomousComparisonAgent } from '../../src/agents/comparison-autonomous.js';
+import type { ComparisonContext } from '../../src/agents/comparison-contract.js';
 import { ComparisonDraft } from "../../src/application/comparison-draft.js";
 import { ComparisonEvidenceCatalog } from "../../src/application/comparison-evidence.js";
 import { materializeComparisonReportPreview } from "../../src/application/comparison-report-preview.js";
@@ -103,9 +104,8 @@ test("accepted draft that never called preview_report still asks for a preview",
 });
 
 test("review publication failure keeps a timeout kind instead of protocol", async () => {
-  const agent = new ComparisonAgent({
+  const agent = new AutonomousComparisonAgent({
     timeoutMs: 0,
-    maxRepairAttempts: 0,
     host: new AgentHost({ createSession: () => ({ append: async () => "", cancel() {} }) }),
   });
   const result = await agent.compare(context(), [], undefined, undefined, {

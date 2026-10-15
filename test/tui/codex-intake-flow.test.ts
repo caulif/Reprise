@@ -473,6 +473,7 @@ test("Codex intake TUI browses validated local history and selects a TaskCase wi
   app.handleInput("\t");
   assert.match(rendered, /TaskCases|任务/);
   app.handleInput("\r");
+  await waitFor(() => app.page === 'history-detail');
   assert.match(rendered, /case-history/);
   app.handleInput("\r");
   assert.match(rendered, /TaskCase case-history|当前任务是 case-history/);

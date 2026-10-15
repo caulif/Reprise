@@ -47,7 +47,7 @@ export async function IntakeTui_start(this: IntakeTui): Promise<void> {
       if (configured) {
         this.modelConfig = configured;
         this.hasSavedModelConfig = true;
-        this.configDraft = draftForConfig(configured);
+        this.configSession.reset(draftForConfig(configured));
       }
     } catch (error) {
       configurationIssue = `Could not read local configuration: ${safeConfigError(error)}`;

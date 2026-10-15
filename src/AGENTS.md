@@ -6,4 +6,4 @@
 
 `tui/pages/` 只做渲染，不写业务判断、不发请求、不改实验状态。
 
-原子写一律用 [`writeAtomic`](core/identity.ts)，不要再写一份 rename 封装。
+文件发布复用 [`identity.ts`](core/identity.ts)：可替换投影用 `writeAtomic`，不可变事实用 `writeImmutable`；不要再写一份 rename 封装。

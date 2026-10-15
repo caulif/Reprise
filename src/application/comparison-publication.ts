@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile, realpath } from "node:fs/promises";
 import { basename, extname, join, relative, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { parse, serializeOuter } from "parse5";
-import type { ComparisonReportFacts, ComparisonResult } from "../agents/comparison-agent.js";
+import type { ComparisonReportFacts, ComparisonResult } from "../agents/comparison-contract.js";
 import {
   ComparisonReportModelSchema,
   type ComparisonLinkRecord,

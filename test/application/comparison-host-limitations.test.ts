@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { ComparisonReportFacts } from '../../src/agents/comparison-agent.js';
+import type { ComparisonReportFacts } from '../../src/agents/comparison-contract.js';
 import { renderComparisonReportShell } from '../../src/application/comparison-report-shell.js';
 import { verifyAndRenderComparisonReport } from '../../src/application/comparison-publication.js';
 import { reportString } from '../../src/application/comparison-report-strings.js';

@@ -15,6 +15,7 @@ import {
 import type { ExperimentStore } from "../infrastructure/store/experiment-store.js";
 import { findProductPack } from "../products/index.js";
 import { packProjection } from "../products/pack-access.js";
+import type { ProductPack } from '../products/contract.js';
 import { joinPublicAssistantSurface } from "../products/contract.js";
 import { hostReplayConditions, type ReplayLang, type SourceRootKind } from "./replay-conditions.js";
 import { recordValue, strings } from "./experiment-helpers.js";
@@ -48,10 +49,10 @@ export type WorkspaceInspection = {
 export async function inspectRun(
   store: ExperimentStore,
   record: RunRecord | undefined,
-  productId: string,
+  product: string | ProductPack,
   workspace?: WorkspaceInspection,
   replay?: {
-    sourceRootKind: SourceRootKind;
+    sourceRootKind?: SourceRootKind;
     requestedModel: string;
     resolvedModel?: string;
     lang?: ReplayLang;
@@ -61,8 +62,11 @@ export async function inspectRun(
   const runId = record?.attempt.runId ?? workspace?.runId;
   if (!runId)
     throw new Error("Run inspection requires a RunRecord or active workspace.");
-  const events = store.events(runId);
-  const translator = packProjection(findProductPack(productId));
+  const events = store.events(runId).filter(event => !record
+    || (event.sequence >= record.trace.firstSequence && event.sequence <= record.trace.lastSequence));
+  const pack = typeof product === 'string' ? findProductPack(product) : product;
+  const productId = pack.manifest.productId;
+  const translator = packProjection(pack);
   const facts = translator.inspectRunFacts(events);
   const finalMessage = facts.finalMessage;
   const commands = [...facts.commands];
@@ -84,7 +88,7 @@ export async function inspectRun(
   const tokenUsage = factsFromUsage(usage);
   const tokenCount = tokenUsage?.total;
   const priced = priceRunUsage(usage, productId, replay);
-  const replayConditions = replay
+  const replayConditions = replay?.sourceRootKind
     ? hostReplayConditions({
         sourceRootKind: replay.sourceRootKind,
         requestedModel: replay.requestedModel,
