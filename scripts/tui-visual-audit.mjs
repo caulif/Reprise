@@ -302,6 +302,7 @@ async function main() {
   historyApp.handleInput('\t');
   await push('16-history-cases', 120, history.render(120));
   historyApp.handleInput('\r');
+  await waitFor(() => historyApp.page === 'history-detail');
   await push('17-history-detail', 120, history.render(120));
 
   const { workflow: scripted, handles } = createScriptedSyntheticWorkflow({
