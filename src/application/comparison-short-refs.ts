@@ -85,6 +85,9 @@ function evidenceLabel(link: ComparisonLinkRecord): string {
   if (link.origin === "host_review" || link.side === "host") return "Host 审阅材料";
   if (link.origin === "historical_artifact") return "历史终稿产物";
   if (link.origin === "reconstructed_from_history") return "自历史重建的产物";
+  if (link.origin === 'user_selected_substitute') return '用户指定替代基准（非历史原件）';
+  if (link.origin === 'git_snapshot') return '精确 Git 终点快照';
+  if (link.origin === 'captured_file') return '捕获文件（身份见来源记录）';
   if (link.origin === "candidate_delivery" || (link.side === "candidate" && link.path)) return "候选会话最终交付";
   if (link.side === "baseline" && link.mediaType?.startsWith("image/") && link.inspectPath.startsWith("media/")) return "历史会话预览";
   if (link.side === "baseline") return "历史会话最终回复";

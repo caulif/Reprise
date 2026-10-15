@@ -405,6 +405,7 @@ async function openExperimentSession(input: {
   const store = input.startup.store;
   return {
     sourceRootKind,
+    importedInputs: prepared.imported,
     environment,
     attempt,
     manifest,
@@ -507,6 +508,7 @@ async function startCandidateRun(args: {
   }
 }
 async function finishCandidateRun(args: {
+  importedInputs: Awaited<ReturnType<typeof materializeIsolatedStart>>['imported'];
   input: ExperimentInput;
   control: ExperimentControl;
   run: CandidateRun;
@@ -542,6 +544,8 @@ async function finishCandidateRun(args: {
         policy: input.policy,
         controllerModel: input.agentConfig.requestedModel,
         environment,
+        sourceRoot: resolve(input.sourceRoot),
+        importedInputs: args.importedInputs,
         workspaceProvider: args.provider,
         sourceRootKind,
         requestedModel: input.candidate.requestedModel,
@@ -612,6 +616,7 @@ async function executeExperiment(
       taskCase,
     });
     result = await finishCandidateRun({
+      importedInputs: session.importedInputs,
       input,
       control,
       run,

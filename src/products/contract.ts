@@ -211,9 +211,11 @@ export type HistoricalArtifactFile = {
 };
 
 export type HistoricalArtifactExtractResult = {
-  readonly manifest: HistoricalArtifactManifest;
+  readonly manifest: Extract<HistoricalArtifactManifest, { schemaVersion: 1 }>;
   readonly files: readonly HistoricalArtifactFile[];
 };
+
+export type HistoricalArtifactBytes = { readonly manifest: HistoricalArtifactManifest; readonly files: readonly HistoricalArtifactFile[] };
 
 export type ProductHistoryReader = {
   readonly defaultRoot: string;
