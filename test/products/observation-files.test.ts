@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { recoveryEvidenceCatalog } from "../../src/products/history/source-refs.js";
+import { recoveryEvidenceCatalog } from "../../src/core/recovery-evidence.js";
 import { workspaceTools } from "../../src/infrastructure/recovery-tools.js";
 import { OBSERVATIONS_MOUNT, writeFrozenObservationTree } from "../../src/products/history/observations-materializer.js";
 import type { EventEnvelope, TaskCase } from "../../src/core/schema.js";
