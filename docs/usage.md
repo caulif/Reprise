@@ -102,7 +102,7 @@ Recovery 与 Comparison 默认整体时间预算为 24 小时；Controller 单�
 
 旧来源阶段的局部让出、独立审阅和只读正文检查点属于历史协议，不是当前自主流程的执行步骤；保留的读取与认证范围见[执行器退役决策](./decisions/accepted/2026-10-15-comparison-executor-retirement.md)。
 
-`recover-comparison` 对旧失败 attempt 默认只读：核对冻结事实、catalog 修订、草稿 digest、成功预览事件和当前发布校验，返回可恢复状态，不调用模型。只有显式加 `--publish --status ...` 才尝试发布，状态必须由操作者依据旧草稿判断；已有根报告时拒绝覆盖。恢复会追加 `comparison.recovered` 事件并更新根 `comparison.json`，原 attempt 日志和草稿不改写。新流程不需要这个命令来处理末尾空文本。
+`recover-comparison` 对旧失败 attempt 默认只读：核对冻结事实、catalog 修订、草稿 digest、成功预览事件和当前发布校验，返回可恢复状态，不调用模型。只有显式加 `--publish --status ...` 才尝试发布，状态由操作者依据旧草稿判断。该命令仍使用兼容根级发布路径，拒绝覆盖已有的不同报告；同一已记录恢复意图与相同发布 digest 可幂等重试。它追加恢复事件并更新根投影，不补造新的报告 owner 认证；详细边界见[文件与兼容](./architecture/evidence-and-comparison.md#文件与兼容边界)。当前自主流程不需要该命令处理末尾空文本。
 
 ## Reprise 模型设置
 
@@ -137,7 +137,7 @@ Recovery、Controller、Comparison 会将完成任务所需的历史内容、工
 
 ## 边界
 
-候选在独立工作副本运行，受控文件工具与源目录变化检测提供各自的边界；Shell 仅提前阻止部分已知写命令，未提供操作系统只读隔离。网络、外部服务和其他路径不会被 Reprise 统一沙箱化，报告 hash 校验也不代替文件系统隔离。无法安全重放的数据库、部署、支付或网页副作用应使用测试账号、mock、只读观察或取消。历史 Runtime 只是证据，候选使用当前机器可解析的 Runtime；无法观察的配置记录为未知。运行输出不同于历史结果是正常情况，比较报告提供证据而不是统一分数。
+候选 Runtime 在独立工作副本运行，Host 对 source 使用 fingerprint/tripwire 检测变化；这不表示候选自身的工具受到 Host Shell guard 拦截。Recovery/Comparison 的 Host 文件工具另有路径与只读挂载边界，对应 Shell guard 只提前阻止部分已知写命令，不提供操作系统只读隔离。网络、外部服务和其他路径不会被 Reprise 统一沙箱化，报告 hash 校验也不代替文件系统隔离。无法安全重放的数据库、部署、支付或网页副作用应使用测试账号、mock、只读观察或取消。历史 Runtime 只是证据，候选使用当前机器可解析的 Runtime；无法观察的配置记录为未知。运行输出不同于历史结果是正常情况，比较报告提供证据而不是统一分数。
 
 报告、trace 和隔离副本是本机文件。不要把含有密钥、会话正文或私有路径的产物提交到 Git。
 
