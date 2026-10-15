@@ -171,7 +171,7 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
       assert.ok(html.includes(mode === 'repreviewed' ? revised : original));
       assert.match(html, /data-report-format="3"/);
       assert.match(html, /2026-09-21 UTC/);
-      assert.match(recovery.html!, /2026-09-21 UTC/);
+      assert.match(recovery.html, /2026-09-21 UTC/);
       assert.doesNotMatch(html, /data-agent-zone="details"|data-host-zone="evidence"|data-host-limitation="hostLimitationShareCardPresentation"/);
       const model: unknown = JSON.parse(await readFile(join(result.experimentRoot, 'report-model.json'), 'utf8'));
       assert.ok(Value.Check(ComparisonReportModelSchema, model));
