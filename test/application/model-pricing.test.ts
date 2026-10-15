@@ -42,9 +42,9 @@ test("cleanModelIdForPricing matches cc-switch slash colon at-sign and 1m rules"
 test("snapshot catalog validates and does not map sibling SKUs", () => {
   const catalog = loadPricingCatalog();
   assert.equal(catalog.version, MODEL_PRICING_TABLE_VERSION);
-  assert.equal(MODEL_PRICING_TABLE_VERSION, "2026-09-19-cc-switch-seed");
+  assert.equal(MODEL_PRICING_TABLE_VERSION, "2026-10-15-static-pricing");
   assert.ok(catalog.models.length >= 180);
-  assert.ok(catalog.models.every((row) => row.source === "cc-switch-seed"));
+  assert.ok(catalog.models.filter((row) => row.source === "cc-switch-seed").length >= 180);
   assert.equal(resolveModelPricing("gpt-5.5").kind, "hit");
   assert.equal(resolveModelPricing("MiniMax-M3").kind, "hit");
   assert.equal(resolveModelPricing("gpt-5.6-terra").kind, "hit");
@@ -98,7 +98,35 @@ test("gpt-6-astra hits its own snapshot row and not terra or sol", () => {
     assert.notDeepEqual(astra.rates, terra.rates);
     assert.notDeepEqual(astra.rates, sol.rates);
   }
-  assert.equal(resolveModelPricing("gpt-6-luna").kind, "miss");
+  assert.equal(resolveModelPricing("gpt-6-unknown").kind, "miss");
+});
+
+test("current GPT models use independent manually pinned models.dev rates", () => {
+  const expected = [
+    ["gpt-6-sol", { input: 2, output: 10, cacheRead: 0.2, cacheCreation: 2.5 }],
+    ["gpt-6-luna", { input: 0.1, output: 0.5, cacheRead: 0.01, cacheCreation: 0.125 }],
+    ["gpt-6.1-sol", { input: 2, output: 10, cacheRead: 0.1, cacheCreation: 2.5 }],
+  ] as const;
+  for (const [id, rates] of expected) {
+    const priced = resolveModelPricing(`openai/${id}`);
+    assert.equal(priced.kind, "hit");
+    if (priced.kind !== "hit") throw new Error(`Missing price for ${id}`);
+    assert.equal(priced.modelId, id);
+    assert.deepEqual(priced.rates, rates);
+    assert.equal(priced.source, "models-dev-snapshot");
+    assert.equal(priced.version, MODEL_PRICING_TABLE_VERSION);
+  }
+  const historical = aggregateHistoricalUsage([{
+    type: "token_count",
+    last_token_usage: { input_tokens: 11_653_452, cached_input_tokens: 11_468_032,
+      output_tokens: 45_266, reasoning_output_tokens: 16_779 },
+  }]);
+  const priced = usagePricing(historical, "gpt-6-sol");
+  assert.equal(priced.lookup, "hit");
+  assert.ok(priced.costUsd !== undefined);
+  assert.ok(Math.abs(priced.costUsd - 3.1171064) < 1e-10);
+  assert.equal(priced.pricingSource, "models-dev-snapshot");
+  assert.equal(usageCostUsd(historical, "sonnet"), undefined);
 });
 
 test("bracket 1m suffix uses the same catalog row as the cleaned id", () => {

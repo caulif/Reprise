@@ -1,5 +1,5 @@
 {
-  "version": "2026-09-19-cc-switch-seed",
+  "version": "2026-10-15-static-pricing",
   "models": [
     {
       "modelId": "claude-3-5-haiku-20241022",
@@ -2288,6 +2288,39 @@
       "unit": "per_million_tokens",
       "source": "cc-switch-seed",
       "displayName": "Step 3.7 Flash"
+    },
+    {
+      "modelId": "gpt-6-sol",
+      "input": 2,
+      "output": 10,
+      "cacheRead": 0.2,
+      "cacheCreation": 2.5,
+      "currency": "USD",
+      "unit": "per_million_tokens",
+      "source": "models-dev-snapshot",
+      "displayName": "GPT-6 Sol"
+    },
+    {
+      "modelId": "gpt-6-luna",
+      "input": 0.1,
+      "output": 0.5,
+      "cacheRead": 0.01,
+      "cacheCreation": 0.125,
+      "currency": "USD",
+      "unit": "per_million_tokens",
+      "source": "models-dev-snapshot",
+      "displayName": "GPT-6 Luna"
+    },
+    {
+      "modelId": "gpt-6.1-sol",
+      "input": 2,
+      "output": 10,
+      "cacheRead": 0.1,
+      "cacheCreation": 2.5,
+      "currency": "USD",
+      "unit": "per_million_tokens",
+      "source": "models-dev-snapshot",
+      "displayName": "GPT-6.1 Sol"
     }
   ]
 }
