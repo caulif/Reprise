@@ -35,11 +35,9 @@ import {
   nextHitIndex,
   syncTimelineSelection,
   timelineIdentity,
-  type FindRestoreSnapshot,
 } from './timeline-read.js';
 import { beginPreflight, beginRun, bindWorkflow, candidateGateFrom, candidateStartBlocked, freeze, loadCandidateCatalog, acceptCandidateModel, requestCancellation, resolveCompareChoice } from './controller-run.js';
 import {
-  dispatchCanvasInput,
   dispatchCandidatePickerInput,
   dispatchConfirmInput,
   dispatchErrorKeys,
@@ -58,6 +56,7 @@ import {
   type GlobalInputAction,
 } from './page-input.js';
 import type { ActivityIndexState } from './activity-index.js';
+import type { CanvasFind } from './canvas-find.js';
 import { type TimelineEntry } from './timeline.js';
 import type { WorkbenchView } from './workbench.js';
 import { measureWorkbenchGeometry } from './workbench.js';
@@ -102,10 +101,7 @@ export type ControllerHandle = {
   preflight: ExperimentPreflight | undefined;
   historyDetail: HistoryCase | HistoryExperiment | undefined;
   taskCase: TaskCase | undefined;
-  finding: boolean;
-  findQuery: string;
-  findCursor: number;
-  findRestore: FindRestoreSnapshot | undefined;
+  readonly canvasFind: CanvasFind;
   readingMode: boolean;
   readingVisibleAt: number;
   timelineAnchor: string | undefined;
@@ -250,7 +246,7 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
   if (c.page === 'config') return c.configPageInput(input);
   if (c.page === 'history') return matchesKey(input, 'escape') ? c.backToHome() : c.historyInput(input);
   if (c.page === 'history-detail') {
-    if (c.processExpanded && matchesKey(input, 'escape') && !c.finding) {
+    if (c.processExpanded && matchesKey(input, 'escape') && !c.canvasFind.state.finding) {
       c.processExpanded = false;
       c.timelineReadOffset = 0;
       c.render(true);
@@ -310,7 +306,7 @@ export function handleControllerInput(c: ControllerHandle, data: string): Consum
 
 function applyResultPage(c: ControllerHandle, input: string, data: string): Consume | undefined {
     if (c.processExpanded) {
-      if (matchesKey(input, 'escape') && !c.finding) { c.processExpanded = false; c.timelineReadOffset = 0; c.render(true); return { consume: true }; }
+      if (matchesKey(input, 'escape') && !c.canvasFind.state.finding) { c.processExpanded = false; c.timelineReadOffset = 0; c.render(true); return { consume: true }; }
       const canvas = applyCanvas(c, input);
       if (canvas) return canvas;
       const key = dispatchRunningKeys(input);
@@ -714,16 +710,16 @@ function applyConfirm(c: ControllerHandle, data: string): Consume | undefined {
 
 function applyRunning(c: ControllerHandle, data: string): Consume | undefined {
   const blocked = canvasBlocked(c);
-  if (!blocked && !c.finding && matchesKey(data, 'v')) {
+  if (!blocked && !c.canvasFind.state.finding && matchesKey(data, 'v')) {
     return c.readingMode ? exitReadingMode(c) : enterReadingMode(c);
   }
-  if (c.readingMode && !c.finding && matchesKey(data, 'escape')) return exitReadingMode(c);
+  if (c.readingMode && !c.canvasFind.state.finding && matchesKey(data, 'escape')) return exitReadingMode(c);
   // The viewport wrapper routes selection gestures before this listener.
   // Ignore directly injected SGR here without moving the application timeline.
-  if (c.readingMode && !c.finding && isSgrMouseInput(data)) return undefined;
+  if (c.readingMode && !c.canvasFind.state.finding && isSgrMouseInput(data)) return undefined;
   const canvas = applyCanvas(c, data);
   if (canvas) return canvas;
-  if (c.readingMode && !c.finding) return { consume: true };
+  if (c.readingMode && !c.canvasFind.state.finding) return { consume: true };
   if (c.compareChoice) {
     const gate = applyCompareGate(data);
     if (gate) return gate;
@@ -747,11 +743,8 @@ function canvasBlocked(c: ControllerHandle): boolean {
 }
 
 function applyCanvas(c: ControllerHandle, data: string): Consume | undefined {
-  const result = dispatchCanvasInput({ finding: c.finding, query: c.findQuery, cursor: c.findCursor }, data, canvasBlocked(c));
+  const result = c.canvasFind.dispatch(data, canvasBlocked(c));
   if (!result) return undefined;
-  c.finding = result.state.finding;
-  c.findQuery = result.state.query;
-  c.findCursor = result.state.cursor;
   if (result.action === 'clear-find') return clearFind(c);
   if (result.action === 'next-hit' || result.action === 'prev-hit') {
     return jumpFindHit(c, result.action === 'prev-hit' ? -1 : 1);
@@ -759,13 +752,10 @@ function applyCanvas(c: ControllerHandle, data: string): Consume | undefined {
   if (result.action === 'move') return moveTimeline(c, result.amount ?? 1);
   if (result.action === 'start-find') {
     if (c.runPhase === 'recovery' || c.preparePhase === 'check') {
-      c.finding = false;
-      c.findQuery = '';
-      c.findCursor = 0;
-      c.findRestore = undefined;
+      c.canvasFind.reset();
       return { consume: true };
     }
-    c.findRestore = captureFindRestore(c);
+    c.canvasFind.rememberPosition(captureFindRestore(c));
     c.timelineFollowing = false;
     expandFoldsForQuery(c);
     c.render();
@@ -809,11 +799,7 @@ function applyHistoryDetail(c: ControllerHandle, data: string): Consume | undefi
 }
 
 function clearFind(c: ControllerHandle): Consume {
-  const restore = c.findRestore;
-  c.finding = false;
-  c.findQuery = '';
-  c.findCursor = 0;
-  c.findRestore = undefined;
+  const restore = c.canvasFind.reset();
   if (restore) applyFindRestore(c, restore);
   else {
     const current = c.visibleTimeline()[c.timelineSelected];
@@ -867,7 +853,7 @@ function moveTimeline(c: ControllerHandle, amount: number): Consume {
 function jumpFindHit(c: ControllerHandle, direction: 1 | -1): Consume {
   expandFoldsForQuery(c);
   const entries = c.visibleTimeline();
-  const hits = canvasHitIndices(entries, c.findQuery, c.timelineRevision);
+  const hits = canvasHitIndices(entries, c.canvasFind.state.query, c.timelineRevision);
   if (!hits.length) {
     // Keep the pre-find / current anchor; do not snap to live bottom.
     c.message = t(c.locale, 'findNone');
@@ -904,12 +890,7 @@ function followTimeline(c: ControllerHandle): Consume {
     c.readingMode = false;
     c.setMouseReporting(true);
   }
-  if (c.finding) {
-    c.finding = false;
-    c.findQuery = '';
-    c.findCursor = 0;
-    c.findRestore = undefined;
-  }
+  if (c.canvasFind.state.finding) c.canvasFind.reset();
   c.message = t(c.locale, 'followingLatest');
   c.render();
   return { consume: true };
@@ -944,10 +925,10 @@ function cycleFoldSelection(c: ControllerHandle, direction: 1 | -1): Consume {
 }
 
 function expandFoldsForQuery(c: ControllerHandle): void {
-  if (!c.findQuery.trim()) return;
+  if (!c.canvasFind.state.query.trim()) return;
   const filter = TIMELINE_FILTERS[c.timelineFilterIndex] ?? 'ALL';
   const filtered = c.timeline.filter((entry) => matchesFilter(entry, filter));
-  const hits = c.timeline.filter((entry) => matchesFilter(entry, filter)).filter((entry) => matchesCanvasQuery(entry, c.findQuery));
+  const hits = c.timeline.filter((entry) => matchesFilter(entry, filter)).filter((entry) => matchesCanvasQuery(entry, c.canvasFind.state.query));
   for (const hit of hits) {
     for (const id of coveringFoldIds(filtered, hit)) {
       if (!c.expandedFolds.includes(id)) c.expandedFolds.push(id);

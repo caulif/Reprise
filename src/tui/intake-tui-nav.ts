@@ -178,10 +178,7 @@ export function IntakeTui_backToHome(this: IntakeTui): { consume: true } {
     this.searching = false;
     this.searchQuery = "";
     this.searchCursor = 0;
-    this.finding = false;
-    this.findQuery = "";
-    this.findCursor = 0;
-    this.findRestore = undefined;
+    this.canvasFind.reset();
     this.readingMode = false;
     this.intakeLevel = "projects";
     this.preparePhase = undefined;
@@ -239,7 +236,7 @@ export function IntakeTui_isEditingText(this: IntakeTui): boolean {
     return (
       this.configEditing ||
       this.searching ||
-      this.finding ||
+      this.canvasFind.state.finding ||
       this.page === "source" ||
       (this.page === "home" && this.composer.length > 0)
     );
@@ -252,7 +249,7 @@ export function IntakeTui_showHelp(this: IntakeTui): { consume: true } {
       locale: this.locale,
       mode: {
         processExpanded: this.processExpanded,
-        finding: this.finding,
+        finding: this.canvasFind.state.finding,
         reading: this.readingMode,
         preparing,
         comparePending: Boolean(this.compareChoice),

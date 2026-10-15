@@ -30,7 +30,7 @@ import type { IntakeLevel, ProductIntakeItem, SessionProject } from "./pages/int
 import type { Option } from "./types.js";
 import type { TimelineEntry } from "./timeline.js";
 import { createActivityIndex, type ActivityIndexState } from "./activity-index.js";
-import type { FindRestoreSnapshot } from "./timeline-read.js";
+import { CanvasFind } from "./canvas-find.js";
 import { type Workbench, type WorkbenchView } from "./workbench.js";
 import type { IntakeProductMemory } from "./intake-layer-memory.js";
 import type { PreparePhase } from "./widgets.js";
@@ -111,10 +111,7 @@ export class IntakeTui {
   searchQuery = "";
   searchCursor = 0;
   searching = false;
-  finding = false;
-  findQuery = "";
-  findCursor = 0;
-  findRestore: FindRestoreSnapshot | undefined;
+  readonly canvasFind = new CanvasFind();
   readingMode = false;
   readingVisibleAt = 0;
   timelineAnchor: string | undefined;
