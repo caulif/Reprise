@@ -101,7 +101,7 @@ async function openHistoryCase(c: HistoryPanel, item: HistoryCase): Promise<void
   try {
     const taskCase = await readTaskCaseFile(item.path, { expectedCaseId: item.taskCase.caseId, requireComplete: true });
     if (token !== c.generation) return;
-    c.historyDetail = { taskCase, path: item.path, filesVerified: true };
+    c.historyDetail = { taskCase, path: item.path, filesVerified: taskCase.schemaVersion === 2 };
     c.timelineReadOffset = 0;
     c.processExpanded = false;
     c.page = 'history-detail';

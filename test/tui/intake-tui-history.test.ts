@@ -85,6 +85,24 @@ test('selecting a metadata-only case validates frozen files before installing it
   assert.equal(panel.historyDetail, undefined);
 });
 
+test('opening case details certifies file bindings only for a fully checked v2 scene', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-history-detail-certification-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const version of [1, 2] as const) {
+    const dataDir = join(root, String(version));
+    const legacy = input(dataDir, new VerifiedRuntime()).taskCase;
+    const taskCase = version === 1 ? legacy : await sealFrozenCase(legacy, []);
+    await publishFrozenCase({ taskCase, files: [], casesRoot: join(dataDir, 'cases') });
+    const item = (await readLocalHistoryListing(dataDir)).cases[0]!;
+    const panel = panelFor(dataDir, item);
+    IntakeTui_historyInput.call(panel, '\r');
+    await waitFor(() => panel.page === 'history-detail');
+    assert.ok(panel.historyDetail && 'taskCase' in panel.historyDetail);
+    assert.equal(panel.historyDetail.filesVerified, version === 2);
+    assert.equal(panel.historyDetail.taskCase.schemaVersion, version);
+  }
+});
+
 function panelFor(dataDir: string, item: HistoryPanel['historyExperiments'][number] | HistoryPanel['historyCases'][number]): HistoryPanel {
   const panel = {
     dataDir, locale: 'zh', generation: 0, page: 'history', message: '',
