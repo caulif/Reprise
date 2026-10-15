@@ -42,6 +42,7 @@ Core 定义 [schema](../../src/core/schema.ts)、[状态转换](../../src/core/s
 - 候选工作区与用户 source 分离；source 设有 fingerprint/tripwire，候选结束后释放由 Host 执行。
 - 模型可见输入必须能从事件和持久化 briefing 重建；压缩使用 `agent.context_compacted` 的 summary 与 retained tail。
 - TUI 只投影事件和结果，不伪造未公开的推理过程。查找编辑和退出恢复快照由局部 [CanvasFind](../../src/tui/canvas-find.ts) 持有，不接收整个控制器；timeline 选择与导航仍由原控制器负责，异步结果继续受 generation/request token 约束。
+- 事件诊断与阶段时钟由 [RunDiagnostics](../../src/tui/run-diagnostics.ts) 持有，页面读取只读快照；它复用既有事件推导，不持有 workflow、实验 handle、页面或取消生命周期，不执行 CandidateRun 状态变化。
 
 ## 实现入口
 

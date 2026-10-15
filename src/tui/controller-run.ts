@@ -18,18 +18,9 @@ import { candidateGateFromView, candidateStartBlocked, type CandidateStartGate }
 import { prepareExperiment } from '../application/experiment-operations.js';
 import { recoveryViewFromAttempt } from '../application/recovery/view.js';
 import { userRecoveryStatus } from '../application/recovery/user-status.js';
-import { record, text } from '../core/json.js';
-import { candidateRunPhaseFromEvent, candidateRunDisplayFromEvents, isCandidateRunState } from '../application/candidate-run-phase.js';
 import { preflightFromBaseline } from '../application/experiment-preflight.js';
 import { deriveResultPresentationFromResult } from './display-state.js';
-import {
-  applyPhaseClockEvent,
-  eventActivityRole,
-  isVisibleActivityEvent,
-  shouldApplyLivePhase,
-  type ClockScope,
-  type PhaseClockBounds,
-} from './phase-state.js';
+import type { ClockScope } from './phase-state.js';
 
 function historicalCwd(taskCase: TaskCase | undefined): string | undefined {
   const cwd = taskCase?.taskContext?.historicalCwd;
@@ -73,8 +64,8 @@ function defaultResultAction(c: ControllerHandle, result: ExperimentResult): Con
 function setCancelUi(c: ControllerHandle, next: CancelUi, detail?: string): void {
   c.cancelUi = next;
   if (next === 'requesting') {
-    const stage = c.preparePhase === 'compare' || c.comparisonAttemptId ? 'cancellationStageComparison'
-      : c.preparePhase === 'check' || c.preparePhase === 'copy' || c.runPhase === 'recovery' ? 'cancellationStagePreparation'
+    const stage = c.preparePhase === 'compare' || c.runDiagnostics.state.comparisonAttemptId ? 'cancellationStageComparison'
+      : c.preparePhase === 'check' || c.preparePhase === 'copy' || c.runDiagnostics.state.runPhase === 'recovery' ? 'cancellationStagePreparation'
         : 'cancellationStageExecution';
     c.message = t(c.locale, 'cancellationRequestedStage', { stage: t(c.locale, stage) });
     return;
@@ -193,62 +184,16 @@ export function requestCancellation(c: ControllerHandle): Consume {
 
 function startRunClock(c: ControllerHandle, scope?: ClockScope): void {
   stopRunClock(c);
-  if (scope) markPhaseClockStart(c, scope);
+  if (scope) c.runDiagnostics.startClock(scope, c.nowMs());
   c.runClock = setInterval(() => {
     if (c.page === 'running') c.scheduleTimelineRender();
   }, 250);
   c.runClock.unref?.();
 }
 
-function markPhaseClockStart(c: ControllerHandle, scope: ClockScope): void {
-  const now = c.nowMs();
-  if (scope === 'recovery') {
-    c.recoveryStartedAt = now;
-    c.recoveryEndedAt = 0;
-    c.runStartedAt = now;
-    return;
-  }
-  if (scope === 'comparison') {
-    c.comparisonStartedAt = now;
-    c.comparisonEndedAt = 0;
-    c.runStartedAt = now;
-    return;
-  }
-  c.candidateStartedAt = now;
-  c.candidateEndedAt = 0;
-  c.runStartedAt = now;
-}
-
-function freezePhaseClock(c: ControllerHandle, scope: ClockScope): void {
-  const now = c.nowMs();
-  if (scope === 'recovery' && !c.recoveryEndedAt) c.recoveryEndedAt = now;
-  if (scope === 'candidate' && !c.candidateEndedAt) c.candidateEndedAt = now;
-  if (scope === 'comparison' && !c.comparisonEndedAt) c.comparisonEndedAt = now;
-}
-
 export function stopRunClock(c: ControllerHandle): void {
   if (c.runClock) clearInterval(c.runClock);
   c.runClock = undefined;
-}
-
-function phaseClocksOf(c: ControllerHandle): PhaseClockBounds {
-  return {
-    ...(c.recoveryStartedAt ? { recoveryStartedAt: c.recoveryStartedAt } : {}),
-    ...(c.recoveryEndedAt ? { recoveryEndedAt: c.recoveryEndedAt } : {}),
-    ...(c.candidateStartedAt ? { candidateStartedAt: c.candidateStartedAt } : {}),
-    ...(c.candidateEndedAt ? { candidateEndedAt: c.candidateEndedAt } : {}),
-    ...(c.comparisonStartedAt ? { comparisonStartedAt: c.comparisonStartedAt } : {}),
-    ...(c.comparisonEndedAt ? { comparisonEndedAt: c.comparisonEndedAt } : {}),
-  };
-}
-
-function syncPhaseClocks(c: ControllerHandle, bounds: PhaseClockBounds): void {
-  c.recoveryStartedAt = bounds.recoveryStartedAt ?? 0;
-  c.recoveryEndedAt = bounds.recoveryEndedAt ?? 0;
-  c.candidateStartedAt = bounds.candidateStartedAt ?? 0;
-  c.candidateEndedAt = bounds.candidateEndedAt ?? 0;
-  c.comparisonStartedAt = bounds.comparisonStartedAt ?? 0;
-  c.comparisonEndedAt = bounds.comparisonEndedAt ?? 0;
 }
 
 function appendTimeline(c: ControllerHandle, event: EventEnvelope): void {
@@ -262,7 +207,7 @@ function appendTimeline(c: ControllerHandle, event: EventEnvelope): void {
     c.preparePhase = undefined;
     c.prepareDetail = undefined;
   }
-  noteRunDiagnostics(c, event);
+  c.runDiagnostics.observe(event, c.preparePhase);
   appendTimelineEntries(c.timeline, projectTimelineEvent(event), c);
   syncTimelineSelection(c);
   if (c.page === 'running') c.scheduleTimelineRender();
@@ -332,8 +277,7 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
     c.timelineSelected = 0;
     bumpTimelineRevision(c);
     c.timelineFollowing = true;
-    resetRunDiagnostics(c);
-    c.runPhase = 'recovery';
+    c.runDiagnostics.beginPhase('recovery');
     c.preparePhase = 'check';
     c.prepareDetail = t(c.locale, 'recoveryStageAgent');
     c.page = 'running';
@@ -375,7 +319,7 @@ async function beginRecovery(c: ControllerHandle): Promise<void> {
     };
     c.preparePhase = undefined;
     c.prepareDetail = undefined;
-    freezePhaseClock(c, 'recovery');
+    c.runDiagnostics.freezeClock('recovery', c.nowMs());
     stopRunClock(c);
     c.selectedCandidate = undefined;
     if (userStatus === 'failed') {
@@ -422,7 +366,7 @@ async function settleRun(
     return undefined;
   }
   if (cancelBlocksCompareGate(c)) return handle.result;
-  freezePhaseClock(c, 'candidate');
+  c.runDiagnostics.freezeClock('candidate', c.nowMs());
   c.result = partial;
   c.resultDetails = false;
   c.processExpanded = false;
@@ -446,7 +390,7 @@ async function settleRun(
     }
     startRunClock(c, 'comparison');
     await handle.runComparison();
-    freezePhaseClock(c, 'comparison');
+    c.runDiagnostics.freezeClock('comparison', c.nowMs());
   } else {
     await handle.skipComparison();
   }
@@ -496,8 +440,7 @@ export async function beginRun(c: ControllerHandle): Promise<void> {
     const blocked = candidateStartBlocked(candidateGateFrom(c));
     if (blocked) throw new Error(blocked);
     if (!await verifyConfirmedModel(c, candidate, token, abort.signal)) return;
-    resetRunDiagnostics(c);
-    c.runPhase = 'candidate_starting';
+    c.runDiagnostics.beginPhase('candidate_starting');
     c.preparePhase = 'copy';
     c.prepareDetail = undefined;
     c.page = 'running';
@@ -590,76 +533,6 @@ export function candidateGateFrom(c: ControllerHandle): CandidateStartGate {
     ...(c.preflight?.sourceBaseline ? { sourceBaseline: c.preflight.sourceBaseline } : {}),
     ...(recovered ? { recovery: recovered } : {}),
   };
-}
-
-function resetRunDiagnostics(c: ControllerHandle): void {
-  c.runPhase = undefined;
-  c.machineState = undefined;
-  c.runFailed = false;
-  c.cleanupStatus = undefined;
-  c.lastRuntimeEventAt = undefined;
-  c.lastObservedEventAt = undefined;
-  c.lastVisibleActivityAt = undefined;
-  c.lastRuntimeEventKind = undefined;
-  c.modelOutputSeen = false;
-  c.reconnectCount = 0;
-  c.reconnectTotal = 0;
-  c.comparisonAttemptId = undefined;
-}
-
-function noteRunDiagnostics(c: ControllerHandle, event: EventEnvelope): void {
-  c.lastObservedEventAt = event.occurredAt;
-  c.lastRuntimeEventAt = event.occurredAt;
-  c.lastRuntimeEventKind = event.type;
-
-  if (event.type === 'comparison.started') {
-    const attemptId = text(record(event.payload).attemptId);
-    if (attemptId) c.comparisonAttemptId = attemptId;
-  }
-  if (event.type === 'comparison.completed') {
-    // Keep attempt id until reset so late candidate events stay scoped out.
-  }
-
-  syncPhaseClocks(c, applyPhaseClockEvent(phaseClocksOf(c), event));
-
-  const role = eventActivityRole(event);
-  const currentRole = (() => {
-    if (c.preparePhase === 'compare' || c.comparisonAttemptId) return 'comparison' as const;
-    if (c.runPhase === 'recovery' || c.preparePhase === 'check') return 'recovery' as const;
-    if (c.machineState === 'awaiting_controller' || c.machineState === 'created' || c.machineState === 'finalizing') {
-      return 'controller' as const;
-    }
-    return 'candidate' as const;
-  })();
-  if (isVisibleActivityEvent(event) && (!role || role === currentRole)) {
-    c.lastVisibleActivityAt = event.occurredAt;
-  }
-
-  if (shouldApplyLivePhase(event, c.preparePhase, c.comparisonAttemptId)) {
-    const phase = candidateRunPhaseFromEvent(event);
-    if (phase) c.runPhase = phase;
-  }
-  if (event.type === 'run.state_changed') {
-    const to = text(record(event.payload).to);
-    if (isCandidateRunState(to)) c.machineState = to;
-  }
-  if (event.type === 'run.outcome_created') {
-    const display = candidateRunDisplayFromEvents([event]);
-    c.runFailed = display.failed;
-    c.cleanupStatus = display.cleanupStatus;
-  }
-  if (event.type === 'runtime.visible_output' || event.type === 'runtime.turn_settled') c.modelOutputSeen = true;
-  if (event.type !== 'runtime.runtime_failed') return;
-  const attempt = parseReconnectAttempt(text(record(event.payload).message) ?? '');
-  if (!attempt) return;
-  c.reconnectCount = attempt.current;
-  c.reconnectTotal = attempt.total;
-}
-
-function parseReconnectAttempt(message: string): { current: number; total: number } | undefined {
-  const match = /Reconnecting\s+(\d+)\s*\/\s*(\d+)/i.exec(message);
-  if (!match) return undefined;
-  return { current: Number(match[1]), total: Number(match[2]) };
 }
 
 function openCandidateProductPicker(c: ControllerHandle): void {

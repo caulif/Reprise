@@ -10,6 +10,7 @@ import { PiModelCaller } from '../../src/infrastructure/agent/model-caller.js';
 import { defaultHarnessModelConfig, saveHarnessModelConfig } from '../../src/infrastructure/harness-model-config.js';
 import { IntakeTui_showError } from '../../src/tui/intake-tui-nav.js';
 import { IntakeTui } from '../../src/tui/intake-app.js';
+import { RunDiagnostics } from '../../src/tui/run-diagnostics.js';
 import type { RecoveryView } from '../../src/application/recovery/view.js';
 import { mockTui } from '../../scripts/tui-audit-lib.js';
 import { renderWorkbench } from '../../src/tui/workbench.js';
@@ -43,7 +44,7 @@ test('connection probe failures preserve their phase and show localized retry gu
     assert.ok(error instanceof Error);
     assert.equal(error.name, 'HarnessProbeError');
     assert.equal(error.cause, cause);
-    const view = { locale: 'zh', message: '', page: 'running' };
+    const view = { locale: 'zh', message: '', page: 'running', runDiagnostics: new RunDiagnostics() };
     IntakeTui_showError.call(view as never, error, 'home');
     assert.equal(view.page, 'error');
     assert.match(view.message, /Reprise 模型连接检查.*暂时失败.*重试/);
@@ -384,10 +385,10 @@ test('controller event handling clears a previous comparison end when another at
       start: async ({ onEvent }: { onEvent: (event: unknown) => void }) => {
         onEvent(stamp('comparison.started', 10_000));
         onEvent(stamp('comparison.completed', 40_000));
-        assert.equal(app.comparisonEndedAt, 40_000);
+        assert.equal(app.runDiagnostics.state.comparisonEndedAt, 40_000);
         onEvent(stamp('comparison.started', 50_000));
-        assert.equal(app.comparisonStartedAt, 50_000);
-        assert.equal(app.comparisonEndedAt, 0);
+        assert.equal(app.runDiagnostics.state.comparisonStartedAt, 50_000);
+        assert.equal(app.runDiagnostics.state.comparisonEndedAt, 0);
         throw new Error('stop after clock probe');
       },
     } as never,
@@ -397,7 +398,7 @@ test('controller event handling clears a previous comparison end when another at
   app.selectedCandidate = { candidateId: 'candidate', productId: 'claude-code', requestedModel: 'sonnet' };
   app.preflight = { sourceBaseline: 'available', limitations: [], resolved: { requestedModel: 'sonnet', resolvedModel: 'sonnet' } } as never;
   await beginRun(app);
-  assert.equal(app.comparisonEndedAt, 0);
+  assert.equal(app.runDiagnostics.state.comparisonEndedAt, 0);
   assert.equal(app.page, 'error');
 });
 

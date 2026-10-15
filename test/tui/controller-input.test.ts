@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handleControllerInput, type ControllerHandle } from '../../src/tui/controller-input.js';
 import { CanvasFind } from '../../src/tui/canvas-find.js';
+import { RunDiagnostics } from '../../src/tui/run-diagnostics.js';
 
 function runningController(): ControllerHandle {
   const timeline = [{ sequence: 1, occurredAt: '', source: 'TARGET', title: 'First activity' },
@@ -15,7 +16,7 @@ function runningController(): ControllerHandle {
     activityDetailOverlay: undefined,
     activityDetailEntry: undefined,
     startupAbort: undefined,
-    canvasFind: new CanvasFind(),
+    canvasFind: new CanvasFind(), runDiagnostics: new RunDiagnostics(),
     expandedFolds: [],
     timelineFilterIndex: 0,
     timelineRevision: 0,

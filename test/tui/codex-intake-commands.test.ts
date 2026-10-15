@@ -393,7 +393,7 @@ test("Codex intake TUI prefills the historical source, shows current-state limit
   await waitFor(() => app.page === 'running' || app.page === 'result');
   await waitFor(() => sourceRoot === "C:/not-automatic");
   emitEvent?.({ schemaVersion: 1, sequence: 6, eventId: 'shared-delivery', occurredAt: '2026-08-11T00:10:03.000Z', type: 'runtime.delivery_observed', payload: { status: 'accepted' }, checksum: 'd'.repeat(64) });
-  assert.equal(app.runPhase, 'candidate_generating');
+  assert.equal(app.runDiagnostics.state.runPhase, 'candidate_generating');
   app.handleInput("\u0003");
   assert.equal(stops, 0);
   assert.equal(cancellations, 0);

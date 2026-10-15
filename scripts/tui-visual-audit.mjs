@@ -361,7 +361,7 @@ async function main() {
   await push('19-running-check', 120, run.render(120));
   await push('19b-running-check-compact', 60, run.render(60));
   releasePreflight();
-  await waitFor(() => runApp.runPhase === 'recovery' && Boolean(runApp.recoveryAbort), 'automatic environment preparation after preflight');
+  await waitFor(() => runApp.runDiagnostics.state.runPhase === 'recovery' && Boolean(runApp.recoveryAbort), 'automatic environment preparation after preflight');
   await push('20-running-copy', 120, run.render(120));
   releaseRecovery();
   await waitFor(() => runApp.page === 'candidate-product', { describe: 'candidate product after recovery', frame: () => run.render(120) });

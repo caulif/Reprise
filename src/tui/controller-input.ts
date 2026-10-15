@@ -8,7 +8,7 @@ import { resolveResultPathLinks } from '../application/result-paths.js';
 import type { ExperimentPreflight } from '../application/experiment-preflight.js';
 import type { RecoveryView } from '../application/recovery/view.js';
 import type { ExperimentWorkflow } from '../application/experiment-workflow.js';
-import type { TaskCase, CandidateRunState } from '../core/schema.js';
+import type { TaskCase } from '../core/schema.js';
 import type { HarnessConfigDraft, HarnessModelConfig } from '../infrastructure/harness-model-config.js';
 import type { ProductPack, SessionInspection, SessionPrivacy, SessionSummary } from '../products/contract.js';
 import { artifactsFromResult, listActions } from './action-model.js';
@@ -57,6 +57,7 @@ import {
 } from './page-input.js';
 import type { ActivityIndexState } from './activity-index.js';
 import type { CanvasFind } from './canvas-find.js';
+import type { RunDiagnostics } from './run-diagnostics.js';
 import { type TimelineEntry } from './timeline.js';
 import type { WorkbenchView } from './workbench.js';
 import { measureWorkbenchGeometry } from './workbench.js';
@@ -65,7 +66,6 @@ import { renderRecoverySummary } from './pages/recovery-summary.js';
 import { ensureResultSelectionVisible, resultChoices, scrollPageBody } from './controller-scroll.js';
 import { createTheme } from './theme.js';
 import type { PreparePhase } from './widgets.js';
-import type { CandidateRunPhase } from './pages/run.js';
 
 export type Page = WorkbenchView['page'];
 export type Consume = { consume: true };
@@ -102,6 +102,7 @@ export type ControllerHandle = {
   historyDetail: HistoryCase | HistoryExperiment | undefined;
   taskCase: TaskCase | undefined;
   readonly canvasFind: CanvasFind;
+  readonly runDiagnostics: RunDiagnostics;
   readingMode: boolean;
   readingVisibleAt: number;
   timelineAnchor: string | undefined;
@@ -150,27 +151,8 @@ export type ControllerHandle = {
   sessions: readonly SessionSummary[];
   readonly now: () => string;
   readonly nowMs: () => number;
-  runStartedAt: number;
-  recoveryStartedAt: number;
-  recoveryEndedAt: number;
-  candidateStartedAt: number;
-  candidateEndedAt: number;
-  comparisonStartedAt: number;
-  comparisonEndedAt: number;
-  comparisonAttemptId: string | undefined;
   runClock: ReturnType<typeof setInterval> | undefined;
   cancelUi: import('./controller-run.js').CancelUi;
-  runPhase: CandidateRunPhase | undefined;
-  machineState: CandidateRunState | undefined;
-  runFailed: boolean;
-  cleanupStatus: string | undefined;
-  lastRuntimeEventAt: string | undefined;
-  lastObservedEventAt: string | undefined;
-  lastVisibleActivityAt: string | undefined;
-  lastRuntimeEventKind: string | undefined;
-  modelOutputSeen: boolean;
-  reconnectCount: number;
-  reconnectTotal: number;
   modelConfig: HarnessModelConfig;
   hasSavedModelConfig: boolean;
   harnessAuthOk: boolean;
@@ -751,7 +733,7 @@ function applyCanvas(c: ControllerHandle, data: string): Consume | undefined {
   }
   if (result.action === 'move') return moveTimeline(c, result.amount ?? 1);
   if (result.action === 'start-find') {
-    if (c.runPhase === 'recovery' || c.preparePhase === 'check') {
+    if (c.runDiagnostics.state.runPhase === 'recovery' || c.preparePhase === 'check') {
       c.canvasFind.reset();
       return { consume: true };
     }
