@@ -40,7 +40,7 @@ node dist/src/cli/main.js
 
 ## CLI
 
-首页和运行记录列表延后模型输入审计与空间统计。打开记录详情时才审计该实验的输入；选择冻结任务时仍完整校验其文件，损坏任务不能进入使用流程。“尚未统计”表示没有采集空间数值，不表示占用为零。CLI 历史分页协议为 v2，返回 `schemaVersion: 2` 和 `storageSizeStatus: not_collected`，未采集的 `totalBytes`/`sizeBytes` 不出现在 JSON 中。
+首页和运行记录列表延后模型输入审计与空间统计。打开记录详情时才审计该实验的输入；选择冻结任务时执行其格式支持的完整校验，损坏任务不能进入使用流程。只有完整绑定的 v2 冻结文件验证成功才显示已验证，旧 v1 读取成功不补文件认证。“尚未统计”表示没有采集空间数值，不表示占用为零。CLI 历史分页协议为 v2，返回 `schemaVersion: 2` 和 `storageSizeStatus: not_collected`，未采集的 `totalBytes`/`sizeBytes` 不出现在 JSON 中。
 
 无子命令进入 TUI；脚本和自动化可使用 JSON/JSONL 的无头命令：
 
