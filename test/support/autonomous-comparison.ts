@@ -13,7 +13,7 @@ import { sha256 } from '../../src/core/identity.js';
 import { parseCommittedEventLog } from '../../src/infrastructure/agent/model-input.js';
 import { input, patientPolicy, VerifiedRuntime } from '../codex-experiment-support.js';
 
-const comparisonFixtureModel: Model<'openai-completions'> = {
+export const comparisonFixtureModel: Model<'openai-completions'> = {
   id: 'fixture', name: 'fixture', api: 'openai-completions', provider: 'fixture', baseUrl: 'https://example.test',
   reasoning: false, input: ['text', 'image'], contextWindow: 128_000, maxTokens: 16_384,
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

@@ -141,4 +141,3 @@ export function assertComparisonResult(
 }
 
 export function shortRefsOf(items: readonly { shortRef?: string }[]): string[] { return items.flatMap((item) => (item.shortRef ? [item.shortRef] : [])); }
-
