@@ -28,6 +28,8 @@ History 从已校验的提交日志前缀构造只读附件读取器，每个 Se
 
 ## Comparison attempt
 
+Comparison 的共享 Context、Port、Result、Facts 与输出校验由 [`comparison-contract.ts`](../../src/agents/comparison-contract.ts) 持有；应用、脚本和默认自主实现直接依赖该中立模块。`comparison-agent.ts` 保留旧多阶段执行器和兼容 re-export；默认 harness/应用入口不会因结果校验 runtime 加载旧执行器。此批只解除契约与执行策略的装配耦合，旧历史认证及测试仍保留，不声明旧执行器已退役。理由见[中立 Comparison 契约](../decisions/accepted/2026-10-14-comparison-neutral-contracts.md)。
+
 默认自主 Session 的输入以用户需求和实际交付物为先，完整导航与过程材料按需展开。`render_artifact` 支持一次调用中重放受控点击、表单输入、按键、滚动、等待和 DOM 状态观察，加载前可设置弱动效和主题偏好。每次新开冻结页面，传完整动作序列；带动作的帧时间相对序列完成，观察对应其动作位置。工具回执记录动作、条件及观察，沿现有审计和测量分页保存；不开放任意脚本、任意网址或用户浏览器。初始和工具后的剩余时间与实际整体截止保持一致。见[交付优先与浏览器检查](../decisions/accepted/2026-10-11-comparison-browser-actions.md)。
 
 默认由 [`AutonomousComparisonAgent`](../../src/agents/comparison-autonomous.ts) 执行单个自主 Session、一个初始任务 prompt。模型自主调查、验证、编写、预览及修订；read/search、write/edit、shell、受控渲染、图片读取/变换及证据登记工具全程可用，独立只读工具仍按已有声明并行。没有强制 understand/investigate/compose/review 阶段、周期语义保存、独立 reviewer 或 findings/disposition 提交要求；原始交付只读，工作文件写入 scratch/。模型选择证据与判断，Host 不对任务语义增加专用判题规则。

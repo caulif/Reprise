@@ -1,7 +1,7 @@
 import type { ComparisonResources } from '../core/schema.js';
 import type { FreeformInvocation, FreeformWorkRequest } from '../infrastructure/agent/host.js';
 import type { ComparisonResourceTracker } from './comparison-resources.js';
-import type { ComparisonReportFacts } from './comparison-agent.js';
+import type { ComparisonReportFacts } from './comparison-contract.js';
 
 export type ComparisonWorkPass = 'sources' | 'source-save' | 'review-supplement' | 'initial-findings' | 'findings' | 'review-findings' | 'inspection' | 'audit' | 'final-inspection' | 'preview' | 'presentation-review';
 

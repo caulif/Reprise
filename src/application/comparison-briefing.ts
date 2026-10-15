@@ -2,7 +2,7 @@ import { mkdir, stat, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Value } from "@sinclair/typebox/value";
-import type { ComparisonContext, ComparisonFactsContext } from "../agents/comparison-agent.js";
+import type { ComparisonContext, ComparisonFactsContext } from "../agents/comparison-contract.js";
 import { sha256, writeAtomic } from "../core/identity.js";
 import { ComparisonBriefingContextSchema, ComparisonLinksSchema, GitSinkManifestSchema, type ComparisonLinkRecord, type ComparisonMediaRecord, type EventEnvelope, type RunRecord, type TaskCase } from "../core/schema.js";
 import type { ArtifactManifest } from "../infrastructure/store/experiment-store.js";

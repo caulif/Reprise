@@ -3,7 +3,7 @@ import { access, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import type { ComparisonAgentPort } from '../src/agents/comparison-agent.js';
+import type { ComparisonAgentPort } from '../src/agents/comparison-contract.js';
 import type { ControllerPort } from '../src/agents/controller-agent.js';
 import { recoverExperiment } from '../src/application/recovery/recover.js';
 import { startExperiment } from '../src/application/experiment.js';

@@ -3,7 +3,7 @@ import { join, relative, resolve, isAbsolute } from 'node:path';
 import { Type, type Static, type TSchema } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { parseFragment } from 'parse5';
-import type { ComparisonResult } from '../agents/comparison-agent.js';
+import type { ComparisonResult } from '../agents/comparison-contract.js';
 import { AgentImageRefSchema, AgentTextBodySchema } from '../core/agent-model-input-schema.js';
 import { sha256, writeAtomic } from '../core/identity.js';
 import { SAFE_ID } from '../core/identity.js';
