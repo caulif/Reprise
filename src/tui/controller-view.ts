@@ -143,7 +143,7 @@ function runDiagnosticsFields(c: IntakeTui) {
 }
 
 export function view(c: IntakeTui): WorkbenchView {
-  const envName = envNameFromConfig(c.modelConfig, c.configDraft);
+  const envName = envNameFromConfig(c.modelConfig, c.configSession.state.draft);
   const product = c.productContext();
   const discovery = c.activeProductId ? c.productDiscovery.get(c.activeProductId) : undefined;
   const discoveryStatus = discovery?.status;
@@ -168,18 +168,18 @@ export function view(c: IntakeTui): WorkbenchView {
     composerCursor: c.composerCursor,
     showSuggestions: c.showSuggestions,
     commandOverlay: Boolean(c.commandOverlay),
-    configDraft: c.configDraft,
-    configSelected: c.configSelected,
-    configAdvanced: c.configAdvanced,
-    configEditing: c.configEditing,
-    configBuffer: c.configBuffer,
-    configCursor: c.configCursor,
+    configDraft: c.configSession.state.draft,
+    configSelected: c.configSession.state.selected,
+    configAdvanced: c.configSession.state.advanced,
+    configEditing: c.configSession.state.editing,
+    configBuffer: c.configSession.state.buffer,
+    configCursor: c.configSession.state.cursor,
     configDirty: c.configDirty(),
-    configPendingToggle: c.configPendingToggle,
-    ...(c.configLeaveConfirm ? { configLeaveConfirm: true } : {}),
-    configBusy: c.configBusy,
-    configTestStatus: c.configTestStatus,
-    ...(c.configTestDetail ? { configTestDetail: c.configTestDetail } : {}),
+    configPendingToggle: c.configSession.state.pendingToggle,
+    ...(c.configSession.state.leaveConfirm ? { configLeaveConfirm: true } : {}),
+    configBusy: c.configSession.state.busy,
+    configTestStatus: c.configSession.state.testStatus,
+    ...(c.configSession.state.testDetail ? { configTestDetail: c.configSession.state.testDetail } : {}),
     historyTotalBytes: c.historyTotalBytes,
     invalidHistoryCaseCount: c.invalidHistoryCaseCount,
     historyTab: c.historyTab,

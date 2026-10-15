@@ -41,13 +41,13 @@ function replaceField(app, value) {
 }
 
 function editField(app, field) {
-  const fields = visibleConfigItems(app.configDraft.kind, app.configAdvanced);
+  const fields = visibleConfigItems(app.configSession.state.draft.kind, app.configSession.state.advanced);
   const index = fields.indexOf(field);
   assert.ok(index >= 0, `Configuration field is visible: ${field}`);
-  for (let step = 0; app.configSelected !== index && step < fields.length; step += 1) {
-    app.handleInput(app.configSelected < index ? '\u001b[B' : '\u001b[A');
+  for (let step = 0; app.configSession.state.selected !== index && step < fields.length; step += 1) {
+    app.handleInput(app.configSession.state.selected < index ? '\u001b[B' : '\u001b[A');
   }
-  assert.equal(app.configSelected, index);
+  assert.equal(app.configSession.state.selected, index);
   app.handleInput('\r');
 }
 
