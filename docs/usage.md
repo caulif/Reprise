@@ -55,7 +55,7 @@ reprise cancel <operationId|experimentId|runId>
 reprise capture-history --task-case <case.json> --basis <reason> (--repository <dir> --commit <fullSHA> | --file <path> --logical-path <name> --expected-hash <sha256>)
 ```
 
-`--product` 与 `--model` 必须成对提供。`prepare` 只准备和封存，不接受候选选择；`run` 从封存场景或 TaskCase 启动候选；`compare` 对已保存运行生成对照。不要把 API 密钥放进命令行参数；`--json` 与 `--jsonl` 互斥。
+`--product` 与 `--model` 必须成对提供。`prepare` 只准备和封存，不接受执行工具或模型选择；`run` 从封存场景或 TaskCase 启动当前运行；`compare` 对已保存运行生成对照。不要把 API 密钥放进命令行参数；`--json` 与 `--jsonl` 互斥。
 
 `compare` 有两种输入模式：
 
@@ -66,11 +66,11 @@ reprise capture-history --task-case <case.json> --basis <reason> (--repository <
 
 `capture-history` 显式捕获并选择一个历史基准，`--task-case` 必须与 `--data-dir` 下冻结 case 一致。Git 模式只读取本地完整提交；文件模式必须给逻辑路径及预期 SHA256。用户选定替代品另加 `--substitute --user-instruction <text>`，确认原件缺失才加 `--original-unavailable`；否则原件状态为未核实。`--basis` 写明选择依据，不填写凭据。
 
-命令把终点字节与来源冻结到独立目录，不修改 case、原文件、原仓库或候选起点，也不启动模型。新 Comparison 使用选定版本，旧报告仍用自己的冻结输入。替代品不是历史模型原始交付；捕获普通文件也不能仅凭路径存在认证其历史身份。超预算、Git链接/LFS或内容变化拒绝采集，不自动安装或联网。详细契约见[历史交付采集决策](./decisions/accepted/2026-10-14-historical-delivery-capture.md)。
+命令把终点字节与来源冻结到独立目录，不修改 case、原文件、原仓库或当前任务起点，也不启动模型。新 Comparison 使用选定版本，旧报告仍用自己的冻结输入。替代品不是历史模型原始交付；捕获普通文件也不能仅凭路径存在认证其历史身份。超预算、Git链接/LFS或内容变化拒绝采集，不自动安装或联网。详细契约见[历史交付采集决策](./decisions/accepted/2026-10-14-historical-delivery-capture.md)。
 
 ### 无费用查询示例
 
-列出当前机器可识别的来源／候选产品（不调用模型）：
+列出当前机器可识别的历史来源／当前执行工具（不调用模型）：
 
 ```powershell
 node dist/src/cli/main.js products --json
@@ -90,6 +90,10 @@ node dist/src/cli/main.js compare --experiment <experimentId> --json
 
 当前报告首先展示任务、双方模型与日期、推荐、关键差异及运行指标，不设详情展开区；旧报告保留原布局。推荐只针对本次运行，可以有条件、结果相近或无法判断；不同 Runtime、工具环境和历史缺口会限制模型能力归因。估算不是实账，也不包含工具费用；未知记录不是零。
 
+两侧统一称为“历史”和“当前”。当前侧显示本次执行会话实际使用的模型，缺失时标明未记录；“报告分析模型”只说明报告由谁分析，不代表当前执行模型。原始引文和既有历史报告不改写。
+
+Comparison 检查中的长命令可分段等待、继续读取输出或取消，单次等待返回不再意味着命令超时终止。整体时间预算及用户取消仍有效；未完成的进程、日志写入失败或无法确认清理不能被当作成功报告。
+
 比较主文先说明交付物在本次任务中是否好用、相对取舍及重要未知，再给必要证据。已发现的关键问题不能因篇幅压缩而消失，也不能仅放入折叠方法；报告结构通过不等于这些判断已经正确。
 
 报告中的精确引文由 Host 标记为“完整原文”或“节选”，并在发布和离线恢复时再次核对来源与范围。该标签证明引文对应来源，不认证 Agent 在引文之外的解释或结论；旧报告不自动补发标签。
@@ -108,7 +112,7 @@ Recovery 与 Comparison 默认整体时间预算为 24 小时；Controller 单�
 
 配置页（首页“Reprise 模型设置”或输入 `/config`）保存一份供任务准备、执行引导和结果比较共用的 Reprise 模型。配置写入 Git 忽略的 `{dataDir}/harness-model.json`（默认即 `.reprise/harness-model.json`），也可将密钥写成 `env:NAME` 引用。密钥值不会写入事件、artifact 或报告。
 
-自定义模型的图片输入默认未声明，因此内部 Agent 仅接收文本；配置页会显示“未声明，仅文本”，启用后显示“已声明（未探测）”。这项声明影响 Recovery、Controller 与 Comparison，不代表供应商网关已通过图片请求验证，也不由候选 Runtime 的图片能力继承。Comparison 时间线显示实际 Session 的输入类型；仅文本 Session 的视觉质量不能据源码或像素脚本自称目视验证。
+自定义模型的图片输入默认未声明，因此内部 Agent 仅接收文本；配置页会显示“未声明，仅文本”，启用后显示“已声明（未探测）”。这项声明影响 Recovery、Controller 与 Comparison，不代表供应商网关已通过图片请求验证，也不由当前执行 Runtime 的图片能力继承。Comparison 时间线显示实际 Session 的输入类型；仅文本 Session 的视觉质量不能据源码或像素脚本自称目视验证。
 
 ### 第三方 OpenAI-compatible 服务（推荐入口）
 
@@ -123,21 +127,21 @@ Recovery 与 Comparison 默认整体时间预算为 24 小时；Controller 单�
 
 官方目录登录**不在 Reprise 内**完成。需先安装 [Pi](https://github.com/badlogic/pi-mono) CLI，在 Pi 交互环境中执行 `/login`，凭据由 Pi 的 `auth.json` 保存。回到 Reprise 的 `/config`，选择 **pi-catalog** 类型并挑选对应目录项。Reprise 不读取或保存 Codex CLI、Claude Code 的登录文件。
 
-候选 Runtime 继续使用用户在目标产品中的登录态；Reprise 不替用户切换全局模型配置。
+当前执行 Runtime 继续使用用户在目标产品中的登录态；Reprise 不替用户切换全局模型配置。
 
-真实验证脚本要求显式 opt-in；默认开发检查使用本地 fixture。TUI 的恢复、候选运行和对照是用户主动触发的实际任务，同样可能计费。
+真实验证脚本要求显式 opt-in；默认开发检查使用本地 fixture。TUI 的恢复、当前运行和对照是用户主动触发的实际任务，同样可能计费。
 
 ## 数据去向
 
 实验记录和工作副本保存在本机（`--data-dir` 指定的目录，默认 `.reprise`）。其中包含事件日志、TaskCase、隔离工作区、trace、报告和本地配置。
 
-Recovery、Controller、Comparison 会将完成任务所需的历史内容、工作区观察和工具结果发送到配置的 Harness 模型服务；候选 Runtime 的数据处理由目标产品及其登录态决定，Reprise 不统一代理。进入模型的正文先经过秘密过滤再持久化并发送（见 [`model-input.ts`](../src/infrastructure/agent/model-input.ts)），但过滤不等于会话隐私清洗，也不保证清除全部个人信息或业务内容。
+Recovery、Controller、Comparison 会将完成任务所需的历史内容、工作区观察和工具结果发送到配置的 Harness 模型服务；当前执行 Runtime 的数据处理由目标产品及其登录态决定，Reprise 不统一代理。进入模型的正文先经过秘密过滤再持久化并发送（见 [`model-input.ts`](../src/infrastructure/agent/model-input.ts)），但过滤不等于会话隐私清洗，也不保证清除全部个人信息或业务内容。
 
 分享报告、trace 或隔离副本前，检查正文、截图、路径和交付物是否含有不应公开的信息。
 
 ## 边界
 
-候选 Runtime 在独立工作副本运行，Host 对 source 使用 fingerprint/tripwire 检测变化；这不表示候选自身的工具受到 Host Shell guard 拦截。Recovery/Comparison 的 Host 文件工具另有路径与只读挂载边界，对应 Shell guard 只提前阻止部分已知写命令，不提供操作系统只读隔离。网络、外部服务和其他路径不会被 Reprise 统一沙箱化，报告 hash 校验也不代替文件系统隔离。无法安全重放的数据库、部署、支付或网页副作用应使用测试账号、mock、只读观察或取消。历史 Runtime 只是证据，候选使用当前机器可解析的 Runtime；无法观察的配置记录为未知。运行输出不同于历史结果是正常情况，比较报告提供证据而不是统一分数。
+当前执行 Runtime 在独立工作副本运行，Host 对 source 使用 fingerprint/tripwire 检测变化；这不表示当前执行工具受到 Host Shell guard 拦截。Recovery/Comparison 的 Host 文件工具另有路径与只读挂载边界，对应 Shell guard 只提前阻止部分已知写命令，不提供操作系统只读隔离。网络、外部服务和其他路径不会被 Reprise 统一沙箱化，报告 hash 校验也不代替文件系统隔离。无法安全重放的数据库、部署、支付或网页副作用应使用测试账号、mock、只读观察或取消。历史 Runtime 只是证据，当前运行使用本机可解析的 Runtime；无法观察的配置记录为未知。运行输出不同于历史结果是正常情况，比较报告提供证据而不是统一分数。
 
 报告、trace 和隔离副本是本机文件。不要把含有密钥、会话正文或私有路径的产物提交到 Git。
 
@@ -154,7 +158,7 @@ Recovery、Controller、Comparison 会将完成任务所需的历史内容、工
 | 裸 `reprise` 找不到命令 | 使用 `node dist/src/cli/main.js`；若命令不存在，先 `npm run build` 确认 `dist/` 已生成。未全局安装时裸 `reprise` 不可用是预期行为。 |
 | 来源产品或会话列表为空 | 确认目标产品已安装且本机确有历史记录。`products` 只列出可识别产品；`sessions` 需要 `--product <id>`。发现（discovery）与导入（import）不是同一操作，见 `reprise sessions --help` 与 `reprise import --help`。 |
 | 模型连接失败 | 在 `/config` 核对 endpoint、API 协议类型（`openai-completions` / `openai-responses`）、模型 ID 和凭据来源。不要把配置全文粘贴到 Issue；用 `Ctrl+T` 连接测试并查看错误摘要。 |
-| 恢复显示「无法恢复」或 blocked | 查看 TUI 或事件日志中的缺失条件；缺关键输入时不会启动候选，没有「强行继续」开关。 |
+| 恢复显示「无法恢复」或 blocked | 查看 TUI 或事件日志中的缺失条件；缺关键输入时不会启动当前运行，没有「强行继续」开关。 |
 | 报告或图片入口不可用 | 区分未生成对照、未采集媒体、快照缺失和发布失败。空入口可能是数据尚未产生，不代表零差异。 |
 | 取消后仍在收尾 | `Ctrl+C` 或 `reprise cancel` 发起取消请求；清理与最终状态在事件日志和结果页分别显示，二者可能不同步片刻。 |
 | 同一实验再次运行失败 | 属于当前已知限制，见 [路线图](./roadmap.md#已知实现问题)。不要默认删除整个 `.reprise` 目录作为修复手段。 |

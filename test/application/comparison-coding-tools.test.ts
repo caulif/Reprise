@@ -55,9 +55,9 @@ test('browser tool checks both source and working report with actions and native
 });
 
 test('coding shell rejects browser launches and global process termination without spawning', async t => {
-  const f = await fixture(t), shell = createCodingComparisonTools(f).find(tool => tool.name === 'shell_exec')!;
+  const f = await fixture(t), shell = createCodingComparisonTools(f).find(tool => tool.name === 'exec_command')!;
   for (const command of ['chrome --headless --dump-dom report.html', 'Stop-Process -Name chrome -Force', 'taskkill /IM node.exe /F', 'pkill firefox']) {
-    const result = await shell.execute({ command }, signal);
+    const result = await shell.execute({ cmd: command }, signal);
     assert.match(result.content, /render_browser/); assert.deepEqual(result.details, { denied: true, code: 'process_boundary' });
   }
 });

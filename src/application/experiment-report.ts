@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { comparisonFailureText } from './comparison-failure-text.js';
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { createComparisonImageDeliveryRecorder } from './comparison-image-delivery-recorder.js';
 import type { ControllerDecision } from "../agents/controller-agent.js";
@@ -732,6 +732,14 @@ function comparisonTools(
         ? ["work/comparison-plan.md"] : ["work/comparison-plan.md", "report.html"]),
       denyDestructiveOnPrefix: ["candidate", "evidence", "history", "finals", "turns", "run", "observations"],
       allowShell: true,
+      managedExecution: true,
+      processLogRoot: scratchRoot,
+      onProcessLog: async (path) => {
+        const artifactId = `comparison-${basename(path)}`;
+        await input.store.commitArtifact({ artifactId, runId: input.input.runId, kind: 'comparison_process_log',
+          mediaType: 'text/plain', bytes: await readFile(join(scratchRoot, path)) });
+        return { artifactId, runId: input.input.runId };
+      },
       shellCwd: scratchRoot,
       shellEnv: {
         REPRISE_BASELINE_ROOT: join(controllerRoot, "history"),

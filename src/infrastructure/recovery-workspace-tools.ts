@@ -156,9 +156,9 @@ export function workspaceTools(
   const processes = options.allowShell && options.managedExecution ? workspaceProcessTools({
     description: shellExecDescription(options.unrestrictedRead),
     ...(options.onProcessLog ? { onProcessLog: options.onProcessLog } : {}),
+    validateInput: chars => { assertShellCommandDoesNotTargetSensitiveFiles(chars); assertShellDoesNotMutateReadonlyMount(ctx, chars); },
     start: async (command, workdir, signal) => {
-      assertShellCommandDoesNotTargetSensitiveFiles(command);
-      assertShellDoesNotMutateReadonlyMount(ctx, command);
+      assertShellCommandDoesNotTargetSensitiveFiles(command); assertShellDoesNotMutateReadonlyMount(ctx, command);
       const base = resolve(options.shellCwd ?? ctx.root);
       const cwd = workdir ? resolve(base, workdir) : base;
       if (!pathContainedBy(base, cwd)) throw new ToolPreconditionRejected('invalid_path', 'workdir must stay within the writable workspace.');

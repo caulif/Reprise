@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import {
   COMPARISON_BROWSER_SHELL_DENIED,
   isComparisonBrowserShellCommand,
@@ -13,17 +12,16 @@ import { workspaceTools } from "../../src/infrastructure/recovery-tools.js";
 import { instrumentTools } from "../../src/infrastructure/agent/tools.js";
 import { toolResultBody } from "../../src/infrastructure/agent/model-input.js";
 import type { AgentToolDefinition } from "../../src/infrastructure/agent/host.js";
-import { hostNodeCommand, hostShellSleep } from "../host-shell.js";
+import { hostNodeCommand } from "../host-shell.js";
 
-function comparisonShell(root: string, options: { shellTimeoutMs?: number } = {}) {
+function comparisonShell(root: string) {
   const tools = withComparisonShellDeny(
     workspaceTools(root, {
       role: "comparison",
-      allowShell: true,
-      ...(options.shellTimeoutMs !== undefined ? { shellTimeoutMs: options.shellTimeoutMs } : {}),
+      allowShell: true, managedExecution: true,
     }),
   );
-  const shell = tools.find((tool) => tool.name === "shell_exec");
+  const shell = tools.find((tool) => tool.name === "exec_command");
   assert.ok(shell);
   return shell;
 }
@@ -50,16 +48,16 @@ test("isComparisonBrowserShellCommand matches browser exe, probe flags, and user
   assert.equal(isComparisonBrowserShellCommand("npm test"), false);
 });
 
-test("Comparison shell_exec fast-rejects msedge --version and Chrome --dump-dom", async (t) => {
+test("Comparison exec_command fast-rejects msedge --version and Chrome --dump-dom", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-cmp-shell-deny-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const shell = comparisonShell(root);
-  const edge = await shell.execute({ command: BROWSER_PROBE }, new AbortController().signal);
+  const edge = await shell.execute({ cmd: BROWSER_PROBE }, new AbortController().signal, { sessionId: 'test', invocationId: 'test' });
   assert.equal(edge.content, COMPARISON_BROWSER_SHELL_DENIED);
   assert.match(edge.content, /render_artifact|preview_report/);
   const chrome = await shell.execute(
-    { command: "& 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' --dump-dom file:///tmp/x.html" },
-    new AbortController().signal,
+    { cmd: "& 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' --dump-dom file:///tmp/x.html" },
+    new AbortController().signal, { sessionId: 'test', invocationId: 'test' },
   );
   assert.equal(chrome.content, COMPARISON_BROWSER_SHELL_DENIED);
 });
@@ -73,7 +71,7 @@ test("Host instrumentTools keeps deny guidance in model-visible tool result", as
     invocationId: "inv-1",
   });
   assert.ok(instrumented);
-  const visible = await instrumented.execute({ command: BROWSER_PROBE }, new AbortController().signal);
+  const visible = await instrumented.execute({ cmd: BROWSER_PROBE }, new AbortController().signal, { sessionId: 'test', invocationId: 'test' });
   assert.equal(visible.content, COMPARISON_BROWSER_SHELL_DENIED);
   const body = toolResultBody(visible);
   assert.equal(body.encoding, "inline");
@@ -84,9 +82,9 @@ test("Host instrumentTools keeps deny guidance in model-visible tool result", as
 test("reverse: throw-through deny is swallowed by AgentToolFailure before the model", async () => {
   const { Type } = await import("@sinclair/typebox");
   const fixture: AgentToolDefinition = {
-    name: "shell_exec",
+    name: "exec_command",
     description: "throw-style deny fixture",
-    parameters: Type.Object({ command: Type.String({ minLength: 1 }) }),
+    parameters: Type.Object({ cmd: Type.String({ minLength: 1 }) }),
     async execute() {
       throw new Error(COMPARISON_BROWSER_SHELL_DENIED);
     },
@@ -94,7 +92,7 @@ test("reverse: throw-through deny is swallowed by AgentToolFailure before the mo
   const [instrumented] = instrumentTools([fixture], "session-throw", "comparison", { requestIndex: 0 });
   assert.ok(instrumented);
   await assert.rejects(
-    instrumented.execute({ command: BROWSER_PROBE }, new AbortController().signal),
+    instrumented.execute({ cmd: BROWSER_PROBE }, new AbortController().signal),
     (error: unknown) => {
       assert.ok(error instanceof Error);
       assert.match(error.message, /comparison agent tool execution failed/i);
@@ -106,96 +104,40 @@ test("reverse: throw-through deny is swallowed by AgentToolFailure before the mo
   );
 });
 
-test("Comparison shell_exec still runs ordinary Node/Python static checks", async (t) => {
+test("Comparison exec_command still runs ordinary Node/Python static checks", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-cmp-shell-ok-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "note.txt"), "ok\n");
   const shell = comparisonShell(root);
   const node = await shell.execute(
-    { command: hostNodeCommand("process.stdout.write('node-ok')") },
-    new AbortController().signal,
+    { cmd: hostNodeCommand("process.stdout.write('node-ok')") },
+    new AbortController().signal, { sessionId: 'test', invocationId: 'test' },
   );
   assert.match(node.content, /node-ok/);
   const py = await shell.execute(
-    { command: process.platform === "win32" ? "python -c \"print('py-ok')\"" : "python3 -c \"print('py-ok')\"" },
-    new AbortController().signal,
+    { cmd: process.platform === "win32" ? "python -c \"print('py-ok')\"" : "python3 -c \"print('py-ok')\"" },
+    new AbortController().signal, { sessionId: 'test', invocationId: 'test' },
   );
   assert.match(py.content, /py-ok/);
 });
 
-test("Comparison shell_exec timeout terminates the shell and releases its workspace", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "reprise-cmp-shell-timeout-"));
-  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }));
-  const shell = comparisonShell(root, { shellTimeoutMs: 100 });
-  const started = Date.now();
-  await assert.rejects(
-    shell.execute(
-      { command: hostShellSleep(30) },
-      new AbortController().signal,
-    ),
-    /timed out/i,
-  );
-  assert.ok(Date.now() - started < 15_000, "timeout must not wait for the full child sleep");
-});
-
-test("Comparison shell_exec cancels a started nested process", async (t) => {
-  if (process.platform !== "win32") return t.skip("Windows process-tree behavior");
-  const root = await mkdtemp(join(tmpdir(), "reprise-cmp-shell-tree-"));
-  const marker = join(root, "child.pid");
-  let childPid = 0;
-  let childExited = false;
-  t.after(async () => {
-    if (childPid && !childExited) {
-      try { process.kill(childPid, "SIGKILL"); } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-      }
-    }
-    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
-  });
-  const controller = new AbortController();
-  const shell = comparisonShell(root, { shellTimeoutMs: 60_000 });
-  const pending = shell.execute({
-    command: hostNodeCommand("require('node:fs').writeFileSync('child.pid', String(process.pid)); setTimeout(() => {}, 30_000)"),
-  }, controller.signal);
-  void pending.catch(() => undefined);
-  try {
-    const deadline = Date.now() + 15_000;
-    while (Date.now() < deadline) {
-      const pid = await readFile(marker, "utf8").catch((error: NodeJS.ErrnoException) => {
-        if (error.code === "ENOENT") return undefined;
-        throw error;
-      });
-      if (pid) {
-        childPid = Number(pid);
-        break;
-      }
-      await delay(50);
-    }
-    assert.ok(childPid > 0, "nested process did not start");
-  } finally {
-    controller.abort();
-  }
-  await assert.rejects(pending, /cancel|abort/i);
-  const deadline = Date.now() + 5_000;
-  while (Date.now() < deadline) {
-    try { process.kill(childPid, 0); } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ESRCH") {
-        childExited = true;
-        return;
-      }
-      throw error;
-    }
-    await delay(50);
-  }
-  assert.fail("nested process remained alive after cancellation");
-});
-
-test("Comparison shell_exec AbortSignal cancels a long command", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "reprise-cmp-shell-abort-"));
+test('Comparison stdin keeps browser, readonly and credential guards without losing its owned process', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-cmp-stdin-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const shell = comparisonShell(root, { shellTimeoutMs: 60_000 });
-  const controller = new AbortController();
-  const pending = shell.execute({ command: hostShellSleep(30) }, controller.signal);
-  setTimeout(() => controller.abort(), 50);
-  await assert.rejects(pending, /cancel|abort/i);
+  const tools = withComparisonShellDeny(workspaceTools(root, { role: 'comparison', allowShell: true,
+    managedExecution: true, mounts: { source: root }, processLogRoot: root }));
+  const owner = { sessionId: 'test', invocationId: 'stdin' }, signal = new AbortController().signal;
+  const exec = tools.find(tool => tool.name === 'exec_command')!, stdin = tools.find(tool => tool.name === 'write_stdin')!;
+  const started = await exec.execute({ cmd: hostNodeCommand("process.stdin.once('data', () => process.exit(0))"), yield_time_ms: 0 }, signal, owner);
+  const id = (started.details as { session_id: string }).session_id;
+  t.after(() => exec.lifecycle!.finishInvocation(owner, false));
+  const browser = await stdin.execute({ session_id: id, chars: 'chrome --headless\n' }, signal, owner);
+  assert.equal(browser.content, COMPARISON_BROWSER_SHELL_DENIED);
+  await assert.rejects(stdin.execute({ session_id: id, chars: 'Remove-Item source/file.txt\n' }, signal, owner), /write_denied/);
+  await assert.rejects(stdin.execute({ session_id: id, chars: 'Get-Content auth.json\n' }, signal, owner), /credential_read_denied/);
+  const finished = await stdin.execute({ session_id: id, chars: 'safe\n' }, signal, owner);
+  assert.equal((finished.details as { exitCode: number }).exitCode, 0);
+  const receipt = finished.details as { outputLog: string };
+  assert.equal(await readFile(join(root, receipt.outputLog), 'utf8'), '');
+  await exec.lifecycle!.finishInvocation(owner);
 });

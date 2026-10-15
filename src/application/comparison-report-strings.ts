@@ -36,12 +36,12 @@ const M = {
     zh: "本次对照未登记可用的预览图。",
   },
   visualBaselineMissing: {
-    en: "Candidate preview is available; the historical final image could not be recovered or rendered.",
-    zh: "候选侧已有预览图；历史侧终稿图未能恢复或渲染。",
+    en: "Current preview is available; the historical final image could not be recovered or rendered.",
+    zh: "当前已有预览图；历史终稿图未能恢复或渲染。",
   },
   visualCandidateMissing: {
-    en: "Historical preview is available; the candidate final image could not be recovered or rendered.",
-    zh: "历史侧已有预览图；候选侧终稿图未能恢复或渲染。",
+    en: "Historical preview is available; the current final image could not be recovered or rendered.",
+    zh: "历史已有预览图；当前终稿图未能恢复或渲染。",
   },
   visualRegisteredUnavailable: {
     en: "Preview images were registered but their source files are unavailable.",
@@ -52,8 +52,8 @@ const M = {
     zh: "引用了预览图，但未能固化到对照媒体索引。",
   },
   visualPairingHint: {
-    en: "Host listed candidate pairings from registered media. Choose verified same-kind sources; index order is not proof they are comparable.",
-    zh: "Host 列出了已登记媒体的候选配对。请选用已核验的同类来源；数组顺序不证明业务可比。",
+    en: "Host listed possible pairings from registered media. Choose verified same-kind sources; index order is not proof they are comparable.",
+    zh: "Host 列出了已登记媒体的可用配对。请选用已核验的同类来源；数组顺序不证明业务可比。",
   },
   visualDerivedPreview: {
     en: "Derived preview (not an original historical screenshot).",
@@ -89,7 +89,7 @@ const M = {
   diagFailed: { en: "Comparison could not be completed", zh: "对照未能完成" },
   diagClassPhase: { en: "Failure class: {class}. Phase: {phase}.", zh: "对照失败分类：{class}。失败阶段：{phase}。" },
   diagDraft: { en: "Existing analysis (report structure incompatible)", zh: "已有分析（报告结构未兼容）" },
-  diagCandidateCompleted: { en: "Candidate task completed: {value}", zh: "候选任务是否完成：{value}" },
+  diagCandidateCompleted: { en: "Current task completed: {value}", zh: "当前任务是否完成：{value}" },
   diagProcessHint: {
     en: "Open the trace and artifacts in the experiment directory to continue; an existing successful report.html belongs to an earlier attempt.",
     zh: "打开实验目录中的 trace 与 artifacts 继续排查；若已有成功 report.html，它属于更早一次 attempt。",
@@ -102,9 +102,9 @@ const M = {
   sessionDateUnknown: { en: "Date unknown", zh: "日期未知" },
   sideHistorical: { en: "unrecorded", zh: "未记录" },
   sideCandidate: { en: "unrecorded", zh: "未记录" },
-  candidateTaskCompleted: { en: "Candidate task completed", zh: "候选任务已完成" },
-  candidateTaskIncomplete: { en: "Candidate task incomplete ({code})", zh: "候选任务未完成（{code}）" },
-  candidateTaskOutcome: { en: "Candidate task status: {outcome}", zh: "候选任务状态：{outcome}" },
+  candidateTaskCompleted: { en: "Current task completed", zh: "当前任务已完成" },
+  candidateTaskIncomplete: { en: "Current task incomplete ({code})", zh: "当前任务未完成（{code}）" },
+  candidateTaskOutcome: { en: "Current task status: {outcome}", zh: "当前任务状态：{outcome}" },
   hostLimitationHeadlineMissing: { en: "Main conclusion is missing.", zh: "主要结论缺失" },
   hostLimitationCannotDetermine: { en: "cannot be determined", zh: "无法判断" },
   hostLimitationLeakedInternal: {

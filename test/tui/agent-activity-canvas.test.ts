@@ -135,3 +135,11 @@ test('controller inspect live verb is readable from the activity canvas', () => 
 });
 
 
+
+test('managed exec command retains the same command projection as legacy shell', () => {
+  const command = "Get-Content 'scratch/check.txt'";
+  const legacy = projectTimelineEvent(event('agent.tool_called', { role: 'comparison', tool: 'shell_exec', params: { command } }));
+  const managed = projectTimelineEvent(event('agent.tool_called', { role: 'comparison', tool: 'exec_command', params: { cmd: command } }));
+  assert.deepEqual(managed.map(({ title, detail, kind }) => ({ title, detail, kind })), legacy.map(({ title, detail, kind }) => ({ title, detail, kind })));
+  assert.match(JSON.stringify(managed), /check.txt/);
+});

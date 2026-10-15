@@ -78,6 +78,28 @@ test('invocation refuses completion and drains an unfinished command before retu
   await session.close();
 });
 
+test('process artifact persistence failure stays fatal through the Host and is not retried during cleanup', async () => {
+  let commits = 0;
+  const { child, process } = fixture();
+  child.emit('close', 0);
+  const registry = workspaceProcessTools({ description: 'Failure fixture',
+    start: async () => ({ process, cwd: '.', outputLog: 'process.log' }),
+    onProcessLog: async () => { commits++; throw new Error('Artifact store unavailable'); },
+  });
+  const session = await new AgentHost({ createSession: input => ({ append: async request => {
+    await input.tools.find(tool => tool.name === 'exec_command')!.execute({ cmd: 'test', yield_time_ms: 0 }, request.signal);
+    return 'done';
+  }, cancel() {} }) }).createSession({ role: 'comparison', systemPrompt: 'Fixture', tools: registry.tools });
+  await assert.rejects(session.work({ promptContent: 'Start', timeoutMs: 1_000 }), error => {
+    assert.ok(error instanceof AggregateError);
+    assert.ok(error.errors[0] instanceof AggregateError);
+    assert.match(String(error.errors[0].errors[0]), /Artifact store unavailable/);
+    return true;
+  });
+  assert.equal(commits, 1);
+  await session.close();
+});
+
 test('a fatal lifecycle failure waits for all other cleanup before publishing the failed invocation', async () => {
   let release!: () => void, entered!: () => void, settled = false;
   const gate = new Promise<void>(resolve => { release = resolve; });

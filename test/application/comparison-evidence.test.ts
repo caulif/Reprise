@@ -57,7 +57,7 @@ test("evidence labels distinguish browser residue and historical previews", () =
     { side: "baseline", inspectPath: "media/baseline.png", mediaType: "image/png" },
     { side: "candidate", inspectPath: "candidate/result.html", path: "result.html" },
   ]);
-  assert.deepEqual(links.map((link) => link.label), ["浏览器运行残留", "历史会话预览", "候选会话最终交付"]);
+  assert.deepEqual(links.map((link) => link.label), ["浏览器运行残留", "历史会话预览", "当前会话最终交付"]);
 });
 
 test("derived HTML keeps a renderable extension and forged image bytes are rejected", async (t) => {

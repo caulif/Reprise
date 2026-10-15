@@ -80,7 +80,7 @@ test('comparison write tool writes report.html and refuses candidate paths', asy
     allowWrite: (path) => path === 'report.html',
     completionPaths: new Set(['report.html']),
     denyDestructiveOnPrefix: ['candidate'],
-    allowShell: true,
+    allowShell: true, managedExecution: true,
   });
   const write = tools.find((tool) => tool.name === 'write');
   assert.ok(write);
@@ -88,11 +88,11 @@ test('comparison write tool writes report.html and refuses candidate paths', asy
   await write.execute({ path: 'report.html', content: html }, new AbortController().signal);
   assert.equal(await readFile(join(root, 'report.html'), 'utf8'), html);
   await assert.rejects(write.execute({ path: 'candidate/kept.txt', content: 'nope' }, new AbortController().signal), /write_denied/);
-  const shellTool = tools.find((tool) => tool.name === 'shell_exec');
+  const shellTool = tools.find((tool) => tool.name === 'exec_command');
   assert.ok(shellTool);
   assert.match(shellTool.description, /filesystem ACL|Read-only mounts/);
   await assert.rejects(
-    shellTool.execute({ command: 'Remove-Item candidate/kept.txt' }, new AbortController().signal),
+    shellTool.execute({ cmd: 'Remove-Item candidate/kept.txt' }, new AbortController().signal, { sessionId: 'test', invocationId: 'test' }),
     /write_denied/,
   );
   const after = await fingerprintTree(candidate);

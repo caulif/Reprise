@@ -89,7 +89,7 @@ function voiceOf(entry: TimelineEntry): Voice | undefined {
   if (entry.source === 'HARNESS' && entry.level !== 'error' && entry.lane !== 'comparison' && entry.lane !== 'recovery') {
     return undefined;
   }
-  if (entry.title.startsWith('对照') || entry.title === '证据不足' || entry.lane === 'comparison' || entry.title.startsWith('Candidate stopped')
+  if (entry.title.startsWith('对照') || entry.title === '证据不足' || entry.lane === 'comparison' || entry.title.startsWith('Current stopped')
     || entry.title.startsWith('Controller done') || entry.title.startsWith('Stop requested')) {
     return 'summary';
   }
