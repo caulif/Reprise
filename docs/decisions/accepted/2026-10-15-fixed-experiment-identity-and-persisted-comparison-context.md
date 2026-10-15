@@ -17,6 +17,8 @@
 7. 报告层使用仅包含 Comparison 依赖与已结束运行事实的 `CompletedRunContext`。持久化重比直接传真实 RunRecord、manifest 与 runtime 事件引用，不构造假的 Runtime、Controller、CandidateRun 或 Session，也不使用双重类型断言。未重建历史 Controller 决定时显式 `not_reconstructed`，followup 保持未知；未记录的 sourceRootKind 不伪造 operator_selected。结果页总耗时从本次重比入口计时，候选原始耗时仍取运行事实，不把旧 run 至今的日历间隔算作重比开销。原始 owner、准备失败审计和不可变报告协议保持生效。
 8. 已结束 RunRecord 的 inspection 与 Target 引用只采用 record.trace 的原事实窗口；后续同 run 的有效格式 runtime 文本、usage 或 settlement 不能污染旧运行的回答、指标和证据。没有 record 的运行中查询仍采用当前完整日志，工作区事实继续从 record.artifactRefs 读取。
 
+   相同窗口也约束 Comparison 的候选观察树、process index、decision map 和 owned evidence 引用；仅过滤统计不足以阻断窗口外文本影响判断。Store 仍保存全部日志，Comparison 自身的请求、工具和发布审计继续独立追加，不混入候选运行观察。
+
 ## 备选方案
 
 **把所有首轮配置永久固定到 Experiment。** 会拒绝正常的多候选、多轮试验，且不能代表当前执行；固定场景身份、按 run 记录实际条件更准确。

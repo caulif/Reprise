@@ -23,6 +23,7 @@ import { renderHistoryDetail } from '../../src/tui/pages/history.js';
 import { createTheme } from '../../src/tui/theme.js';
 import { inspectRun } from '../../src/application/controller-queries.js';
 import { isRecord } from '../../src/core/json.js';
+import { OBSERVATIONS_MOUNT, observationRelativePath } from '../../src/products/history/observations-materializer.js';
 import { input, VerifiedRuntime } from '../codex-experiment-support.js';
 
 async function fixture(t: TestContext) {
@@ -227,6 +228,14 @@ test('preflight dispatcher checks full content, version and owner without fallin
     assert.equal(bounded.turns, originalInspection.turns);
     assert.equal(bounded.tokenCount, originalInspection.tokenCount);
   } finally { await store.close(); }
+  let comparisonAttemptId: string | undefined;
+  const compare = base.comparison.compare.bind(base.comparison);
+  t.mock.method(base.comparison, 'compare', async (...args: Parameters<typeof base.comparison.compare>) => {
+    comparisonAttemptId = args[0].attemptId;
+    assert.equal(args[0].ownedEvidenceRefs?.includes(lateRef), false);
+    assert.ok(args[0].ownedEvidenceRefs?.includes(result.targetEvents[0]!));
+    return compare(...args);
+  });
   const unknown = await comparePersistedExperiment({ dataDir: base.dataDir, experimentId: base.experimentId,
     policy: base.policy, now: base.now, comparison: base.comparison, agentConfig: base.agentConfig });
   assert.equal(unknown.preflight.sourceBaseline, 'unknown');
@@ -238,6 +247,14 @@ test('preflight dispatcher checks full content, version and owner without fallin
   assert.ok(result.targetEvents.length > 0);
   assert.ok(result.targetEvents.every(ref => unknown.targetEvents.includes(ref)));
   assert.equal(unknown.targetEvents.includes(lateRef), false);
+  assert.ok(comparisonAttemptId);
+  assert.equal(unknown.comparison.result.status, 'completed');
+  const attemptRoot = join(experimentRoot, 'comparison-attempts', comparisonAttemptId);
+  for (const path of ['briefing/candidate/process-index.tsv', 'briefing/decision-map.md', `${OBSERVATIONS_MOUNT}/INDEX.tsv`]) {
+    assert.doesNotMatch(await readFile(join(attemptRoot, path), 'utf8'), new RegExp(lateRef));
+  }
+  await assert.rejects(stat(join(attemptRoot, OBSERVATIONS_MOUNT, observationRelativePath(lateRef, 'run_events'))), { code: 'ENOENT' });
+  assert.ok((await stat(join(attemptRoot, OBSERVATIONS_MOUNT, observationRelativePath(result.targetEvents[0]!, 'run_events')))).isFile());
   const committedEvents = (await readCommittedRunEvents(experimentRoot)).events;
   for (const ref of unknown.targetEvents) {
     const event = committedEvents.find(entry => `event:${entry.eventId}` === ref);
