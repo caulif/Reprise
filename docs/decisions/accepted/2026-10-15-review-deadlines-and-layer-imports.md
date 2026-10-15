@@ -12,6 +12,8 @@
 
 证据引用目录由 core 持有，products 与 infrastructure 共同使用。相同 rank 的跨模块引用仅允许 agents、environment、products 指向 infrastructure；模块内部引用仍允许。门禁自测必须拒绝 infrastructure 的反向引用及未授权的兄弟模块边，避免形成同层模块环。
 
+集成修正：逻辑路径校验与拒绝原因统一由 `core/logical-paths.ts` 持有，产品历史提取、应用封存与 infrastructure 的 Git 捕获共同引用。保留既有拒绝原因与异常文案，不为复用路径校验放行 infrastructure → products；这些 helper 不属于公开 Pack API。
+
 开发依赖 knip 升级至 6.x、jscpd 至 5.x；保留重复率 1% 门槛与原扫描范围。knip 仅豁免 Windows 系统自带的 `where`、`icacls.exe` 二进制，不将其当作 npm 依赖。
 
 ## 备选方案
