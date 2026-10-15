@@ -1,5 +1,6 @@
 import { record, text } from "../core/json.js";
 import type { EventEnvelope } from "../core/schema.js";
+import { historicalTurnTiming } from './session-timing.js';
 import {
   calculateUsageCostUsd,
   resolveModelPricing,
@@ -46,24 +47,7 @@ export function aggregateHistoricalUsage(events: readonly Record<string, unknown
 }
 
 export function busyMsFromHistoricalEvents(events: readonly Record<string, unknown>[]): number | undefined {
-  let started: number | undefined;
-  let total = 0;
-  let paired = false;
-  for (const event of events) {
-    const kind = eventKind(event);
-    const at = eventTimeMs(event);
-    if (at === undefined) continue;
-    if (kind === "task_started") {
-      started = at;
-      continue;
-    }
-    if (kind === "task_complete" && started !== undefined && at >= started) {
-      total += at - started;
-      started = undefined;
-      paired = true;
-    }
-  }
-  return paired ? total : undefined;
+  return historicalTurnTiming(events).valueMs;
 }
 
 export type UsagePricing = {
@@ -237,21 +221,6 @@ function sumParts(items: readonly UsageParts[]): UsageParts {
     reasoning: (acc.reasoning ?? 0) + (item.reasoning ?? 0),
   }), { ...ZERO });
   return summed.reasoning ? summed : { input: summed.input, output: summed.output, cacheRead: summed.cacheRead, cacheCreation: summed.cacheCreation };
-}
-
-function eventKind(event: Record<string, unknown>): string | undefined {
-  const payload = record(event.payload);
-  const type = typeof event.type === "string" ? event.type : undefined;
-  const nested = typeof payload.type === "string" ? payload.type : undefined;
-  return nested ?? type;
-}
-
-function eventTimeMs(event: Record<string, unknown>): number | undefined {
-  const payload = record(event.payload);
-  const raw = [event.timestamp, event.occurredAt, payload.timestamp, payload.occurredAt].find((item) => typeof item === "string");
-  if (typeof raw !== "string") return undefined;
-  const parsed = Date.parse(raw);
-  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function firstRecord(...values: unknown[]): Record<string, unknown> | undefined {

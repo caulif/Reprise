@@ -1,3 +1,4 @@
+import { comparisonReportFormat } from '../core/comparison-html.js';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { join, relative, resolve, isAbsolute } from 'node:path';
 import { Type, type Static, type TSchema } from '@sinclair/typebox';
@@ -155,7 +156,7 @@ export async function inspectComparisonRecovery(input: {
   const sessionId = (previewed.payload as { sessionId: string }).sessionId;
   const draftModel = comparisonReportModelFromHtml(html, context.reportFacts, result, media, links);
   const reviewError = autonomousComparisonRequested(events, input.attemptId)
-    ? await autonomousComparisonBinding({ store, events, attemptId: input.attemptId, draftDigest, catalogRevision: catalog.revision })
+    ? await autonomousComparisonBinding({ store, events, reportFormat: comparisonReportFormat(html), attemptId: input.attemptId, draftDigest, catalogRevision: catalog.revision })
     : await recoveryReviewBinding({ store, events, attemptId: input.attemptId, draftDigest, catalogRevision: catalog.revision,
     previewSessionId: sessionId, acceptedAfterSequence: findings.previewAfterSequence ?? 0,
     content: { headline: draftModel.headline ?? '', comparisonHtml: draftModel.slots.comparison ?? '', detailsHtml: draftModel.slots.details ?? '' } });
