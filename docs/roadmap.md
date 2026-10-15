@@ -55,4 +55,4 @@
 
 命令的当前定义以 [package.json](../package.json) 和对应 [scripts](../scripts/) 为准；费用与执行边界见[开发指南](./development.md#真实调用与费用)。新证据记录日期、环境、命令和未通过项，不以旧报告重渲染关闭验收。
 
-配置记录还需收口：内部 Agent 的有效 timeout 与通用 budget 不一致；同一 Experiment 的冲突 spec 被忽略而 workflow 可读取新配置。需决定配置固定到 Experiment 还是记录到每个 Run，再补一致性检查；本轮不把建议当成已实施协议。
+有效 Harness 配置现已按操作记录，固定 Experiment 只绑定 TaskCase 身份，候选与 policy 按 run 变化并使用冻结快照。旧 v1 身份只核对当前保留内容，不认证历史；SDK 内部重试、私有路由与复杂兼容默认仍不能由公开配置白名单完整重建。真实 Runtime/服务验收仍须显式 opt-in，不由离线测试补认证。

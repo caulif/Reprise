@@ -1,22 +1,21 @@
 import { readTaskCase } from '../products/shared/task-case-reader.js';
 import { join, resolve } from "node:path";
 import { SAFE_ID } from "../core/identity.js";
-import type { EventEnvelope, ExperimentSpec, RunRecord, TaskCase } from "../core/schema.js";
+import type { EventEnvelope, RunRecord } from "../core/schema.js";
 import { ExperimentStore } from "../infrastructure/store/experiment-store.js";
 import { LocalWorkspaceProvider } from "../environment/local-workspace-provider.js";
 import { replicaWorkspaceLocation } from "./result-paths.js";
 import { CliError } from "./cli-error.js";
 import { readJsonFile } from "./experiment-history-list.js";
-import { attachExperimentComparison } from "./experiment-report.js";
+import { attachExperimentComparison, type CompletedRunContext } from "./experiment-report.js";
 import { finishActivity, registerActivity, activityControlReady, type ExperimentActivity } from "./experiment-activity.js";
-import { isPersistedExperimentMetadata, listPersistedRunIds, readRunPreflight, resolvedExperimentRoot } from "./experiment-layout.js";
-import type { ExperimentInput, ExperimentResult, ExperimentAgentConfig } from "./experiment.js";
-import type { ExperimentPreflight } from "./experiment-preflight.js";
+import { listPersistedRunIds, readRunPreflight, resolvedExperimentRoot } from "./experiment-layout.js";
+import { readExperimentMetadata, assertExperimentTaskIdentity } from './experiment-metadata.js';
+import type { ExperimentResult, ExperimentAgentConfig } from "./experiment.js";
 import type { ComparisonAgentPort } from "../agents/comparison-contract.js";
-import type { ControllerPort } from "../agents/controller-agent.js";
 import type { RunPolicy } from "../core/schema.js";
 import type { HistoricalArtifactExtractFn } from "../products/shared/freeze.js";
-import type { ProductRuntime } from "../core/runtime.js";
+import { isCandidateRuntimeJournalType } from "../core/runtime.js";
 import { hasRunLifecycle, matchingRunRecord, readCommittedRunEvents } from "./experiment-run-history.js";
 import { cleanupOperation, throwFailures, type CleanupFailure } from "./experiment-startup.js";
 import { harnessConfigurationScope, type HarnessConfigurationScope } from './harness-configuration.js';
@@ -40,6 +39,7 @@ export async function comparePersistedExperiment(input: {
   readonly extractHistoricalArtifacts?: HistoricalArtifactExtractFn;
   readonly resolveExtractHistoricalArtifacts?: (productId: string) => HistoricalArtifactExtractFn | undefined;
 }): Promise<ExperimentResult> {
+  const startedAt = Date.now();
   const experimentRoot = resolvedExperimentRoot(input.dataDir, input.experimentId);
   let loaded = await loadFinishedRun(experimentRoot, input.experimentId, input.runId);
   const store = await ExperimentStore.open(experimentRoot, input.experimentId);
@@ -89,21 +89,19 @@ export async function comparePersistedExperiment(input: {
       ?? input.resolveExtractHistoricalArtifacts?.(loaded.taskCase.source.productId);
     const finishInput = {
       signal,
-      input: experimentInput({
+      input: comparisonRunInput({
         ...input,
         comparison: agents.comparison,
         agentConfig: agents.agentConfig,
         ...(extractHistoricalArtifacts ? { extractHistoricalArtifacts } : {}),
-      }, loaded, experimentRoot),
+      }, loaded),
       taskCase: loaded.taskCase,
       preflight: loaded.preflight,
       store,
-      run: { result: () => ({ record: loaded.record }) },
-      controller: { decision: { status: "completed" as const, sessionId: "persisted", value: { type: "done" as const, reason: "no_further_value" as const } }, followupSubmission: false },
       experimentRoot,
-      targetEvents: [] as const,
-      startedAt: Date.parse(loaded.record.attempt.createdAt) || Date.now(),
-      sourceRootKind: "operator_selected" as const,
+      targetEvents: store.events(loaded.record.attempt.runId).filter(event => isCandidateRuntimeJournalType(event.type)
+        && event.sequence >= loaded.record.trace.firstSequence && event.sequence <= loaded.record.trace.lastSequence).map(event => `event:${event.eventId}`),
+      startedAt,
       workspaceRoot: workspaceLocation.workspaceRoot,
       candidateSnapshotRoot: snapshot.root,
       candidateSnapshotStatus: snapshot.status,
@@ -112,7 +110,7 @@ export async function comparePersistedExperiment(input: {
       comparisonAttempt: reserved,
     };
     stage = 'comparison';
-    return await attachExperimentComparison(finishInput as unknown as Parameters<typeof attachExperimentComparison>[0], loaded.record);
+    return await attachExperimentComparison(finishInput, loaded.record);
   } catch (error) {
     const failures: CleanupFailure[] = [];
     await cleanupOperation(failures, 'comparison_failure_audit', () => recordComparisonHostFailure({ store, reserved, stage, signal,
@@ -154,8 +152,10 @@ async function resolveCompareAgents(
 }
 
 async function loadFinishedRun(experimentRoot: string, experimentId: string, requestedRunId?: string) {
-  const metadata = await readJsonFile(join(experimentRoot, "experiment.json"));
-  if (!isPersistedExperimentMetadata(metadata)) throw new CliError("not_found", `Unknown experiment '${experimentId}'.`, experimentId);
+  const read = await readExperimentMetadata(join(experimentRoot, 'experiment.json'), experimentId);
+  if (read.kind === 'missing') throw new CliError('not_found', `Unknown experiment '${experimentId}'.`, experimentId);
+  if (read.kind !== 'current' && read.kind !== 'legacy') throw new CliError('failed', `Cannot load experiment '${experimentId}': ${read.diagnostic}.`, experimentId);
+  const metadata = read.value;
   const runIds = await listPersistedRunIds(experimentRoot, metadata);
   if (requestedRunId && !SAFE_ID.test(requestedRunId)) throw new CliError("usage", "runId is not a safe identifier.", requestedRunId);
   const selected = await selectFinishedRecord(experimentRoot, experimentId, metadata.spec.taskCaseId, requestedRunId ? [requestedRunId] : [...runIds].reverse(), Boolean(requestedRunId));
@@ -165,21 +165,24 @@ async function loadFinishedRun(experimentRoot: string, experimentId: string, req
   }
   const recordValue = selected;
   const taskCaseValue = await readTaskCase(join(resolve(experimentRoot, "..", ".."), "cases", metadata.spec.taskCaseId, "case.json"), { expectedCaseId: metadata.spec.taskCaseId, requireComplete: true });
+  assertExperimentTaskIdentity(metadata.spec, taskCaseValue);
   const preflightValue = await readRunPreflight(experimentRoot, runId);
+  if (preflightValue.kind === 'corrupt' || preflightValue.kind === 'unsupported') throw new CliError('failed', `Cannot load run preflight: ${preflightValue.diagnostic}.`, runId);
   return {
     spec: metadata.spec,
     record: recordValue,
     taskCase: taskCaseValue,
-    preflight: isPreflight(preflightValue) ? preflightValue : {
-      sourceBaseline: "available",
+    preflight: preflightValue.kind === 'current' || preflightValue.kind === 'legacy' ? preflightValue.value : {
+      sourceBaseline: "unknown" as const,
       resolved: {
-        productId: recordValue.attempt.candidate.productId,
-        executable: "persisted",
+        productId: recordValue.manifest?.runtime.productId ?? recordValue.attempt.candidate.productId,
+        executable: recordValue.manifest?.runtime.executable ?? 'unknown',
+        ...(recordValue.manifest?.runtime.version ? { version: recordValue.manifest.runtime.version } : {}),
         requestedModel: recordValue.attempt.candidate.requestedModel,
-        resolvedModel: recordValue.manifest?.resolvedModel.resolved ?? recordValue.attempt.candidate.requestedModel,
+        resolvedModel: recordValue.manifest?.resolvedModel.resolved ?? 'unknown',
       },
-      limitations: [],
-      comparisonClass: "observational",
+      limitations: ['Legacy run has no recorded preflight; source readiness and contamination are unknown.'],
+      comparisonClass: "observational" as const,
     },
   };
 }
@@ -202,64 +205,12 @@ async function selectFinishedRecord(root: string, experimentId: string, caseId: 
   return records[times.indexOf(newest)];
 }
 
-function isPreflight(value: unknown): value is ExperimentPreflight {
-  return typeof value === "object" && value !== null && "sourceBaseline" in value && "resolved" in value;
-}
-
-function experimentInput(
-  input: {
-    dataDir: string;
-    comparison: ComparisonAgentPort;
-    agentConfig: ExperimentAgentConfig;
-    policy: RunPolicy;
-    now: string;
-    onEvent?: (event: EventEnvelope) => void;
-    extractHistoricalArtifacts?: HistoricalArtifactExtractFn;
-  },
-  loaded: { spec: ExperimentSpec; record: RunRecord; taskCase: TaskCase },
-  experimentRoot: string,
-): ExperimentInput {
-  const candidate = loaded.record.attempt.candidate;
-  const controller: ControllerPort = { decide: async () => ({ status: "cancelled" }) };
-  return {
-    dataDir: resolve(input.dataDir),
-    caseId: loaded.taskCase.caseId,
-    experimentId: loaded.spec.experimentId,
-    runId: loaded.record.attempt.runId,
-    sourceRoot: experimentRoot,
-    taskCase: loaded.taskCase,
-    candidate,
-    policy: input.policy,
-    agentConfig: input.agentConfig,
-    runtime: unusedRuntime(),
-    controller,
-    comparison: input.comparison,
-    now: input.now,
-    ...(input.onEvent ? { onEvent: input.onEvent } : {}),
-    ...(input.extractHistoricalArtifacts
-      ? { extractHistoricalArtifacts: input.extractHistoricalArtifacts }
-      : {}),
-    compare: true,
-  };
-}
-
-function unusedRuntime(): ProductRuntime {
-  const fail = async () => {
-    throw new Error("Persisted comparison does not load a candidate Runtime.");
-  };
-  return {
-    id: "persisted-comparison",
-    inspectAvailable: fail,
-    inspectAvailability: fail,
-    resolve: fail,
-    validateCandidate: fail,
-    listCatalog: fail,
-    recoveryCapabilities: () => ({
-      sessionHistory: "unavailable",
-      localArtifacts: false,
-      workspaceHistory: false,
-      externalSideEffects: "unobserved",
-    }),
-    createRunner: fail,
-  };
+function comparisonRunInput(
+  input: Pick<CompletedRunContext['input'], 'dataDir' | 'comparison' | 'agentConfig' | 'extractHistoricalArtifacts'>,
+  loaded: { record: RunRecord },
+): CompletedRunContext['input'] {
+  return { dataDir: resolve(input.dataDir), experimentId: loaded.record.attempt.experimentId,
+    runId: loaded.record.attempt.runId, candidate: loaded.record.attempt.candidate,
+    agentConfig: input.agentConfig, comparison: input.comparison,
+    ...(input.extractHistoricalArtifacts ? { extractHistoricalArtifacts: input.extractHistoricalArtifacts } : {}) };
 }

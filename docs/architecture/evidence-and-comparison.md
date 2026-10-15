@@ -31,6 +31,11 @@ v2 读端校验 schema、身份、内部 owner、每个清单文件长度/hash�
 ## 运行与报告归属
 
 首页与历史列表使用 v2 轻量查询：实验 `modelInputAudit: not_checked`，空间 `storageSizeStatus: not_collected`，数值缺失不代表零。列表仍核对提交前缀和运行/报告归属；冻结 case 的元数据读取保留真实目录、普通 JSON、完整标记、owner 和内容描述校验，`filesVerified: false` 不认证绑定文件。打开任务详情才完整校验冻结文件，打开实验详情只审计所选实验的模型输入；独立空间统计返回采集时间。条目 I/O 错误和日志前缀诊断保持可见，读取并发有界、过期导航不回写页面。旧完整查询仍供显式审计使用。见[列表与显式审计](../decisions/accepted/2026-10-15-history-listing-and-explicit-audit.md)。
+新 ExperimentSpec v2 只绑定固定 TaskCase 身份：冻结 v2 case 使用完整内容 hash，旧 v1 使用旧 hash 和仅忽略 importedAt 的当前 canonical 观察。旧 metadata（无版本或版本 1）完整校验后原样读取，不重写、不补历史认证；History 明示旧身份未认证。新的当前绑定与保留 case 不一致时显示具体诊断，不展示替换内容的标题。候选、policy 和 Agent 实际配置仍属于每个 run，首轮配置不是永久约束。
+
+metadata 与 preflight 读端分派 missing/corrupt/unsupported/legacy/current；非正整数版本为损坏，合法未知版本为不支持。新 preflight wrapper 绑定 experimentId/runId 并完整校验嵌套内容；只有 nested missing 可读旧根级文件，损坏或未知版本不能回退。缺失旧预检的运行重比明确 sourceBaseline unknown 与证据限制。固定场景和接纳顺序见[固定实验身份决策](../decisions/accepted/2026-10-15-fixed-experiment-identity-and-persisted-comparison-context.md)。
+
+对已结束 RunRecord，inspection、模型可见运行事实与 Target 引用只读 record.trace 的原日志窗口，后续同 run 的 runtime 追加不能改变旧答案、usage 或 settlement；无 record 的运行中查询保持读取当前日志。
 
 启动失败仅按 core schema 与已提交 attempt owner 匹配的 run.startup_failed 显示 failed/cancelled、stage 和诊断；没有 experiment.json 时保留最小身份与 missing_metadata，孤立失败文件不认证。已接纳 attempt 的任务与固定实验元数据冲突时，History 保留真实 attempt 任务和启动诊断，并显式展示原元数据任务 ID 与冲突。元数据缺失或损坏且事件日志发生 I/O 错误时，列表保留损坏条目、unknown 和安全错误码，不生成运行事实；打开详情仍报告实际日志读取错误。
 

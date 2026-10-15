@@ -239,9 +239,9 @@ test('factory task completion preserves explicit deliverables in proven rebuilda
   const original = base.taskCase;
   const { wallClockMs: _deadline, ...policy } = base.policy;
   const result = await startExperiment({ ...base, policy, compare: false,
-    taskCase: () => ({ ...original, execution: {
+    taskCase: { ...original, execution: {
       mode: 'task_completion', goal: 'preserve delivery', deliverables: ['node_modules/delivery.txt'], authorization: 'edit', snapshotRetainPaths: ['./NODE_MODULES\\delivery.txt'],
-    } }),
+    } },
   }).result;
   assert.equal(result.record.outcome.cleanup.status, 'complete');
   const scopeRef = result.record.artifactRefs.find(ref => ref.artifactId === 'candidate-workspace-scope.json');

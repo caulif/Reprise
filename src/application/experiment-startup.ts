@@ -4,11 +4,15 @@ import { RunAttemptSchema, RunStartupFailureSchema, RunCleanupFailureSchema, typ
 import { ExperimentStore, writeImmutableJson } from '../infrastructure/store/experiment-store.js';
 import { safeAgentFailureText } from '../infrastructure/agent/failure.js';
 import { runOperationId } from '../core/identity.js';
-import { assertIds, assertPaths } from './experiment-helpers.js';
+import { assertIds, assertPaths, persistTaskCase } from './experiment-helpers.js';
+import { snapshotTaskCase } from '../products/shared/task-case-reader.js';
+import { readExperimentMetadata, assertExperimentTaskIdentity, fixedExperimentSpec } from './experiment-metadata.js';
+import { persistExperimentSpec } from './experiment-layout.js';
+import type { TaskCase } from '../core/schema.js';
 import type { ExperimentInput } from './experiment.js';
 import { frozenSnapshot } from '../core/json.js';
 
-type Admission = Pick<ExperimentInput, 'dataDir' | 'sourceRoot' | 'experimentId' | 'runId' | 'caseId' | 'candidate' | 'policy' | 'now' | 'onEvent'>;
+type Admission = Pick<ExperimentInput, 'dataDir' | 'sourceRoot' | 'experimentId' | 'runId' | 'caseId' | 'taskCase' | 'candidate' | 'policy' | 'now' | 'onEvent'>;
 export type CleanupFailure = { resource: string; error: unknown };
 function startupErrorFact(error: unknown): { name: string; message: string } {
   const message = error instanceof AggregateError
@@ -29,11 +33,14 @@ export async function cleanupOperation(failures: CleanupFailure[], resource: str
 
 export class ExperimentStartup {
   stage = 'activity';
-  private constructor(readonly root: string, readonly store: ExperimentStore, readonly attempt: RunAttempt, readonly unsubscribe?: () => void) {}
+  private constructor(readonly root: string, readonly store: ExperimentStore, readonly attempt: RunAttempt, readonly taskCase: TaskCase, readonly unsubscribe?: () => void) {}
 
   static async admit(input: Admission): Promise<ExperimentStartup> {
+    input = { ...input };
     assertIds(input);
     assertPaths(input.dataDir, input.sourceRoot);
+    const taskCase = snapshotTaskCase(input.taskCase);
+    if (taskCase.caseId !== input.caseId) throw new Error('Experiment caseId must match TaskCase.caseId.');
     const attempt: RunAttempt = frozenSnapshot({ schemaVersion: 1, experimentId: input.experimentId, runId: input.runId,
       caseId: input.caseId, candidate: input.candidate, policy: input.policy, createdAt: input.now });
     if (!Value.Check(RunAttemptSchema, attempt)) throw new Error('Invalid startup RunAttempt.');
@@ -43,6 +50,11 @@ export class ExperimentStartup {
     try {
       await store.acquireWriter();
       if (store.events(input.runId).some(event => event.type === 'run.attempt_created')) throw new Error(`Run ${input.runId} already exists; use a new run ID.`);
+      const metadata = await readExperimentMetadata(join(root, 'experiment.json'), input.experimentId);
+      if (metadata.kind === 'current' || metadata.kind === 'legacy') assertExperimentTaskIdentity(metadata.value.spec, taskCase);
+      else if (metadata.kind !== 'missing') throw new Error(`Experiment admission rejected: ${metadata.diagnostic}.`);
+      await persistTaskCase(join(resolve(input.dataDir), 'cases', input.caseId, 'case.json'), taskCase);
+      await persistExperimentSpec(root, fixedExperimentSpec(input.experimentId, taskCase));
       unsubscribe = input.onEvent ? store.subscribe(input.onEvent) : undefined;
       await store.commitAttempt(attempt);
     } catch (error) {
@@ -51,7 +63,7 @@ export class ExperimentStartup {
       await cleanupOperation(cleanup, 'store_close', () => store.close());
       throwFailures([error, ...cleanup.map(item => item.error)], 'Startup admission and cleanup failed.');
     }
-    return new ExperimentStartup(root, store, attempt, unsubscribe);
+    return new ExperimentStartup(root, store, attempt, taskCase, unsubscribe);
   }
 
   async fail(error: unknown, cancelled: boolean, cleanup: readonly CleanupFailure[] = [], cancellationSource?: 'user' | 'supervisor' | 'budget'): Promise<void> {
