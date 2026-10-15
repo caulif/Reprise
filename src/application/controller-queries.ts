@@ -20,6 +20,7 @@ import { hostReplayConditions, type ReplayLang, type SourceRootKind } from "./re
 import { recordValue, strings } from "./experiment-helpers.js";
 import { aggregateEventUsage, factsFromUsage, usagePricing, type AggregatedUsage, type UsagePricing } from "./session-usage.js";
 import { loadOperatorPricingOverride } from "./model-pricing.js";
+import { candidateTurnTiming } from './session-timing.js';
 
 export type RecentToolError = { tool: string; message: string };
 
@@ -102,6 +103,7 @@ export async function inspectRun(
     rejectedApprovals,
     turns: settled.length,
     ...(wallClockMs === undefined ? {} : { wallClockMs }),
+    turnTiming: candidateTurnTiming(events),
     ...(tokenCount === undefined ? {} : { tokenCount }),
     ...(tokenUsage ? { tokenUsage } : {}),
     ...pricingAudit(usage, priced),

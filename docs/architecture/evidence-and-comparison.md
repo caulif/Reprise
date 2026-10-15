@@ -36,7 +36,7 @@ Comparison 的共享 Context、Port、Result、Facts 与输出校验由 [`compar
 
 Host 指标固定在已审计的自主 Session system prompt，压缩摘要丢失指标时，后续实际请求与 History 重建仍可取得原值。当前 Port 的 completed 结果必须实际具有 `reportPath=report.html`；assert 不通过临时副本替调用方填充字段，旧历史 envelope schema/reader 继续兼容原记录。见[指标输入与结果断言](../decisions/accepted/2026-10-15-comparison-pinned-input-and-result-validation.md)。
 
-`submit_report` 从 scratch/ 读取 UTF-8 HTML fragment 及可选详情，复用安全 shell 和原有证据、图片声明及来源验证；不是任意可执行整页 HTML。没有旧 decisionShape 的固定字数限制，简洁与重要差异由 prompt 指导。接受后必须 `preview_report` 当前 digest/catalog，且实际预览回执进入同 Session 后续 generation 快照，调用正常完成后才可发布。live 与离线恢复共用此检查；这证明版本和输入完整性，不认证模型判断或审美。新 `comparison.requested` 明确记录 `autonomousContractVersion=1`，不得与独立复审标记并存。详见[单 Session 决策](../decisions/accepted/2026-10-11-comparison-autonomous-session.md)。
+`submit_report` 从 scratch/ 读取 UTF-8 证据片段，另提交推荐、必要边界及最多三条差异，复用安全 shell 和原有来源验证。新报告 formatVersion=3：突出历史/当前实际模型，推荐最多80个非空白码点、每条差异60、全部作者正文900，含表格/图注/代码；不提供详情展开区。Host 生成耗时、Token（k）和估算费用三行表，未知不作零，计时来源或覆盖不一致时短句提示。完整视口图优先、裁剪保留来源，长页沿受控滚动观察，视口图不等于全文。接受后须 `preview_report` 当前 digest/catalog，实际回执进入同 Session 后续 generation 快照并正常完成才可发布。新 `comparison.requested` 标记 `autonomousContractVersion=2`，旧1及报告1/2按原契约恢复，不与独立复审标记混用。版本完整性不认证语义或审美，见[紧凑报告决策](../decisions/accepted/2026-10-14-comparison-compact-report.md)。
 
 下文关于多阶段、独立审阅、findings、inspection、decisionSummary/disposition、周期 source-save 与字符配额的规则只描述旧 `ComparisonAgent` 兼容端口及历史恢复契约，不再是默认生产流程。旧请求仍按原标记验证，不自动降级成自主模式。共享的授权、证据、原生图片、审计、安全 shell 和原子发布规则继续适用。
 
@@ -79,6 +79,8 @@ Host metrics 的 `data-metrics-layout="compact"` 标记与区域顺序不变；�
 候选 Token 与单模型估算费用仅聚合 `runtime.` 事件，再按候选 Runtime 模型定价；同 run 的 Controller、Recovery、Comparison Agent 用量不计入候选指标，重复比较不得改变原候选成本。没有 Runtime telemetry 时保持未知，不借 Harness 用量补齐。Comparison 开销仍保存在该 attempt 的独立资源记录；新检查从原 journal 重算，不原地改写旧报告或冻结 facts。见[Runtime 用量归属](../decisions/accepted/2026-10-06-runtime-usage-attribution.md)。
 
 Agent 区的内联 `style` 属性和原生 `dialog` / popover 浮层一律拒绝，避免遮盖 Host 的任务、模型与指标。
+
+Host 双侧会话标签同时显示日期（UTC）：格式3置于模型名下方，以次要文字显示；格式2置于会话标签内，共用日期格式化逻辑。历史侧取 `taskContext.historyStartedAt` 与历史事件顶层 `timestamp` 中最早的合法时间，当前侧取 manifest 开始时间，缺失或非法时退回 attempt 创建时间；不使用导入时间、文件修改时间或报告生成时间。日期冻结在可选 `reportFacts.sessionDates` 中，沿现有 `comparison.requested` 输入 artifact 和 briefing 审计链保存、恢复。旧 facts 缺字段时显示“日期未知”，旧已发布报告不原地重写；日期仍由 Host 所有，不能由 Agent 推断或改写。日期不代表模型版本或能力变化。取舍见[双侧会话日期](../decisions/accepted/2026-10-14-comparison-session-dates.md)。
 
 ## 报告发布
 

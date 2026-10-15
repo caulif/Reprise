@@ -58,6 +58,11 @@ test('legitimate persisted comparisons can append events and artifacts without i
       agentConfig: scripted.agents.config,
       policy: EVALUATION_POLICY, now: new Date().toISOString() });
     assert.equal(result.comparison.result.status, attempt === 0 ? 'cancelled' : 'failed');
+    if (attempt === 1) {
+      assert.equal(scripted.contexts.length, 3, 'The current factory must reach the deliberate post-submission failure rather than time out');
+      assert.ok(result.comparison.result.status === 'failed');
+      assert.match(result.comparison.result.failure.message, /Offline fixture failure after accepted autonomous submission/);
+    }
     await verifyComparisonEvaluationInputs(root, item, prepared.inputIdentityHash);
   }
   const eventsPath = join(prepared.dataDir, 'experiments', prepared.experimentId, 'events.jsonl');

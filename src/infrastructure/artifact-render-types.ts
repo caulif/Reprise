@@ -27,6 +27,7 @@ export type RenderLayout = {
   viewportHeight: number;
   scrollWidth: number;
   documentHeight: number;
+  scrollOffset?: { x: number; y: number };
   imagesLoaded: number;
   imagesFailed: number;
   elements: Record<string, { top: number; height: number; laidOut: boolean; inViewport: boolean } | null>;
@@ -39,6 +40,8 @@ export type RenderFrame = {
   byteLength: number;
   contentHash: string;
   geometrySample?: RenderGeometrySample;
+  /** Observed immediately after this frame, not after the entire sample batch. */
+  layout?: RenderLayout;
 };
 
 export type RenderDiagnostic = {

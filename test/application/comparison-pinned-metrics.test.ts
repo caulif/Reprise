@@ -16,7 +16,7 @@ test('default autonomous factory retains pinned Host metrics across actual Pi co
   const f = await runAutonomousPublication(t, { steps, beforeStart: async base => {
     base.taskCase.historicalEvents = [
       { timestamp: '2026-09-11T00:00:00.000Z', type: 'event_msg', payload: { type: 'task_started' } },
-      { timestamp: '2026-09-11T00:02:00.000Z', type: 'event_msg', payload: { type: 'task_complete' } },
+      { timestamp: '2026-09-11T00:02:00.000Z', type: 'event_msg', payload: { type: 'task_complete', duration_ms: 120000 } },
       { timestamp: '2026-09-11T00:02:00.000Z', type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 100, output_tokens: 20, cached_input_tokens: 10 } } } },
     ];
     await writeFile(join(base.sourceRoot, 'metrics.txt'), Array.from({ length: 16 }, (_, index) => `evidence-${index}:`.padEnd(10000, 'x')).join(''));
@@ -35,7 +35,9 @@ test('default autonomous factory retains pinned Host metrics across actual Pi co
   assert.equal(summaries, 1);
   assert.equal(f.events.filter(event => event.type === 'agent.session_started' && event.payload.role === 'comparison').length, 1);
   const prompt = f.contexts[0]!.systemPrompt!;
-  assert.match(prompt, /Pinned Host metrics:.*"baseline":\{"elapsedMs":120000,"tokens":\{"total":120/);
+  const pinned = JSON.parse(prompt.split('Pinned Host metrics: ')[1]!.split('\n')[0]!) as { baseline: { elapsedMs?: number; tokens?: { total: number } }; candidate: { usageStatus: string } };
+  assert.equal(pinned.baseline.elapsedMs, 120000);
+  assert.equal(pinned.baseline.tokens?.total, 120);
   assert.match(prompt, /"candidate":\{.*"usageStatus":"not_collected"/);
   assert.match(prompt, /Unknown is not zero/);
   for (const actual of f.contexts.slice(-2)) {
