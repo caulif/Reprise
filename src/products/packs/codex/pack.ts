@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { SAFE_ID, sha256, writeImmutable } from '../../../core/identity.js';
 import type { CaseArtifactRef, CandidateSpec, TaskCase } from '../../../core/schema.js';
 import type { ProductAuthStatus, ProductPack, RecoveryPlaybookDescriptor } from '../../contract.js';
-import { publishFrozenCase } from '../../shared/freeze.js';
+import { publishFrozenCase, type FrozenFile } from '../../shared/freeze.js';
+import { sealFrozenCase } from '../../shared/frozen-case-files.js';
 import { codexProjection } from './projection.js';
 import { CodexProductRuntime } from './runtime.js';
 import { codexSessionAdapter } from './sessions.js';
@@ -204,7 +205,17 @@ export async function importCodexFixture(path: FixturePath, now = new Date().toI
     privacy: { allowModelText: true, allowBinary: false, redactions: [] },
     contentHash: sourceHash,
   };
-  return { taskCase, rawSession };
+  return { taskCase: await sealFrozenCase(taskCase, fixtureFiles(rawSession)), rawSession };
+}
+
+function fixtureFiles(rawSession: CodexFixture): FrozenFile[] {
+  return [
+    { relativePath: 'raw/session.json', content: `${JSON.stringify(rawSession, null, 2)}\n` },
+    ...rawSession.artifacts.filter((item) => item.baseline === true).map((artifact) => ({
+      relativePath: `baseline-artifacts/${artifact.artifactId}`,
+      content: parseBase64(artifact.dataBase64, `artifacts.${artifact.artifactId}.dataBase64`),
+    })),
+  ];
 }
 
 export async function freezeCodexFixture(
@@ -217,13 +228,7 @@ export async function freezeCodexFixture(
   await publishFrozenCase({
     taskCase: imported.taskCase,
     casesRoot: root,
-    files: [
-      { relativePath: 'raw/session.json', content: `${JSON.stringify(imported.rawSession, null, 2)}\n` },
-      ...imported.rawSession.artifacts.filter((item) => item.baseline === true).map((artifact) => ({
-        relativePath: `baseline-artifacts/${artifact.artifactId}`,
-        content: parseBase64(artifact.dataBase64, `artifacts.${artifact.artifactId}.dataBase64`),
-      })),
-    ],
+    files: fixtureFiles(imported.rawSession),
     reuseExisting: false,
     write,
   });

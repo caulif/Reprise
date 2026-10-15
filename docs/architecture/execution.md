@@ -40,9 +40,11 @@ RunOutcome 分别保存任务判断、运行终止和清理结果；调用 Runne
 <!-- BEGIN GENERATED record-fields (scripts/gen-docs.mjs) — 不要编辑标记之间的内容 -->
 ### TaskCase
 
+当前新冻结使用 v2；v1 保留原身份，由兼容读端读取。下表为 v2。
+
 | 字段 | 类型 | 可选 |
 |---|---|---|
-| `schemaVersion` | integer | 否 |
+| `schemaVersion` | 2 | 否 |
 | `caseId` | string | 否 |
 | `source` | object | 否 |
 | `evidenceLevel` | "transcript" \| "history" | 是 |
@@ -56,6 +58,7 @@ RunOutcome 分别保存任务判断、运行终止和清理结果；调用 Runne
 | `provenance` | object | 否 |
 | `privacy` | object | 否 |
 | `contentHash` | string | 否 |
+| `freezeIdentity` | object | 否 |
 
 ### RunRecord
 

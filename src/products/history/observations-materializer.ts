@@ -154,6 +154,8 @@ async function writeSessionManifest(root: string, taskCase: TaskCase, missing: s
 async function writeMetadata(root: string, taskCase: TaskCase): Promise<number> {
   const body = {
     caseId: taskCase.caseId,
+    taskCaseSchemaVersion: taskCase.schemaVersion,
+    ...(taskCase.freezeIdentity ? { freezeIdentityAlgorithm: taskCase.freezeIdentity.algorithm } : {}),
     contentHash: taskCase.contentHash,
     importedAt: taskCase.provenance.importedAt,
     packVersion: taskCase.provenance.packVersion,

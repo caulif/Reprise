@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { TaskCase } from '../../src/core/schema.js';
+import { sha256 } from '../../src/core/identity.js';
+import { TaskCaseSchema, type TaskCase } from '../../src/core/schema.js';
+import { Value } from '@sinclair/typebox/value';
 import { listPublishedFrozenCases, publishFrozenCase } from '../../src/products/shared/freeze.js';
 import { publishFrozenDirectory } from '../../src/products/shared/freeze-publish.js';
 
@@ -137,4 +139,67 @@ test('destination existence check propagates IO failure before invoking rename',
     rename: async () => { attempts++; },
   }), (error: unknown) => error instanceof Error && 'code' in error && error.code === 'ERR_INVALID_ARG_VALUE');
   assert.equal(attempts, 0);
+});
+
+for (const failure of ['write', 'rename'] as const) {
+  test(`publication ${failure} failure preserves a concurrent published case`, async (t) => {
+    const { root, staging } = await directories(t);
+    await rm(staging, { recursive: true });
+    const expected = taskCase();
+    const winner = { ...expected, initialInput: { ...expected.initialInput, id: 'u2', text: 'Another task' } };
+    const target = join(root, expected.caseId);
+    const original = `${JSON.stringify(winner)}\n`;
+    const publishWinner = async () => {
+      await mkdir(target);
+      await writeFile(join(target, 'case.json'), original);
+      await writeFile(join(target, 'case.complete'), '');
+      await writeFile(join(target, 'evidence.txt'), 'Original evidence');
+      throw ioError('EIO');
+    };
+    await assert.rejects(publishFrozenCase({
+      taskCase: expected, casesRoot: root, files: [], reuseExisting: true,
+      ...(failure === 'write' ? { write: publishWinner } : { publishDependencies: { rename: publishWinner } }),
+    }), /conflicts with the selected task/);
+    assert.equal(sha256(await readFile(join(target, 'case.json'))), sha256(Buffer.from(original)));
+    assert.equal(await readFile(join(target, 'case.complete'), 'utf8'), '');
+    assert.equal(await readFile(join(target, 'evidence.txt'), 'utf8'), 'Original evidence');
+    assert.deepEqual(await readdir(root), [expected.caseId]);
+  });
+}
+
+test('publication failure reuses only a matching concurrently published case', async (t) => {
+  const { root, staging } = await directories(t);
+  await rm(staging, { recursive: true });
+  const expected = taskCase();
+  const target = join(root, expected.caseId);
+  const result = await publishFrozenCase({
+    taskCase: expected, casesRoot: root, files: [], reuseExisting: true,
+    publishDependencies: { rename: async () => {
+      await mkdir(target);
+      await writeFile(join(target, 'case.json'), JSON.stringify(expected));
+      await writeFile(join(target, 'case.complete'), '');
+      throw ioError('EIO');
+    } },
+  });
+  assert.equal(result.reused, true);
+  assert.deepEqual(result.taskCase, expected);
+  assert.deepEqual(await readdir(root), [expected.caseId]);
+});
+
+
+test('same frozen content with explicit undefined optional values reuses its JSON representation', async (t) => {
+  const { root, staging } = await directories(t);
+  await rm(staging, { recursive: true });
+  const expected = taskCase();
+  const input = structuredClone(expected);
+  Object.defineProperty(input.sourceRuntimeEvidence, 'model', { value: undefined, enumerable: true });
+  assert.equal(Value.Check(TaskCaseSchema, input), true);
+  const first = await publishFrozenCase({ taskCase: input, casesRoot: root, files: [], reuseExisting: true });
+  const path = join(root, expected.caseId, 'case.json');
+  const before = sha256(await readFile(path));
+  const second = await publishFrozenCase({ taskCase: input, casesRoot: root, files: [], reuseExisting: true });
+  assert.equal(first.reused, false);
+  assert.equal(second.reused, true);
+  assert.deepEqual(second.taskCase, JSON.parse(JSON.stringify(input)));
+  assert.equal(sha256(await readFile(path)), before);
 });

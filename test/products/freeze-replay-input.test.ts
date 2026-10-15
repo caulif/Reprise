@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { sha256 } from '../../src/core/identity.js';
 import { freezeCase } from '../../src/products/shared/freeze.js';
 import { firstReplayUserMessage, looksLikeInjectedInstruction } from '../../src/products/shared/replay-user-input.js';
 import type { ImportedSession, SessionMessage } from '../../src/products/contract.js';
@@ -79,7 +80,7 @@ test('freezeCase keeps the only user row when it is an instruction block', async
   assert.equal(frozen.taskCase.initialInput.id, 'u1');
 });
 
-test('freezeCase rewrites a reused case whose initialInput is still the injected block', async (t) => {
+test('freezeCase publishes a separate task version when automatic selection skips an instruction', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-freeze-replay-rewrite-'));
   t.after(async () => rm(root, { recursive: true, force: true }));
   const session = imported([
@@ -95,7 +96,68 @@ test('freezeCase rewrites a reused case whose initialInput is still the injected
     { initialMessageId: 'u1' },
   );
   assert.equal(pinned.taskCase.initialInput.id, 'u1');
-  const rewritten = await freezeCase(session, root, { allowModelText: true, allowBinary: false, redactions: [] }, '2026-08-31T00:00:00.000Z');
-  assert.equal(rewritten.reused, false);
-  assert.equal(rewritten.taskCase.initialInput.id, 'u2');
+  const caseDir = join(root, pinned.taskCase.caseId);
+  const before = await frozenHashes(caseDir);
+  const selected = await freezeCase(session, root, PRIVACY, NOW);
+  assert.notEqual(selected.taskCase.caseId, pinned.taskCase.caseId);
+  assert.equal(selected.taskCase.initialInput.id, "u2");
+  assert.deepEqual(await frozenHashes(caseDir), before);
 });
+
+const PRIVACY = { allowModelText: true, allowBinary: false, redactions: [] };
+const NOW = '2026-10-14T00:00:00.000Z';
+
+async function frozenHashes(directory: string): Promise<Record<string, string>> {
+  const hashes: Record<string, string> = {};
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      for (const [path, hash] of Object.entries(await frozenHashes(join(directory, entry.name)))) {
+        hashes[`${entry.name}/${path}`] = hash;
+      }
+    } else hashes[entry.name] = sha256(await readFile(join(directory, entry.name)));
+  }
+  return hashes;
+}
+
+test('different selected input write failure preserves the prior frozen version', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-freeze-preserve-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const session = imported([message('u1', 'user', 'First task'), message('u2', 'user', 'Second task')]);
+  const first = await freezeCase(session, root, PRIVACY, NOW, { initialMessageId: 'u1' });
+  const caseDir = join(root, first.taskCase.caseId);
+  const before = await frozenHashes(caseDir);
+  let writes = 0;
+  await assert.rejects(freezeCase(session, root, PRIVACY, NOW, {
+    initialMessageId: 'u2', write: async () => { writes++; throw new Error('Injected write failure'); },
+  }), /Injected write failure/);
+  assert.equal(writes, 1);
+  assert.deepEqual(await frozenHashes(caseDir), before);
+  const again = await freezeCase(session, root, PRIVACY, '2026-10-15T00:00:00.000Z', { initialMessageId: 'u1' });
+  assert.equal(again.reused, true);
+  assert.deepEqual(again.taskCase, first.taskCase);
+  assert.deepEqual(await frozenHashes(caseDir), before);
+});
+
+for (const variant of ['invalid-json', 'invalid-structure', 'future-version', 'wrong-case-id', 'wrong-source', 'wrong-hash', 'wrong-text', 'wrong-privacy', 'missing-marker'] as const) {
+  test(`freeze refuses ${variant} existing case and preserves all original bytes`, async (t) => {
+    const root = await mkdtemp(join(tmpdir(), 'reprise-freeze-invalid-'));
+    t.after(async () => rm(root, { recursive: true, force: true }));
+    const session = imported([message('u1', 'user', TASK)]);
+    const first = await freezeCase(session, root, PRIVACY, NOW);
+    const caseDir = join(root, first.taskCase.caseId);
+    const existing = structuredClone(first.taskCase);
+    if (variant === 'future-version') Object.assign(existing, { schemaVersion: 3 });
+    if (variant === 'wrong-case-id') existing.caseId = 'case-other';
+    if (variant === 'wrong-source') existing.source.sessionId = 'other';
+    if (variant === 'wrong-hash') existing.contentHash = 'f'.repeat(64);
+    if (variant === 'wrong-text') existing.initialInput.text = 'Changed';
+    if (variant === 'wrong-privacy') existing.privacy.allowBinary = true;
+    const text = variant === 'invalid-json' ? '{' : variant === 'invalid-structure' ? '{}' : JSON.stringify(existing);
+    await writeFile(join(caseDir, 'case.json'), text);
+    if (variant === 'missing-marker') await rm(join(caseDir, 'case.complete'));
+    const before = await frozenHashes(caseDir);
+    await assert.rejects(freezeCase(session, root, PRIVACY, NOW), /Existing case cannot be safely reused/);
+    assert.deepEqual(await frozenHashes(caseDir), before);
+    assert.deepEqual(await readdir(root), [first.taskCase.caseId]);
+  });
+}

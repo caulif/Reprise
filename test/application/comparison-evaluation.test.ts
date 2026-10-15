@@ -114,9 +114,9 @@ test('offline preparation materializes immutable final artifacts and records wit
   assert.ok(!events.includes('agent.model_request'));
   assert.ok(!events.includes('comparison.started'));
   await assert.rejects(stat(join(experimentRoot, 'report.html')), { code: 'ENOENT' });
-  assert.equal(await readFile(join(prepared.dataDir, 'cases', `case-${item.id}`, 'baseline-artifacts/files/fixture-bundle/average.js'), 'utf8'), item.baseline.content);
-  const frozenCase = JSON.parse(await readFile(join(prepared.dataDir, 'cases', `case-${item.id}`, 'case.json'), 'utf8')) as { transcript: Array<{ id: string; text: string }> };
+  assert.equal(await readFile(join(prepared.dataDir, 'cases', prepared.taskCaseId, 'baseline-artifacts/files/fixture-bundle/average.js'), 'utf8'), item.baseline.content);
+  const frozenCase = JSON.parse(await readFile(join(prepared.dataDir, 'cases', prepared.taskCaseId, 'case.json'), 'utf8')) as { transcript: Array<{ id: string; text: string }> };
   assert.ok(frozenCase.transcript.find(message => message.id === 'historical-artifact')?.text.includes(item.baseline.content!));
-  const manifest = JSON.parse(await readFile(join(prepared.dataDir, 'cases', `case-${item.id}`, 'baseline-artifacts/manifest.json'), 'utf8')) as { artifacts: Array<{ sourceRefs: string[] }> };
+  const manifest = JSON.parse(await readFile(join(prepared.dataDir, 'cases', prepared.taskCaseId, 'baseline-artifacts/manifest.json'), 'utf8')) as { artifacts: Array<{ sourceRefs: string[] }> };
   assert.deepEqual(manifest.artifacts[0]?.sourceRefs, ['message:historical-artifact']);
 });
