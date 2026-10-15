@@ -1,3 +1,5 @@
+export const MAX_INLINE_HASH_BYTES = 8 * 1024 * 1024;
+
 export type SnapshotLimits = {
   files: number;
   totalBytes: number;
