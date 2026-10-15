@@ -64,6 +64,7 @@ import { preflightComparisonDraft } from "./comparison-draft-preflight.js";
 import { createComparisonQuoteSourcePort, type ComparisonQuoteSourcePort } from "./comparison-source.js";
 import { ComparisonReviewRequestSchema, ComparisonReviewStartedSchema } from "../core/comparison-review-schema.js";
 import { createQuoteEvidenceTool, validateComparisonEvidenceQuotes } from "./comparison-evidence-quotes.js";
+import { sealComparisonReport } from "./comparison-report-ownership.js";
 
 export { comparisonCandidateMount };
 
@@ -488,13 +489,19 @@ async function persistComparisonInvocation(input: {
       recordedPhase: comparisonRecordedFailurePhase(input.store.events(input.runId), input.runId, input.attemptId),
     });
   }
+  const owned = await sealComparisonReport({
+    experimentRoot: input.experimentRoot, attemptRoot: input.attemptRoot, comparison: input.comparisonResult,
+    owner: { experimentId: input.store.experimentId, runId: input.runId, attemptId: input.attemptId }, reportPath,
+  });
+  const { comparison: _comparison, ...reportOwner } = owned;
+  const ownedPath = join(input.experimentRoot, owned.report.path);
   await input.store.append({
     type: "report.created",
     runId: input.runId,
     operationId: `report-created-${input.attemptId}`,
-    payload: { path: reportPath, attemptId: input.attemptId },
+    payload: { path: ownedPath, attemptId: input.attemptId, reportOwner },
   });
-  return { comparisonResult: input.comparisonResult, reportPath, attemptRoot: input.attemptRoot };
+  return { comparisonResult: input.comparisonResult, reportPath: ownedPath, attemptRoot: input.attemptRoot };
 }
 
 function withOrientation(

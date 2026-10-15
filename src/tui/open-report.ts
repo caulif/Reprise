@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openPathInvocation } from '../infrastructure/platform.js';
 import { replicaWorkspaceLocation } from '../application/result-paths.js';
+import { comparisonHtmlKind } from '../application/comparison-artifacts.js';
 
 type ReportProcess = {
   once(event: 'error', listener: (error: Error) => void): void;
@@ -114,8 +115,7 @@ export async function openExperimentArtifact(
 
 export function assertExperimentReportPath(experimentRoot: string, reportPath: string): void {
   const root = resolve(experimentRoot);
-  const allowed = new Set(['report.html', 'comparison-failure.html'].map((name) => resolve(root, name)));
-  if (!allowed.has(resolve(reportPath))) throw new Error('Report path must be report.html or comparison-failure.html in the selected experiment directory.');
+  if (dirname(resolve(reportPath)) !== root || !comparisonHtmlKind(reportPath)) throw new Error('Report path must be report.html, comparison-failure.html or an attempt-owned report in the selected experiment directory.');
 }
 
 export function assertExperimentTracePath(experimentRoot: string, runId: string): string {

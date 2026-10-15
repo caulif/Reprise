@@ -55,6 +55,11 @@ test('a damaged history entry reports event log I/O errors', async (t) => {
   const item = history.experiments[0];
   assert.ok(item);
   assert.equal(item.formatError, 'missing_metadata');
+  assert.equal(item.eventLogErrorCode, 'EISDIR');
+  assert.equal(item.outcome, 'unknown');
+  assert.equal(item.runId, undefined);
+  assert.equal(item.startupFailure, undefined);
+  assert.match(renderHistoryDetail(createTheme(100, false), 100, item, 'zh').join('\n'), /事件日志无法读取\s+EISDIR/);
   const panel = panelFor(dataDir, item);
   IntakeTui_historyInput.call(panel, '\r');
   await waitFor(() => panel.page === 'error');
