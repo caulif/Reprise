@@ -32,7 +32,9 @@ RunOutcome 分别保存任务判断、运行终止和清理结果；调用 Runne
 
 候选启动上下文写入 experiment/run 目录，至少绑定 experimentId、runId、产品、请求模型、解析模型、隔离工作区和权限。新 ExperimentSpec v2 只固定 TaskCase 身份；候选、policy 与有效 Harness 配置逐 run 记录，允许后续轮次变化，执行使用本次冻结快照。旧 spec 保留原字节，不能将其中的首次配置当作后续执行事实；旧 v1 case 仅核对当前保留内容，不补历史或 v2 认证。Comparison 使用独立的操作所属配置，不混入候选条件。持久化重比通过中立的已结束运行上下文进入报告层，不构造 Runtime、Controller、CandidateRun 或假 Session；未重建 Controller 决定明确为 not_reconstructed，未记录的起点类别保持未知。契约见[固定实验身份与重比上下文](../decisions/accepted/2026-10-15-fixed-experiment-identity-and-persisted-comparison-context.md)。
 
-实际编排见 [Controller loop](../../src/application/experiment-controller-loop.ts)、[cleanup](../../src/application/candidate-run-cleanup.ts) 和 [Run schema](../../src/core/schemas/run.ts)。已知缺口与完成条件集中在[路线图](../roadmap.md#已知实现问题)。
+默认 Pi Harness 的操作配置快照、连接 probe 与准确引用边界见[模型输入可追溯](./evidence-and-comparison.md#模型输入可追溯)。未记录的旧配置不由首轮 metadata 或当前设置补认证。
+
+实际编排见 [Controller loop](../../src/application/experiment-controller-loop.ts)、[cleanup](../../src/application/candidate-run-cleanup.ts) 和 [Run schema](../../src/core/schemas/run.ts)。尚待取得的真实验证证据与目标集中在[路线图](../roadmap.md#开放目标)。
 
 
 ## 记录字段

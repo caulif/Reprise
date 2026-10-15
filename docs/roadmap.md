@@ -33,15 +33,7 @@
 
 ## 已知实现问题
 
-每项包含用户影响、修复完成条件和当前验证范围。
-
-### 早期准备失败缺少 attempt 记录
-
-- **用户影响：** Runtime 解析等早期准备失败发生在 CandidateRun/attempt 持久化之前，失败启动无法从 attempt 列表解释。
-- **修复完成条件：** 确定启动尝试的边界并形成一致终态。相关顺序位于 [experiment.ts](../src/application/experiment.ts) 和 [candidate-run.ts](../src/application/candidate-run.ts)。
-- **当前验证范围：** 代码审查与离线行为观察；无统一回归用例。
-
-修复后应补回归用例，并按变更风险运行构建、相关测试和门禁。
+已接纳启动失败的记录、固定实验身份和逐操作有效配置的旧缺口已收口，不再列为开放目标。当前接纳、失败及旧格式边界见[执行流程](./architecture/execution.md#candidaterun-生命周期)与[模型输入可追溯](./architecture/evidence-and-comparison.md#模型输入可追溯)；真实 Runtime、终端及服务证据仍按上面的开放目标取得，离线回归不能代替。
 
 ## 验证记录要求
 

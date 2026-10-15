@@ -85,13 +85,9 @@ runner 只读取现有 Harness 配置，不复制凭据；逐项记录实际模�
 
 当前自主发布回归从实际 Harness 工厂与 Host 工具入口运行，验证 fragment 提交、当前 digest/catalog 的预览回执进入同 Session 后续 generation，以及发布和离线恢复。缺失提交、未交付预览、正文或 catalog 变化、取消、调用失败与审计失败不得通过完成检查；实际生产入口用例见[自主发布回归](../test/application/comparison-autonomous-publication.test.ts)。这些完整性检查不认证报告判断或视觉质量。
 
-以下来源复审、核稿正文检查点和决策摘要要求只适用于旧多阶段 Comparison 兼容端口与对应历史协议回归，不是当前自主流程的前置条件。历史请求按原协议标记校验，不能把缺失独立复审证据的旧报告降级成自主完成；协议范围见[证据与对照](./architecture/evidence-and-comparison.md#comparison-attempt)。
+旧多阶段 executor、局部阶段截止、周期 source-save 和独立 reviewer 已退役，不再以旧 loop 的通过证明当前自主流程。保留历史 schema、findings/disposition/inspection 持久化、binding 与来源认证、旧报告读取和恢复回归；历史请求按原协议标记校验，不能把缺失独立复审证据的旧报告降级成自主完成。逐项保留与退役清单见[执行器退役决策](./decisions/accepted/2026-10-15-comparison-executor-retirement.md)。
 
-来源复审的局部截止与完整 turn 软让出分别审计：检查调用开始事件的绝对 deadline/reason、真实生成/工具与 usage、idle 后的 yielded 原因及下一次核稿输入。局部中止可能没有可见 assessment，不能把它统计为完成验证；不把普通 Provider timeout、用户取消或整体硬限映射成局部让出。逆例需验证真实 idle/usage 前不开始下一阶段、同 Session 后续调用可用，以及取消与真实错误优先。
-
-核稿正文检查点需以真实工具成功交付验证，覆盖 current/stale 完整材料、未完成回调、审计失败、缺失/过大文本、revision/epoch 失效、调用次数与取消硬限。stale material 不得满足正式 inspection 或发布认证；工具白名单不取代执行限制，旧 Provider 忽略曝光字段仍不得产生其它工具副作用。
-
-决策摘要契约需覆盖缺字段、空白摘要、已有重要限制却交空边界、HTML 文本转义及摘要与边界计入主文总长度的逆例；实际 inspection 和持久化比较区必须包含这些段落。真实语义审核另核任务可用性、关键质量维度及重要未知是否被压缩掉，不将有摘要字段等同于判断正确。
+当前共享不变量应从实际工厂和工具链验证；缺失或过期 preview、catalog/正文变化、审计失败和取消等负例不得发布。历史检查点的 stale 材料仍不能满足其原正式认证；旧结构或摘要字段本身也不证明语义。真实质量验收另核任务可用性、关键维度、重要未知与实际图片交付，不从字段齐全或 fixture PNG 推断模型判断正确。
 
 生成成功只表示报告发布链路通过。人工检查对应报告后，在 ledger 的 review 字段按当前 schema 记录决定性事实、限制、错误、过程误归属、反证处理、30 秒可读性与规范化到原始双方的取舍；review 必须绑定报告 hash。随后对完整 ledger 执行：
 

@@ -24,7 +24,7 @@ Core 定义 [schema](../../src/core/schema.ts)、[状态转换](../../src/core/s
 4. `CandidateRun` 记录投递、turn settlement、任务判断、终止和 cleanup。Controller 在 opening 以及后续 settled turn 上参与，Controller 工具可以按规则读写工作副本和记录观察。
 5. 候选完成后保留 `RunRecord`。Comparison 是独立的、可选的 attempt，读取冻结观察和候选证据并生成报告。
 
-准备阶段的异常目前可能发生在 `RunAttempt` 建立之前；这意味着部分 preflight 失败没有统一的 attempt 记录。该缺口属于可观测性问题，不能在本篇描述成已有统一终态。
+启动接纳先校验 ID、路径、attempt 与冻结 TaskCase，再在 writer 内确认固定场景身份并提交 `RunAttempt`；此后的 Runtime 校验与准备失败按启动协议保存诊断。接纳前的非法输入、固定身份冲突、锁竞争及持久化本身失败不保证形成 attempt 或终态，不能把它们和已接纳请求混为一类。所有权及失败边界见[执行流程](./execution.md#candidaterun-生命周期)。
 
 ## Pack 边界
 
