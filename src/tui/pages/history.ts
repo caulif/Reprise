@@ -6,6 +6,7 @@ import { localPathFromFileUrl } from '../open-report.js';
 import type { Theme } from '../theme.js';
 import { kv, kvBlock, kvLinkBlock, panel, panelWithHits, type LinkValueHit } from '../widgets.js';
 import { relativeTime } from './intake.js';
+import { pathToFileURL } from 'node:url';
 
 export type HistoryModel = {
   readonly totalBytes: number;
@@ -151,20 +152,18 @@ export function historyDetailPointerAction(
   const href = directHit?.path ?? hitFileLink(lines[row] ?? '', col);
   if (!href) return undefined;
   const clicked = directHit?.path ?? hrefPath(href);
-  const owned = item ? [item.reportPath, item.previousReportPath].some(path => path && pathMatchKey(path) === pathMatchKey(clicked)) : isComparisonHtml(clicked);
-  if (!owned) return { action: 'open-local' };
-  const reportPath = item ? resolveHistoryHtmlPath(item, clicked) : clicked;
-  return { action: 'open-report', reportPath };
+  const reportPath = item ? resolveHistoryHtmlPath(item, clicked, href) : isComparisonHtml(clicked) ? clicked : undefined;
+  return reportPath ? { action: 'open-report', reportPath } : { action: 'open-local' };
 }
 
 /** Map an OSC-8 / file URL target back onto the experiment's stored HTML paths. */
-function resolveHistoryHtmlPath(item: HistoryExperiment, clicked: string): string {
+function resolveHistoryHtmlPath(item: HistoryExperiment, clicked: string, href: string): string | undefined {
   const candidates = [item.reportPath, item.previousReportPath].filter((path): path is string => Boolean(path));
   const clickedKey = pathMatchKey(clicked);
   for (const candidate of candidates) {
-    if (pathMatchKey(candidate) === clickedKey) return candidate;
+    if (pathMatchKey(candidate) === clickedKey || pathToFileURL(candidate).href === href) return candidate;
   }
-  return clicked;
+  return undefined;
 }
 
 function historyPrimaryReportLabel(
