@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { ExperimentResult } from '../../src/application/experiment.js';
 import { handleControllerInput, type ControllerHandle } from '../../src/tui/controller-input.js';
 import { CanvasFind } from '../../src/tui/canvas-find.js';
+import { RunDiagnostics } from '../../src/tui/run-diagnostics.js';
 import { t } from '../../src/tui/i18n.js';
 import { renderWorkbench } from '../../src/tui/workbench.js';
 
@@ -25,7 +26,7 @@ function compareController(resolve: (run: boolean) => void, page: 'result' | 'ru
     result: gateResult,
     resultAction: 'compare',
     timeline: [],
-    canvasFind: new CanvasFind(),
+    canvasFind: new CanvasFind(), runDiagnostics: new RunDiagnostics(),
     processExpanded: false,
     locale: 'en',
     isEditingText: () => false,

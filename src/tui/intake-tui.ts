@@ -4,7 +4,7 @@ import type { ExperimentResult, ExperimentHandle } from "../application/experime
 import type { ExperimentPreflight } from "../application/experiment-preflight.js";
 import type { RecoveryView } from "../application/recovery/view.js";
 import type { ExperimentWorkflow } from "../application/experiment-workflow.js";
-import type { TaskCase, CandidateSpec, CandidateRunState } from "../core/schema.js";
+import type { TaskCase, CandidateSpec } from "../core/schema.js";
 import type { RuntimeAvailabilityStatus, RuntimeModelOffer } from "../core/runtime.js";
 import {
   defaultHarnessModelConfig,
@@ -31,6 +31,7 @@ import type { Option } from "./types.js";
 import type { TimelineEntry } from "./timeline.js";
 import { createActivityIndex, type ActivityIndexState } from "./activity-index.js";
 import { CanvasFind } from "./canvas-find.js";
+import { RunDiagnostics } from './run-diagnostics.js';
 import { type Workbench, type WorkbenchView } from "./workbench.js";
 import type { IntakeProductMemory } from "./intake-layer-memory.js";
 import type { PreparePhase } from "./widgets.js";
@@ -112,6 +113,7 @@ export class IntakeTui {
   searchCursor = 0;
   searching = false;
   readonly canvasFind = new CanvasFind();
+  readonly runDiagnostics = new RunDiagnostics();
   readingMode = false;
   readingVisibleAt = 0;
   timelineAnchor: string | undefined;
@@ -206,26 +208,7 @@ export class IntakeTui {
         result: readonly TimelineEntry[];
       }
     | undefined;
-  runStartedAt = 0;
-  recoveryStartedAt = 0;
-  recoveryEndedAt = 0;
-  candidateStartedAt = 0;
-  candidateEndedAt = 0;
-  comparisonStartedAt = 0;
-  comparisonEndedAt = 0;
-  comparisonAttemptId: string | undefined;
   runClock: ReturnType<typeof setInterval> | undefined;
-  runPhase: CandidateRunPhase | undefined;
-  machineState: CandidateRunState | undefined;
-  runFailed = false;
-  cleanupStatus: string | undefined;
-  lastRuntimeEventAt: string | undefined;
-  lastObservedEventAt: string | undefined;
-  lastVisibleActivityAt: string | undefined;
-  lastRuntimeEventKind: string | undefined;
-  modelOutputSeen = false;
-  reconnectCount = 0;
-  reconnectTotal = 0;
   preparePhase: PreparePhase | undefined;
   prepareDetail: string | undefined;
   runFromSource = false;
