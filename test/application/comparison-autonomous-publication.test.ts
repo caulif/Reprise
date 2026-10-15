@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createAssistantMessageEventStream, type AssistantMessage, type Context, type Model } from '@earendil-works/pi-ai';
 import { createHarnessAgents } from '../../src/application/harness-agents.js';
 import { startExperiment } from '../../src/application/experiment.js';
@@ -15,6 +17,7 @@ import { ExperimentStore } from '../../src/infrastructure/store/experiment-store
 import type { ArtifactRenderer } from '../../src/infrastructure/artifact-renderer.js';
 import type { HarnessModelConfig } from '../../src/infrastructure/harness-model-config.js';
 import { sha256 } from '../../src/core/identity.js';
+import { captureHistoricalDelivery } from '../../src/application/historical-delivery.js';
 import { input, patientPolicy, VerifiedRuntime } from '../codex-experiment-support.js';
 
 const model: Model<'openai-completions'> = { id: 'fixture', name: 'fixture', api: 'openai-completions', provider: 'fixture',
@@ -27,7 +30,7 @@ const original = '<p>The candidate produced a focused change. Task quality remai
 const revised = '<p>The revised comparison retains the uncertainty about task quality.</p>';
 type Step = { name: string; arguments: Record<string, unknown> };
 
-for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewed', 'cancelled'] as const) {
+for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewed', 'cancelled', 'selected-delivery', 'git-delivery'] as const) {
   test(`default autonomous factory traverses production publication: ${mode}`, async t => {
     const root = await mkdtemp(join(tmpdir(), 'reprise-autonomous-publication-'));
     t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
@@ -36,9 +39,11 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
     await writeFile(join(base.sourceRoot, 'README.md'), '# frozen source\n');
     const abort = new AbortController();
     const steps: Step[] = [
-      { name: 'write', arguments: { path: submission.path, content: original } },
+      { name: 'write', arguments: { path: submission.path, content: mode === 'selected-delivery' || mode === 'git-delivery'
+        ? `${original}<p>Chosen substitute, not the historical model's original delivery.</p><a href="finals/baseline.txt">Chosen baseline</a>` : original } },
       { name: 'submit_report', arguments: submission },
     ];
+    if (mode === 'selected-delivery' || mode === 'git-delivery') steps.unshift({ name: 'read', arguments: { path: 'finals/manifest.json' } });
     if (mode !== 'missing-preview') steps.push({ name: 'preview_report', arguments: {} });
     if (mode === 'stale-preview' || mode === 'repreviewed') {
       steps.push({ name: 'write', arguments: { path: submission.path, content: revised } },
@@ -55,6 +60,11 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
         assert.ok(receipt?.role === 'toolResult', 'The next generation must receive the actual tool result');
         assert.equal(receipt.toolName, previous.name);
         assert.equal(receipt.isError, false);
+        if (previous.name === 'read') {
+          const body = receipt.content.find(part => part.type === 'text');
+          assert.ok(body?.type === 'text');
+          assert.match(body.text, mode === 'git-delivery' ? /git_snapshot/ : /user_selected_substitute/);
+        }
         if (previous.name === 'submit_report' || previous.name === 'preview_report') {
           const body = receipt.content.find(part => part.type === 'text');
           assert.ok(body?.type === 'text');
@@ -92,12 +102,29 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
     const handle = startExperiment({ ...base, policy: patientPolicy, comparison: agents.comparison,
       comparisonPreviewRenderer, signal: abort.signal, deferComparison: true });
     const candidate = await handle.candidateFinished;
+    if (mode === 'selected-delivery') {
+      const sourcePath = join(root, 'baseline.txt');
+      await writeFile(sourcePath, 'chosen baseline bytes');
+      await captureHistoricalDelivery({ dataDir: base.dataDir, taskCase: base.taskCase, now: base.now, selectionBasis: 'Explicit user selection',
+        source: { kind: 'user_selected_substitute', sourcePath, logicalPath: 'baseline.txt', expectedHash: sha256('chosen baseline bytes'), userInstruction: 'Use this substitute.' } });
+      await rm(sourcePath);
+    }
+    if (mode === 'git-delivery') {
+      const repository = join(root, 'history-repository'); await mkdir(repository);
+      await writeFile(join(repository, 'baseline.txt'), 'chosen baseline bytes');
+      await writeFile(join(repository, 'asset.html'), '<h1>Repository asset, not the task deliverable</h1>');
+      const git = (...args: string[]) => promisify(execFile)('git', ['-C', repository, ...args], { windowsHide: true });
+      await git('init'); await git('add', '.');
+      await git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture');
+      const commit = (await git('rev-parse', 'HEAD')).stdout.trim();
+      await captureHistoricalDelivery({ dataDir: base.dataDir, taskCase: base.taskCase, now: base.now, selectionBasis: 'Explicit endpoint', source: { kind: 'git_snapshot', repository, commit } });
+    }
     await handle.runComparison();
     const result = await handle.result;
     assert.deepEqual(result.record.outcome, candidate.record.outcome);
     assert.equal(actualInputs.length, steps.length + 1, JSON.stringify(result.comparison));
     assert.equal(renders, mode === 'missing-preview' ? 0 : mode === 'repreviewed' ? 2 : 1);
-    const published = mode === 'published' || mode === 'repreviewed';
+    const published = mode === 'published' || mode === 'repreviewed' || mode === 'selected-delivery' || mode === 'git-delivery';
     assert.equal(result.comparison.result.status, published ? 'completed' : mode === 'cancelled' ? 'cancelled' : 'failed', JSON.stringify(result.comparison));
     const eventsPath = join(result.experimentRoot, 'events.jsonl');
     const before = await readFile(eventsPath);
@@ -109,6 +136,23 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
     const payload = request.payload as { attemptId: string; autonomousContractVersion: number; reviewInspectionContractVersion?: number };
     assert.equal(payload.autonomousContractVersion, 2);
     assert.equal(payload.reviewInspectionContractVersion, undefined);
+    if (mode === 'git-delivery') {
+      const media = JSON.parse(await readFile(join(result.experimentRoot, 'comparison-attempts', payload.attemptId, 'facts', 'media.json'), 'utf8')) as { side: string }[];
+      assert.equal(media.filter(item => item.side === 'baseline').length, 0, 'Repository HTML assets must not trigger automatic delivery screenshots');
+    }
+    if (mode === 'selected-delivery') {
+      assert.ok(events.some(event => event.type === 'comparison.historical_delivery_prepared'));
+      const facts = JSON.parse(await readFile(join(result.experimentRoot, 'comparison-attempts', payload.attemptId, 'facts', 'context.json'), 'utf8')) as { reportFacts: { replay: { conditions: string[] } } };
+      assert.ok(facts.reportFacts.replay.conditions.some(condition => /user-selected substitute|用户指定替代基准/.test(condition)));
+      const report = await readFile(join(result.experimentRoot, 'report.html'), 'utf8');
+      const href = report.match(/href="([^"]*published-finals[^"]*baseline\.txt)"/)?.[1];
+      assert.ok(href);
+      assert.equal(await readFile(join(result.experimentRoot, ...href.split('/')), 'utf8'), 'chosen baseline bytes');
+      const nextPath = join(root, 'next.txt'); await writeFile(nextPath, 'next selection');
+      await captureHistoricalDelivery({ dataDir: base.dataDir, taskCase: base.taskCase, now: base.now, selectionBasis: 'Later explicit selection',
+        source: { kind: 'captured_file', sourcePath: nextPath, logicalPath: 'next.txt', expectedHash: sha256('next selection') } });
+      assert.equal(await readFile(join(result.experimentRoot, ...href.split('/')), 'utf8'), 'chosen baseline bytes');
+    }
     assert.equal(events.filter(event => event.type === 'agent.session_started'
       && (event.payload as { role?: string }).role === 'comparison').length, 1);
     const recovery = await inspectComparisonRecovery({ dataDir: base.dataDir, experimentId: base.experimentId, attemptId: payload.attemptId });

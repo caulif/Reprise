@@ -200,6 +200,7 @@ function isSafeSourceRefToken(sourceRef: string): boolean {
 function originFromLink(link: ComparisonLinkRecord): ComparisonRenderSource["origin"] {
   if (link.origin === "historical_artifact") return "historical_artifact";
   if (link.origin === "reconstructed_from_history") return "reconstructed_from_history";
+  if (link.origin === 'captured_file' || link.origin === 'git_snapshot' || link.origin === 'user_selected_substitute') return link.origin;
   if (link.origin === "candidate_delivery") return "candidate";
   if (link.origin === "derived_analysis") return "derived";
   if (link.origin === "host_review") return "host";

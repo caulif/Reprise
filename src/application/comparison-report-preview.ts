@@ -1,4 +1,5 @@
 import { mkdir, readFile, realpath } from "node:fs/promises";
+import { isHistoricalFinalLink } from './comparison-historical-origin.js';
 import { dirname, join, resolve } from "node:path";
 import { sha256 } from "../core/identity.js";
 import { writeAtomic } from "../core/identity.js";
@@ -58,7 +59,7 @@ export async function materializeComparisonReportPreview(input: {
     dependencies.push(await loadDerivedEvidence(input.attemptRoot, link));
   }
   const historical = (input.evidence ?? []).filter((link) =>
-    link.origin === "historical_artifact"
+    isHistoricalFinalLink(link)
     && link.reportHref?.startsWith("finals/")
     && anchorHrefs.has(link.reportHref));
   if (historical.length > 0) {

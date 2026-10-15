@@ -68,6 +68,21 @@ function execPatchScript(patch: string): string {
   return `const patch = ${JSON.stringify(patch)};\nconst r = await tools.apply_patch(patch); text(r);`;
 }
 
+test('inline awaited static patch wrappers reconstruct the same bytes and reject extra mutations', () => {
+  const patch = addPatch('report.html', '精简结果');
+  for (const script of [
+    `const patch = ${JSON.stringify(patch)}; text(await tools.apply_patch(patch));`,
+    `text(await tools.apply_patch(${JSON.stringify(patch)}));`,
+  ]) {
+    const result = codexSessionAdapter.extractHistoricalArtifacts!({ transcript: [], historicalEvents: [customExecCall('patch', script), customExecOutput('patch')] });
+    assert.equal(result.manifest.artifacts.length, 1);
+    assert.equal(Buffer.from(result.files[0]!.bytes).toString(), '精简结果');
+    const unsafe = codexSessionAdapter.extractHistoricalArtifacts!({ transcript: [], historicalEvents: [customExecCall('patch', `${script} await tools.exec_command({cmd:"Set-Content report.html changed"});`), customExecOutput('patch')] });
+    assert.equal(unsafe.manifest.artifacts.length, 0);
+    assert.ok(unsafe.manifest.issues.some(issue => issue.code === 'unsupported_write'));
+  }
+});
+
 function addPatch(path: string, body: string): string {
   const lines = body.split("\n").map((line) => `+${line}`).join("\n");
   return `*** Begin Patch\n*** Add File: ${path}\n${lines}\n*** End Patch\n`;

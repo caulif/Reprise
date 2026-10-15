@@ -44,6 +44,8 @@ export function comparisonOrientation(input: {
     `baselineEvidence=${input.baselineAvailable ? "available" : "unavailable"}`,
     `candidateEvidence=${input.candidateAvailable ? "available" : "unavailable"}`,
     "Read the original task and ordered user requirements first: briefing/task/initial-input.txt and observations/user-inputs/INDEX.tsv. Follow-up requirements may change the initial task.",
+    "When finals/manifest.json has schemaVersion=2, read its capture identity and selection basis. A user_selected_substitute is a chosen comparison baseline, not the historical model's original delivery; do not attribute its quality to that model.",
+    "A git_snapshot is a complete committed source tree, not a list of independently delivered HTML/image assets. Inspect task-relevant code and use controlled rendering only when it can answer the task.",
     "Inspect the actual deliveries below before expanding into process history. These are navigation leads, not certified final versions or findings; confirm which artifacts were delivered. For text-only tasks, final messages may be the delivery.",
     ...(["baseline", "candidate"] as const).flatMap(side => {
       const leads = (input.links ?? []).filter(link => link.side === side);
@@ -203,7 +205,7 @@ async function comparisonMediaBundle(
   input: Parameters<typeof writeComparisonBriefing>[0],
   selected: Awaited<ReturnType<typeof comparisonLinks>>,
 ): Promise<{ links: ComparisonLink[]; media: ComparisonMediaRecord[]; invalidLinkCount: number; sealedFinalGaps: string[]; openableSources: { baseline: string[]; candidate: string[] } }> {
-  const finals = await comparisonSealedFinalLinks(input.attemptRoot);
+  const finals = await comparisonSealedFinalLinks(input.attemptRoot, input.context.reportFacts.delivery.changedPaths);
   const rawLinks = withEvidenceShortRefs([...finals.links, ...selected.links.filter(link => !finals.links.some(final => final.inspectPath === link.inspectPath && final.side === link.side))]);
   const links = rawLinks.filter((link) => Value.Check(ComparisonLinksSchema, [link]));
   const invalidLinkCount = rawLinks.length - links.length;
@@ -224,7 +226,7 @@ async function comparisonMediaBundle(
     attemptRoot: input.attemptRoot,
     workspaceRoot: input.workspaceRoot,
     links,
-    baselineSources: openable.baselineSources,
+    baselineSources: finals.links.some(link => link.origin === 'git_snapshot') ? [] : openable.baselineSources,
     candidateSources: openable.candidateSources,
     ...(input.signal ? { signal: input.signal } : {}),
   });
