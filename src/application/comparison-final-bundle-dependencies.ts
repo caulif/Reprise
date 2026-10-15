@@ -25,6 +25,7 @@ export async function historicalFinalDependencies(attemptRoot: string, links: re
   const rootReal = await realpath(finalsRoot);
   if (!pathContainedBy(attemptReal, rootReal)) throw new Error("Comparison preview finals escape attempt root.");
   const seen = new Set<string>();
+  const rawSources = new Set(links.filter(link => link.origin === 'git_snapshot').map(link => link.inspectPath.slice('finals/'.length)));
   const pending: string[] = [];
   for (const link of links) {
     if (!link.inspectPath.startsWith("finals/")) throw new Error(`Invalid historical final path: ${link.inspectPath}`);
@@ -43,7 +44,8 @@ export async function historicalFinalDependencies(attemptRoot: string, links: re
     }
     const sourceBytes = await readFile(sourceReal);
     const extension = extname(path).toLowerCase();
-    const transformed = extension === ".html" || extension === ".htm" || extension === ".xhtml" || extension === ".svg"
+    const transformed = rawSources.has(path) ? { text: undefined, targets: [] }
+      : extension === ".html" || extension === ".htm" || extension === ".xhtml" || extension === ".svg"
       ? transformHtml(sourceBytes.toString("utf8"), path)
       : extension === ".css" ? transformCss(sourceBytes.toString("utf8"), path)
       : extension === ".js" || extension === ".mjs" ? transformModule(sourceBytes.toString("utf8"), path)

@@ -12,6 +12,7 @@ import {
 import { recoveryEvidenceCatalog } from "./source-refs.js";
 import type { ObservationOwnedFile } from "./types.js";
 import { writeObservationNavigation } from "./observations-navigation.js";
+import { writeObservationEventNavigation } from './observations-event-navigation.js';
 
 export type { ObservationOwnedFile } from "./types.js";
 
@@ -97,6 +98,7 @@ export async function writeFrozenObservationTree(input: {
   fileCount += 1;
   fileCount += await writeSessionManifest(input.root, input.taskCase, missing);
   fileCount += await writeObservationNavigation(input.root, input.taskCase, rows);
+  fileCount += await writeObservationEventNavigation(input.root, input.taskCase, input.runEvents ?? []);
   const index = [
     "# Frozen observations",
     "",
@@ -105,6 +107,7 @@ export async function writeFrozenObservationTree(input: {
     "User demand is indexed at user-inputs/INDEX.tsv; read those files in order before other evidence.",
     "The full task sentence is task/initial-input.txt even when the briefing truncates it.",
     "Chronological normalized messages and tool commands/results: timeline/INDEX.tsv. Read exact numbered .txt paths in order; each entry cites its original transcript JSON.",
+    "Raw process facts: event-timeline/INDEX.tsv and 0001.tsv, ... include side/order/time/type/call_id/tool/original/previous/next. Read event-timeline/COVERAGE.txt for task scope and preview limits; verify commands/results in original JSON. A capped or preview-only search cannot prove an action never happened.",
     "Large catalogs: index-pages/0001.tsv, 0002.tsv, ... (100 entries per page, in catalog order). INDEX.tsv remains the complete catalog. Text files support read offset/maxBytes pagination; nextCursor is in the text response.",
     "Credentials and the product's original session paths are not copied here.",
     "",

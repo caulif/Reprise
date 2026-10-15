@@ -209,6 +209,9 @@ export type ComparisonPhaseRequestedPayload = Static<typeof ComparisonPhaseReque
 export const ComparisonEvidenceOriginSchema = Type.Union([
   Type.Literal("historical_artifact"),
   Type.Literal("reconstructed_from_history"),
+  Type.Literal("captured_file"),
+  Type.Literal("git_snapshot"),
+  Type.Literal("user_selected_substitute"),
   Type.Literal("candidate_delivery"),
   Type.Literal("derived_analysis"),
   Type.Literal("host_review"),
@@ -294,3 +297,5 @@ export { CodingTrialImageSchema, CodingTrialRenderSchema, CodingTrialTransformSc
 
 export { RecoveryFrozenGitSchema, type RecoveryFrozenGit } from "./schemas/recovery.js";
 export { CandidateProgressCheckpointSchema, CandidateWorkspaceScopeSchema } from './schemas/candidate-progress.js';
+export { HistoricalDeliveryManifestSchema, HistoricalDeliverySelectionSchema, HistoricalDeliveryReceiptSchema, HistoricalArtifactExtractManifestSchema } from './schemas/historical-artifacts.js';
+export type { HistoricalDeliveryManifest, HistoricalDeliverySelection } from './schemas/historical-artifacts.js';
