@@ -74,15 +74,18 @@ test('history insufficient_evidence matches live comparison presentation', () =>
   assert.equal(fromHistory.reportKind, 'diagnostic');
 });
 
-test('history detail pointer opens the clicked HTML path for previous report and diagnostic', () => {
+for (const paths of [
+  { style: 'Windows', diagnostic: 'C:\\exp\\comparison-failure.html', previous: 'C:\\exp\\report.html', root: 'C:\\exp' },
+  { style: 'POSIX', diagnostic: '/recorded/exp/comparison-failure.html', previous: '/recorded/exp/report.html', root: '/recorded/exp' },
+]) {
+test(`history detail pointer opens the clicked ${paths.style} HTML path for previous report and diagnostic`, () => {
   setCapabilities({ images: null, trueColor: false, hyperlinks: true });
   const theme = createTheme(120, false);
-  const diagnostic = 'C:\\exp\\comparison-failure.html';
-  const previous = 'C:\\exp\\report.html';
+  const { diagnostic, previous } = paths;
   const item = {
     experimentId: 'exp-1',
     taskCaseId: 'case-1',
-    path: 'C:\\exp',
+    path: paths.root,
     sizeBytes: 1,
     comparisonStatus: 'cancelled',
     reportPath: diagnostic,
@@ -105,6 +108,7 @@ test('history detail pointer opens the clicked HTML path for previous report and
   assert.deepEqual(prevHit, { action: 'open-report', reportPath: previous });
   assert.deepEqual(pathHit, { action: 'open-local' });
 });
+}
 
 test('history detail pointer keeps all local links clickable without OSC 8 support', () => {
   setCapabilities({ images: null, trueColor: false, hyperlinks: false });
