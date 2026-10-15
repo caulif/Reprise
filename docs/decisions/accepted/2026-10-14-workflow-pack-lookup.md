@@ -14,6 +14,8 @@ workflow 的 Pack 解析始终使用注入 Pack/lookup，preflight 的低层入�
 
 来源 Pack 可与候选 Pack 不同；显式覆盖不改变来源历史解释器、Recovery playbook 或用户可见投影。没有新 on-disk 格式，也无需数据迁移。
 
+候选 Pack 的 projection 随所选 Pack 贯穿 steering、完成检查与 Comparison 输入构造；持久化重比按运行记录中的候选 productId 从当前 workflow lookup 重新选择。不能在这些路径退回全局注册表，否则未全局激活的 Pack 会在首个 settled turn 后失败，同名 lookup 也会互相串用投影。底层检查入口保留 productId 字符串兼容，但 workflow 必须显式传递 Pack。
+
 ## 备选方案
 
 **将测试或插件 Pack 全局激活。** 继续耦合相互独立的 workflow，不能保证实例隔离。
@@ -27,5 +29,7 @@ workflow 的 Pack 解析始终使用注入 Pack/lookup，preflight 的低层入�
 ## 验证
 
 [workflow 回归](../../../test/application/workflow-pack-lookup.test.ts)覆盖独立 Pack preflight、同名产品的两个 lookup 隔离、显式 Runtime 一致性、未知产品、能力不足、解析产品错配和未知模型。现有第三方 Pack registry、跨产品历史 Comparison 及内置 preflight 测试继续运行；默认验证不启动真实 Runtime 或付费模型。
+
+完整假 Runtime 回归还覆盖未全局激活 Pack 和与内置产品同名的局部 Pack：验证 steering briefing、持久化用户视图、完成检查和持久化重比均使用各自实例的 projection。
 
 当前规则见[Pack 边界](../../architecture/overview.md#pack-边界)。

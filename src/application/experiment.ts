@@ -543,6 +543,7 @@ async function finishCandidateRun(args: {
         requestedModel: input.candidate.requestedModel,
         resolvedModel: resolved.resolvedModel,
         candidateProductId: input.candidate.productId,
+        ...(input.pack ? { candidatePack: input.pack } : {}),
         experimentRoot,
         dataDir: input.dataDir,
         ...(input.agentConfig.budget.maxCalls !== undefined
