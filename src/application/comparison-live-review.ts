@@ -1,3 +1,4 @@
+import { comparisonReportFormat } from '../core/comparison-html.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Type } from '@sinclair/typebox';
@@ -24,8 +25,9 @@ export async function completedReviewedComparison(input: {
   if (!result) return undefined;
   const events = input.store.events();
   if (autonomousComparisonRequested(events, input.attemptId)) {
+    const html = await readFile(join(input.attemptRoot, 'report.html'), 'utf8');
     const error = await autonomousComparisonBinding({ events, attemptId: input.attemptId, store: input.store,
-      draftDigest: sha256(await readFile(join(input.attemptRoot, 'report.html'), 'utf8')), catalogRevision: input.catalog.snapshot().revision });
+      reportFormat: comparisonReportFormat(html), draftDigest: sha256(html), catalogRevision: input.catalog.snapshot().revision });
     return error ? undefined : result;
   }
   const belongs = (payload: unknown): payload is Record<string, unknown> => typeof payload === 'object'
