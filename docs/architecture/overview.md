@@ -54,6 +54,8 @@ Core 定义 [schema](../../src/core/schema.ts)、[状态转换](../../src/core/s
 
 CLI/TUI 组合根将已组装的 `ProductLookup` 传入 workflow。目录、候选校验、preflight、恢复、冻结及历史提取使用该 workflow 的 Pack，不重新查询全局注册表；独立注入的 Pack 无需全局激活。显式 `runtime` 注入覆盖候选目录、可用性、校验及运行所使用的 Runtime，但不能绕过所选 Pack 的 runtime 能力声明。候选校验返回的 productId 必须与候选一致；未校验的 preflight 只采用该产品的可用性信息，缺失时保留 unresolved/pending。
 
+候选的 steering、完成检查和 Comparison 也使用所选候选 Pack 的 projection；持久化重比从当前 workflow lookup 按记录中的候选产品重新选择。来源 Pack 独立负责历史解释，不替代候选投影。
+
 模型执行复用 [AgentHost](../../src/infrastructure/agent/host.ts)，Session 可跨多次 Invocation 连续使用；同一 Session 不并发请求，关闭或取消后不能继续使用。角色之间不共享业务会话，模型与工具输入必须经事件审计。详细失败语义见[执行](./execution.md)、[恢复](./recovery.md)和[证据](./evidence-and-comparison.md)。
 
 ## 默认运行政策

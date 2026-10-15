@@ -72,7 +72,7 @@ const MAX_COMPARISON_INPUT_BYTES = 262_144;
 
 export type CompletedRunContext = {
   signal?: AbortSignal;
-  input: Pick<ExperimentInput, 'dataDir' | 'experimentId' | 'runId' | 'candidate' | 'agentConfig' | 'comparisonAgentConfig' | 'comparison' | 'comparisonPreviewRenderer' | 'extractHistoricalArtifacts'>;
+  input: Pick<ExperimentInput, 'dataDir' | 'experimentId' | 'runId' | 'candidate' | 'pack' | 'agentConfig' | 'comparisonAgentConfig' | 'comparison' | 'comparisonPreviewRenderer' | 'extractHistoricalArtifacts'>;
   taskCase: TaskCase;
   preflight: ExperimentPreflight;
   store: ExperimentStore;
@@ -225,7 +225,7 @@ async function inspectExperimentRun(
   return inspectRun(
     input.store,
     record,
-    input.input.candidate.productId,
+    input.input.pack ?? input.input.candidate.productId,
     undefined,
     {
       ...(input.sourceRootKind ? { sourceRootKind: input.sourceRootKind } : {}),

@@ -170,6 +170,7 @@ export function createExperimentWorkflow(input: {
           return { comparison: agents.comparison, agentConfig: agents.config };
         },
         resolveExtractHistoricalArtifacts: sourceExtractor,
+        resolveCandidatePack: packFor,
         ...(runId ? { runId } : {}), ...(signal ? { signal } : {}), ...(onEvent ? { onEvent } : {}), ...(onActivity ? { onActivity } : {}),
       });
     },

@@ -1,6 +1,6 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createExperimentWorkflow } from "../../src/application/experiment-workflow.js";
@@ -10,6 +10,9 @@ import type { ProductRuntime } from "../../src/core/runtime.js";
 import type { ProductPack } from "../../src/products/contract.js";
 import { codexProductPack } from "../../src/products/packs/codex/pack.js";
 import { input, VerifiedRuntime, now } from "../codex-experiment-support.js";
+import { createHarnessAgents, type HarnessAgents } from '../../src/application/harness-agents.js';
+import { defaultHarnessModelConfig } from '../../src/infrastructure/harness-model-config.js';
+import { ExperimentStore } from '../../src/infrastructure/store/experiment-store.js';
 
 class LocalRuntime implements ProductRuntime {
   readonly id = "local-test";
@@ -42,7 +45,8 @@ function localPack(runtime: LocalRuntime): ProductPack {
   };
 }
 
-async function fixture(t: TestContext, pack: ProductPack, runtime?: ProductRuntime) {
+async function fixture(t: TestContext, pack: ProductPack, runtime?: ProductRuntime,
+  buildAgents?: (base: ReturnType<typeof input>) => HarnessAgents) {
   const root = await mkdtemp(join(tmpdir(), "reprise-workflow-lookup-"));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
@@ -53,10 +57,64 @@ async function fixture(t: TestContext, pack: ProductPack, runtime?: ProductRunti
     lookup: createProductLookup([pack]),
     ...(runtime ? { runtime } : {}),
     now: () => now,
-    agents: async () => { throw new Error("Read-only operations must not initialize agents."); },
+    agents: async () => {
+      if (buildAgents) return buildAgents(base);
+      throw new Error("Read-only operations must not initialize agents.");
+    },
   });
   return { base, taskCase, workflow, preflight: { taskCase, sourceRoot: base.sourceRoot } };
 }
+
+for (const productId of ['local-only', 'codex']) test(`injected ${productId} projections remain local through steering, completion and persisted comparison`, async t => {
+  for (const marker of ['first-local-projection', 'second-local-projection']) {
+    const runtime = new LocalRuntime(productId, marker);
+    let inspections = 0, steering = 0, comparisons = 0;
+    const pack: ProductPack = { ...localPack(runtime), projection: {
+      inspectRunFacts(events) {
+        inspections++;
+        return { ...codexProductPack.projection.inspectRunFacts(events), assistantTexts: [marker], finalMessage: marker };
+      },
+      projectTurn(request) {
+        return { ...codexProductPack.projection.projectTurn(request), assistantText: marker };
+      },
+    } };
+    const f = await fixture(t, pack, undefined, base => {
+      const agents = createHarnessAgents(defaultHarnessModelConfig(), {
+        createSession: () => { throw new Error('This regression must not request a real model session.'); },
+      });
+      t.mock.method(agents.controller, 'decide', async (...[context, ...args]: Parameters<HarnessAgents['controller']['decide']>) => {
+        if (context.phase === 'steering') {
+          steering++;
+          assert.match(await readFile(join(context.briefingRoot!, 'current-user-view.md'), 'utf8'), new RegExp(marker));
+        }
+        return base.controller.decide(context, ...args);
+      });
+      t.mock.method(agents.comparison, 'compare', async () => {
+        comparisons++;
+        return { status: 'cancelled' as const, sessionId: 'fixture-comparison' };
+      });
+      return agents;
+    });
+    const candidate = { ...f.base.candidate, productId, requestedModel: marker };
+    const handle = await f.workflow.start({ taskCase: f.taskCase, sourceRoot: f.base.sourceRoot, candidate,
+      experimentId: f.base.experimentId, runId: f.base.runId, onEvent: () => {} });
+    const result = await handle.result;
+    assert.equal(steering, 1);
+    assert.equal(result.record.attempt.candidate.productId, productId);
+    assert.equal(result.record.manifest?.resolvedModel.resolved, marker);
+    const store = await ExperimentStore.open(result.experimentRoot, f.base.experimentId);
+    assert.ok(store.events(f.base.runId).some(event => event.type === 'candidate.user_view_persisted'
+      && typeof event.payload === 'object' && event.payload !== null && 'assistantText' in event.payload && event.payload.assistantText === marker));
+    await store.close();
+    const beforeReopen = inspections;
+    const compared = await f.workflow.comparePersisted(f.base.experimentId, undefined, undefined, f.base.runId);
+    assert.ok(inspections > beforeReopen, 'persisted comparison must use this workflow projection');
+    assert.equal(comparisons, 1);
+    assert.deepEqual(compared.record, result.record);
+    assert.equal(compared.comparison.result.status, 'cancelled');
+  }
+  if (productId === 'local-only') assert.equal(productPacks.some(pack => pack.manifest.productId === productId), false);
+});
 
 test("independent Pack preflight succeeds without global activation or execution", async (t) => {
   const runtime = new LocalRuntime("local-only", "local-model");

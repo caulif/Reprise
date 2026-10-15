@@ -23,8 +23,9 @@ import type { newComparisonAttempt } from './comparison-briefing.js';
 import { failComparisonOperation, reserveComparisonOperation } from './comparison-operation.js';
 import type { ComparisonOperationFailure, HarnessConfigurationReference } from '../core/schema.js';
 import { isRecord } from '../core/json.js';
+import type { ProductPack } from '../products/contract.js';
 
-export async function comparePersistedExperiment(input: {
+interface PersistedComparisonInput {
   readonly dataDir: string;
   readonly experimentId: string;
   readonly runId?: string;
@@ -38,7 +39,10 @@ export async function comparePersistedExperiment(input: {
   readonly onActivity?: (activity: ExperimentActivity) => void;
   readonly extractHistoricalArtifacts?: HistoricalArtifactExtractFn;
   readonly resolveExtractHistoricalArtifacts?: (productId: string) => HistoricalArtifactExtractFn | undefined;
-}): Promise<ExperimentResult> {
+  readonly resolveCandidatePack?: (productId: string) => ProductPack;
+}
+
+export async function comparePersistedExperiment(input: PersistedComparisonInput): Promise<ExperimentResult> {
   const startedAt = Date.now();
   const experimentRoot = resolvedExperimentRoot(input.dataDir, input.experimentId);
   let loaded = await loadFinishedRun(experimentRoot, input.experimentId, input.runId);
@@ -72,6 +76,7 @@ export async function comparePersistedExperiment(input: {
     input.onActivity?.(activity);
     await activityControlReady(activity);
     stage = 'agents';
+    const pack = input.resolveCandidatePack?.(loaded.record.attempt.candidate.productId);
     const agents = input.comparison && input.agentConfig
       ? { comparison: input.comparison, agentConfig: input.agentConfig }
       : await resolveCompareAgents(input.resolveAgents, signal, harnessConfigurationScope(store,
@@ -93,6 +98,7 @@ export async function comparePersistedExperiment(input: {
         ...input,
         comparison: agents.comparison,
         agentConfig: agents.agentConfig,
+        ...(pack ? { pack } : {}),
         ...(extractHistoricalArtifacts ? { extractHistoricalArtifacts } : {}),
       }, loaded),
       taskCase: loaded.taskCase,
@@ -206,11 +212,12 @@ async function selectFinishedRecord(root: string, experimentId: string, caseId: 
 }
 
 function comparisonRunInput(
-  input: Pick<CompletedRunContext['input'], 'dataDir' | 'comparison' | 'agentConfig' | 'extractHistoricalArtifacts'>,
+  input: Pick<CompletedRunContext['input'], 'dataDir' | 'comparison' | 'agentConfig' | 'pack' | 'extractHistoricalArtifacts'>,
   loaded: { record: RunRecord },
 ): CompletedRunContext['input'] {
   return { dataDir: resolve(input.dataDir), experimentId: loaded.record.attempt.experimentId,
     runId: loaded.record.attempt.runId, candidate: loaded.record.attempt.candidate,
     agentConfig: input.agentConfig, comparison: input.comparison,
+    ...(input.pack ? { pack: input.pack } : {}),
     ...(input.extractHistoricalArtifacts ? { extractHistoricalArtifacts: input.extractHistoricalArtifacts } : {}) };
 }
