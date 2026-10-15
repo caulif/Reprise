@@ -173,6 +173,34 @@ test('Git capture exports exact committed binary bytes and never the dirty workt
   assert.equal((await selectedHistoricalDelivery(f.caseDir, f.task))!.manifest.selectionId, empty.selectionId);
 });
 
+test('Git source citations preview and publish unchanged without parsing or loading build dependencies', async t => {
+  const f = await fixture(t);
+  const repo = join(f.dataDir, 'source-repository'); await mkdir(repo);
+  const sources = new Map([
+    ['entry.js', `import helper from ${JSON.stringify('./generated.js')}; export default <div>{helper}</div>;\n`],
+    ['style.css', 'body { background: url(/generated.png); }\n'],
+    ['index.html', '<script src="/dist/app.js"></script>\n'],
+  ]);
+  for (const [path, bytes] of sources) await writeFile(join(repo, path), bytes);
+  const run = (...args: string[]) => git('git', ['-C', repo, ...args], { windowsHide: true });
+  await run('init'); await run('add', '.');
+  await run('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'source fixture');
+  const commit = (await run('rev-parse', 'HEAD')).stdout.trim();
+  await captureHistoricalDelivery({ ...f.input, source: { kind: 'git_snapshot', repository: repo, commit } });
+  const attemptRoot = join(f.dataDir, 'comparison-attempts', 'source-citations');
+  await prepareHistoricalArtifacts({ caseDir: f.caseDir, taskCase: f.task, attemptRoot });
+  const { links } = await comparisonSealedFinalLinks(attemptRoot);
+  const draftHtml = links.map(link => `<a href="${link.reportHref}">${link.inspectPath}</a>`).join('');
+  const preview = await materializeComparisonReportPreview({ attemptRoot, draftHtml, media: [], evidence: links, catalogRevision: 1 });
+  const published = await prepareComparisonArtifacts({ attemptRoot, experimentRoot: f.dataDir, html: preview.html, evidence: links });
+  for (const [path, bytes] of sources) {
+    assert.deepEqual(await readFile(join(preview.outputRoot, 'finals', path)), Buffer.from(bytes));
+    const href = [...published.html.matchAll(/href="([^"]+)"/g)].map(match => match[1]!).find(href => href.endsWith(`/finals/${path}`));
+    assert.ok(href);
+    assert.deepEqual(await readFile(join(f.dataDir, ...decodeURIComponent(href).split('/'))), Buffer.from(bytes));
+  }
+});
+
 test('repository source inventories keep the legacy shell bounded without hiding candidate leads or changing older projections', () => {
   const entries = Array.from({ length: 200 }, (_, i) => ({ side: 'baseline' as const, origin: 'git_snapshot' as const,
     inspectPath: `finals/file-${i}.ts`, reportHref: `finals/file-${i}.ts`, shortRef: `ev-${i + 1}` }));
