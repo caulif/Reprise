@@ -9,6 +9,8 @@
 ## 决定
 
 1. 默认 Pi factory 用同一冻结预算构造 Agent 和有效 DTO，Agent 缓存包含预算与 locale。连接验证单独缓存，配置/凭据变更重新检查；每个操作仍提交自己的配置绑定，缓存实例不持有可变 owner。
+
+   自定义 Provider 的本机文件密钥或 `env:NAME` 当前解析值参与私有内存中的连接与 Agent 缓存失效判断，引用名不等于凭据身份。预算变化只重建 Agent，密钥轮换还必须重新探测；解析值及缓存键均不得进入持久化 DTO、事件、artifact、报告或诊断。
 2. 有效 DTO 是显式白名单，所有新嵌套对象闭合。先提交 artifact，再提交含正文/hash/owner 的 `harness.configuration_bound`，之后才允许本操作 probe。manifest、Recovery initialize 与 Comparison 操作引用本次绑定；无 owner 的旧记录与自定义 Port 保持未记录。
 3. 用判别值表示 unlimited 和 finite，不把 Controller 的内部 0 填入旧 AgentBudget schema。Comparison 明确配置单次上限、总截止及逐次 min 规则；只记录实际执行的全局限额，旧阶段限额保留为 requested。
 4. Pi caller 在私有内存复制配置（可包含本机凭据）并固定首次解析模型；持久化 DTO 只挑无敏感字段。已知标量 compat override 与 SDK 版本可记录；SDK 私有 URL 默认推导不在应用复制，复杂未记录参数只记字段名，endpoint/headers/认证不记录。该快照不认证完整 wire 请求重建。

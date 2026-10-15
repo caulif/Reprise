@@ -283,14 +283,24 @@ test('same-run configuration cannot be substituted between run, Recovery, or Com
     payload: { attemptId: 'comparison-inline', effectiveReference: run.reference } });
 });
 
-test('production factory reuses connection validation but resolves changed budgets and binds every run', async t => {
+for (const credentialSource of ['file', 'environment'] as const) {
+test(`production factory invalidates ${credentialSource} credentials but reuses unchanged validation and binds every run`, async t => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-config-cache-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const runtime = new VerifiedRuntime();
   const base = input(root, runtime);
   await mkdir(base.sourceRoot, { recursive: true });
   await mkdir(base.dataDir, { recursive: true });
-  await saveHarnessModelConfig(base.dataDir, config);
+  const environmentName = 'REPRISE_TEST_ROTATING_HARNESS_CREDENTIAL';
+  const previous = process.env[environmentName];
+  t.after(() => {
+    if (previous === undefined) delete process.env[environmentName];
+    else process.env[environmentName] = previous;
+  });
+  const { apiKey, ...withoutKey } = config;
+  if (credentialSource === 'environment') process.env[environmentName] = apiKey;
+  const initialConfig = credentialSource === 'file' ? config : { ...withoutKey, keyRef: `env:${environmentName}` };
+  await saveHarnessModelConfig(base.dataDir, initialConfig);
   let validations = 0;
   t.mock.method(PiModelCaller.prototype, 'validate', async () => { validations++; return {}; });
   t.mock.method(runtime, 'validateCandidate', async () => { throw new Error('stop after initialization'); });
@@ -298,9 +308,12 @@ test('production factory reuses connection validation but resolves changed budge
   const recoveryBudget = { callTimeoutMs: 7000, maxStructuredRepairAttempts: 1 };
   const workflow = createHarnessWorkflow({ dataDir: base.dataDir, lookup: createProductLookup([{ ...codexProductPack, runtime }]),
     now: () => base.now, defaults: { candidate: base.candidate, policy: base.policy }, budget, recoveryBudget });
-  for (const runId of ['run-cache-1', 'run-cache-2', 'run-cache-3']) {
+  for (const runId of ['run-cache-1', 'run-cache-2', 'run-cache-3', 'run-cache-4']) {
     if (runId === 'run-cache-2') { budget.callTimeoutMs = 9000; recoveryBudget.callTimeoutMs = 11000; }
-    if (runId === 'run-cache-3') await saveHarnessModelConfig(base.dataDir, { ...config, apiKey: 'fixture-rotated-credential' });
+    if (runId === 'run-cache-3') {
+      if (credentialSource === 'file') await saveHarnessModelConfig(base.dataDir, { ...config, apiKey: 'fixture-rotated-credential' });
+      else process.env[environmentName] = 'fixture-rotated-credential';
+    }
     const handle = await workflow.start({ taskCase: base.taskCase, sourceRoot: base.sourceRoot,
       experimentId: base.experimentId, runId, onEvent: () => undefined });
     await assert.rejects(handle.result, /stop after initialization/);
@@ -308,16 +321,17 @@ test('production factory reuses connection validation but resolves changed budge
   assert.equal(validations, 2);
   const store = await ExperimentStore.open(join(base.dataDir, 'experiments', base.experimentId), base.experimentId);
   const bindings = store.events().filter(event => event.type === 'harness.configuration_bound');
-  assert.equal(bindings.length, 3);
+  assert.equal(bindings.length, 4);
   const configs = bindings.map(event => {
     assert.ok(Value.Check(HarnessConfigurationBoundSchema, event.payload));
     return event.payload;
   });
-  assert.equal(new Set(configs.map(value => value.reference.configurationId)).size, 3);
-  assert.deepEqual(configs.map(value => value.configuration.comparison.configuredCallCap.milliseconds), [5000, 9000, 9000]);
-  assert.deepEqual(configs.map(value => value.configuration.recovery.singleCall.kind === 'finite' && value.configuration.recovery.singleCall.milliseconds), [7000, 11000, 11000]);
-  assert.doesNotMatch(await readFile(join(base.dataDir, 'experiments', base.experimentId, 'events.jsonl'), 'utf8'), /fixture-private|fixture-rotated|apiKey|keyRef/);
+  assert.equal(new Set(configs.map(value => value.reference.configurationId)).size, 4);
+  assert.deepEqual(configs.map(value => value.configuration.comparison.configuredCallCap.milliseconds), [5000, 9000, 9000, 9000]);
+  assert.deepEqual(configs.map(value => value.configuration.recovery.singleCall.kind === 'finite' && value.configuration.recovery.singleCall.milliseconds), [7000, 11000, 11000, 11000]);
+  assert.doesNotMatch(await readFile(join(base.dataDir, 'experiments', base.experimentId, 'events.jsonl'), 'utf8'), /fixture-private|fixture-rotated|apiKey|keyRef|REPRISE_TEST_ROTATING/);
 });
+}
 
 for (const origin of ['probe', 'binding'] as const) {
 test(`production re-comparison ${origin} failure owns the current attempt and preserves the previous report`, async t => {
