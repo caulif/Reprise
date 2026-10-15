@@ -76,6 +76,23 @@ test('startup failure and unconfirmed report diagnoses survive the same History 
   assert.notEqual(deriveResultPresentationFromHistory(item, 'zh').statusTone, 'ok');
 });
 
+test('known skipped comparison remains skipped in the recent projection without inventing a report', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-skipped-presentation-'));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  const base = input(root, new VerifiedRuntime());
+  await mkdir(base.sourceRoot, { recursive: true });
+  const result = await startExperiment({ ...base, compare: false }).result;
+  assert.equal(result.comparison.result.status, 'skipped');
+  const recent = historyExperimentFromResult(result, { experimentRoot: result.experimentRoot, taskCaseId: base.caseId });
+  assert.equal(recent.comparisonStatus, 'skipped');
+  assert.equal(recent.reportPath, undefined);
+  const { comparisonStatus: _known, ...missing } = recent;
+  for (const locale of ['zh', 'en'] as const) {
+    assert.deepEqual(deriveResultPresentationFromHistory(recent, locale), deriveResultPresentationFromResult(result, locale));
+    assert.equal(deriveResultPresentationFromHistory(missing, locale).comparisonKind, 'unknown');
+  }
+});
+
 test('real live and History projections keep identical fact labels for completed and failed comparisons', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-presentation-'));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));

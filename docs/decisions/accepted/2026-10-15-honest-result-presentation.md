@@ -12,6 +12,8 @@
 
 Comparison 展示事实只包含 invocation status、实际保存的结果 detail 和可选失败诊断 token。History 不生成 sessionId、reportPath、evidenceRefs、调用次数或默认 agent_failure。completed 但缺少或不认识 detail 时，比较结果保持未确认；已保存的失败 token 原样保留。报告路径与归属继续使用应用层查询结果，缺字段不能由展示层补出。
 
+实时结果转为 recent 投影时保留已知 skipped，不能将它省略成 unknown；缺少持久化 Comparison 事实的历史仍保持未确认，不据此猜测曾跳过，也不为 skipped 补报告路径。
+
 页面继续消费既有 presentation 文案、色调和动作；键盘、滚动、报告打开与局部状态拥有者不变。本批不引入另一套运行状态机，也不拆分 IntakeTui 的交互状态。
 
 ## 备选方案

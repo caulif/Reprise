@@ -48,7 +48,7 @@ export function historyExperimentFromResult(
     startedAt: result.record.attempt.createdAt,
     path: input.experimentRoot,
     sizeBytes: input.sizeBytes,
-    ...(!skipped ? { comparisonStatus: comparison.status } : {}),
+    comparisonStatus: comparison.status,
     ...(failure ? { comparisonFailure: failure } : {}),
     ...(detail ? { comparisonDetail: detail } : {}),
     ...artifacts,
