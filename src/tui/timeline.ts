@@ -402,7 +402,7 @@ function projectRunEvent(event: EventEnvelope, payload: JsonRecord, entry: MakeE
     }
     case 'candidate.session_bound': {
       const sessionId = text(payload.sessionId);
-      return [entry('HARNESS', `Candidate session · ${sessionId ?? '?'}`, text(payload.productId), {
+      return [entry('HARNESS', `Current session · ${sessionId ?? '?'}`, text(payload.productId), {
         hidden: true,
         role: 'system',
         ...(sessionId ? { sessionId } : {}),
@@ -422,9 +422,9 @@ function projectRunEvent(event: EventEnvelope, payload: JsonRecord, entry: MakeE
     case 'run.stop_requested': {
       const code = text(payload.code) ?? '';
       const reason = text(payload.reason) ?? 'unknown';
-      if (code.startsWith('blocked.')) return [entry('HARNESS', 'Candidate stopped · blocked', code)];
-      if (code.startsWith('completed.')) return [entry('HARNESS', 'Candidate completed', code, { hidden: true })];
-      if (code.startsWith('stalled.')) return [entry('HARNESS', 'Candidate stalled', code)];
+      if (code.startsWith('blocked.')) return [entry('HARNESS', 'Current stopped · blocked', code)];
+      if (code.startsWith('completed.')) return [entry('HARNESS', 'Current completed', code, { hidden: true })];
+      if (code.startsWith('stalled.')) return [entry('HARNESS', 'Current stalled', code)];
       return [entry('HARNESS', `Stop requested: ${reason}`, code, reason === 'failed' ? { level: 'error' } : undefined)];
     }
     case 'environment.release_completed':
@@ -437,7 +437,7 @@ function projectRunEvent(event: EventEnvelope, payload: JsonRecord, entry: MakeE
         }),
       ];
     case 'run.finished':
-      return [entry('HARNESS', 'Candidate run finished', undefined, { hidden: true })];
+      return [entry('HARNESS', 'Current run finished', undefined, { hidden: true })];
     case 'runtime.runtime_failed':
       return [entry('TARGET', 'Runtime failed', text(payload.message), { level: 'error' })];
     case 'runtime.session_failed':

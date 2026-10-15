@@ -674,7 +674,9 @@ test("missing candidate SVG deliverable is still registered as unavailable media
   assert.equal(candidate[0]?.available, false);
   assert.equal(candidate[0]?.mediaType, "image/svg+xml");
   const decisionMap = await readFile(join(attemptRoot, "briefing", "decision-map.md"), "utf8");
-  assert.match(decisionMap, /Candidate snapshot incomplete; sealed delivery unavailable/);
+  assert.match(decisionMap, /Current snapshot incomplete; sealed delivery unavailable/);
+  assert.match(decisionMap, /## History/);
+  assert.match(decisionMap, /## Current/);
   assert.doesNotMatch(decisionMap, /## candidate[\s\S]*candidate\/animation\.svg/);
 });
 

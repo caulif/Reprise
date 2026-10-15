@@ -253,3 +253,11 @@ test('T04 index composite correlationId is stamped onto timeline entries', () =>
   assert.match(live?.correlationId ?? '', /raw-id$/);
   assert.notEqual(live?.correlationId, 'raw-id');
 });
+
+test('managed exec activity indexes cmd as its command object', () => {
+  const index = createActivityIndex();
+  ingestActivityEvent(index, event('agent.tool_called', { role: 'comparison', tool: 'exec_command', toolCallId: 'exec-1', sessionId: 's', invocationId: 'i', params: { cmd: 'cargo test' } }));
+  const node = activeNodes(index)[0];
+  assert.equal(node?.verb, 'inspect');
+  assert.equal(node?.object, 'cargo test');
+});

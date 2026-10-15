@@ -88,11 +88,11 @@ function evidenceLabel(link: ComparisonLinkRecord): string {
   if (link.origin === 'user_selected_substitute') return '用户指定替代基准（非历史原件）';
   if (link.origin === 'git_snapshot') return '精确 Git 终点快照';
   if (link.origin === 'captured_file') return '捕获文件（身份见来源记录）';
-  if (link.origin === "candidate_delivery" || (link.side === "candidate" && link.path)) return "候选会话最终交付";
+  if (link.origin === "candidate_delivery" || (link.side === "candidate" && link.path)) return "当前会话最终交付";
   if (link.side === "baseline" && link.mediaType?.startsWith("image/") && link.inspectPath.startsWith("media/")) return "历史会话预览";
   if (link.side === "baseline") return "历史会话最终回复";
-  if (link.path) return "候选会话最终交付";
-  if (link.mediaType?.startsWith("image/")) return "候选生成的图片预览";
-  if (link.side === "candidate") return "候选会话材料";
+  if (link.path) return "当前会话最终交付";
+  if (link.mediaType?.startsWith("image/")) return "当前生成的图片预览";
+  if (link.side === "candidate") return "当前会话材料";
   return "比较证据";
 }

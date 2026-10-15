@@ -40,7 +40,7 @@ export function comparisonOrientation(input: {
   links?: readonly ComparisonLinkRecord[];
 }): string {
   return [
-    "Compare this real task's historical outcome with the candidate run.",
+    "Compare this real task's historical outcome with the current run.",
     `baselineEvidence=${input.baselineAvailable ? "available" : "unavailable"}`,
     `candidateEvidence=${input.candidateAvailable ? "available" : "unavailable"}`,
     "Read the original task and ordered user requirements first: briefing/task/initial-input.txt and observations/user-inputs/INDEX.tsv. Follow-up requirements may change the initial task.",
@@ -273,7 +273,7 @@ async function writeAttemptSidecars(
     "",
   ].join("\n"));
   await writeAtomic(join(input.attemptRoot, "candidate", "INDEX.md"), [
-    "# Candidate track",
+    "# Current track",
     "",
     "Process index: candidate/process-index.tsv and briefing/candidate/process-index.tsv",
     "User views: turns/*/user-view.md",
@@ -321,7 +321,7 @@ function comparisonIndex(
   return [
     "# Comparison briefing map",
     "",
-    "Read only what can change the comparison. Historical and candidate process bodies are mounted separately; this directory holds navigation and Host facts.",
+    "Read only what can change the comparison. Historical and current process bodies are mounted separately; this directory holds navigation and Host facts.",
     "All paths below are relative to the attempt root, not to briefingRoot.",
     "",
     "- briefing/decision-map.md: bounded delivery leads and gaps; inspect the sources before judging",
@@ -337,11 +337,11 @@ function comparisonIndex(
     "- observations/INDEX.md: frozen transcript, historical events, and this run's events (read-only)",
     "- history/outline.tsv and history/transcript/: frozen historical conversation (read-only mount)",
     "- finals/: frozen or attempt-derived historical deliverables (read-only mount; use REPRISE_FINALS_ROOT in shell)",
-    "- turns/: candidate settled-turn briefing including each user-view.md (read-only mount)",
+    "- turns/: current settled-turn briefing including each user-view.md (read-only mount)",
     "- briefing/candidate/git-sink-refs.txt: Host catalog of initial and final sink refs by repository relative path (not the user's GitHub); objectStore may be not_seeded",
     "- briefing/candidate/git-sink-manifest.json: structured sink catalog with isolation, objectStore, completeness, issues.code, and ref changes; do not assume a branch named main",
     "- run/sent-user-messages.jsonl: Controller messages sent this run (read-only mount)",
-    "- candidate/: retained candidate workspace snapshot (read-only mount)",
+    "- candidate/: retained current workspace snapshot (read-only mount)",
     "- evidence/: materialized Host artifacts (read-only mount)",
     "- work/comparison-plan.md: revisable working notes for this session",
     "- scratch/: unrestricted temporary analysis files; the shell starts here",
@@ -364,13 +364,13 @@ function comparisonDecisionMap(input: {
     "",
     "This is a Host navigation projection, not a finding. Confirm final versions and task success against the source files.",
     "User requirements: observations/user-inputs/INDEX.tsv (in order); initial task: briefing/task/initial-input.txt.",
-    "File-tool paths below are virtual; shell_exec starts in scratch/. In shell use REPRISE_BASELINE_ROOT, REPRISE_FINALS_ROOT, REPRISE_CANDIDATE_ROOT, REPRISE_EVIDENCE_ROOT, and REPRISE_SCRATCH_ROOT for the physical mounts.",
+    "File-tool paths below are virtual; exec_command starts in scratch/. In shell use REPRISE_BASELINE_ROOT, REPRISE_FINALS_ROOT, REPRISE_CANDIDATE_ROOT, REPRISE_EVIDENCE_ROOT, and REPRISE_SCRATCH_ROOT for the physical mounts.",
     "",
   ];
   for (const side of ["baseline", "candidate"] as const) {
-    lines.push(`## ${side}`);
+    lines.push(`## ${side === 'baseline' ? 'History' : 'Current'}`);
     if (side === "candidate" && input.snapshotStatus !== "complete") {
-      lines.push(`Candidate snapshot ${input.snapshotStatus}; sealed delivery unavailable. Do not substitute a mutable workspace.`, "");
+      lines.push(`Current snapshot ${input.snapshotStatus}; sealed delivery unavailable. Do not substitute a mutable workspace.`, "");
       continue;
     }
     const candidates = input.links.filter((link) => link.side === side);
@@ -391,7 +391,7 @@ function comparisonDecisionMap(input: {
     lines.push("");
   }
   const process = input.events.filter(event => event.type === 'runtime.tool_finished' || event.type === 'runtime.visible_output');
-  lines.push('## Candidate process payload leads', '',
+  lines.push('## Current process payload leads', '',
     'Event types are navigation only. To assess a verification claim, open the relevant tool-result payload and compare it with the visible output; do not infer success or failure from an index row.',
     'These are the most recent tool-result/visible-output events, including post-settlement events, selected by type only. They are not a full verification history or a semantic finding.');
   for (const event of process.slice(-6)) lines.push(`- ${event.sequence} ${event.type}: ${OBSERVATIONS_MOUNT}/${observationRelativePath(`event:${event.eventId}`, 'run_events')}`);
@@ -400,9 +400,9 @@ function comparisonDecisionMap(input: {
   lines.push('Observation files expose truncated/originalChars. If truncated=true, the excerpt cannot establish the unseen remainder; obtain a complete registered source or disclose that scope limit.', '');
   lines.push("## Checks to resolve", "");
   for (const gap of input.sealedFinalGaps ?? []) lines.push(`- ${gap}`);
-  if (input.snapshotStatus !== "complete") lines.push("- Determine what can be concluded without a complete sealed candidate snapshot.");
+  if (input.snapshotStatus !== "complete") lines.push("- Determine what can be concluded without a complete sealed current snapshot.");
   if (!input.links.some((link) => link.side === "baseline") && input.openableSources.baseline.length === 0) lines.push("- Locate the historical final delivery, or report the evidence gap.");
-  if (input.snapshotStatus === "complete" && !input.links.some((link) => link.side === "candidate") && input.openableSources.candidate.length === 0) lines.push("- Locate the candidate final delivery, or report the evidence gap.");
+  if (input.snapshotStatus === "complete" && !input.links.some((link) => link.side === "candidate") && input.openableSources.candidate.length === 0) lines.push("- Locate the current final delivery, or report the evidence gap.");
   if (input.media.some((item) => !item.available)) lines.push("- Check unavailable media before making visual claims.");
   if (input.omitted > 0) lines.push(`- ${input.omitted} leads were omitted by the bounded index; inspect the full sources if they could change the result.`);
   if (input.changedPathsIndexed > 0) lines.push("- Check which changed paths are final deliverables rather than intermediate files.");
@@ -529,7 +529,7 @@ function slash(path: string): string { return path.replaceAll("\\", "/"); }
 
 async function loadGitSinkBriefing(experimentRoot: string, runId: string, workspaceRoot: string): Promise<{ refsListing: string; catalogJson: string }> {
   const location = replicaWorkspaceLocation(experimentRoot, runId, workspaceRoot);
-  if (!location) throw new Error('Candidate workspace is outside the selected experiment.');
+  if (!location) throw new Error('Current workspace is outside the selected experiment.');
   const sinkRoot = gitSinkRoot(location.providerRoot, runId);
   await finalizeGitSinkCatalog(sinkRoot);
   const catalog = await readGitSinkManifest(sinkRoot) ?? {

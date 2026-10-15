@@ -472,7 +472,7 @@ function ingestCandidateTool(
 function toolVerbOf(tool: string | undefined): ActivityVerb | undefined {
   if (!tool) return undefined;
   if (tool === 'read' || tool === 'ls' || tool === 'grep' || tool === 'find') return 'read';
-  if (tool === 'shell_exec') return 'inspect';
+  if (tool === 'shell_exec' || tool === 'exec_command') return 'inspect';
   if (tool === 'write') return 'write';
   if (tool === 'edit') return 'edit';
   return 'inspect';
@@ -490,7 +490,7 @@ function liveVerbOf(verb: string | undefined): ActivityVerb | undefined {
 function toolObjectOf(payload: JsonRecord): string | undefined {
   const params = record(payload.params);
   const details = record(payload.details);
-  return text(params.path) ?? text(details.path) ?? text(params.command);
+  return text(params.path) ?? text(details.path) ?? text(params.command) ?? text(params.cmd);
 }
 
 /**

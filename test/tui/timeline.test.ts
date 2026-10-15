@@ -59,7 +59,7 @@ test('timeline projects operator-relevant persisted facts', () => {
   });
   assert.equal(projectTimelineEvent(event('input.submitted', { turnIndex: 0, text: 'Edit slides.html in the current directory.' }))[0]?.detail, 'Edit slides.html in the current directory.');
   assert.deepEqual(projectTimelineEvent(event('input.submitted', { turnIndex: 0 })), []);
-  assert.equal(projectTimelineEvent(event('candidate.session_bound', { sessionId: 'sess-1', productId: 'fake' }))[0]?.title, 'Candidate session · sess-1');
+  assert.equal(projectTimelineEvent(event('candidate.session_bound', { sessionId: 'sess-1', productId: 'fake' }))[0]?.title, 'Current session · sess-1');
   assert.equal(projectTimelineEvent(event('candidate.user_view_persisted', {
     turnIndex: 1,
     status: 'completed',
@@ -85,7 +85,7 @@ test('timeline projects operator-relevant persisted facts', () => {
   assert.equal(done?.detail, 'Sandbox denied the path.');
   assert.deepEqual(projectTimelineEvent(event('controller.decision', { status: 'failed', failure: { message: 'Model text is disallowed by TaskCase privacy policy.' } })), []);
 
-  assert.equal(projectTimelineEvent(event('run.stop_requested', { code: 'blocked.controller_done', reason: 'failed' }))[0]?.title, 'Candidate stopped · blocked');
+  assert.equal(projectTimelineEvent(event('run.stop_requested', { code: 'blocked.controller_done', reason: 'failed' }))[0]?.title, 'Current stopped · blocked');
   assert.equal(projectTimelineEvent(event('run.stop_requested', { code: 'failed.controller', reason: 'failed' }))[0]?.title, 'Stop requested: failed');
 
   assert.deepEqual(projectTimelineEvent(event('controller.done', { reason: 'satisfied' }))[0], {

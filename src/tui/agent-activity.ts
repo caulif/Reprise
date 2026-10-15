@@ -95,7 +95,8 @@ export function excerptId(entry: TimelineEntry): string {
 }
 
 const INVESTIGATE = new Set(['ls', 'read', 'grep', 'find']);
-const MUTATE = new Set(['shell_exec', 'edit']);
+const SHELL_COMMAND = new Set(['shell_exec', 'exec_command']);
+const MUTATE = new Set([...SHELL_COMMAND, 'edit']);
 const READ_PS = /^(Get-ChildItem|Get-Content|Get-[A-Za-z]+)\b/;
 const WRITE_PS = /\b(Remove-Item|Set-Content|Copy-Item|New-Item|Move-Item|Out-File)\b/i;
 
@@ -315,7 +316,7 @@ function humanToolFailure(message: string): { title: string; detail?: string } {
 function toolKind(lane: AgentLane, tool: string, command: string | undefined): AgentKind {
   if (tool === 'write') return 'deliver';
   if (INVESTIGATE.has(tool)) return 'investigate';
-  if (tool === 'shell_exec' && lane === 'comparison' && command && READ_PS.test(command.trim()) && !WRITE_PS.test(command)) {
+  if (SHELL_COMMAND.has(tool) && lane === 'comparison' && command && READ_PS.test(command.trim()) && !WRITE_PS.test(command)) {
     return 'investigate';
   }
   if (MUTATE.has(tool)) return 'mutate';
@@ -325,7 +326,7 @@ function toolKind(lane: AgentLane, tool: string, command: string | undefined): A
 function toolVerb(tool: string, object: { verb?: string }): string {
   if (tool === 'write' || tool === 'edit') return '写入';
   if (INVESTIGATE.has(tool)) return '阅读';
-  if (tool === 'shell_exec') return object.verb === 'shell_exec' || !object.verb ? '检查' : object.verb;
+  if (SHELL_COMMAND.has(tool)) return object.verb === 'shell_exec' || !object.verb ? '检查' : object.verb;
   return object.verb ?? tool;
 }
 
@@ -334,7 +335,7 @@ function toolObject(payload: JsonRecord, tool: string): { short: string; origina
   const details = record(payload.details);
   const path = text(params.path) ?? text(details.path);
   if (path) return { short: leaf(path), original: path, verb: tool === 'write' || tool === 'edit' ? '写入' : '阅读' };
-  const command = text(params.command);
+  const command = text(params.command) ?? text(params.cmd);
   if (command) {
     const verb = powershellVerb(command);
     const quoted = command.match(/['"]([^'"]+)['"]/)?.[1];
@@ -346,7 +347,7 @@ function toolObject(payload: JsonRecord, tool: string): { short: string; origina
 
 function isGitMissing(tool: string, completed: boolean, payload: JsonRecord): boolean {
   const details = record(payload.details);
-  return (tool === 'shell_exec' && completed && /not a git repository/i.test(text(payload.content) ?? ''))
+  return (SHELL_COMMAND.has(tool) && completed && /not a git repository/i.test(text(payload.content) ?? ''))
     || (completed && details.isRepo === false);
 }
 

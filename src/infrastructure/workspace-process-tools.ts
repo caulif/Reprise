@@ -9,6 +9,7 @@ type Options = {
   description: string;
   start(command: string, workdir: string | undefined, signal: AbortSignal): Promise<{ process: ManagedProcessSession; cwd: string; outputLog?: string }>;
   onProcessLog?(path: string, truncated: boolean): Promise<unknown>;
+  validateInput?(chars: string): void;
 };
 const wait = Type.Optional(Type.Integer({ minimum: 0, maximum: 60_000 }));
 const budget = Type.Optional(Type.Integer({ minimum: 1, maximum: 65_536 }));
@@ -70,7 +71,9 @@ export function workspaceProcessTools(options: Options): { tools: readonly Agent
       parameters: Type.Object({ session_id: Type.String(), chars: Type.Optional(Type.String({ maxLength: 32_768 })), yield_time_ms: wait, max_output_tokens: budget }),
       async execute(params, _signal, owner) {
         const value = params as { session_id: string; chars?: string; yield_time_ms?: number; max_output_tokens?: number };
-        return result(value.session_id, owned(value.session_id, owner), value);
+        const session = owned(value.session_id, owner);
+        if (value.chars) options.validateInput?.(value.chars);
+        return result(value.session_id, session, value);
       } },
     { name: 'cancel_process', description: 'Terminate an owned command tree and wait for pipe/process cleanup. Unconfirmed termination is fatal; cancellation itself is an ordinary command result.', lifecycle,
       parameters: Type.Object({ session_id: Type.String(), max_output_tokens: budget }),

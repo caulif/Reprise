@@ -73,7 +73,7 @@ export function buildComparisonContext(
   return {
     task: { caseId: taskCase.caseId, summary: taskCase.initialInput.text },
     baseline: {
-      summary: taskCase.baseline.finalMessage ?? `Baseline ${taskCase.baseline.status}.`,
+      summary: taskCase.baseline.finalMessage ?? `Historical delivery ${taskCase.baseline.status}.`,
       evidenceRefs: unique([...taskCase.baseline.evidenceRefs, ...taskCase.baseline.artifactRefs.map((ref) => `artifact:${ref.artifactId}`)]),
     },
     candidates: runs.map((run) => ({

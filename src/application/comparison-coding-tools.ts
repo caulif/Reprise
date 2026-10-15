@@ -1,4 +1,3 @@
-import { DEFAULT_AGENT_DEADLINE_MS } from '../core/agent-defaults.js';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
@@ -14,13 +13,13 @@ import { transformPng } from '../infrastructure/png-transform.js';
 import { isComparisonBrowserShellCommand } from './comparison-shell-deny.js';
 
 function withCodingShellBoundary(tools: AgentToolDefinition[]): AgentToolDefinition[] {
-  return tools.map(tool => tool.name !== 'shell_exec' ? tool : { ...tool, async execute(params, signal) {
-    const command = (params as { command?: unknown }).command;
+  return tools.map(tool => !['exec_command', 'write_stdin'].includes(tool.name) ? tool : { ...tool, async execute(params, signal, owner) {
+    const command = tool.name === 'exec_command' ? (params as { cmd?: unknown }).cmd : (params as { chars?: unknown }).chars;
     if (typeof command === 'string' && (isComparisonBrowserShellCommand(command) || /\b(?:Stop-Process|taskkill|killall|pkill|kill)\b/i.test(command))) {
       return { content: 'Use render_browser for browser work, including your own working HTML and DOM inspect actions. Direct browser launches and process termination are disabled. The browser tool owns and cleans up its isolated processes.',
         details: { denied: true, code: 'process_boundary' } };
     }
-    return tool.execute(params, signal);
+    return tool.execute(params, signal, owner);
   } });
 }
 
@@ -48,9 +47,9 @@ export function createCodingComparisonTools(input: { sourceRoot: string; workRoo
     return { content: `Image: ${path}`, contentBlocks: [{ type: 'text', text: `Image: ${path}` }, { type: 'image', data: bytes.toString('base64'), mimeType: 'image/png' }] };
   };
   const tools = workspaceTools(input.workRoot, {
-    role: 'comparison', allowBinary: true, allowShell: true,
+    role: 'comparison', allowBinary: true, allowShell: true, managedExecution: true, processLogRoot: input.workRoot,
     mounts: { source: input.sourceRoot }, allowWrite: () => true, completionPaths: new Set(),
-    homeRoot: join(input.workRoot, '.home'), shellTimeoutMs: DEFAULT_AGENT_DEADLINE_MS,
+    homeRoot: join(input.workRoot, '.home'),
     shellEnv: { REPRISE_SOURCE_MOUNT: input.sourceRoot },
   }).map(tool => ({ ...tool, ...(['read', 'ls', 'grep', 'find'].includes(tool.name) ? { executionMode: 'parallel' as const } : {}) }));
   return withCodingShellBoundary([...tools, {

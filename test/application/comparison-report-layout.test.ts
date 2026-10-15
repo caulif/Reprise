@@ -19,7 +19,7 @@ function facts(): ComparisonReportFacts {
 }
 
 function filledSlots() {
-  return { headline: "本次倾向候选", comparison: "<p>候选结果更完整，但等待更久。</p>" };
+  return { headline: "本次倾向当前", comparison: "<p>当前结果更完整，但等待更久。</p>" };
 }
 
 test("both report formats retain frozen session dates through rebuild and reject Host date edits", () => {
@@ -195,5 +195,24 @@ test("visible metrics distinguish missing measurements from zero in both locales
     assert.match(totals, />0\.00<span class="unit">\$/);
     assert.equal(hostMetricsMismatch(html, metrics, locale), undefined);
     assert.equal(hostMetricsMismatch(html.replace('>0.00<span', '>1.00<span'), metrics, locale), "Host metrics numbers were modified.");
+  }
+});
+
+test("report roles retain the actual current model independently of the analysis model", () => {
+  for (const locale of ["zh", "en"] as const) {
+    const reportFacts = facts();
+    reportFacts.models = { baseline: "history-actual", candidate: "requested-alias", candidateRequested: "requested-alias", candidateResolved: "current-actual", comparison: "analysis-only" };
+    const html = renderComparisonReportShell({ formatVersion: 3, task: "Compare", facts: reportFacts, metrics: {}, locale });
+    const header = extractOuter(html, "data-host-zone", "header")!;
+    assert.match(header, /history-actual/);
+    assert.match(header, /current-actual/);
+    assert.doesNotMatch(header, /requested-alias|analysis-only/);
+    assert.match(header, locale === "zh" ? /当前会话/ : /Current session/);
+    assert.match(extractOuter(html, "data-host-zone", "cost-note")!, /analysis-only/);
+    reportFacts.models.candidateResolved = "unknown";
+    const missing = renderComparisonReportShell({ formatVersion: 3, task: "Compare", facts: reportFacts, metrics: {}, locale });
+    const unknownHeader = extractOuter(missing, "data-host-zone", "header")!;
+    assert.doesNotMatch(unknownHeader, /requested-alias|analysis-only/);
+    assert.match(unknownHeader, locale === "zh" ? /未记录/ : /unrecorded/);
   }
 });
