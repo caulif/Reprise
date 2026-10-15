@@ -203,7 +203,7 @@ export async function verifyAndRenderComparisonReport(input: VerificationInput):
   }
   const finalQuoteError = await validateComparisonEvidenceQuotes(html, input.quoteSources);
   if (finalQuoteError) return { failureClass: "evidence", code: "evidence_unresolved", message: finalQuoteError };
-  const budgetError = comparisonReportFormat(html) === 3 ? comparisonCompactTextBudgetError(html) : undefined;
+  const budgetError = comparisonReportFormat(html) >= 3 ? comparisonCompactTextBudgetError(html) : undefined;
   if (budgetError) return { failureClass: 'publication', code: 'report_incomplete', message: budgetError };
   const model = comparisonReportModelFromHtml(html, input.facts, input.result, input.media, input.evidence, locale);
   return { html, model };
@@ -219,7 +219,7 @@ function rebuildHostReport(
   if ("error" in extracted) return { failureClass: "publication", code: "report_incomplete", message: extracted.error };
   return {
     html: renderComparisonReportShell({
-      ...(extracted.formatVersion === 3 ? { formatVersion: 3 as const } : {}),
+      ...(extracted.formatVersion ? { formatVersion: extracted.formatVersion } : {}),
       task: input.hostTask,
       facts: input.facts,
       metrics,
@@ -396,8 +396,8 @@ export function comparisonReportModelFromHtml(
     mediaRefs,
     ...(headline ? { headline } : {}),
   };
-  return comparisonReportFormat(html) === 3
-    ? { ...base, formatVersion: 3, headline: headline ?? '', boundary: comparisonPlainText(extractInner(html, 'data-agent-slot', 'boundary')), differences: comparisonDifferenceTexts(html) }
+  return comparisonReportFormat(html) >= 3
+    ? { ...base, ...(comparisonReportFormat(html) === 4 ? { task: comparisonPlainText(extractInner(html, 'data-agent-slot', 'category')) } : {}), formatVersion: comparisonReportFormat(html) as 3 | 4, headline: headline ?? '', boundary: comparisonPlainText(extractInner(html, 'data-agent-slot', 'boundary')), differences: comparisonDifferenceTexts(html) }
     : { ...base, formatVersion: 2 };
 }
 
@@ -651,8 +651,8 @@ function shareCardPresentationError(html: string, locale: AgentLocale): string |
   if (/本卡由|Written by /i.test(page)) return "Share card must not print who wrote the card.";
   const visible = share.replace(/<!--[\s\S]*?-->/g, " ");
   if (/历史侧|候选侧/.test(visible)) return "Share card must not use 历史侧 or 候选侧.";
-  const labels = comparisonReportFormat(html) === 3
-    ? [reportString(locale, 'recommendation'), reportString(locale, 'sessionHistorical'), reportString(locale, 'sessionCurrent')]
+  const labels = comparisonReportFormat(html) >= 3
+    ? [reportString(locale, comparisonReportFormat(html) === 4 ? 'shareConclusion' : 'recommendation'), reportString(locale, 'sessionHistorical'), reportString(locale, 'sessionCurrent')]
     : locale === "en"
     ? ["Task", "Main conclusion", "Historical session", "Current session"] as const
     : ["任务描述", "主要结论", "历史会话", "当前会话"] as const;

@@ -12,7 +12,7 @@ const ReportFileSchema = Type.Object({
   ...Type.Pick(ComparisonDraftSubmissionSchema, ['status', 'category', 'headline']).properties,
   path: Type.String({ minLength: 1, maxLength: 512 }),
   boundary: Type.String({ description: 'Plain text decision-changing condition or uncertainty; empty only when none identified.' }),
-  differences: Type.Array(Type.String({ minLength: 1, pattern: '\\S' }), { maxItems: 3, description: 'Zero to three plain text differences with user impact; at most 60 non-whitespace Unicode code points each.' }),
+  differences: Type.Optional(Type.Array(Type.String(), { maxItems: 0, description: 'Leave empty or omit. Write differences once in the HTML fragment.' })),
 }, { additionalProperties: false });
 
 export function createAutonomousReportTool(draft: ComparisonDraft, attemptRoot: string): AgentToolDefinition {
@@ -41,12 +41,12 @@ export function createAutonomousReportTool(draft: ComparisonDraft, attemptRoot: 
   };
   return {
     name: 'submit_report',
-    description: 'Publish a working HTML fragment from scratch/ into the report shell. Supply status, category, headline (recommendation, at most 80 non-whitespace code points), boundary, differences and path. All author text including captions, tables, code and hidden content has a hard 900 non-whitespace code point budget; no details area. Use semantic HTML, registered data-evidence-ref / data-media-ref and existing component classes; no scripts/styles/external resources. This validates integrity, not meaning. After changes resubmit and preview the current version.',
+    description: 'Publish a working HTML fragment from scratch/ into the report shell. Supply status, category, headline (recommendation, at most 60 non-whitespace code points), boundary and path. Category is an abstract task title of at most 32 non-whitespace code points, never the original task or a filename. Write each difference once in the fragment; do not submit a separate summary list. All author text including captions, tables, code and hidden content has a hard 500 non-whitespace code point budget; no details area. Use semantic HTML, registered data-evidence-ref / data-media-ref and existing component classes; no scripts/styles/external resources. Use generic roles and artifacts, not names, organizations, paths, filenames, contacts or source quotations containing them. Only include images and excerpts reviewed for privacy; omit unsafe evidence. This validates integrity and obvious text identifiers, not semantic accuracy or complete anonymization. After changes resubmit and preview the current version.',
     parameters: ReportFileSchema,
     execute: async (params, signal) => {
       if (!Value.Check(ReportFileSchema, params)) throw new Error('Invalid report file parameters.');
       signal.throwIfAborted();
-      const submission = { formatVersion: 3 as const, boundary: params.boundary, differences: params.differences, status: params.status, category: params.category, headline: params.headline,
+      const submission = { formatVersion: 4 as const, boundary: params.boundary, differences: [], status: params.status, category: params.category, headline: params.headline,
         comparisonHtml: await readFragment(params.path) };
       if (!Value.Check(ComparisonDraftSubmissionSchema, submission)) throw new Error('Invalid report content.');
       signal.throwIfAborted();

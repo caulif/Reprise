@@ -1,3 +1,4 @@
+import { renderShareableReport, shareableMetricTexts, sideFingerprint } from "./comparison-shareable-report.js";
 import type { AgentLocale } from "../agents/language.js";
 import { parse, serializeOuter } from "parse5";
 import type { ComparisonMetricSide, ComparisonReportFacts } from "../agents/comparison-contract.js";
@@ -99,7 +100,7 @@ export function agentUnsafeContentError(html: string): string | undefined {
 }
 
 export function agentContentFromDraft(html: string):
-  | { formatVersion?: 3; slots: ReportSlots }
+  | { formatVersion?: 3 | 4; slots: ReportSlots }
   | { error: string } {
   const errors: string[] = [];
   const root = parse(html, { onParseError: (error) => errors.push(error.code) }) as unknown as HtmlNode;
@@ -116,8 +117,8 @@ export function agentContentFromDraft(html: string):
   visit(root);
   const expected = [
     ...comparisonAgentZones(html).map((name) => `data-agent-zone:${name}`),
-    "data-agent-slot:headline", "data-agent-slot:category", "data-agent-slot:task",
-    ...(comparisonReportFormat(html) === 3 ? ["data-agent-slot:boundary"] : []),
+    "data-agent-slot:headline", "data-agent-slot:category", ...(comparisonReportFormat(html) === 4 ? [] : ["data-agent-slot:task"]),
+    ...(comparisonReportFormat(html) >= 3 ? ["data-agent-slot:boundary"] : []),
   ];
   for (const key of markers.keys()) {
     if (!expected.includes(key)) return { error: `Comparison report contains unsupported ${key}.` };
@@ -142,9 +143,9 @@ export function agentContentFromDraft(html: string):
   }
   const textOf = (node: HtmlNode): string => node.value ?? (node.childNodes ?? []).map(textOf).join("");
   const innerOf = (node: HtmlNode): string => (node.childNodes ?? []).map((child) => serializeOuter(child as never)).join("");
-  if (comparisonReportFormat(html) === 3) {
-    const differenceNodes = descendants(markers.get("data-agent-zone:differences")![0]!).filter(node => node.attrs?.some(attr => attr.name === "data-difference"));
-    return { formatVersion: 3, slots: {
+  if (comparisonReportFormat(html) >= 3) {
+    const differenceNodes = (markers.get("data-agent-zone:differences")?.[0] ? descendants(markers.get("data-agent-zone:differences")![0]!) : []).filter(node => node.attrs?.some(attr => attr.name === "data-difference"));
+    return { formatVersion: comparisonReportFormat(html) as 3 | 4, slots: {
       comparison: innerOf(markers.get("data-agent-zone:comparison")![0]!),
       headline: escapeHtml(textOf(markers.get("data-agent-slot:headline")![0]!)),
       boundary: textOf(markers.get("data-agent-slot:boundary")![0]!),
@@ -161,7 +162,7 @@ export function agentContentFromDraft(html: string):
 }
 
 export function renderComparisonReportShell(input: {
-  formatVersion?: 3;
+  formatVersion?: 3 | 4;
   title?: string;
   task: string;
   facts: ComparisonReportFacts;
@@ -194,6 +195,7 @@ export function renderComparisonReportShell(input: {
       input.diagnostic ? diagnosticDelivery(input.diagnostic, locale) : "",
       input.diagnostic ? diagnosticLimitations(input.diagnostic) : "",
     ].filter(Boolean).join("");
+  if (input.formatVersion === 4) return renderShareableReport({ category, headline, boundary: slots.boundary ?? "", comparisonBody, facts: input.facts, metrics: input.metrics, labels, locale, cost: [formatCost(input.metrics.baseline, locale), formatCost(input.metrics.candidate, locale)] });
   if (input.formatVersion === 3) return renderCompactReport({ ...input, category, task, title, headline, comparisonBody, locale, labels });
   return `<!DOCTYPE html>
 <html lang="${escapeHtml(reportString(locale, "htmlLang"))}">
@@ -243,7 +245,7 @@ export function renderComparisonReportFromModel(input: {
 }): string {
   const mapped = mapLegacyModelSlots(input.model);
   return renderComparisonReportShell({
-    ...(input.model.formatVersion === 3 ? { formatVersion: 3 as const } : {}),
+    ...(input.model.formatVersion === 3 || input.model.formatVersion === 4 ? { formatVersion: input.model.formatVersion } : {}),
     ...(input.diagnostic ? { title: "Comparison unavailable" } : {}),
     task: input.model.task,
     facts: input.facts,
@@ -253,7 +255,7 @@ export function renderComparisonReportFromModel(input: {
     slots: {
       ...mapped,
       ...(input.model.headline ? { headline: escapeHtml(input.model.headline) } : {}),
-      ...(input.model.formatVersion === 3 ? { boundary: input.model.boundary ?? "", differences: input.model.differences ?? [] } : {}),
+      ...((input.model.formatVersion === 3 || input.model.formatVersion === 4) ? { boundary: input.model.boundary ?? "", differences: input.model.differences ?? [] } : {}),
     },
     ...(input.diagnostic ? { diagnostic: input.diagnostic } : {}),
     ...(input.locale ? { locale: input.locale } : {}),
@@ -267,7 +269,7 @@ function mapLegacyModelSlots(model: ComparisonReportModel): ReportSlots {
     ?? [slots["visual-evidence"], slots["key-differences"]].filter(Boolean).join("");
   const details = slots.details
     ?? [slots.delivery, slots.limitations].filter(Boolean).join("");
-  const category = model.formatVersion === 3 && slots.header ? categoryFromHeader(slots.header) : undefined;
+  const category = (model.formatVersion === 3 || model.formatVersion === 4) && slots.header ? categoryFromHeader(slots.header) : undefined;
   return {
     ...(slots.header ? { header: slots.header } : {}),
     ...(category !== undefined ? { category } : {}),
@@ -303,7 +305,7 @@ export function hostMetricsMismatch(html: string, metrics: {
     ?? extractOuter(html, "data-host", "metrics");
   if (!block) return "Host metrics block is missing.";
   const fingerprint = attributeValue(block, "data-fingerprint");
-  const compactTable = comparisonReportFormat(html) === 3;
+  const compactTable = comparisonReportFormat(html) >= 3;
   const legacy = !compactTable && attributeValue(block, "data-metrics-layout") !== "compact";
   const expected = hostMetricsFingerprint(metrics);
   if (!fingerprint) return "Host metrics numbers were modified.";
@@ -318,7 +320,7 @@ export function hostMetricsMismatch(html: string, metrics: {
     return "Host metrics numbers were modified.";
   }
   const normalizedBlock = block.replace(/\s+/g, " ");
-  const visibleTexts = compactTable ? compactMetricTexts(metrics, locale) : visibleMetricTexts(metrics, locale);
+  const visibleTexts = comparisonReportFormat(html) === 4 ? shareableMetricTexts(metrics, [formatCost(metrics.baseline, locale), formatCost(metrics.candidate, locale)], locale) : compactTable ? compactMetricTexts(metrics, locale) : visibleMetricTexts(metrics, locale);
   if (legacy) {
     visibleTexts[0] = legacyTime(metrics.baseline?.elapsedMs, locale);
     visibleTexts[1] = legacyTime(metrics.candidate?.elapsedMs, locale);
@@ -609,19 +611,6 @@ export function formatCost(side: MetricSideProjection | undefined, locale: Agent
   }
   if (side?.tokens) return { text: reportString(locale, "pricingUnavailable"), missing: true };
   return { text: reportString(locale, "missing"), missing: true };
-}
-
-function sideFingerprint(side: MetricSideProjection | undefined): (number | string | null)[] {
-  return [
-    side?.elapsedMs ?? null,
-    side?.tokens?.total ?? null,
-    side?.costUsd ?? null,
-    side?.pricingStatus ?? null,
-    side?.tokens?.input ?? null,
-    side?.tokens?.output ?? null,
-    side?.tokens?.cached ?? null,
-    side?.tokens?.reasoning ?? null,
-  ];
 }
 
 function oneLine(value: string): string {

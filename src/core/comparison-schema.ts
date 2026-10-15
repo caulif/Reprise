@@ -111,7 +111,7 @@ export type ComparisonMediaRecord = Static<typeof ComparisonMediaRecordSchema>;
 export const ComparisonReportModelSchema = Type.Intersect([Type.Object({
   schemaVersion: Type.Literal(1),
   /** 2 = autonomous comparison/details zones. Absent or 1 = legacy four-zone audit files (readable, not rewritten). */
-  formatVersion: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2), Type.Literal(3)])),
+  formatVersion: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2), Type.Literal(3), Type.Literal(4)])),
   boundary: Type.Optional(Type.String()),
   differences: Type.Optional(Type.Array(Type.String(), { maxItems: 3 })),
   headline: Type.Optional(Type.String({ minLength: 1, maxLength: 280 })),
@@ -149,6 +149,7 @@ export const ComparisonReportModelSchema = Type.Intersect([Type.Object({
   limitationCodes: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
 }), Type.Union([
   Type.Object({ formatVersion: Type.Literal(3), headline: Type.String({ minLength: 1 }), boundary: Type.String(), differences: Type.Array(Type.String({ minLength: 1, pattern: "\\S" }), { maxItems: 3 }) }),
+  Type.Object({ formatVersion: Type.Literal(4), headline: Type.String({ minLength: 1 }), boundary: Type.String(), differences: Type.Array(Type.String(), { maxItems: 0 }) }),
   Type.Object({ formatVersion: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2)])) }),
 ])]);
 export type ComparisonReportModel = Static<typeof ComparisonReportModelSchema>;
@@ -160,7 +161,7 @@ export const ComparisonBriefingContextSchema = Type.Object({
 });
 export const ComparisonShortRefSchema = Type.String({ pattern: "^ev-[0-9]{2,6}$" });
 export const ComparisonDraftSubmissionSchema = Type.Object({
-  formatVersion: Type.Optional(Type.Literal(3)),
+  formatVersion: Type.Optional(Type.Union([Type.Literal(3), Type.Literal(4)])),
   boundary: Type.Optional(Type.String()),
   differences: Type.Optional(Type.Array(Type.String({ minLength: 1, pattern: "\\S" }), { maxItems: 3 })),
   status: Type.Union([Type.Literal("completed"), Type.Literal("insufficient_evidence")]),
