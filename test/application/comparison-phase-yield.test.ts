@@ -228,6 +228,7 @@ for (const mode of ['ready', 'late', 'verbal', 'unavailable', 'missing', 'hard',
 
 for (const mode of ['yielded', 'unlimited', 'legacy_timeout', 'cancel', 'hard', 'provider_error'] as const) test(`source local deadline preserves real publication and failure boundaries: ${mode}`, async t => {
   if (mode === 'hard') t.mock.timers.enable({ apis: ['Date'], now: 1_000 });
+  if (mode === 'legacy_timeout') t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_000 });
   const events: AgentAuditEvent[] = [], sessions: string[] = [];
   const deadlines: { source: boolean; value: { at: number; reason: string } | undefined }[] = [];
   const controller = new AbortController();
@@ -241,7 +242,11 @@ for (const mode of ['yielded', 'unlimited', 'legacy_timeout', 'cancel', 'hard', 
       if (source) {
         if (mode === 'unlimited') assert.equal(yieldDeadline, undefined);
         else { assert.equal(yieldDeadline?.reason, 'bounded_source_timeout'); assert.ok(yieldDeadline.at >= Date.now()); }
-        if (mode === 'legacy_timeout') return await new Promise<string>(() => {});
+        if (mode === 'legacy_timeout') {
+          // Earlier invocations must finish before this test expires the source invocation's actual timer.
+          t.mock.timers.tick(5);
+          return await new Promise<string>(() => {});
+        }
         if (mode === 'provider_error') throw new Error('Actual provider error');
         await input.tools.find(tool => tool.name === 'read')!.execute({}, signal);
         if (mode === 'cancel') controller.abort();
