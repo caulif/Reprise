@@ -14,6 +14,7 @@ import { createProductLookup, loadAndActivateProductPacks, packLoadDiagnostics, 
 import { parseSessionsDirs } from "./sessions-dirs.js";
 import { exitWhenFlushed } from "./exit-when-flushed.js";
 import { parseOutputMode, writeJsonResult } from "./protocol.js";
+import { runCaptureHistory } from './capture-history.js';
 
 export { parseSessionsDirs };
 
@@ -77,6 +78,7 @@ export function helpText(): string {
     "  reprise compare (--experiment <id> | --source-root <dir> --task-case <file.json>) [--json|--jsonl]",
     "  reprise recover-comparison --experiment <id> --attempt <id> [--data-dir <dir>] [--publish --status <completed|insufficient_evidence>]",
     "  reprise cancel <operationId|experimentId|runId> [--data-dir <dir>] [--json]",
+    "  reprise capture-history --task-case <case.json> --basis <reason> (--repository <dir> --commit <fullSHA> | --file <path> --logical-path <name> --expected-hash <sha256> [--substitute --user-instruction <text>]) [--data-dir <dir>] [--json]",
     "  reprise [--help] [--version]",
     "",
     "No subcommand opens the TUI. `--compare` on that entry skips the TUI comparison gate; it is not the `compare` subcommand.",
@@ -90,6 +92,7 @@ export async function runCli(argv: readonly string[] = process.argv.slice(2), io
   try {
     assertSupportedNodeVersion();
     const command = argv[0];
+    if (command === 'capture-history') return await runCaptureHistory(argv.slice(1), io);
     if (command === "cancel") return await runCancel(argv.slice(1), io);
     if (command === "recover-comparison") return await runComparisonRecovery(argv.slice(1), io);
     if (command && QUERY_COMMANDS.has(command)) return await runQueryCommand(command, argv.slice(1), io);

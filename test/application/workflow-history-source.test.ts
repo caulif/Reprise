@@ -9,6 +9,10 @@ import { createProductLookup } from "../../src/products/index.js";
 import { codexProductPack } from "../../src/products/packs/codex/pack.js";
 import { claudeCodeProductPack } from "../../src/products/packs/claude-code/pack.js";
 import { input, VerifiedRuntime } from "../codex-experiment-support.js";
+import { captureHistoricalDelivery } from '../../src/application/historical-delivery.js';
+import { sha256 } from '../../src/core/identity.js';
+import { readLocalHistory } from '../../src/application/experiment-history-list.js';
+import { ExperimentStore } from '../../src/infrastructure/store/experiment-store.js';
 
 function historicalPatchEvents() {
   const patch = "*** Begin Patch\n*** Add File: pelican_bike.html\n+<!doctype html>\n+<html>bike</html>\n*** End Patch";
@@ -62,7 +66,7 @@ test("live and persisted comparison extract Codex history when the candidate is 
   const first = JSON.parse(await readFile(join(attemptsRoot, firstAttempt, "derived-history", "manifest.json"), "utf8")) as {
     extractorVersion: string; artifacts: Array<{ logicalPath: string }>;
   };
-  assert.equal(first.extractorVersion, "codex-historical-artifacts/v1");
+  assert.equal(first.extractorVersion, "codex-historical-artifacts/v2");
   assert.equal(first.artifacts[0]?.logicalPath, "pelican_bike.html");
 
   await workflow.comparePersisted("cross-product-history", undefined, undefined, "run-cross");
@@ -73,4 +77,54 @@ test("live and persisted comparison extract Codex history when the candidate is 
   const second = JSON.parse(await readFile(join(attemptsRoot, secondAttempt, "derived-history", "manifest.json"), "utf8")) as typeof first;
   assert.equal(second.extractorVersion, first.extractorVersion);
   assert.deepEqual(second.artifacts, first.artifacts);
+});
+
+test('comparePersisted freezes the explicitly selected delivery and its provenance event without rerunning the candidate', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-selected-workflow-'));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  const runtime = new VerifiedRuntime();
+  const base = input(root, runtime);
+  await mkdir(base.sourceRoot, { recursive: true });
+  await writeFile(join(base.sourceRoot, 'README.md'), 'task input');
+  const workflow = createExperimentWorkflow({ dataDir: base.dataDir, runtime,
+    lookup: createProductLookup([codexProductPack]), now: () => base.now, defaults: { policy: base.policy },
+    agents: async () => ({ controller: base.controller, comparison: base.comparison, recovery: {},
+      config: { ...base.agentConfig, recoveryBudget: base.agentConfig.budget } }) as unknown as HarnessAgents });
+  const handle = await workflow.start({ taskCase: base.taskCase, candidate: base.candidate, sourceRoot: base.sourceRoot,
+    compare: false, experimentId: 'selected-history', runId: 'selected-run', onEvent: () => {} });
+  const result = await handle.result;
+  const originalCase = await readFile(join(base.dataDir, 'cases', base.taskCase.caseId, 'case.json'));
+  const selectedFile = join(root, 'delivered.txt');
+  await writeFile(selectedFile, 'chosen delivery');
+  const selection = await captureHistoricalDelivery({ dataDir: base.dataDir, taskCase: base.taskCase, now: base.now, selectionBasis: 'Explicit selection',
+    source: { kind: 'captured_file', sourcePath: selectedFile, logicalPath: 'delivered.txt', expectedHash: sha256('chosen delivery') } });
+  await rm(selectedFile);
+  await workflow.comparePersisted('selected-history', undefined, undefined, 'selected-run');
+  assert.equal(runtime.created, 1);
+  const attemptsRoot = join(result.experimentRoot, 'comparison-attempts');
+  const attemptId = (await readdir(attemptsRoot))[0]!;
+  const manifest = JSON.parse(await readFile(join(attemptsRoot, attemptId, 'finals', 'manifest.json'), 'utf8')) as { selectionId: string; capture: { kind: string } };
+  assert.equal(manifest.selectionId, selection.selectionId);
+  assert.equal(manifest.capture.kind, 'captured_file');
+  assert.equal(await readFile(join(attemptsRoot, attemptId, 'finals', 'delivered.txt'), 'utf8'), 'chosen delivery');
+  assert.deepEqual(await readFile(join(base.dataDir, 'cases', base.taskCase.caseId, 'case.json')), originalCase);
+  assert.equal(await readFile(join(base.sourceRoot, 'README.md'), 'utf8'), 'task input');
+  const history = await readLocalHistory(base.dataDir);
+  assert.ok(history.experiments.some(experiment => experiment.experimentId === 'selected-history'));
+  const store = await ExperimentStore.open(result.experimentRoot, 'selected-history');
+  const prepared = store.events('selected-run').find(event => event.type === 'comparison.historical_delivery_prepared');
+  assert.ok(prepared);
+  const payload = prepared.payload as { selectionId: string; artifactId: string };
+  assert.equal(payload.selectionId, selection.selectionId);
+  const artifact = await store.readArtifact({ artifactId: payload.artifactId, experimentId: 'selected-history', runId: 'selected-run' });
+  assert.equal((JSON.parse(Buffer.from(artifact).toString()) as { capture: { kind: string } }).capture.kind, 'captured_file');
+  await store.close();
+  const selectedRoot = join(base.dataDir, 'historical-deliveries', base.taskCase.caseId, selection.selectionId);
+  await writeFile(join(selectedRoot, 'files', selection.selectionId, 'delivered.txt'), 'tampered');
+  const originalReport = await readFile(join(result.experimentRoot, 'report.html'));
+  const failed = await workflow.comparePersisted('selected-history', undefined, undefined, 'selected-run');
+  assert.equal(failed.comparison.result.status, 'failed');
+  assert.equal(runtime.created, 1);
+  assert.deepEqual(await readFile(join(result.experimentRoot, 'report.html')), originalReport);
+  assert.match(await readFile(failed.reportPath, 'utf8'), /Comparison unavailable/);
 });

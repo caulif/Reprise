@@ -2,10 +2,11 @@ import { Value } from "@sinclair/typebox/value";
 import { sha256 } from "../../core/identity.js";
 import {
   HistoricalArtifactManifestSchema,
+  HistoricalArtifactExtractManifestSchema,
   type HistoricalArtifact,
   type HistoricalArtifactManifest,
-} from "../../core/schemas/historical-artifacts.js";
-import type { HistoricalArtifactExtractResult } from "../contract.js";
+} from "../../core/schema.js";
+import type { HistoricalArtifactExtractResult, HistoricalArtifactBytes } from "../contract.js";
 import { validateLogicalPath } from "./historical-artifact-apply.js";
 import type { FrozenFile } from "./freeze.js";
 
@@ -26,7 +27,7 @@ export function frozenRelativePathForArtifact(artifact: HistoricalArtifact): str
 }
 
 function bytesForArtifact(
-  extraction: HistoricalArtifactExtractResult,
+  extraction: HistoricalArtifactBytes,
   artifactId: string,
 ): Uint8Array | undefined {
   const match = extraction.files.find((file) => file.artifactId === artifactId);
@@ -40,6 +41,11 @@ function bytesForArtifact(
 export function validateHistoricalExtraction(
   extraction: HistoricalArtifactExtractResult,
 ): HistoricalArtifactManifest {
+  if (!Value.Check(HistoricalArtifactExtractManifestSchema, extraction.manifest)) throw new Error('Pack extraction must use the reconstructed-history manifest.');
+  return validateHistoricalArtifactBytes(extraction);
+}
+
+export function validateHistoricalArtifactBytes(extraction: HistoricalArtifactBytes): HistoricalArtifactManifest {
   if (!Value.Check(HistoricalArtifactManifestSchema, extraction.manifest)) {
     throw new Error("Historical artifact manifest failed schema validation.");
   }
