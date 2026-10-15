@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { ComparisonReportFacts } from "../../src/agents/comparison-agent.js";
+import type { ComparisonReportFacts } from "../../src/agents/comparison-contract.js";
 import {
   extractOuter, extractHostZoneSnapshot, missingComparisonSlots, hostMetricsMismatch,
   hostZonesMismatch, renderComparisonReportShell,

@@ -15,7 +15,7 @@ import {
   withEvidenceShortRefs,
   withMediaShortRefs,
 } from "../../src/application/comparison-short-refs.js";
-import { assertComparisonResult } from "../../src/agents/comparison-agent.js";
+import { assertComparisonResult } from "../../src/agents/comparison-contract.js";
 import {
   ComparisonEvidenceOriginSchema,
   ComparisonEvidenceRegisteredPayloadSchema,

@@ -9,7 +9,7 @@ import {
   verifyAndRenderComparisonReport,
 } from "../../src/application/comparison-publication.js";
 import { renderComparisonReportShell } from "../../src/application/comparison-report-shell.js";
-import type { ComparisonReportFacts } from "../../src/agents/comparison-agent.js";
+import type { ComparisonReportFacts } from "../../src/agents/comparison-contract.js";
 import { imageContentHash } from "../../src/infrastructure/agent/model-input.js";
 import { sha256 } from "../../src/core/identity.js";
 import { createComparisonImageDeliveryRecorder } from "../../src/application/comparison-image-delivery-recorder.js";

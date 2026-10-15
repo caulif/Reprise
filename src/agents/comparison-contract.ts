@@ -109,11 +109,11 @@ export type ComparisonCompareOptions = {
   estimateUsageCost?: (payload: Record<string, unknown>) => number | undefined;
 };
 
-export function comparisonEvidenceAllowlist(context: ComparisonFactsContext): Set<string> {
+function comparisonEvidenceAllowlist(context: ComparisonFactsContext): Set<string> {
   return new Set(context.shortEvidenceRefs ?? []);
 }
 
-export function validateComparisonEvidence(
+function validateComparisonEvidence(
   value: ComparisonAgentEnvelope,
   available: ReadonlySet<string>,
 ): string | undefined {
@@ -129,11 +129,10 @@ export function assertComparisonResult(
   context: ComparisonFactsContext,
   getEvidenceCatalog?: ComparisonCompareOptions["getEvidenceCatalog"],
 ): asserts value is ComparisonResult {
-  const completed = normalizeCompletedEnvelope(value);
-  if (!Value.Check(ComparisonResultSchema, completed)) {
+  if (!Value.Check(ComparisonResultSchema, value)) {
     throw new Error("Invalid ComparisonEnvelope: schema validation failed.");
   }
-  const record = completed as ComparisonResult;
+  const record = value;
   if (record.reportPath !== "report.html") {
     throw new Error("Invalid ComparisonEnvelope: schema validation failed.");
   }
@@ -146,15 +145,4 @@ export function assertComparisonResult(
   }
 }
 
-export function shortRefsOf(items: readonly { shortRef?: string }[]): string[] { return items.flatMap((item) => (item.shortRef ? [item.shortRef] : [])); }
-
-function normalizeCompletedEnvelope(value: unknown): unknown {
-  if (!value || typeof value !== "object") return value;
-  const record = value as Record<string, unknown>;
-  return {
-    status: record.status,
-    evidenceRefs: record.evidenceRefs,
-    reportPath: record.reportPath === undefined ? "report.html" : record.reportPath,
-    ...(typeof record.headline === "string" && record.headline.length > 0 ? { headline: record.headline } : {}),
-  };
-}
+function shortRefsOf(items: readonly { shortRef?: string }[]): string[] { return items.flatMap((item) => (item.shortRef ? [item.shortRef] : [])); }

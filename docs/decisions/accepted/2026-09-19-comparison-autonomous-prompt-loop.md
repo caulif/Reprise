@@ -12,7 +12,7 @@
 
 ## 决定
 
-- 唯一可执行文本源仍是 [`comparison-agent.ts`](../../../src/agents/comparison-agent.ts)：`COMPARISON_SYSTEM_PROMPT`、`COMPARISON_TURN_PROMPTS`、`COMPARISON_COMPACTION`、Host-zone repair、JSON-only repair。
+- 唯一可执行文本源仍是 [`comparison-agent.ts`](https://github.com/caulif/Reprise/blob/8d528d5/src/agents/comparison-agent.ts)：`COMPARISON_SYSTEM_PROMPT`、`COMPARISON_TURN_PROMPTS`、`COMPARISON_COMPACTION`、Host-zone repair、JSON-only repair。
 - System Prompt 以任务成功标准与用户后果为中心；证据形式由 Agent 选择；图片非每任务必选；单侧可展示并就近说明限制；禁止跨任务排名与伪造观察。
 - Workspace 指向 `facts/` catalog、`finals/`、`history/`、`candidate/`（sealed read-only snapshot），并点名 `render_artifact` / `register_evidence` / `preview_report`。
 - Host 投影的 `reportFacts` 为硬事实；简报摘要为 claims until checked。差异先归入 result / process / replay limitation / configuration 四类。

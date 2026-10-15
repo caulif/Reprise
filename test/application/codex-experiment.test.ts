@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ComparisonAgentPort } from "../../src/agents/comparison-agent.js";
+import type { ComparisonAgentPort } from "../../src/agents/comparison-contract.js";
 import { ControllerAgent, type ControllerPort } from "../../src/agents/controller-agent.js";
 import { reconstructControllerRequest } from "../../src/application/controller-request.js";
 import { preflightExperiment } from "../../src/application/experiment-preflight.js";

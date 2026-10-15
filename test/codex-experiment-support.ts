@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ComparisonAgentPort } from "../src/agents/comparison-agent.js";
+import type { ComparisonAgentPort } from "../src/agents/comparison-contract.js";
 import { type ControllerPort } from "../src/agents/controller-agent.js";
 import { startExperiment, type ExperimentAgentConfig } from "../src/application/experiment.js";
 import type {

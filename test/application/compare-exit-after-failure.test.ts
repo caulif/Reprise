@@ -7,7 +7,8 @@ import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ComparisonAgent, type ComparisonContext } from "../../src/agents/comparison-agent.js";
+import { AutonomousComparisonAgent } from '../../src/agents/comparison-autonomous.js';
+import type { ComparisonContext } from '../../src/agents/comparison-contract.js';
 import { activityControlReady, finishExperimentActivity, registerActivity } from "../../src/application/experiment-activity.js";
 import { AgentHost } from "../../src/infrastructure/agent/host.js";
 import { listControlRecords } from "../../src/infrastructure/control-store.js";
@@ -102,9 +103,8 @@ test("preview_failed closes the comparison session handle before compare returns
     if (!server.listening) resolve();
     else server.close(() => resolve());
   }));
-  const comparison = new ComparisonAgent({
+  const comparison = new AutonomousComparisonAgent({
     timeoutMs: 0,
-    maxRepairAttempts: 0,
     host: new AgentHost({
       createSession: () => ({
         append: async () => "",

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ComparisonAgent, type ComparisonContext } from "../../src/agents/comparison-agent.js";
+import { AutonomousComparisonAgent } from '../../src/agents/comparison-autonomous.js';
+import type { ComparisonContext } from '../../src/agents/comparison-contract.js';
 import { AgentHost } from "../../src/infrastructure/agent/host.js";
 
 function context(attemptId = "attempt-timeout-1"): ComparisonContext {
@@ -27,7 +28,7 @@ function context(attemptId = "attempt-timeout-1"): ComparisonContext {
 
 test("Comparison timeout maps to agent_timeout and stops further model rounds", async () => {
   let prompts = 0;
-  const comparison = new ComparisonAgent({
+  const comparison = new AutonomousComparisonAgent({
     host: new AgentHost({
       createSession: () => ({
         append: async () => {
@@ -38,7 +39,6 @@ test("Comparison timeout maps to agent_timeout and stops further model rounds", 
       }),
     }),
     timeoutMs: 20,
-    maxRepairAttempts: 0,
   });
   const result = await comparison.compare(context());
   assert.equal(result.status, "failed");
@@ -53,7 +53,7 @@ test("Comparison user cancel beats timeout and does not retry", async () => {
   let prompts = 0;
   let resolveAppend!: (value: string) => void;
   const abort = new AbortController();
-  const comparison = new ComparisonAgent({
+  const comparison = new AutonomousComparisonAgent({
     host: new AgentHost({
       createSession: () => ({
         append: async (input) => {
@@ -74,7 +74,6 @@ test("Comparison user cancel beats timeout and does not retry", async () => {
       }),
     }),
     timeoutMs: 5_000,
-    maxRepairAttempts: 1,
   });
   const pending = comparison.compare(context("attempt-cancel-1"), [], undefined, abort.signal);
   await new Promise((done) => setImmediate(done));
@@ -88,7 +87,7 @@ test("Comparison user cancel beats timeout and does not retry", async () => {
 test("Comparison cancel after hang does not start envelope repair", async () => {
   let prompts = 0;
   const abort = new AbortController();
-  const comparison = new ComparisonAgent({
+  const comparison = new AutonomousComparisonAgent({
     host: new AgentHost({
       createSession: () => ({
         append: async () => {
@@ -103,9 +102,24 @@ test("Comparison cancel after hang does not start envelope repair", async () => 
       }),
     }),
     timeoutMs: 30_000,
-    maxRepairAttempts: 2,
   });
   const result = await comparison.compare(context("attempt-cancel-2"), [], undefined, abort.signal);
   assert.equal(result.status, "cancelled");
   assert.equal(prompts, 1);
+});
+
+test('autonomous hard attempt deadline remains binding with a disabled per-call timeout', async () => {
+  let prompts = 0;
+  const events: string[] = [];
+  const comparison = new AutonomousComparisonAgent({ timeoutMs: 0, resources: { maxElapsedMs: 20 },
+    host: new AgentHost({ createSession: () => ({ append: async () => {
+      prompts++;
+      return new Promise<string>(() => {});
+    }, cancel() {} }) }) });
+  const result = await comparison.compare(context('hard-attempt'), [], { append: async event => { events.push(event.type); } });
+  assert.equal(result.status, 'failed');
+  if (result.status === 'failed') assert.equal(result.failure.code, 'agent_timeout');
+  assert.equal(prompts, 1);
+  assert.ok(events.includes('comparison.resources_completed'));
+  assert.ok(events.includes('agent.session_completed'));
 });

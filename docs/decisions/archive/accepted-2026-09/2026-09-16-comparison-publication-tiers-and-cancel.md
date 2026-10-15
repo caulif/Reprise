@@ -32,7 +32,7 @@
 
 ## 影响
 
-[`verifyAndRenderComparisonReport`](../../../../src/application/comparison-publication.ts)、[`ComparisonAgentPort`](../../../../src/agents/comparison-agent.ts)、[对照模块](../../../architecture/evidence-and-comparison.md)。不改 Comparison resume，不改四轮模型语义，不做双实验并发产品测试。
+[`verifyAndRenderComparisonReport`](../../../../src/application/comparison-publication.ts)、[`ComparisonAgentPort`](https://github.com/caulif/Reprise/blob/8d528d5/src/agents/comparison-agent.ts)、[对照模块](../../../architecture/evidence-and-comparison.md)。不改 Comparison resume，不改四轮模型语义，不做双实验并发产品测试。
 
 ## 验证
 

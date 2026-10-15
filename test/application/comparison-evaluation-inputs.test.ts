@@ -11,8 +11,7 @@ import { Value } from '@sinclair/typebox/value';
 import { TaskCaseSchema } from '../../src/core/schema.js';
 import { sha256 } from '../../src/core/identity.js';
 import { parseCommittedEventLog } from '../../src/infrastructure/agent/model-input.js';
-import { ComparisonAgent } from '../../src/agents/comparison-agent.js';
-import { AgentHost } from '../../src/infrastructure/agent/host.js';
+import { publicationSteps, scriptedComparison } from '../support/autonomous-comparison.js';
 
 async function fixture(t: { after(fn: () => Promise<void>): void }) {
   const root = await mkdtemp(join(tmpdir(), 'reprise-evaluation-input-binding-'));
@@ -49,30 +48,29 @@ test('frozen input identity rejects task changes with old contentHash and candid
 
 test('legitimate persisted comparisons can append events and artifacts without invalidating frozen inputs', async t => {
   const { root, item, prepared } = await fixture(t);
-  let turns = 0;
   for (let attempt = 0; attempt < 2; attempt++) {
     await verifyComparisonEvaluationInputs(root, item, prepared.inputIdentityHash);
+    const scripted = scriptedComparison(publicationSteps().slice(0, 2), { onGeneration: (_context, index) => {
+      if (index === 2) throw new Error('Offline fixture failure after accepted autonomous submission');
+    } });
     const result = await comparePersistedExperiment({ ...prepared,
-      comparison: attempt === 0 ? { compare: async () => ({ status: 'cancelled' }), cancel: async () => {} }
-        : new ComparisonAgent({ host: new AgentHost({ createSession: ({ tools }) => ({ append: async ({ signal }) => {
-          turns++;
-          if (turns === 2) await tools.find(tool => tool.name === 'submit_comparison_draft')!.execute({
-            status: 'completed', decisionShape: 'single_difference', category: 'Results', headline: 'A difference', comparisonHtml: '<p>A supported contrast.</p>',
-            decisionSummary: 'One outcome better meets the requested task.', decisionBoundary: '',
-            decisionBasis: [], conclusionScope: 'supported_in_scope', findingDispositions: [],
-          }, signal);
-          if (turns === 3) throw new Error('Offline fixture review failure');
-          return '';
-        }, cancel() {} }) }), timeoutMs: 30_000, maxRepairAttempts: 0 }),
-      agentConfig: { providerId: 'offline', requestedModel: 'offline', budget: { callTimeoutMs: 30_000, maxStructuredRepairAttempts: 0 } },
+      comparison: attempt === 0 ? { compare: async () => ({ status: 'cancelled' }), cancel: async () => {} } : scripted.agents.comparison,
+      agentConfig: scripted.agents.config,
       policy: EVALUATION_POLICY, now: new Date().toISOString() });
     assert.equal(result.comparison.result.status, attempt === 0 ? 'cancelled' : 'failed');
+    if (attempt === 1) {
+      assert.equal(scripted.contexts.length, 3, 'The current factory must reach the deliberate post-submission failure rather than time out');
+      assert.ok(result.comparison.result.status === 'failed');
+      assert.match(result.comparison.result.failure.message, /Offline fixture failure after accepted autonomous submission/);
+    }
     await verifyComparisonEvaluationInputs(root, item, prepared.inputIdentityHash);
   }
   const eventsPath = join(prepared.dataDir, 'experiments', prepared.experimentId, 'events.jsonl');
   const events = await readFile(eventsPath);
-  assert.equal(turns, 3, 'Offline review must reach its deliberate failure rather than time out');
-  assert.match(events.toString('utf8'), /comparison.review_started/);
+  assert.ok(parseCommittedEventLog(events.toString('utf8')).events.some(event => {
+    const payload = event.payload as { tool?: string; details?: { status?: string }; nativeHook?: unknown };
+    return event.type === 'agent.tool_completed' && payload.tool === 'submit_report' && !payload.nativeHook && payload.details?.status === 'accepted';
+  }), 'Actual accepted submission must be present in the permitted suffix');
   await writeFile(eventsPath, events.subarray(1));
   await assert.rejects(verifyComparisonEvaluationInputs(root, item, prepared.inputIdentityHash), /event prefix changed/);
 });
@@ -116,6 +114,8 @@ test('valid checksums cannot authorize new Runtime or Controller process observa
     { type: 'comparison.unknown_future_event', payload: {} },
     { type: 'runtime.tool_finished', payload: { item: { type: 'commandExecution', command: 'invented check', aggregated_output: 'New process evidence' } } },
     { type: 'agent.tool_completed', payload: { role: 'controller', tool: 'new-check', result: 'New process evidence' } },
+    { type: 'agent.model_stream_completed', payload: { role: 'controller', schemaVersion: 1, requestIndex: 1,
+      startedAt: 1000, firstEventAt: 1010, firstTextAt: null, finishedAt: 1030, events: 1 } },
     { type: 'artifact.created', payload: { artifactId: 'new-candidate-evidence' } },
   ]) {
     const body = { schemaVersion: 1, sequence, eventId: `injected-${sequence}`, occurredAt: new Date().toISOString(), runId: 'fixture-run', ...event };

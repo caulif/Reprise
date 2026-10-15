@@ -681,14 +681,14 @@ test('real progress, text-only filtering and redaction preserve only internal de
   await f.discovery!.update(findings); await f.draft.submit(submission); f.draft.beginReview();
   await f.discovery!.update({ ...findings, importantLimitations: ['Changed scope'] });
   const raw = f.draft.inspectTool(), events: AgentAuditEvent[] = [];
-  const resources = new ComparisonResourceTracker({}); resources.phase('review');
+  const resources = new ComparisonResourceTracker({});
   let token: object | undefined;
   const tool = instrumentTools([{ ...raw, execute: async (params, signal) => {
     const result = await raw.execute(params, signal);
     token = toolDeliveryToken(result);
     assert.ok(token); assert.equal(f.draft.hasReviewDraftMaterial(), false);
     const augmented = { ...result, contentBlocks: [{ type: 'text' as const, text: result.content }, { type: 'image' as const, data: 'fixture', mimeType: 'image/png' }] };
-    return comparisonToolFeedback(augmented, resources, undefined, raw.name);
+    return comparisonToolFeedback(augmented, resources, raw.name);
   } }], 'review', 'comparison', { requestIndex: 0 }, { append: async event => { events.push(event); } })[0]!;
   const visible = await tool.execute({}, new AbortController().signal);
   assert.equal(toolDeliveryToken(visible), token);
@@ -696,7 +696,7 @@ test('real progress, text-only filtering and redaction preserve only internal de
   assert.equal(Value.Check(ComparisonDraftInspectionSchema, visible.details), false);
   assert.equal(visible.contentBlocks?.some(block => block.type === 'image'), false);
   assert.match(visible.content, /Image content omitted/);
-  assert.match(visible.content, /hostProgress/);
+  assert.match(JSON.stringify(visible.contentBlocks), /Host total-time budget remaining:/);
   assert.equal(f.draft.hasReviewDraftMaterial(), true);
   assert.equal((JSON.parse(f.draft.submissionState()) as { inspected?: unknown }).inspected, undefined);
   assert.equal(await f.draft.completedResult(), undefined);
@@ -730,11 +730,11 @@ test('complete standard-redacted slots with Host progress satisfy real material 
   const f = await fixture(t);
   const secretMarker = 'synthetic_review_secret';
   await f.draft.submit({ ...submission, detailsHtml: `<p>Authorization: Bearer ${secretMarker}</p>` }); f.draft.beginReview();
-  const raw = f.draft.inspectTool(), resources = new ComparisonResourceTracker({}); resources.phase('review');
-  const tool = instrumentTools([{ ...raw, execute: async (params, signal) => comparisonToolFeedback(await raw.execute(params, signal), resources, undefined, raw.name) }], 'review', 'comparison', { requestIndex: 0 })[0]!;
+  const raw = f.draft.inspectTool(), resources = new ComparisonResourceTracker({});
+  const tool = instrumentTools([{ ...raw, execute: async (params, signal) => comparisonToolFeedback(await raw.execute(params, signal), resources, raw.name) }], 'review', 'comparison', { requestIndex: 0 })[0]!;
   const visible = await tool.execute({}, new AbortController().signal);
   assert.equal(visible.content.includes(secretMarker), false);
-  assert.match(visible.content, /hostProgress/);
+  assert.match(JSON.stringify(visible.contentBlocks), /Host total-time budget remaining:/);
   assert.equal(f.draft.hasReviewDraftMaterial(), true);
 });
 

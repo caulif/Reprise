@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { buildComparisonContext, type RunInspection } from "../../src/application/comparison.js";
 import { verifyAndRenderComparisonReport } from "../../src/application/comparison-publication.js";
 import { extractHostZoneSnapshot, renderComparisonReportShell } from "../../src/application/comparison-report-shell.js";
-import { ComparisonAgent } from "../../src/agents/comparison-agent.js";
+import { AutonomousComparisonAgent } from '../../src/agents/comparison-autonomous.js';
 import { AgentHost } from "../../src/infrastructure/agent/host.js";
 
 const inspection: RunInspection = {
@@ -148,7 +148,7 @@ test("Comparison cancel requires attemptId and does not cancel other attempts", 
   let startedB!: () => void;
   const readyA = new Promise<void>((resolve) => { startedA = resolve; });
   const readyB = new Promise<void>((resolve) => { startedB = resolve; });
-  const comparison = new ComparisonAgent({
+  const comparison = new AutonomousComparisonAgent({
     host: new AgentHost({
       createSession: () => {
         const which = created++ === 0 ? "a" : "b";
@@ -166,7 +166,6 @@ test("Comparison cancel requires attemptId and does not cancel other attempts", 
       },
     }),
     timeoutMs: 0,
-    maxRepairAttempts: 0,
   });
   const context = {
     task: { caseId: "case-1", summary: "Compare." },

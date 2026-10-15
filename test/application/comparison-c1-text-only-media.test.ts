@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { Type } from "@sinclair/typebox";
-import type { ComparisonReportFacts } from "../../src/agents/comparison-agent.js";
+import type { ComparisonReportFacts } from "../../src/agents/comparison-contract.js";
 import {
   publishComparisonArtifacts,
   verifyAndRenderComparisonReport,

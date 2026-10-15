@@ -1,22 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Value } from '@sinclair/typebox/value';
 import { ComparisonDiscovery } from '../../src/application/comparison-discovery.js';
 import { ComparisonEvidenceCatalog } from '../../src/application/comparison-evidence.js';
 import { ComparisonFindingsDeltaSchema, ComparisonFindingsDedicatedDeltaSchema, ComparisonFindingsToolSubmissionSchema, ComparisonDiscoveryRecordSchema, type ComparisonDiscoveryRecord, type ComparisonFindingsDelta, type ComparisonFindingsSubmission } from '../../src/core/schema.js';
-import { ComparisonAgent } from '../../src/agents/comparison-agent.js';
-import { ComparisonResourceTracker } from '../../src/agents/comparison-resources.js';
-import { ComparisonStages } from '../../src/agents/comparison-stages.js';
-import { COMPARISON_INITIAL_FINDINGS_PROMPT } from '../../src/agents/comparison-initial-findings.js';
-import { COMPARISON_AUTHOR_COMPOSE_PROMPT } from '../../src/agents/comparison-author-prompt.js';
-import { AgentHost, type ProviderAdapter } from '../../src/infrastructure/agent/host.js';
-import { sha256 } from '../../src/core/identity.js';
-import type { ArtifactRenderer } from '../../src/infrastructure/artifact-renderer.js';
-import { startExperiment } from '../../src/application/experiment.js';
-import { input, VerifiedRuntime } from '../codex-experiment-support.js';
 
 async function fixture(t: { after: (fn: () => Promise<void>) => void }, persist?: (record: ComparisonDiscoveryRecord) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), 'reprise-findings-delta-')); t.after(() => rm(root, { recursive: true, force: true }));
@@ -248,95 +238,8 @@ for (const mode of ['cancel', 'persist', 'catalog_change', 'queued_stale'] as co
   }
 });
 
-function actualRequests(session: Parameters<ProviderAdapter['createSession']>[0]) {
-  const messages: unknown[] = []; let callId = 0;
-  const tools = session.tools.map(tool => ({ ...tool, execute: async (params: unknown, signal: AbortSignal) => {
-    const id = `delta-call-${++callId}`;
-    messages.push({ role: 'assistant', content: [{ type: 'toolCall', id, name: tool.name, arguments: structuredClone(params) }] });
-    const result = await tool.execute(params, signal);
-    messages.push({ role: 'toolResult', toolCallId: id, toolName: tool.name, content: result.contentBlocks ?? [{ type: 'text', text: result.content }] });
-    return result;
-  } }));
-  return { tools, request: async (content: string, allowedToolNames?: readonly string[]) => {
-    messages.push({ role: 'user', content: [{ type: 'text', text: content }] });
-    const context = { systemPrompt: session.systemPrompt, messages: structuredClone(messages),
-      tools: session.tools.filter(tool => !allowedToolNames || allowedToolNames.includes(tool.name)).map(({ name, description, parameters }) => ({ name, description, parameters })) };
-    await session.onModelRequest?.({ model: 'fixture', scope: 'generation', digest: sha256(JSON.stringify(context)), messageCount: messages.length, images: [], generationContext: context });
-  } };
-}
 
-for (const changed of [false, true]) test(`production ${changed ? 'replacement' : 'retained'} delta uses actual accepted receipt and the full independent publication chain`, async t => {
-  const root = await mkdtemp(join(tmpdir(), 'reprise-delta-publication-')); t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
-  const base = input(root, new VerifiedRuntime()); await mkdir(base.sourceRoot, { recursive: true }); await writeFile(join(base.sourceRoot, 'README.md'), '# source\n');
-  const initial: ComparisonFindingsSubmission = { criteria: ['Task usefulness'], finals: (['baseline', 'candidate'] as const).map(side => ({ side, status: 'unavailable', sourceRefs: [], description: 'Final remains unchecked' })),
-    findings: [], importantLimitations: ['Quality remains unverified'], decisionQuestions: [{ id: 'quality', question: 'Is the final useful?', decisionImpact: 'Could change preference', status: 'unavailable', evidenceRefs: [], resolution: 'Author did not verify final quality' }] };
-  const draft = { status: 'insufficient_evidence', decisionShape: 'single_difference', category: 'Results', headline: 'Quality remains unverified.',
-    decisionSummary: 'The usefulness of both final outputs remains unknown.', decisionBoundary: 'Final quality could change model preference.', decisionBasis: [], conclusionScope: 'undetermined', findingDispositions: [], comparisonHtml: '<p>No supported replacement choice.</p>' };
-  let turns = 0, actualDelta = false;
-  const comparison = new ComparisonAgent({ requireFindings: true, timeoutMs: 0, maxRepairAttempts: 0, host: new AgentHost({ createSession: session => {
-    const { tools, request } = actualRequests(session);
-    const call = (name: string, params: unknown, signal: AbortSignal) => tools.find(tool => tool.name === name)!.execute(params, signal);
-    return { append: async ({ content, signal, allowedToolNames, yieldAfterTurn }) => {
-      turns++; await request(content, allowedToolNames);
-      if (content.includes(COMPARISON_INITIAL_FINDINGS_PROMPT)) {
-        assert.deepEqual(allowedToolNames, ['update_comparison_findings']);
-        assert.match((await call('update_comparison_findings', initial, signal)).content, /^status=accepted\n/);
-      } else if (content.includes(COMPARISON_AUTHOR_COMPOSE_PROMPT)) assert.match((await call('submit_comparison_draft', draft, signal)).content, /^status=accepted\n/);
-      else if (content.includes('This is the actual draft inspection checkpoint')) await call('inspect_comparison_draft', {}, signal);
-      else if (content.includes('This is the independent review findings closure')) {
-        const state = JSON.parse(content.split('Current saved findings (hypotheses only): ')[1]!.split('\n\nCurrent Host-owned metric pair:')[0]!) as { record: ComparisonDiscoveryRecord; binding: ComparisonFindingsDelta['binding'] };
-        assert.ok(Value.Check(ComparisonDiscoveryRecordSchema, state.record));
-        assert.match(content, /kind="delta"/); assert.match(content, /binding=the exact current state.binding object/);
-        assert.match(content, /findingDecisions=/); assert.match(content, /questionDecisions=/);
-        assert.match(content, /Both arrays are required even when empty; their entries are objects, never strings/);
-        const delta: ComparisonFindingsDelta = { kind: 'delta', binding: state.binding, findingDecisions: state.record.submission.findings.map(item => ({ id: item.id, action: 'retain' })),
-          questionDecisions: state.record.submission.decisionQuestions.map(item => changed ? { id: item.id, action: 'replace', replacement: { ...item, resolution: 'Independent review still cannot establish final quality; retain its effect on preference.' } } : { id: item.id, action: 'retain' }) };
-        assert.ok(Value.Check(ComparisonFindingsDeltaSchema, delta)); assert.deepEqual(allowedToolNames, ['read', 'update_comparison_findings_delta']);
-        assert.match((await call('update_comparison_findings_delta', delta, signal)).content, /^status=accepted\n/); actualDelta = true;
-      } else if (content.includes('The initial checkpoint is not formal certification: after this full audit')) {
-        assert.ok(actualDelta); if (changed) assert.match((await call('submit_comparison_draft', draft, signal)).content, /^status=accepted\n/);
-        await call('inspect_comparison_draft', {}, signal);
-      } else if (content.includes('This is the preview-only closure')) {
-        assert.ok(actualDelta); assert.deepEqual(allowedToolNames, ['preview_report']);
-        const receipt = JSON.parse((await call('preview_report', {}, signal)).content) as { status: string }; assert.equal(receipt.status, 'ok', JSON.stringify(receipt));
-      }
-      const reason = await yieldAfterTurn?.(); return reason ? { status: 'yielded' as const, reason } : '';
-    }, cancel() {} };
-  } }) });
-  let previewRenders = 0;
-  const comparisonPreviewRenderer: ArtifactRenderer = async request => {
-    previewRenders++;
-    assert.equal(request.entryRelativePath, 'preview.html');
-    const prepared = await readFile(join(request.bundleRoot, request.entryRelativePath), 'utf8');
-    assert.match(prepared, /Quality remains unverified/);
-    assert.match(prepared, /No supported replacement choice/);
-    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
-    await mkdir(request.outputRoot, { recursive: true });
-    const pngPath = join(request.outputRoot, 'preview.png');
-    await writeFile(pngPath, png);
-    return { ok: true, frames: [{ sampleTimeMs: 0, actualTimeMs: 0, pngPath, byteLength: png.byteLength, contentHash: sha256(png) }],
-      diagnostics: [], measured: { loadMs: 1, viewport: request.viewport, origin: 'fixture://preview' } };
-  };
-  const result = await startExperiment({ ...base, comparison, comparisonPreviewRenderer }).result;
-  assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result)); assert.equal(turns, 9); assert.ok(actualDelta);
-  assert.equal(previewRenders, 1, 'the actual Host preview renders the inspected draft exactly once');
-  const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { sequence: number; type: string; payload: Record<string, unknown> });
-  assert.equal(events.filter(event => event.type === 'comparison.findings_updated').length, changed ? 2 : 1);
-  const updates = events.filter(event => event.type === 'agent.tool_completed' && ['update_comparison_findings', 'update_comparison_findings_delta'].includes(String(event.payload.tool)) && !event.payload.nativeHook);
-  assert.equal(updates.length, 2, 'initial snapshot and independent delta must both actually execute');
-  assert.equal(updates[0]!.payload.tool, 'update_comparison_findings'); assert.equal(updates[1]!.payload.tool, 'update_comparison_findings_delta');
-  const closure = events.find(event => event.type === 'comparison.phase_completed' && event.payload.pass === 'review-findings')!;
-  assert.equal(closure.payload.yieldReason, 'review_findings_ready'); assert.ok(updates[1]!.sequence < closure.sequence);
-  const audit = events.find(event => event.type === 'comparison.draft_audit_started')!;
-  const inspection = events.filter(event => event.type === 'agent.tool_completed' && event.payload.tool === 'inspect_comparison_draft').at(-1)!;
-  const preview = events.find(event => event.type === 'agent.tool_completed' && event.payload.tool === 'preview_report')!;
-  assert.ok(audit.sequence > closure.sequence && inspection.sequence > audit.sequence && preview.sequence > inspection.sequence);
-  assert.ok(events.some(event => event.type === 'agent.model_request' && event.sequence > inspection.sequence && event.sequence < preview.sequence && 'generationInput' in event.payload));
-  assert.match(await readFile(join(result.experimentRoot, 'report.html'), 'utf8'), /Quality remains unverified/);
-});
-
-
-test('small checkpoint preserves every question and non-target finding, rejects stale/foreign evidence, and cannot close independent review', async t => {
+test('legacy small checkpoint preserves every question and non-target finding and rejects stale or foreign evidence', async t => {
   const f = await fixture(t), signal = new AbortController().signal;
   const tool = f.discovery.checkpointTool();
   assert.match((await tool.execute({ binding: { revision: 1, digest: 'a'.repeat(64), catalogRevision: 0 } }, signal)).content, /delta_snapshot_missing/);
@@ -363,18 +266,4 @@ test('small checkpoint preserves every question and non-target finding, rejects 
   assert.deepEqual(f.discovery.snapshot(), stable);
   assert.match((await tool.execute({ binding: f.delta().binding, finals: stable.submission.finals }, signal)).content, /^status=accepted/);
   await assert.rejects(tool.execute({ binding: f.delta().binding }, AbortSignal.abort()), { name: 'AbortError' });
-  const resources = new ComparisonResourceTracker({});
-  const stages = new ComparisonStages([tool, f.discovery.tool(), f.discovery.deltaTool()], resources, {
-    enforcePhaseBoundaries: true, reviewFindings: true, getSubmittedResult: async () => undefined,
-    getFindingsState: () => f.discovery.state(), findingsReady: () => f.discovery.readyToCompose(),
-  });
-  const bound = stages.bind([tool, f.discovery.tool(), f.discovery.deltaTool()]);
-  stages.begin('review', 'source-save');
-  assert.deepEqual(stages.toolNames(bound), ['save_comparison_checkpoint']);
-  assert.match((await bound[0]!.execute({ binding: f.delta().binding }, signal)).content, /^status=accepted/);
-  assert.equal(await stages.exit(), 'findings_checkpoint_saved');
-  assert.equal(stages.reviewFindings.sourceSaved(), false, 'intermediate preservation is not explicit independent review');
-  stages.begin('review', 'review-findings');
-  assert.deepEqual(stages.toolNames(bound), ['update_comparison_findings_delta']);
-  assert.match((await bound[0]!.execute({ binding: f.delta().binding }, signal)).content, /review_findings_only/);
 });
