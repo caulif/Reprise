@@ -271,7 +271,8 @@ async function compareExperimentOutcome(
   const preparedHistory = prepared;
   await mkdir(preparedHistory.finalsRoot, { recursive: true });
   await auditHistoricalDelivery(input.store, input.input.runId, attemptId, preparedHistory.manifest);
-  const events = input.store.events(input.input.runId);
+  const events = input.store.events(input.input.runId).filter(event =>
+    event.sequence >= record.trace.firstSequence && event.sequence <= record.trace.lastSequence);
   const locale = await readOperatorLocale(input.input.dataDir);
   const comparisonModel = (input.input.comparisonAgentConfig ?? input.input.agentConfig).requestedModel;
   const context: ComparisonContext = {
