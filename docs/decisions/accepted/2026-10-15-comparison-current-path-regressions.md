@@ -29,3 +29,7 @@
 迁移回归覆盖实际只读拒绝、scratch 命令 exitCode 与文件字节、当前预览图像进入后续 generation、无预览或旧预览拒绝发布、预览后 Provider 失败、空最终文本及重新预览后的发布。原 TCP listener 退出回归迁到自主实现；收尾负例同时注入主失败、audit 失败和 close 失败并检查外层重复 release。冻结输入负例拒绝 Controller 同名 stream 事件、修改过的 committed 前缀与源文件。
 
 现行规则见[证据与对照](../../architecture/evidence-and-comparison.md#comparison-attempt)。
+
+### Shell 回归的验证范围
+
+只读拒绝 fixture 使用现有 guard 可识别的 `rm finals/policy-denial-sentinel.txt`，随后在各平台实际 Shell 中写入 scratch 并验证文件字节与成功退出。该 guard 是对已知写命令的提前阻止，不是操作系统只读隔离；例如 `echo` 重定向不在当前命令识别范围内，不能将此回归解释为任意 Shell 写入都被禁止。报告发布另外校验 Host metrics fingerprint、已登记证据的内容 hash 与当前预览绑定；这些校验约束报告及其实际引用的证据，不能代替整个文件系统的写入隔离。
