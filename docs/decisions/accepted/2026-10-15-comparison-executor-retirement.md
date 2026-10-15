@@ -32,6 +32,8 @@ output-limit 仅在同 Session 继续未完成动作，每次真实请求和工�
 
 当前工厂的 offline Pi 流实际执行工具、提交、预览和后续 generation；没有手造 completed Port 替代发布。本批新增 1/2 次 native output-limit 后真实发布、分页 read coverage 后续实际请求、hard attempt deadline 在 per-call timeout=0 时仍生效、异步发布校验期间取消拒绝 completed。旧通用 native-media 测试原样迁出；持久化 findings 与 inspection 继续运行。
 
+架构源码门禁的 Comparison 扫描目标同步迁到 comparison-autonomous，继续检查 createSession、RoleSessions 与无文件系统写入边界；反向用例向当前源码注入文件写入依赖或移除 RoleSessions，证明该门禁会拒绝破坏边界的变体。
+
 原引用旧 executor 的文件按下表逐项处理，表中的路径均相对 test/application。只退休列明的策略要求，未把 28 个文件当作整体删除清单。
 
 | 原测试文件 | 保留不变量及现行回归 | 退休的执行策略 |

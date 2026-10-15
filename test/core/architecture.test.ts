@@ -260,6 +260,20 @@ test('Recovery production path does not reintroduce candidate selection or three
   assert.equal(names.includes('select_recovery_candidate'), false);
 });
 
+function assertComparisonSourceBoundary(source: string): void {
+  assert.doesNotMatch(source, /#host\.request/);
+  assert.match(source, /createSession/);
+  assert.doesNotMatch(source, /node:fs|writeAtomic/);
+  assert.doesNotMatch(source, /\.value\.text/);
+  assert.match(source, /RoleSessions/);
+}
+
+test('autonomous Comparison source boundary rejects filesystem writes and missing role session ownership', async () => {
+  const source = await readFile(join(SRC, 'agents/comparison-autonomous.ts'), 'utf8');
+  assert.throws(() => assertComparisonSourceBoundary(`${source}\nimport { writeFile } from 'node:fs/promises';`));
+  assert.throws(() => assertComparisonSourceBoundary(source.replaceAll('RoleSessions', 'OtherSessions')));
+});
+
 test('role write policy stays on application owners without a shared Verifier', async () => {
   const { comparisonAttemptWriteAllowed } = await import('../../src/application/experiment-report.js');
   assert.equal(comparisonAttemptWriteAllowed('scratch/a.txt'), true);
@@ -267,10 +281,8 @@ test('role write policy stays on application owners without a shared Verifier', 
   assert.equal(comparisonAttemptWriteAllowed('report.html'), false);
   const report = await readFile(join(SRC, 'application/experiment-report.ts'), 'utf8');
   assert.doesNotMatch(report, /\.plan\(|\.report\(|invokePlan|invokeReport/);
-  const comparisonAgent = await readFile(join(SRC, 'agents/comparison-agent.ts'), 'utf8');
-  assert.doesNotMatch(comparisonAgent, /#host\.request/);
-  assert.match(comparisonAgent, /createSession/);
-  assert.doesNotMatch(comparisonAgent, /node:fs|writeAtomic/);
+  const comparisonAgent = await readFile(join(SRC, 'agents/comparison-autonomous.ts'), 'utf8');
+  assertComparisonSourceBoundary(comparisonAgent);
   assert.match(report, /writeAtomic\(join\(input\.attemptRoot, "report\.html"/);
   const loop = await readFile(join(SRC, 'application/experiment-controller-loop.ts'), 'utf8');
   assert.match(loop, /controllerProjectWriteAllowed|controllerDecisionTools/);
@@ -452,7 +464,7 @@ test('agent foundation defaults each Pi tool to ordered execution and never Agen
   assert.match(host, /export class AgentHost/);
   const types = await readFile(join(SRC, 'infrastructure/agent/types.ts'), 'utf8');
   assert.match(types, /business agents must not depend on `text`/);
-  for (const name of ['controller-agent.ts', 'comparison-agent.ts', 'recovery-agent.ts']) {
+  for (const name of ['controller-agent.ts', 'comparison-autonomous.ts', 'recovery-agent.ts']) {
     const source = await readFile(join(SRC, 'agents', name), 'utf8');
     assert.doesNotMatch(source, /\.value\.text/);
     assert.match(source, /RoleSessions/);
