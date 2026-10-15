@@ -22,6 +22,34 @@ function filledSlots() {
   return { headline: "本次倾向候选", comparison: "<p>候选结果更完整，但等待更久。</p>" };
 }
 
+test("both report formats retain frozen session dates through rebuild and reject Host date edits", () => {
+  for (const formatVersion of [undefined, 3] as const) {
+    const format = formatVersion === 3 ? { formatVersion } : {};
+    for (const locale of ["zh", "en"] as const) {
+      const reportFacts = facts();
+      reportFacts.sessionDates = { baseline: "2026-09-20", candidate: "2026-10-15" };
+      const html = renderComparisonReportShell({ ...format, task: "Compare", facts: reportFacts, metrics: {}, locale, slots: filledSlots() });
+      const header = extractOuter(html, "data-host-zone", "header")!;
+      assert.match(header, /<time datetime="2026-09-20">2026-09-20 UTC<\/time>/);
+      assert.match(header, /<time datetime="2026-10-15">2026-10-15 UTC<\/time>/);
+      const snapshot = extractHostZoneSnapshot(html)!;
+      assert.equal(hostZonesMismatch(html.replaceAll("2026-09-20", "2026-09-21"), snapshot, {}, locale), 'Host zone "header" was modified.');
+      const extracted = agentContentFromDraft(html);
+      assert.ok("slots" in extracted);
+      const rebuilt = renderComparisonReportShell({ task: "Compare", facts: reportFacts, metrics: {}, locale, ...extracted });
+      assert.equal(extractOuter(rebuilt, "data-host-zone", "header"), header);
+      delete reportFacts.sessionDates.candidate;
+      const partial = renderComparisonReportShell({ ...format, task: "Compare", facts: reportFacts, metrics: {}, locale });
+      assert.match(partial, /2026-09-20 UTC/);
+      const unknown = locale === "zh" ? /日期未知/g : /Date unknown/g;
+      assert.equal(partial.match(unknown)?.length, 1);
+      delete reportFacts.sessionDates;
+      const legacy = renderComparisonReportShell({ ...format, task: "Compare", facts: reportFacts, metrics: {}, locale });
+      assert.equal(legacy.match(unknown)?.length, 2);
+    }
+  }
+});
+
 test("format 3 keeps recommendation, full-view evidence, differences and three Host metric rows in reading order", () => {
   const reportFacts = facts();
   reportFacts.models.comparison = "analysis-model";

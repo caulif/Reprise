@@ -35,6 +35,7 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
     const root = await mkdtemp(join(tmpdir(), 'reprise-autonomous-publication-'));
     t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
     const base = input(root, new VerifiedRuntime());
+    base.taskCase.taskContext = { ...base.taskCase.taskContext, historyStartedAt: '2026-09-20T23:30:00-04:00' };
     await mkdir(base.sourceRoot);
     await writeFile(join(base.sourceRoot, 'README.md'), '# frozen source\n');
     const abort = new AbortController();
@@ -92,6 +93,7 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
     const comparisonPreviewRenderer: ArtifactRenderer = async request => {
       const html = await readFile(join(request.bundleRoot, request.entryRelativePath), 'utf8');
       assert.ok(html.includes(renders++ === 0 ? original : revised));
+      assert.match(html, /2026-09-21 UTC/);
       const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
       await mkdir(request.outputRoot, { recursive: true });
       const pngPath = join(request.outputRoot, 'preview.png');
@@ -136,6 +138,8 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
     const payload = request.payload as { attemptId: string; autonomousContractVersion: number; reviewInspectionContractVersion?: number };
     assert.equal(payload.autonomousContractVersion, 2);
     assert.equal(payload.reviewInspectionContractVersion, undefined);
+    const context = JSON.parse(await readFile(join(result.experimentRoot, 'comparison-attempts', payload.attemptId, 'facts', 'context.json'), 'utf8')) as { reportFacts: { sessionDates: { baseline: string; candidate: string } } };
+    assert.deepEqual(context.reportFacts.sessionDates, { baseline: '2026-09-21', candidate: base.now.slice(0, 10) });
     if (mode === 'git-delivery') {
       const media = JSON.parse(await readFile(join(result.experimentRoot, 'comparison-attempts', payload.attemptId, 'facts', 'media.json'), 'utf8')) as { side: string }[];
       assert.equal(media.filter(item => item.side === 'baseline').length, 0, 'Repository HTML assets must not trigger automatic delivery screenshots');
@@ -166,6 +170,8 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
       const html = await readFile(reportPath, 'utf8');
       assert.ok(html.includes(mode === 'repreviewed' ? revised : original));
       assert.match(html, /data-report-format="3"/);
+      assert.match(html, /2026-09-21 UTC/);
+      assert.match(recovery.html!, /2026-09-21 UTC/);
       assert.doesNotMatch(html, /data-agent-zone="details"|data-host-zone="evidence"|data-host-limitation="hostLimitationShareCardPresentation"/);
       const model: unknown = JSON.parse(await readFile(join(result.experimentRoot, 'report-model.json'), 'utf8'));
       assert.ok(Value.Check(ComparisonReportModelSchema, model));

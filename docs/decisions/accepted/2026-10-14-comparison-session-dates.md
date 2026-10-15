@@ -12,6 +12,8 @@ Host 在双侧模型名旁显示 UTC 日期。历史侧使用冻结 TaskCase 中
 
 新增可选 reportFacts.sessionDates，双侧日期也分别可选；通过现有 schema 校验、comparison.requested 输入 artifact 和 briefing 保存并恢复，不新增独立模型输入渠道。Host 生成标签并沿用 Host 区篡改校验，Agent 不填写日期。旧 facts 缺字段时显示日期未知，旧已发布 HTML 不迁移、不原地改写。
 
+日期能力与[紧凑报告](2026-10-14-comparison-compact-report.md)一同交付。新格式3在双侧模型名下方以次要文字显示，格式2继续在会话标签中显示；两者共用格式化逻辑。日期仅表示会话记录的时间，不代表模型版本或能力变化。
+
 ## 备选方案
 
 **使用导入时间或报告生成时间。** 容易获得，但会把导入、重试或重新比较误显示为会话日期。

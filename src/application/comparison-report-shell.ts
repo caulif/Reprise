@@ -430,7 +430,7 @@ function renderCompactReport(input: Parameters<typeof renderComparisonReportShel
 <style data-host-zone="style" data-id="host-style">${REPORT_CSS}\n${COMPACT_REPORT_CSS}</style></head><body>
 <main class="page" data-report-format="3"><article class="share">
 <header data-host-zone="header" data-id="host-header"><div class="mast"><span class="brand">REPRISE / <span data-agent-slot="category">${escapeHtml(input.category)}</span></span><p class="task" data-agent-slot="task">${escapeHtml(input.task)}</p></div>
-<div class="models" data-host="session-labels"><div class="model" data-model-side="baseline"><span class="role">${escapeHtml(reportString(locale, "sessionHistorical"))}</span><strong>${escapeHtml(labels.baseline)}</strong></div><div class="model current" data-model-side="candidate"><span class="role">${escapeHtml(reportString(locale, "sessionCurrent"))}</span><strong>${escapeHtml(labels.candidate)}</strong></div></div></header>
+<div class="models" data-host="session-labels"><div class="model" data-model-side="baseline"><span class="role">${escapeHtml(reportString(locale, "sessionHistorical"))}</span><strong>${escapeHtml(labels.baseline)}</strong><span class="session-date">${sessionDateHtml(input.facts.sessionDates?.baseline, locale)}</span></div><div class="model current" data-model-side="candidate"><span class="role">${escapeHtml(reportString(locale, "sessionCurrent"))}</span><strong>${escapeHtml(labels.candidate)}</strong><span class="session-date">${sessionDateHtml(input.facts.sessionDates?.candidate, locale)}</span></div></div></header>
 <section class="verdict"><p class="field-label">${escapeHtml(reportString(locale, "recommendation"))}</p><h1 data-agent-slot="headline">${input.headline}</h1><p class="boundary" data-agent-slot="boundary">${escapeHtml(input.slots?.boundary ?? "")}</p></section>
 <section class="slot" data-agent-zone="comparison" data-id="agent-comparison">${input.comparisonBody}</section>
 <section class="differences" data-agent-zone="differences" aria-label="${escapeHtml(reportString(locale, "keyDifferences"))}">${(input.slots?.differences ?? []).map(text => `<p data-difference>${escapeHtml(text)}</p>`).join("")}</section>
@@ -511,6 +511,12 @@ function renderMediaCatalog(media: readonly ComparisonMediaRecord[] | undefined,
   return `<details class="evidence-expand" data-host="media-catalog"><summary>${escapeHtml(reportString(locale, "registeredMedia"))}</summary><ul class="kv-list">${rows}</ul></details>`;
 }
 
+function sessionDateHtml(value: string | undefined, locale: AgentLocale): string {
+  return value
+    ? `<time datetime="${escapeHtml(value)}">${escapeHtml(value)} UTC</time>`
+    : escapeHtml(reportString(locale, "sessionDateUnknown"));
+}
+
 function defaultHeader(
   labels: { baseline: string; candidate: string },
   category: string,
@@ -520,11 +526,8 @@ function defaultHeader(
   diagnostic?: ComparisonReportDiagnostic,
 ): string {
   const kicker = diagnostic ? `<p class="kicker">Comparison · ${escapeHtml(diagnostic.failureClass)}</p>` : "";
-  const date = (value: string | undefined): string => value
-    ? `<time datetime="${escapeHtml(value)}">${escapeHtml(value)} UTC</time>`
-    : escapeHtml(reportString(locale, "sessionDateUnknown"));
   return `${kicker}<h1><span data-agent-slot="category">${escapeHtml(category)}</span></h1>
-  <p class="sessions" data-host="session-labels"><span>${escapeHtml(reportString(locale, "sessionHistorical"))} · ${escapeHtml(labels.baseline)} · ${date(dates?.baseline)}</span><span>${escapeHtml(reportString(locale, "sessionCurrent"))} · ${escapeHtml(labels.candidate)} · ${date(dates?.candidate)}</span></p>
+  <p class="sessions" data-host="session-labels"><span>${escapeHtml(reportString(locale, "sessionHistorical"))} · ${escapeHtml(labels.baseline)} · ${sessionDateHtml(dates?.baseline, locale)}</span><span>${escapeHtml(reportString(locale, "sessionCurrent"))} · ${escapeHtml(labels.candidate)} · ${sessionDateHtml(dates?.candidate, locale)}</span></p>
   <p class="field-label">${escapeHtml(reportString(locale, "taskLabel"))}</p>
   <p class="task" data-slot="task" data-agent-slot="task">${escapeHtml(task)}</p>`;
 }
@@ -693,6 +696,7 @@ const COMPACT_REPORT_CSS = `
 .model .role { display:block; color:#87562d; font-size:12px; font-weight:650; }
 .model.current .role { color:#405bb8; }
 .model strong { display:block; font-size:25px; line-height:1.3; margin-top:3px; overflow-wrap:anywhere; }
+.model .session-date { display:block; margin-top:4px; color:var(--soft); font-size:11px; overflow-wrap:anywhere; }
 [data-report-format="3"] .verdict { margin:20px 0 17px; padding:0; border:0; background:transparent; }
 [data-report-format="3"] [data-agent-slot="headline"] { font-size:29px; line-height:1.4; margin:5px 0 6px; }
 .boundary { margin:0; color:var(--soft); font-size:13px; line-height:1.6; }
