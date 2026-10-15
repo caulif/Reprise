@@ -1,4 +1,4 @@
-import type { ComparisonAgentPort, ComparisonCompareOptions, ComparisonContext, ComparisonResult } from './comparison-agent.js';
+import type { ComparisonAgentPort, ComparisonCompareOptions, ComparisonContext, ComparisonResult } from './comparison-contract.js';
 import { AgentHost, type AgentAuditSink, type AgentInvocation, type AgentToolDefinition } from '../infrastructure/agent/host.js';
 import { RoleSessions } from '../infrastructure/agent/role-sessions.js';
 import { ComparisonResourceTracker, DEFAULT_COMPARISON_RESOURCES } from './comparison-resources.js';

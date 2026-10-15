@@ -1,6 +1,6 @@
 import type { ArtifactRenderer } from '../infrastructure/artifact-renderer.js';
 import { join, resolve } from "node:path";
-import type { ComparisonAgentPort, ComparisonResult } from "../agents/comparison-agent.js";
+import type { ComparisonAgentPort, ComparisonResult } from "../agents/comparison-contract.js";
 import { type ControllerDecision, type ControllerPort } from "../agents/controller-agent.js";
 import { materializeIsolatedStart } from "./session-start-workspace.js";
 import { commitCandidateLaunchContext } from "./recovery/launch-context.js";

@@ -1,6 +1,6 @@
 import type { AgentLocale } from "../agents/language.js";
 import { parse, serializeOuter } from "parse5";
-import type { ComparisonMetricSide, ComparisonReportFacts } from "../agents/comparison-agent.js";
+import type { ComparisonMetricSide, ComparisonReportFacts } from "../agents/comparison-contract.js";
 import {
   AGENT_ZONES,
   hostZoneIntegrityError,

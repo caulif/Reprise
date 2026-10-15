@@ -12,7 +12,7 @@ import {
   type ComparisonFactsContext,
   type ComparisonReportFacts,
   type ComparisonResult,
-} from '../agents/comparison-agent.js';
+} from '../agents/comparison-contract.js';
 import type { AgentAuditSink, AgentToolDefinition, StructuredAgentResult } from '../infrastructure/agent/host.js';
 import { recoveryEvidenceCatalog } from '../products/history/source-refs.js';
 import {
@@ -22,7 +22,7 @@ import {
   usagePricing,
 } from './session-usage.js';
 import { loadOperatorPricingOverride, MODEL_PRICING_TABLE_VERSION } from './model-pricing.js';
-import type { ComparisonMetricSide } from '../agents/comparison-agent.js';
+import type { ComparisonMetricSide } from '../agents/comparison-contract.js';
 import { extractHostZoneSnapshot, metricsFromReportFacts, renderComparisonReportShell } from './comparison-report-shell.js';
 import { readOperatorLocale } from './operator-locale.js';
 

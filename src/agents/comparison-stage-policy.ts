@@ -1,4 +1,4 @@
-import type { ComparisonCompareOptions } from './comparison-agent.js';
+import type { ComparisonCompareOptions } from './comparison-contract.js';
 import type { AgentToolDefinition, AgentToolResult } from '../infrastructure/agent/host.js';
 
 export type ComparisonStage = 'understand' | 'investigate' | 'compose' | 'review' | 'initial-findings' | 'source-save'

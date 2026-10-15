@@ -1,4 +1,4 @@
-import type { ComparisonCompareOptions } from './comparison-agent.js';
+import type { ComparisonCompareOptions } from './comparison-contract.js';
 import type { ComparisonResourceTracker } from './comparison-resources.js';
 import type { AgentToolDefinition, AgentToolResult } from '../infrastructure/agent/host.js';
 import { comparisonSoftLimitFeedback } from './comparison-tool-feedback.js';
