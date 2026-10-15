@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { chmod, mkdtemp, rm, stat } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -36,14 +36,14 @@ function context(): ComparisonContext {
   };
 }
 
-test("compare command releases an unreadable writer.lock and closes the control listener", async (t) => {
+test("control retirement closes its listener while unverifiable writer ownership is retained", async (t) => {
   const dataDir = await mkdtemp(join(tmpdir(), "reprise-compare-exit-"));
   t.after(async () => rm(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const experimentId = "experiment-exit";
   const store = await ExperimentStore.open(join(dataDir, "experiments", experimentId), experimentId);
   await store.acquireWriter();
   const lockPath = join(dataDir, "experiments", experimentId, "writer.lock");
-  if (process.platform !== "win32") await chmod(lockPath, 0o000);
+  await writeFile(lockPath, 'unverifiable writer ownership');
   const activity = registerActivity({
     kind: "compare",
     experimentId,
@@ -59,16 +59,29 @@ test("compare command releases an unreadable writer.lock and closes the control 
   socket.on("error", () => undefined);
   await once(socket, "connect");
 
-  try {
-    await store.close();
-  } catch {
-    // result already produced
-  }
   await finishExperimentActivity(experimentId);
-
-  await assert.rejects(stat(lockPath), { code: "ENOENT" });
+  await assert.rejects(store.close(), /ownership cannot be verified/);
+  assert.equal(await readFile(lockPath, 'utf8'), 'unverifiable writer ownership');
   assert.equal(socket.destroyed, true);
   assert.deepEqual(await listControlRecords(dataDir), []);
+});
+
+test('unreadable POSIX writer lock is preserved until its original owner can verify it', {
+  skip: process.platform === 'win32' || process.geteuid?.() === 0 ? 'POSIX permissions cannot deny this process reads' : false,
+}, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-unreadable-lock-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = await ExperimentStore.open(root, 'experiment-unreadable');
+  await store.acquireWriter();
+  const lockPath = join(root, 'writer.lock');
+  const bytes = await readFile(lockPath);
+  await chmod(lockPath, 0o000);
+  await assert.rejects(store.close(), { code: 'EACCES' });
+  assert.equal((await stat(lockPath)).size, bytes.byteLength);
+  await chmod(lockPath, 0o600);
+  assert.deepEqual(await readFile(lockPath), bytes);
+  await store.close();
+  await assert.rejects(stat(lockPath), { code: 'ENOENT' });
 });
 
 test("close still removes a readable writer.lock", async (t) => {
