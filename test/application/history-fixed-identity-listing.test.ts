@@ -14,6 +14,18 @@ import { input, VerifiedRuntime } from '../codex-experiment-support.js';
 import { renderHistoryDetail } from '../../src/tui/pages/history.js';
 import { createTheme } from '../../src/tui/theme.js';
 
+test('complete reading of a legacy scene cannot certify missing frozen-file bindings', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-history-legacy-files-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const base = input(root, new VerifiedRuntime());
+  await mkdir(base.sourceRoot, { recursive: true });
+  await startExperiment({ ...base, compare: false }).result;
+  const detail = await readLocalHistoryExperiment(base.dataDir, base.experimentId);
+  assert.equal(detail.taskIdentity, 'legacy-unverified');
+  assert.equal(detail.taskCaseFilesVerified, false);
+  assert.equal(detail.formatError, undefined);
+});
+
 test('fixed identity listing defers file verification while details and comparison reject tampered bytes', async t => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-history-fixed-listing-'));
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));

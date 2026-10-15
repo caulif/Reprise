@@ -145,7 +145,7 @@ async function readExperiment(path: string, experimentId: string, options: Histo
   const outcome = record ? record.outcome.termination.kind : startup ? startup.status : unread ? "record unread" : committed.runStatus;
   return {
     experimentId, taskCaseId: attempt?.caseId ?? metadata.spec.taskCaseId,
-    ...(metadata.spec.schemaVersion === 2 ? { taskCaseFilesVerified: options.audit && !identityError } : {}),
+    ...(metadata.spec.schemaVersion === 2 ? { taskCaseFilesVerified: options.audit && !identityError && metadata.spec.taskCaseIdentity.kind === 'frozen-v2' } : {}),
     taskIdentity: metadata.spec.schemaVersion === 2 && metadata.spec.taskCaseIdentity.kind === 'frozen-v2' ? 'fixed-v2' : 'legacy-unverified',
     ...(caseMismatch ? { metadataTaskCaseId: metadata.spec.taskCaseId } : {}),
     ...(runId ? { runId } : {}),
