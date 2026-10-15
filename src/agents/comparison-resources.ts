@@ -1,8 +1,9 @@
+import { DEFAULT_AGENT_DEADLINE_MS } from '../core/agent-defaults.js';
 import type { ComparisonResources } from '../core/schema.js';
 import type { AgentAuditEvent } from '../infrastructure/agent/host.js';
 
 export const DEFAULT_COMPARISON_RESOURCES: Readonly<ComparisonResources> = Object.freeze({
-  maxElapsedMs: 24 * 60 * 60_000,
+  maxElapsedMs: DEFAULT_AGENT_DEADLINE_MS,
 });
 
 class ComparisonResourceLimit extends Error {}

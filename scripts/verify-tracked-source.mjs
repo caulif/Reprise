@@ -52,8 +52,8 @@ export function forbiddenSourceExcludes(exclude) {
 }
 
 export function jscpdIgnorePatterns(script) {
-  const match = script.match(/--ignore\s+(\S+)/);
-  return match ? match[1].split(",") : [];
+  const match = script.match(/--ignore\s+(?:"([^"]+)"|'([^']+)'|(\S+))/);
+  return match ? (match[1] ?? match[2] ?? match[3]).split(",") : [];
 }
 
 export function ignorePatternExists(root, pattern) {
@@ -123,6 +123,14 @@ async function selfTest() {
   const stale = staleControlledIgnores(ROOT, ["src/tui/controller-ops.ts", "src/tui/intake-tui.ts"]);
   if (!stale.includes("src/tui/controller-ops.ts") || stale.includes("src/tui/intake-tui.ts")) {
     throw new Error("指向已删除 src 文件的 ignore 必须失败");
+  }
+  for (const quote of ['', '"', "'"]) {
+    const parsed = jscpdIgnorePatterns(`jscpd src --ignore ${quote}src/tui/controller-ops.ts,src/tui/intake-tui.ts${quote} --threshold 1`);
+    const staleJscpd = staleControlledIgnores(ROOT, parsed);
+    if (parsed.length !== 2 || !staleJscpd.includes('src/tui/controller-ops.ts')
+      || staleJscpd.includes('src/tui/intake-tui.ts')) {
+      throw new Error('jscpd 的裸路径和带引号路径都必须拒绝过期排除');
+    }
   }
 
   const globDir = writeTempEslintProject(

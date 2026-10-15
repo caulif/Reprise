@@ -1,3 +1,4 @@
+import { segmentedTimeout } from '../infrastructure/segmented-timeout.js';
 import { ArtifactCaptureError } from './artifact-capture-error.js';
 import { SAFE_ID, runOperationId } from '../core/identity.js';
 import { Value } from '@sinclair/typebox/value';
@@ -285,7 +286,7 @@ export class CandidateRun {
   }
 
   async #waitForTurn(): Promise<TurnSettlement> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let cancelTimer: (() => void) | undefined;
     let timedOut = false;
     const native = this.#runner.waitForTurn();
     // The abandoned wait must not surface as an unhandled rejection once the race has been decided.
@@ -295,11 +296,11 @@ export class CandidateRun {
         native,
         this.#stoppedWait,
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => { timedOut = true; reject(new Error('turn timeout')); }, this.#policy.turnTimeoutMs);
+          cancelTimer = segmentedTimeout(() => { timedOut = true; reject(new Error('turn timeout')); }, this.#policy.turnTimeoutMs);
         }),
       ]);
     } finally {
-      if (timer) clearTimeout(timer);
+      cancelTimer?.();
       if (timedOut) this.#runner.cancelWait('Harness stopped waiting for this turn.');
     }
   }

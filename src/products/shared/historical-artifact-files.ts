@@ -7,19 +7,12 @@ import {
   type HistoricalArtifactManifest,
 } from "../../core/schema.js";
 import type { HistoricalArtifactExtractResult, HistoricalArtifactBytes } from "../contract.js";
-import { validateLogicalPath } from "./historical-artifact-apply.js";
+import { assertSafeLogicalPath } from "../../core/logical-paths.js";
 import type { FrozenFile } from "./freeze.js";
 
 const BASELINE_ARTIFACTS_MANIFEST = "baseline-artifacts/manifest.json";
 const BASELINE_ARTIFACTS_FILES_PREFIX = "baseline-artifacts/files";
 
-/** Reject path escape / absolute / ADS / UNC before sealing or joining bytes (B1 validator). */
-export function assertSafeLogicalPath(logicalPath: string): void {
-  const result = validateLogicalPath(logicalPath);
-  if (!result.ok) {
-    throw new Error(`Historical artifact logicalPath is unsafe (${result.reason}): ${logicalPath}`);
-  }
-}
 
 export function frozenRelativePathForArtifact(artifact: HistoricalArtifact): string {
   assertSafeLogicalPath(artifact.logicalPath);

@@ -120,13 +120,13 @@ export function createExperimentWorkflow(input: {
       const experimentId = `recovery-${randomUUID()}`;
       const runId = `recovery-run-${randomUUID()}`;
       const owned = await beginOwnedActivity("prepare", experimentId, runId, input.dataDir, request.signal, request.onActivity);
-      const recovery = request.gitStart
-        ? { recover: async () => { throw new Error('Confirmed Git start must not invoke a Recovery model.'); } }
-        : (await input.agents(owned.signal)).recovery;
+      const agents = request.gitStart ? undefined : await input.agents(owned.signal);
+      const recovery = agents?.recovery
+        ?? { recover: async () => { throw new Error('Confirmed Git start must not invoke a Recovery model.'); } };
       owned.signal.throwIfAborted();
       const attempt = await recoverExperiment({
         dataDir: input.dataDir, caseId: request.taskCase.caseId, experimentId, runId, sourceRoot: request.sourceRoot,
-        taskCase: request.taskCase, recovery, now: input.now(), pack: packFor(request.taskCase.source.productId),
+        taskCase: request.taskCase, recovery, ...(agents ? { timeoutMs: agents.config.recoveryBudget.callTimeoutMs } : {}), now: input.now(), pack: packFor(request.taskCase.source.productId),
         activity: owned.activity, signal: owned.signal, ...(request.onEvent ? { onEvent: request.onEvent } : {}),
         ...(request.gitStart ? { gitStart: request.gitStart } : {}),
       });

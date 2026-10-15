@@ -1,5 +1,5 @@
-import { sha256 } from "../../core/identity.js";
-import type { TaskCase } from "../../core/schema.js";
+import { sha256 } from "./identity.js";
+import type { TaskCase } from "./schema.js";
 
 export type RecoveryEvidenceCatalogEntry = {
   ref: string;

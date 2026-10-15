@@ -25,12 +25,12 @@ test('Knip dynamic child entry prevents a false unused-file result', async (t) =
       cwd: root, encoding: 'utf8', timeout: 20_000,
     });
     assert.ifError(result.error);
-    return { status: result.status, report: JSON.parse(result.stdout) as { files: string[] } };
+    return { status: result.status, report: JSON.parse(result.stdout) as { issues: { file: string; files: unknown[] }[] } };
   };
 
   const included = await run(['test/main.test.ts', ...dynamicEntry]);
   assert.equal(included.status, 0, 'configured dynamic entry must keep Knip green');
   const removed = await run(['test/main.test.ts']);
   assert.notEqual(removed.status, 0, 'removing the dynamic entry must fail Knip');
-  assert.ok(removed.report.files.includes(CHILD_FILE));
+  assert.ok(removed.report.issues.some(issue => issue.file === CHILD_FILE && issue.files.length > 0));
 });

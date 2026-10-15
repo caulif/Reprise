@@ -552,7 +552,7 @@ test('ProductPack contract uses history, ProductRuntime, and projection without 
   await stat(join(SRC, 'application/candidate-run-cleanup.ts'));
   await stat(join(SRC, 'application/candidate-run-facts.ts'));
   await stat(join(SRC, 'application/recovery/admission.ts'));
-  await stat(join(SRC, 'products/history/source-refs.ts'));
+  await stat(join(SRC, 'core/recovery-evidence.ts'));
   await stat(join(SRC, 'environment/snapshots.ts'));
   await stat(join(SRC, 'products/history/discover.ts'));
   await stat(join(SRC, 'products/history/read.ts'));

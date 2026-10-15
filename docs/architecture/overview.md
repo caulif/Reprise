@@ -42,6 +42,7 @@ Core 定义 [schema](../../src/core/schema.ts)、[状态转换](../../src/core/s
 - 候选工作区与用户 source 分离；source 设有 fingerprint/tripwire，候选结束后释放由 Host 执行。
 - 模型可见输入必须能从事件和持久化 briefing 重建；压缩使用 `agent.context_compacted` 的 summary 与 retained tail。
 - TUI 只投影事件和结果，不伪造未公开的推理过程。
+- 同层跨模块导入仅允许 agents、environment、products 指向 infrastructure；infrastructure 不反向依赖这些模块，证据引用目录由 core 持有。
 
 ## 实现入口
 
@@ -66,4 +67,3 @@ token 与成本上限默认不启用。Controller 单次 `timeoutMs` 为 0；Com
 <!-- END GENERATED default-run-policy -->
 
 自定义 OpenAI-compatible 模型未显式配置时，上下文窗口默认 256,000 tokens，单次最大输出仍为 16,384 tokens；目录模型与显式配置保留原值。
-

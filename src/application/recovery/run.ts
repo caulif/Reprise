@@ -1,3 +1,5 @@
+import { DEFAULT_AGENT_DEADLINE_MS } from '../../core/agent-defaults.js';
+import { segmentedTimeout } from '../../infrastructure/segmented-timeout.js';
 import {
   closeRecoveryRunSession,
   createRecoveryRunSession,
@@ -23,8 +25,8 @@ export async function recoverExperiment(
   input: RecoveryAttemptInput,
 ): Promise<RecoveryAttempt> {
   const localAbort = new AbortController();
-  const deadline = AbortSignal.timeout(24 * 60 * 60_000);
-  const signal = AbortSignal.any([...(input.signal ? [input.signal] : []), localAbort.signal, deadline]);
+  const deadline = new AbortController();
+  const signal = AbortSignal.any([...(input.signal ? [input.signal] : []), localAbort.signal, deadline.signal]);
   const activity = input.activity ?? registerActivity({
     kind: "prepare",
     experimentId: input.experimentId,
@@ -35,15 +37,16 @@ export async function recoverExperiment(
     },
   });
   if (input.activity) activity.cancel = async () => { localAbort.abort(); };
-  await activityControlReady(activity);
+  const cancelDeadline = segmentedTimeout(() => deadline.abort(), input.timeoutMs ?? DEFAULT_AGENT_DEADLINE_MS);
   let session: RecoveryRunSession | undefined;
   try {
+    await activityControlReady(activity);
     session = await createRecoveryRunSession({ ...input, signal });
     return await runRecoverExperiment(session);
   } catch (error) {
     if (!session) throw error;
     if (signal.aborted) {
-      session.failureStage = deadline.aborted ? "agent_timeout" : "cancelled";
+      session.failureStage = deadline.signal.aborted ? "agent_timeout" : "cancelled";
       session.recovery = { status: 'cancelled' };
       return await failRecoveryRunSession(session, error);
     }
@@ -53,6 +56,7 @@ export async function recoverExperiment(
       return completedDecisionWithFinalizationFailure(session, error);
     return await failRecoveryRunSession(session, error);
   } finally {
+    cancelDeadline();
     if (session) await closeRecoveryRunSession(session);
     await finishExperimentActivity(input.experimentId);
   }

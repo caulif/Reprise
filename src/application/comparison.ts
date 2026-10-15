@@ -14,7 +14,7 @@ import {
   type ComparisonResult,
 } from '../agents/comparison-agent.js';
 import type { AgentAuditSink, AgentToolDefinition, StructuredAgentResult } from '../infrastructure/agent/host.js';
-import { recoveryEvidenceCatalog } from '../products/history/source-refs.js';
+import { recoveryEvidenceCatalog } from '../core/recovery-evidence.js';
 import { validSessionTimestamp } from '../products/shared/session-files.js';
 import {
   aggregateHistoricalUsage,

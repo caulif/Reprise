@@ -4,7 +4,7 @@ import { Value } from '@sinclair/typebox/value';
 import { HistoricalArtifactManifestSchema, type ComparisonLinkRecord } from '../core/schema.js';
 import { sha256File } from '../core/identity.js';
 import { pathContainedBy } from '../core/paths.js';
-import { assertSafeLogicalPath } from '../products/shared/historical-artifact-files.js';
+import { assertSafeLogicalPath } from '../core/logical-paths.js';
 import { attemptFinalsRoot } from './prepare-historical-artifacts.js';
 import { mediaTypeForComparisonPath } from './comparison-media.js';
 
