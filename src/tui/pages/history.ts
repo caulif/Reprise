@@ -91,6 +91,8 @@ export function renderHistoryDetailWithHits(
   push(kv(theme, t(locale, 'resultComparison'), presentation.comparisonLabel, width - 2));
   if (item.startupFailureStage) push(kv(theme, t(locale, 'historyStartupStage'), item.startupFailureStage, width - 2));
   if (item.startupFailure) for (const line of kvBlock(theme, t(locale, 'resultDiagnostic'), item.startupFailure, width)) push(line);
+  if (item.comparisonFailureStage) push(kv(theme, t(locale, 'historyComparisonFailureStage'), item.comparisonFailureStage, width - 2));
+  if (item.comparisonFailureMessage) for (const line of kvBlock(theme, t(locale, 'resultDiagnostic'), item.comparisonFailureMessage, width)) push(line);
   if (item.eventLogErrorCode) push(kv(theme, t(locale, 'historyEventLogError'), item.eventLogErrorCode, width - 2));
   if (item.incompleteModelInput) {
     for (const line of kvBlock(theme, t(locale, 'modelInputLabel'), t(locale, 'incompleteModelInput'), width)) push(line);

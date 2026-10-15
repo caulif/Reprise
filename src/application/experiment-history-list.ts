@@ -28,6 +28,8 @@ export type HistoryExperiment = {
   readonly cleanupStatus?: string;
   readonly comparisonStatus?: string;
   readonly comparisonFailure?: string;
+  readonly comparisonFailureStage?: string;
+  readonly comparisonFailureMessage?: string;
   /** Nested comparison value status when invocation completed (e.g. insufficient_evidence). */
   readonly comparisonDetail?: string;
   readonly startedAt?: string;

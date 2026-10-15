@@ -9,6 +9,7 @@ import { CandidateRun } from "./candidate-run.js";
 import { createCandidateRuntimeSink } from "./candidate-run-events.js";
 import { progressDigestFromFingerprint } from "./candidate-run-safety.js";
 import type { CandidateLaunchContext, CandidateSpec, EventEnvelope, RunManifest, RunPolicy, RunRecord, TaskCase } from "../core/schema.js";
+import type { AgentBudget, HarnessConfigurationReference } from '../core/schema.js';
 import type { ProductRuntime } from "../core/runtime.js";
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
 import {
@@ -40,7 +41,8 @@ import { finishExperiment, attachExperimentComparison } from "./experiment-repor
 export type ExperimentAgentConfig = {
   providerId: string;
   requestedModel: string;
-  budget: { callTimeoutMs: number; maxStructuredRepairAttempts: number; maxCalls?: number };
+  budget: AgentBudget;
+  effectiveReference?: HarnessConfigurationReference;
 };
 export type ExperimentResult = {
   taskCase: TaskCase;
@@ -343,8 +345,8 @@ async function openExperimentSession(input: {
     experimentId: experiment.experimentId,
     taskCaseId: experiment.caseId,
     candidates: [experiment.candidate],
-    controller: experiment.agentConfig,
-    comparison: comparisonAgentConfig,
+    controller: resolvedAgentConfiguration(experiment.agentConfig),
+    comparison: resolvedAgentConfiguration(comparisonAgentConfig),
     runPolicy: experiment.policy,
     outputRoot: experimentRoot,
   };
@@ -398,8 +400,8 @@ async function openExperimentSession(input: {
       executionIsolation: experiment.runtime.executionIsolation?.() ?? { hostPrivateReads: 'unknown', mechanism: 'undeclared' },
       ...(environment.gitSink ? { gitSink: environment.gitSink } : {}),
     },
-    controller: experiment.agentConfig,
-    comparison: comparisonAgentConfig,
+    controller: resolvedAgentConfiguration(experiment.agentConfig),
+    comparison: resolvedAgentConfiguration(comparisonAgentConfig),
     startedAt: experiment.now,
   };
   const store = input.startup.store;
@@ -413,6 +415,14 @@ async function openExperimentSession(input: {
     targetEvents: [] as string[],
     launch,
   };
+}
+
+function resolvedAgentConfiguration(config: ExperimentAgentConfig): RunManifest['controller'] {
+  return { providerId: config.providerId, requestedModel: config.requestedModel,
+    budget: { callTimeoutMs: config.budget.callTimeoutMs, maxStructuredRepairAttempts: config.budget.maxStructuredRepairAttempts,
+      ...(config.budget.maxCalls === undefined ? {} : { maxCalls: config.budget.maxCalls }),
+      ...(config.budget.comparisonResources ? { comparisonResources: config.budget.comparisonResources } : {}) },
+    ...(config.effectiveReference ? { effectiveReference: config.effectiveReference } : {}) };
 }
 async function startCandidateRun(args: {
   input: ExperimentInput;
@@ -504,7 +514,6 @@ async function startCandidateRun(args: {
     const cleanup: CleanupFailure[] = [];
     await cleanupOperation(cleanup, 'runner_close', () => runner.close());
     throwFailures([error, ...cleanup.map(item => item.error)], 'Candidate construction and Runner close failed.');
-    throw error;
   }
 }
 async function finishCandidateRun(args: {
@@ -586,6 +595,7 @@ async function executeExperiment(
 ): Promise<ExperimentResult> {
   if (typeof input.taskCase !== 'function' && input.taskCase.caseId !== input.caseId) throw new Error('Experiment caseId must match TaskCase.caseId.');
   const startup = input.startup ?? await ExperimentStartup.admit(input);
+  input = { ...input, candidate: startup.attempt.candidate, policy: startup.attempt.policy };
   let acquired: { provider: LocalWorkspaceProvider; environment: PreparedEnvironmentRef } | undefined;
   let released: Promise<{ status: 'released' | 'already_released' }> | undefined;
   const release = () => released ??= acquired!.provider.release(acquired!.environment);

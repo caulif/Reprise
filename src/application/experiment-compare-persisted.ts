@@ -19,6 +19,11 @@ import type { HistoricalArtifactExtractFn } from "../products/shared/freeze.js";
 import type { ProductRuntime } from "../core/runtime.js";
 import { hasRunLifecycle, matchingRunRecord, readCommittedRunEvents } from "./experiment-run-history.js";
 import { cleanupOperation, throwFailures, type CleanupFailure } from "./experiment-startup.js";
+import { harnessConfigurationScope, type HarnessConfigurationScope } from './harness-configuration.js';
+import type { newComparisonAttempt } from './comparison-briefing.js';
+import { failComparisonOperation, reserveComparisonOperation } from './comparison-operation.js';
+import type { ComparisonOperationFailure, HarnessConfigurationReference } from '../core/schema.js';
+import { isRecord } from '../core/json.js';
 
 export async function comparePersistedExperiment(input: {
   readonly dataDir: string;
@@ -26,7 +31,7 @@ export async function comparePersistedExperiment(input: {
   readonly runId?: string;
   readonly comparison?: ComparisonAgentPort;
   readonly agentConfig?: ExperimentAgentConfig;
-  readonly resolveAgents?: (signal: AbortSignal) => Promise<{ comparison: ComparisonAgentPort; agentConfig: ExperimentAgentConfig }>;
+  readonly resolveAgents?: (signal: AbortSignal, scope: HarnessConfigurationScope) => Promise<{ comparison: ComparisonAgentPort; agentConfig: ExperimentAgentConfig }>;
   readonly policy: RunPolicy;
   readonly now: string;
   readonly signal?: AbortSignal;
@@ -43,12 +48,17 @@ export async function comparePersistedExperiment(input: {
   const signal = input.signal ? AbortSignal.any([input.signal, localAbort.signal]) : localAbort.signal;
   let comparison: ComparisonAgentPort | undefined;
   let comparisonAttemptId: string | undefined;
+  let reserved: ReturnType<typeof newComparisonAttempt> | undefined;
+  let effectiveReference: HarnessConfigurationReference | undefined;
+  let stage: ComparisonOperationFailure['stage'] = 'activity';
   let activity: ExperimentActivity | undefined;
   let primaryError: { error: unknown } | undefined;
   try {
     await store.acquireWriter();
     loaded = await loadFinishedRun(experimentRoot, input.experimentId, input.runId);
     unsubscribe = input.onEvent ? store.subscribe(input.onEvent) : undefined;
+    reserved = await reserveComparisonOperation(store, experimentRoot, loaded.record.attempt.runId);
+    comparisonAttemptId = reserved.attemptId;
     activity = registerActivity({
     kind: "compare",
     experimentId: input.experimentId,
@@ -61,11 +71,15 @@ export async function comparePersistedExperiment(input: {
   });
     input.onActivity?.(activity);
     await activityControlReady(activity);
+    stage = 'agents';
     const agents = input.comparison && input.agentConfig
       ? { comparison: input.comparison, agentConfig: input.agentConfig }
-      : await resolveCompareAgents(input.resolveAgents, signal);
+      : await resolveCompareAgents(input.resolveAgents, signal, harnessConfigurationScope(store,
+        { experimentId: input.experimentId, runId: loaded.record.attempt.runId, operation: 'comparison', comparisonAttemptId: reserved.attemptId },
+        reference => { effectiveReference = reference; }));
     comparison = agents.comparison;
     signal.throwIfAborted();
+    stage = 'workspace';
     const workspaceLocation = replicaWorkspaceLocation(experimentRoot, loaded.record.attempt.runId,
       loaded.record.manifest?.environment.workspacePath ?? join(experimentRoot, 'environment', 'runs', loaded.record.attempt.runId));
     if (!workspaceLocation) throw new CliError("failed", "Recorded candidate workspace is outside the selected experiment.", input.experimentId);
@@ -95,15 +109,32 @@ export async function comparePersistedExperiment(input: {
       candidateSnapshotStatus: snapshot.status,
       compare: true as const,
       onComparisonAttempt: (attemptId: string) => { comparisonAttemptId = attemptId; },
+      comparisonAttempt: reserved,
     };
+    stage = 'comparison';
     return await attachExperimentComparison(finishInput as unknown as Parameters<typeof attachExperimentComparison>[0], loaded.record);
   } catch (error) {
-    primaryError = { error };
-    throw error;
+    const failures: CleanupFailure[] = [];
+    await cleanupOperation(failures, 'comparison_failure_audit', () => recordComparisonHostFailure({ store, reserved, stage, signal,
+      experimentId: input.experimentId, runId: loaded.record.attempt.runId, effectiveReference }, error));
+    const combined = failures.length ? new AggregateError([error, ...failures.map(item => item.error)], 'Comparison operation and failure audit failed.', { cause: error }) : error;
+    primaryError = { error: combined };
+    throw combined;
   } finally {
     unsubscribe?.();
     await closeComparisonResources(store, activity, primaryError);
   }
+}
+
+async function recordComparisonHostFailure(input: {
+  store: ExperimentStore; reserved: ReturnType<typeof newComparisonAttempt> | undefined; experimentId: string; runId: string;
+  stage: ComparisonOperationFailure['stage']; signal: AbortSignal; effectiveReference: HarnessConfigurationReference | undefined;
+}, error: unknown): Promise<void> {
+  const { store, reserved, experimentId, runId, stage, signal, effectiveReference } = input;
+  if (!reserved || store.events(runId).some(event => event.type === 'comparison.completed'
+    && isRecord(event.payload) && event.payload.attemptId === reserved.attemptId)) return;
+  await failComparisonOperation(store, reserved.attemptRoot, { experimentId, runId, attemptId: reserved.attemptId,
+    stage, status: signal.aborted ? 'cancelled' : 'failed', ...(effectiveReference ? { effectiveReference } : {}) }, error);
 }
 
 async function closeComparisonResources(store: ExperimentStore, activity: ExperimentActivity | undefined, primary?: { error: unknown }): Promise<void> {
@@ -114,11 +145,12 @@ async function closeComparisonResources(store: ExperimentStore, activity: Experi
 }
 
 async function resolveCompareAgents(
-  resolveAgents: ((signal: AbortSignal) => Promise<{ comparison: ComparisonAgentPort; agentConfig: ExperimentAgentConfig }>) | undefined,
+  resolveAgents: ((signal: AbortSignal, scope: HarnessConfigurationScope) => Promise<{ comparison: ComparisonAgentPort; agentConfig: ExperimentAgentConfig }>) | undefined,
   signal: AbortSignal,
+  scope: HarnessConfigurationScope,
 ): Promise<{ comparison: ComparisonAgentPort; agentConfig: ExperimentAgentConfig }> {
   if (!resolveAgents) throw new Error("Persisted comparison requires injected comparison agents.");
-  return resolveAgents(signal);
+  return resolveAgents(signal, scope);
 }
 
 async function loadFinishedRun(experimentRoot: string, experimentId: string, requestedRunId?: string) {

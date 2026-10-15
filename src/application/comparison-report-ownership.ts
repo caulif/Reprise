@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { Value } from "@sinclair/typebox/value";
 import { ComparisonAttemptReferenceSchema, ComparisonAttemptResultSchema, ComparisonInvocationSchema, ComparisonReportOwnerSchema, ComparisonReportModelSchema, type ComparisonAttemptResult, type ComparisonReportOwner, type EventEnvelope } from "../core/schema.js";
+import { ComparisonOperationFailureSchema, HarnessConfigurationBoundSchema } from '../core/schema.js';
 import { sha256, writeImmutable } from "../core/identity.js";
 import { pathContainedBy } from "../core/paths.js";
 import { isRecord } from "../core/json.js";
@@ -27,7 +28,7 @@ export async function sealComparisonReport(input: {
   return record;
 }
 
-type RunComparison = ComparisonArtifactSelection & { comparison?: ComparisonAttemptResult["comparison"] };
+type RunComparison = ComparisonArtifactSelection & { comparison?: ComparisonAttemptResult["comparison"]; comparisonFailureStage?: string; comparisonFailureMessage?: string };
 
 export async function readRunComparison(input: {
   experimentRoot: string; experimentId: string; runId?: string; events: readonly EventEnvelope[];
@@ -42,8 +43,24 @@ export async function readRunComparison(input: {
     return otherRuns ? {} : readLegacyComparison(input.experimentRoot);
   }
   const attemptId = latest.payload.attemptId;
-  const completion = [...events].reverse().find((event) => event.type === "comparison.completed" && isRecord(event.payload) && event.payload.attemptId === attemptId);
+  const started = [...events].reverse().find(event => event.type === 'comparison.started' && event.sequence <= latest.sequence
+    && Value.Check(ComparisonAttemptReferenceSchema, event.payload) && event.payload.attemptId === attemptId);
+  const completion = [...events].reverse().find((event) => event.type === "comparison.completed" && (!started || event.sequence > started.sequence)
+    && isRecord(event.payload) && event.payload.attemptId === attemptId);
   const comparison = completion && Value.Check(ComparisonInvocationSchema, completion.payload) ? completion.payload : undefined;
+  const operationFailure = started && completion && events.find(event => event.type === 'comparison.operation_failed'
+    && event.sequence > started.sequence && event.sequence < completion.sequence
+    && Value.Check(ComparisonOperationFailureSchema, event.payload) && event.payload.experimentId === input.experimentId
+    && event.payload.runId === input.runId && event.payload.attemptId === attemptId && event.payload.status === comparison?.status);
+  let diagnostic: Pick<RunComparison, 'comparisonFailureStage' | 'comparisonFailureMessage'> = {};
+  if (operationFailure && Value.Check(ComparisonOperationFailureSchema, operationFailure.payload)) {
+    const reference = operationFailure.payload.effectiveReference;
+    if (!reference || (reference.operation === 'comparison' && reference.experimentId === input.experimentId && reference.runId === input.runId
+      && reference.comparisonAttemptId === attemptId && events.some(event => event.type === 'harness.configuration_bound' && event.sequence < operationFailure.sequence
+      && Value.Check(HarnessConfigurationBoundSchema, event.payload) && isDeepStrictEqual(event.payload.reference, reference)))) {
+      diagnostic = { comparisonFailureStage: operationFailure.payload.stage, comparisonFailureMessage: operationFailure.payload.error.message };
+    }
+  }
   const reports = events.filter((event) => event.type === "report.created");
   let primary: string | undefined;
   let previous: string | undefined;
@@ -55,6 +72,7 @@ export async function readRunComparison(input: {
     if ((primary && comparison?.status === "completed") || (primary && previous)) break;
   }
   return {
+    ...diagnostic,
     ...(comparison ? { comparison } : {}), ...(primary ? { reportPath: primary } : { reportAttemptUnconfirmed: true }),
     ...(previous && (!primary || comparison?.status !== "completed") ? { previousReportPath: previous } : {}),
   };

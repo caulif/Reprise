@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { AgentBudget, CandidateSpec, EventEnvelope, RunPolicy, TaskCase, RecoveryGitStart } from '../core/schema.js';
 import type { ResolvedRuntime, RuntimeAvailability, RuntimeModelOffer, ProductRuntime } from '../core/runtime.js';
 import { readHarnessModelConfig } from '../infrastructure/harness-model-config.js';
-import { PiModelCaller } from '../infrastructure/agent/model-caller.js';
+import { PiModelCaller, HarnessProbeAuditError } from '../infrastructure/agent/model-caller.js';
 import type { AgentLocale } from '../agents/language.js';
 import { createHarnessAgents, type HarnessAgents } from './harness-agents.js';
 import { readOperatorLocale } from './operator-locale.js';
@@ -33,6 +33,8 @@ import type { SourceRootKind } from './replay-conditions.js';
 import { assertCandidateStartAllowed, candidateGateFromAttempt } from './candidate-start.js';
 import { activityControlReady, finishActivity, registerActivity, type ExperimentActivity } from './experiment-activity.js';
 import { ExperimentStartup, cleanupOperation, throwFailures, type CleanupFailure } from './experiment-startup.js';
+import { harnessConfigurationScope, type HarnessConfigurationScope } from './harness-configuration.js';
+import { frozenSnapshot } from '../core/json.js';
 
 export { DEFAULT_RUN_POLICY, TUI_RUN_POLICY } from './default-run-policy.js';
 
@@ -87,7 +89,7 @@ export function createExperimentWorkflow(input: {
   runtime?: ProductRuntime;
   pack?: ProductPack;
   lookup?: ProductLookup;
-  agents: (signal?: AbortSignal) => Promise<HarnessAgents>;
+  agents: (signal?: AbortSignal, scope?: HarnessConfigurationScope) => Promise<HarnessAgents>;
   now: () => string;
   defaults?: ExperimentDefaults;
 }): ExperimentWorkflow {
@@ -122,7 +124,7 @@ export function createExperimentWorkflow(input: {
       const attempt = await recoverExperiment({
         dataDir: input.dataDir, caseId: request.taskCase.caseId, experimentId, runId, sourceRoot: request.sourceRoot,
         taskCase: request.taskCase, recovery: { recover: async () => { throw new Error('Recovery model was not initialized.'); } },
-        ...(!request.gitStart ? { resolveRecovery: async (signal: AbortSignal) => (await input.agents(signal)).recovery } : {}),
+        ...(!request.gitStart ? { resolveRecovery: async (signal: AbortSignal, scope: HarnessConfigurationScope) => (await input.agents(signal, scope)).recovery } : {}),
         now: input.now(), pack: packFor(request.taskCase.source.productId),
         ...(request.signal ? { signal: request.signal } : {}), ...(request.onEvent ? { onEvent: request.onEvent } : {}),
         ...(request.onActivity ? { onActivity: request.onActivity } : {}),
@@ -163,8 +165,8 @@ export function createExperimentWorkflow(input: {
       signal?.throwIfAborted();
       return comparePersistedExperiment({
         dataDir: input.dataDir, experimentId, policy, now: input.now(),
-        resolveAgents: async (combined) => {
-          const agents = await input.agents(combined);
+        resolveAgents: async (combined, scope) => {
+          const agents = await input.agents(combined, scope);
           return { comparison: agents.comparison, agentConfig: agents.config };
         },
         resolveExtractHistoricalArtifacts: sourceExtractor,
@@ -219,25 +221,33 @@ export function createHarnessWorkflow(input: {
   recoveryBudget?: AgentBudget;
   locale?: AgentLocale;
 }): ExperimentWorkflow {
-  let validated: { key: string; agents: HarnessAgents } | undefined;
+  let cached: { key: string; agents: HarnessAgents } | undefined;
+  let validatedConnection: string | undefined;
   return createExperimentWorkflow({
     ...input,
-    agents: async (signal) => {
+    agents: async (signal, scope) => {
+      if (!scope) throw new Error('Harness initialization requires operation-owned configuration auditing.');
+      const limits = frozenSnapshot({ ...(input.budget ? { budget: input.budget } : {}), ...(input.recoveryBudget ? { recoveryBudget: input.recoveryBudget } : {}) });
       const config = await readHarnessModelConfig(input.dataDir);
       if (!config) throw new Error('Harness Pi setup is required before an experiment can start.');
       const locale = input.locale ?? await readOperatorLocale(input.dataDir);
-      const key = JSON.stringify({ config, locale });
-      if (validated?.key === key) return validated.agents;
       const caller = new PiModelCaller(config);
+      const modelKey = caller.executionFingerprint;
+      const connectionKey = JSON.stringify({ config, modelKey });
+      const key = JSON.stringify({ config, locale, ...limits, modelKey });
+      const agents = cached?.key === key ? cached.agents : createHarnessAgents(config, caller, limits, { locale });
+      const binding = await scope.bind(agents.config.effective!);
       // The connection check is a real, billable request, so it is repeated only when the configuration changes.
       try {
-        await caller.validate(signal);
+        if (validatedConnection !== connectionKey) await caller.validate(signal, binding.probeAudit);
       } catch (error) {
+        if (error instanceof AggregateError || error instanceof HarnessProbeAuditError) throw error;
         signal?.throwIfAborted();
         throw Object.assign(new Error('Harness connection probe failed.', { cause: error }), { name: 'HarnessProbeError' });
       }
-      validated = { key, agents: createHarnessAgents(config, caller, input, { locale }) };
-      return validated.agents;
+      validatedConnection = connectionKey;
+      cached = { key, agents };
+      return { ...agents, config: frozenSnapshot({ ...agents.config, effectiveReference: binding.reference }) };
     },
   });
 }
@@ -292,7 +302,6 @@ async function beginOwnedActivity(
     const cleanup: CleanupFailure[] = [];
     await cleanupOperation(cleanup, 'activity', () => finishActivity(activity));
     throwFailures([error, ...cleanup.map(item => item.error)], 'Activity preparation and cleanup failed.');
-    throw error;
   }
   return { activity, signal: combined };
 }
@@ -307,9 +316,11 @@ async function beginWorkflowStart(
   try {
     owned = await beginOwnedActivity(request.compare ? 'compare' : 'run', input.experimentId, input.runId, input.dataDir, request.signal, request.onActivity);
     startup.stage = 'agents';
-    const agents = await workflow.agents(owned.signal);
+    const agents = await workflow.agents(owned.signal, harnessConfigurationScope(startup.store,
+      { experimentId: input.experimentId, runId: input.runId, operation: 'run' }));
     owned.signal.throwIfAborted();
-    return startExperiment({ ...input, controller: agents.controller, comparison: agents.comparison, agentConfig: agents.config,
+    return startExperiment({ ...input, candidate: startup.attempt.candidate, policy: startup.attempt.policy,
+      controller: agents.controller, comparison: agents.comparison, agentConfig: agents.config,
       activity: owned.activity, signal: owned.signal, startup });
   } catch (error) {
     const cleanup: CleanupFailure[] = [];
@@ -321,7 +332,6 @@ async function beginWorkflowStart(
     await cleanupOperation(cleanup, 'startup_audit', () => startup.fail(error, signal?.aborted ?? false, cleanup, source));
     await startup.close(cleanup);
     throwFailures([error, ...cleanup.map(item => item.error)], 'Workflow startup and cleanup failed.');
-    throw error;
   }
 }
 
