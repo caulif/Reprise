@@ -14,9 +14,9 @@ import { COMPARISON_INITIAL_FINDINGS_PROMPT } from '../../src/agents/comparison-
 import { COMPARISON_AUTHOR_COMPOSE_PROMPT } from '../../src/agents/comparison-author-prompt.js';
 import { AgentHost, type ProviderAdapter } from '../../src/infrastructure/agent/host.js';
 import { sha256 } from '../../src/core/identity.js';
+import type { ArtifactRenderer } from '../../src/infrastructure/artifact-renderer.js';
 import { startExperiment } from '../../src/application/experiment.js';
 import { input, VerifiedRuntime } from '../codex-experiment-support.js';
-import { protocolPreviewRenderer } from '../support/protocol-preview-renderer.js';
 
 async function fixture(t: { after: (fn: () => Promise<void>) => void }, persist?: (record: ComparisonDiscoveryRecord) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), 'reprise-findings-delta-')); t.after(() => rm(root, { recursive: true, force: true }));
@@ -303,8 +303,23 @@ for (const changed of [false, true]) test(`production ${changed ? 'replacement' 
       const reason = await yieldAfterTurn?.(); return reason ? { status: 'yielded' as const, reason } : '';
     }, cancel() {} };
   } }) });
-  const result = await startExperiment({ ...base, comparison, comparisonPreviewRenderer: protocolPreviewRenderer(message => t.diagnostic(message)) }).result;
+  let previewRenders = 0;
+  const comparisonPreviewRenderer: ArtifactRenderer = async request => {
+    previewRenders++;
+    assert.equal(request.entryRelativePath, 'preview.html');
+    const prepared = await readFile(join(request.bundleRoot, request.entryRelativePath), 'utf8');
+    assert.match(prepared, /Quality remains unverified/);
+    assert.match(prepared, /No supported replacement choice/);
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    await mkdir(request.outputRoot, { recursive: true });
+    const pngPath = join(request.outputRoot, 'preview.png');
+    await writeFile(pngPath, png);
+    return { ok: true, frames: [{ sampleTimeMs: 0, actualTimeMs: 0, pngPath, byteLength: png.byteLength, contentHash: sha256(png) }],
+      diagnostics: [], measured: { loadMs: 1, viewport: request.viewport, origin: 'fixture://preview' } };
+  };
+  const result = await startExperiment({ ...base, comparison, comparisonPreviewRenderer }).result;
   assert.equal(result.comparison.result.status, 'completed', JSON.stringify(result.comparison.result)); assert.equal(turns, 9); assert.ok(actualDelta);
+  assert.equal(previewRenders, 1, 'the actual Host preview renders the inspected draft exactly once');
   const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { sequence: number; type: string; payload: Record<string, unknown> });
   assert.equal(events.filter(event => event.type === 'comparison.findings_updated').length, changed ? 2 : 1);
   const updates = events.filter(event => event.type === 'agent.tool_completed' && ['update_comparison_findings', 'update_comparison_findings_delta'].includes(String(event.payload.tool)) && !event.payload.nativeHook);
