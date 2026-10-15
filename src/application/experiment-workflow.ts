@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { AgentBudget, CandidateSpec, EventEnvelope, RunPolicy, TaskCase, RecoveryGitStart } from '../core/schema.js';
 import type { ResolvedRuntime, RuntimeAvailability, RuntimeModelOffer, ProductRuntime } from '../core/runtime.js';
-import { readHarnessModelConfig } from '../infrastructure/harness-model-config.js';
+import { readHarnessModelConfig, resolveKeyRef } from '../infrastructure/harness-model-config.js';
 import { PiModelCaller, HarnessProbeAuditError } from '../infrastructure/agent/model-caller.js';
 import type { AgentLocale } from '../agents/language.js';
 import { createHarnessAgents, type HarnessAgents } from './harness-agents.js';
@@ -234,8 +234,9 @@ export function createHarnessWorkflow(input: {
       const locale = input.locale ?? await readOperatorLocale(input.dataDir);
       const caller = new PiModelCaller(config);
       const modelKey = caller.executionFingerprint;
-      const connectionKey = JSON.stringify({ config, modelKey });
-      const key = JSON.stringify({ config, locale, ...limits, modelKey });
+      const environmentCredential = config.schemaVersion === 2 && config.keyRef ? resolveKeyRef(config.keyRef) : undefined;
+      const connectionKey = JSON.stringify({ config, modelKey, environmentCredential });
+      const key = JSON.stringify({ connectionKey, locale, ...limits });
       const agents = cached?.key === key ? cached.agents : createHarnessAgents(config, caller, limits, { locale });
       const binding = await scope.bind(agents.config.effective!);
       // The connection check is a real, billable request, so it is repeated only when the configuration changes.
