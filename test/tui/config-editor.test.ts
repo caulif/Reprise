@@ -422,17 +422,24 @@ test('draft changes while a connection test is pending keep the new draft unveri
   await app.start();
   await app.openConfig();
   const started = app.testConfigConnection();
-  await waitUntil(() => app.configTestStatus === 'testing');
-  assert.equal(app.configBusy, 'test');
-  const testedVersion = app.configDraftVersion;
+  await waitUntil(() => app.configSession.state.testStatus === 'testing');
+  assert.equal(app.configSession.state.busy, 'test');
+  const testedVersion = app.configSession.state.draftVersion;
   // Mutate the draft the way the editor does: bump identity so a late success cannot verify it.
-  app.configAdvanced = true;
-  app.configSelected = visibleConfigItems('pi-catalog', true).indexOf('effort');
+  const more = visibleConfigItems('pi-catalog').indexOf('more');
+  for (let step = 0; app.configSession.state.selected < more && step <= more; step++) app.configPageInput('\x1b[B');
+  assert.equal(app.configSession.state.selected, more);
   app.configPageInput('\r');
-  assert.notEqual(app.configDraftVersion, testedVersion);
+  const fields = visibleConfigItems('pi-catalog', true);
+  const effort = fields.indexOf('effort');
+  assert.ok(effort >= 0);
+  for (let step = 0; app.configSession.state.selected > effort && step < fields.length; step++) app.configPageInput('\x1b[A');
+  assert.equal(app.configSession.state.selected, effort);
+  app.configPageInput('\r');
+  assert.notEqual(app.configSession.state.draftVersion, testedVersion);
   release();
   await started;
-  assert.equal(app.configTestStatus, 'stale');
+  assert.equal(app.configSession.state.testStatus, 'stale');
   assert.match(app.message, /previous draft|已变更前的草稿|Re-test|重新测试/);
   assert.doesNotMatch(app.message, /^Connection test passed/);
 });
@@ -482,14 +489,14 @@ test('leave and reopen clears sticky busy so reconnect does not fake a connectio
   await app.start();
   await app.openConfig();
   const started = app.testConfigConnection();
-  await waitUntil(() => app.configBusy === 'test');
+  await waitUntil(() => app.configSession.state.busy === 'test');
   app.leaveConfig();
-  assert.equal(app.configBusy, 'idle');
-  assert.equal(app.configTestStatus, 'idle');
+  assert.equal(app.configSession.state.busy, 'idle');
+  assert.equal(app.configSession.state.testStatus, 'idle');
   await waitUntil(() => app.page === 'home' && /background|后台/.test(app.message));
   await app.openConfig();
-  assert.equal(app.configBusy, 'idle');
-  assert.equal(app.configTestStatus, 'idle');
+  assert.equal(app.configSession.state.busy, 'idle');
+  assert.equal(app.configSession.state.testStatus, 'idle');
   const projected = view(app).config;
   assert.ok(projected);
   assert.equal(projected.busy, false);
@@ -543,26 +550,26 @@ test('abandoned probe finally does not clear a newer in-flight connection test',
   await app.start();
   await app.openConfig();
   const first = app.testConfigConnection();
-  await waitUntil(() => app.configBusy === 'test' && gates.length === 1);
+  await waitUntil(() => app.configSession.state.busy === 'test' && gates.length === 1);
   app.leaveConfig();
   await waitUntil(() => app.page === 'home');
   await app.openConfig();
-  assert.equal(app.configBusy, 'idle');
+  assert.equal(app.configSession.state.busy, 'idle');
   const second = app.testConfigConnection();
-  await waitUntil(() => app.configBusy === 'test' && gates.length === 2);
+  await waitUntil(() => app.configSession.state.busy === 'test' && gates.length === 2);
   // Finish the abandoned first probe — must not drop the second request's busy gate.
   gates[0]!();
   await first;
-  assert.equal(app.configBusy, 'test');
-  assert.equal(app.configTestStatus, 'testing');
+  assert.equal(app.configSession.state.busy, 'test');
+  assert.equal(app.configSession.state.testStatus, 'testing');
   // Second probe still owns the gate: another Ctrl+T must not start a third flight.
   assert.deepEqual(app.configPageInput('\x14'), { consume: true });
   assert.match(app.message, /already in progress|进行中/);
   assert.equal(gates.length, 2);
   gates[1]!();
   await second;
-  assert.equal(app.configBusy, 'idle');
-  assert.equal(app.configTestStatus, 'passed');
+  assert.equal(app.configSession.state.busy, 'idle');
+  assert.equal(app.configSession.state.testStatus, 'passed');
 });
 
 test('missing credentials refuse Ctrl+T without marking connection-test failed', async (t) => {
@@ -586,7 +593,7 @@ test('missing credentials refuse Ctrl+T without marking connection-test failed',
   await app.start();
   await app.openConfig();
   // Force openai-compatible draft with empty key.
-  app.configDraft = {
+  app.configSession.reset({
     kind: 'openai-compatible',
     providerId: 'openai-compatible',
     modelId: 'gpt-test',
@@ -596,10 +603,10 @@ test('missing credentials refuse Ctrl+T without marking connection-test failed',
     api: 'openai-completions',
     reasoning: false,
     supportsImage: false,
-  };
+  });
   await app.testConfigConnection();
-  assert.equal(app.configTestStatus, 'idle');
-  assert.equal(app.configBusy, 'idle');
+  assert.equal(app.configSession.state.testStatus, 'idle');
+  assert.equal(app.configSession.state.busy, 'idle');
   assert.match(app.message, /API key|env:NAME|密钥/i);
   assert.equal(view(app).config?.connectionTest?.status, 'idle');
 });

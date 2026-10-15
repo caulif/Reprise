@@ -43,6 +43,7 @@ Core 定义 [schema](../../src/core/schema.ts)、[状态转换](../../src/core/s
 - 模型可见输入必须能从事件和持久化 briefing 重建；压缩使用 `agent.context_compacted` 的 summary 与 retained tail。
 - TUI 只投影事件和结果，不伪造未公开的推理过程。查找编辑和退出恢复快照由局部 [CanvasFind](../../src/tui/canvas-find.ts) 持有，不接收整个控制器；timeline 选择与导航仍由原控制器负责，异步结果继续受 generation/request token 约束。
 - 事件诊断与阶段时钟由 [RunDiagnostics](../../src/tui/run-diagnostics.ts) 持有，页面读取只读快照；它复用既有事件推导，不持有 workflow、实验 handle、页面或取消生命周期，不执行 CandidateRun 状态变化。
+- 配置编辑与测试局部状态由 [ConfigSession](../../src/tui/config-session.ts) 持有，以 draftVersion 和 request ticket 区分草稿/请求归属；保存、探测和 navigation generation 的副作用与提交 guard 仍由 adapter 负责。
 
 ## 实现入口
 

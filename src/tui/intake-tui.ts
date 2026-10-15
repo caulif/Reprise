@@ -8,7 +8,6 @@ import type { TaskCase, CandidateSpec } from "../core/schema.js";
 import type { RuntimeAvailabilityStatus, RuntimeModelOffer } from "../core/runtime.js";
 import {
   defaultHarnessModelConfig,
-  emptyHarnessConfigDraft,
   type HarnessConfigDraft,
   type HarnessModelConfig,
 } from "../infrastructure/harness-model-config.js";
@@ -23,7 +22,6 @@ import type {
 import { initializeIntakeTui } from "./intake-tui-state.js";
 import * as intakeMethods from "./intake-tui-methods.js";
 import type { ConfigReturnTarget } from "./intake-tui-config.js";
-import type { ConfigBusy, ConfigConnectionTestStatus } from "./pages/config.js";
 import type { Locale } from "./i18n.js";
 import type { HistoryCase, HistoryExperiment } from "./local-history.js";
 import type { IntakeLevel, ProductIntakeItem, SessionProject } from "./pages/intake.js";
@@ -32,6 +30,7 @@ import type { TimelineEntry } from "./timeline.js";
 import { createActivityIndex, type ActivityIndexState } from "./activity-index.js";
 import { CanvasFind } from "./canvas-find.js";
 import { RunDiagnostics } from './run-diagnostics.js';
+import { ConfigSession } from './config-session.js';
 import { type Workbench, type WorkbenchView } from "./workbench.js";
 import type { IntakeProductMemory } from "./intake-layer-memory.js";
 import type { PreparePhase } from "./widgets.js";
@@ -114,6 +113,7 @@ export class IntakeTui {
   searching = false;
   readonly canvasFind = new CanvasFind();
   readonly runDiagnostics = new RunDiagnostics();
+  readonly configSession = new ConfigSession();
   readingMode = false;
   readingVisibleAt = 0;
   timelineAnchor: string | undefined;
@@ -127,14 +127,6 @@ export class IntakeTui {
   preparedInspectionSnapshot: string | undefined;
   modelConfig: HarnessModelConfig = defaultHarnessModelConfig();
   hasSavedModelConfig = false;
-  configDraft: ConfigDraft = emptyHarnessConfigDraft();
-  configSelected = 0;
-  configAdvanced = false;
-  configEditing = false;
-  configBuffer = "";
-  configCursor = 0;
-  configPendingToggle = false;
-  configLeaveConfirm = false;
   readonly intakeMemory = new Map<string, IntakeProductMemory>();
   readonly productAuth = new Map<string, boolean>();
   sessionLimitReached = false;
@@ -187,10 +179,6 @@ export class IntakeTui {
   timelineFollowing = true;
   cancelUi: import("./controller-run.js").CancelUi = "idle";
   cancelling = false;
-  configBusy: ConfigBusy = "idle";
-  configDraftVersion = 0;
-  configTestStatus: ConfigConnectionTestStatus = "idle";
-  configTestDetail: string | undefined;
   configReturnTarget: ConfigReturnTarget | undefined;
   generation = 0;
   timelineRenderQueued = false;
@@ -239,7 +227,6 @@ export class IntakeTui {
         catalogProjects: readonly SessionDiscoveryProject[];
       }
     | undefined;
-  dirtyCache: { draft: ConfigDraft; config: HarnessModelConfig; dirty: boolean } | undefined;
 
   constructor(options: IntakeTuiOptions) {
     initializeIntakeTui(this, options);

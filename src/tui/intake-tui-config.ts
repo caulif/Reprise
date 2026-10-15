@@ -11,9 +11,7 @@ import {
   type HarnessModelConfig,
 } from "../infrastructure/harness-model-config.js";
 import { PiModelCaller } from "../infrastructure/agent/model-caller.js";
-import { type ConfigBusy, type ConfigConnectionTestStatus } from "./pages/config.js";
-import { handleConfigInput } from "./config-input.js";
-import { visibleConfigItems } from "./config-input.js";
+import type { ConfigSession } from './config-session.js';
 import { credentialGapMessage, harnessCaller } from "./controller-auth.js";
 import { t, type Locale } from "./i18n.js";
 import type { Option } from "./types.js";
@@ -29,19 +27,7 @@ export type ConfigReturnTarget = {
 
 /** Config helpers may only touch draft, save/test, and operator feedback. */
 export type ConfigPanel = {
-  configDraft: HarnessConfigDraft;
-  configSelected: number;
-  configAdvanced: boolean;
-  configEditing: boolean;
-  configBuffer: string;
-  configCursor: number;
-  configPendingToggle: boolean;
-  configLeaveConfirm: boolean;
-  /** Single request lifecycle — never a separate boolean + kind pair. */
-  configBusy: ConfigBusy;
-  configDraftVersion: number;
-  configTestStatus: ConfigConnectionTestStatus;
-  configTestDetail: string | undefined;
+  readonly configSession: ConfigSession;
   configReturnTarget: ConfigReturnTarget | undefined;
   providers: readonly Option[];
   models: readonly Option[];
@@ -57,7 +43,6 @@ export type ConfigPanel = {
   inspection: unknown;
   inspectionTaskInput: number;
   inspectionShowOutcome: boolean;
-  dirtyCache: { draft: HarnessConfigDraft; config: HarnessModelConfig; dirty: boolean } | undefined;
   tui: import("@earendil-works/pi-tui").TUI;
   configDirty(): boolean;
   modelsForDraft(draft: HarnessConfigDraft): { draft: HarnessConfigDraft; models: readonly Option[] };
@@ -72,37 +57,11 @@ export type ConfigPanel = {
 };
 
 export function IntakeTui_configPageInput(this: ConfigPanel, data: string): { consume: true } | undefined {
-    const previousDraft = this.configDraft;
-    const result = handleConfigInput(
-      {
-        draft: this.configDraft,
-        selected: this.configSelected,
-        advanced: this.configAdvanced,
-        editing: this.configEditing,
-        buffer: this.configBuffer,
-        cursor: this.configCursor,
-        providers: this.providers,
-        models: this.models,
-        pendingToggle: this.configPendingToggle,
-        dirty: this.configDirty(),
-        leaveConfirm: this.configLeaveConfirm,
-        busy: this.configBusy !== "idle",
-        locale: this.locale,
-      },
-      data,
-      (draft) => this.modelsForDraft(draft),
-    );
+    const result = this.configSession.dispatch(data, {
+      providers: this.providers, models: this.models, savedConfig: this.modelConfig, locale: this.locale,
+    }, (draft) => this.modelsForDraft(draft));
     if (!result) return undefined;
-    this.configDraft = result.state.draft;
-    this.configSelected = result.state.selected;
-    this.configAdvanced = Boolean(result.state.advanced);
-    this.configEditing = result.state.editing;
-    this.configBuffer = result.state.buffer;
-    this.configCursor = result.state.cursor ?? result.state.buffer.length;
-    this.configPendingToggle = Boolean(result.state.pendingToggle);
-    this.configLeaveConfirm = Boolean(result.state.leaveConfirm);
-    this.models = result.state.models;
-    if (result.state.draft !== previousDraft) noteDraftChanged.call(this);
+    this.models = result.models;
     if (result.message) this.message = result.message;
     if (result.action === "save") void this.saveConfig();
     else if (result.action === "test") void this.testConfigConnection();
@@ -113,15 +72,6 @@ export function IntakeTui_configPageInput(this: ConfigPanel, data: string): { co
     } else this.render();
     return { consume: true };
   }
-
-function noteDraftChanged(this: ConfigPanel): void {
-  this.configDraftVersion += 1;
-  this.dirtyCache = undefined;
-  if (this.configTestStatus === "passed" || this.configTestStatus === "failed") {
-    this.configTestStatus = "stale";
-    this.configTestDetail = undefined;
-  }
-}
 
 export function IntakeTui_modelsForDraft(this: ConfigPanel, draft: ConfigDraft): {
     draft: ConfigDraft;
@@ -137,51 +87,30 @@ export function IntakeTui_modelsForDraft(this: ConfigPanel, draft: ConfigDraft):
     return { draft: model ? { ...draft, modelId: model.id } : draft, models };
   }
 
-/** Wipe editor chrome and page-local request/test view without touching return target. */
-function resetConfigSession(panel: ConfigPanel, draft: HarnessConfigDraft): void {
-  panel.configDraft = draft;
-  panel.configDraftVersion += 1;
-  panel.configEditing = false;
-  panel.configAdvanced = false;
-  panel.configBuffer = "";
-  panel.configCursor = 0;
-  panel.configPendingToggle = false;
-  panel.configLeaveConfirm = false;
-  panel.configTestStatus = "idle";
-  panel.configTestDetail = undefined;
-  // Drop page busy chrome even if a background probe's finally has not run yet.
-  panel.configBusy = "idle";
-  panel.dirtyCache = undefined;
-}
-
 export async function IntakeTui_openConfig(this: ConfigPanel): Promise<void> {
     const token = this.beginNavigation();
     this.configReturnTarget = captureReturnTarget(this);
-    resetConfigSession(
-      this,
-      this.hasSavedModelConfig
+    this.configSession.reset(this.hasSavedModelConfig
         ? draftForConfig(this.modelConfig)
-        : emptyHarnessConfigDraft(),
-    );
-    this.configSelected = Math.max(0, visibleConfigItems(this.configDraft.kind).indexOf("model"));
+        : emptyHarnessConfigDraft());
     this.providers = new PiModelCaller(
       this.modelConfig,
       this.piModels,
     ).providers();
     if (token !== this.generation) return;
-    if (this.configDraft.kind === "pi-catalog") {
+    if (this.configSession.state.draft.kind === "pi-catalog") {
       const provider =
         this.providers.find(
-          (item) => item.id === this.configDraft.providerId,
+          (item) => item.id === this.configSession.state.draft.providerId,
         ) ?? this.providers[0];
       if (provider)
-        this.configDraft = { ...this.configDraft, providerId: provider.id };
-      const refreshed = this.modelsForDraft(this.configDraft);
-      this.configDraft = refreshed.draft;
+        this.configSession.replaceDraft({ ...this.configSession.state.draft, providerId: provider.id });
+      const refreshed = this.modelsForDraft(this.configSession.state.draft);
+      this.configSession.replaceDraft(refreshed.draft);
       this.models = refreshed.models;
     }
     this.page = "config";
-    const envName = tryEnvironmentName(this.configDraft.keyRef);
+    const envName = tryEnvironmentName(this.configSession.state.draft.keyRef);
     this.message =
       envName && !process.env[envName]
         ? t(this.locale, "envNotSetConfig", {
@@ -204,15 +133,12 @@ function captureReturnTarget(panel: ConfigPanel): ConfigReturnTarget {
 }
 
 export function IntakeTui_leaveConfig(this: ConfigPanel): { consume: true } {
-    const testing = this.configBusy === "test";
+    const testing = this.configSession.state.busy === "test";
     // Invalidate in-flight save/test results without claiming the request was cancelled.
     this.beginNavigation();
-    resetConfigSession(
-      this,
-      this.hasSavedModelConfig
+    this.configSession.reset(this.hasSavedModelConfig
         ? draftForConfig(this.modelConfig)
-        : emptyHarnessConfigDraft(),
-    );
+        : emptyHarnessConfigDraft());
     const target = this.configReturnTarget;
     this.configReturnTarget = undefined;
     const backgroundNote = testing
@@ -232,18 +158,17 @@ export function IntakeTui_leaveConfig(this: ConfigPanel): { consume: true } {
   }
 
 export async function IntakeTui_saveConfig(this: ConfigPanel): Promise<void> {
-    if (this.configBusy !== "idle") return;
-    this.configBusy = "save";
+    const ticket = this.configSession.beginRequest('save');
+    if (!ticket) return;
     const token = this.beginNavigation();
     try {
-      const config = configForDraft(this.configDraft);
+      const config = configForDraft(this.configSession.state.draft);
       await saveHarnessModelConfig(this.dataDir, config);
       if (token !== this.generation) return;
       this.modelConfig = config;
       this.hasSavedModelConfig = true;
       // Saving never marks the connection as verified.
-      this.configTestStatus = "idle";
-      this.configTestDetail = undefined;
+      this.configSession.clearTest();
       await this.refreshHarnessAuth();
       if (token !== this.generation) return;
       await restoreAfterSave.call(this);
@@ -253,7 +178,7 @@ export async function IntakeTui_saveConfig(this: ConfigPanel): Promise<void> {
       this.message = safeConfigError(error);
     } finally {
       // Only the owning generation may drop the gate — an abandoned save must not clear a newer request.
-      if (token === this.generation) this.configBusy = "idle";
+      if (token === this.generation) this.configSession.finishRequest(ticket);
     }
     this.render(true);
   }
@@ -263,7 +188,7 @@ async function restoreAfterSave(this: ConfigPanel): Promise<void> {
   this.configReturnTarget = undefined;
   const savedOk = this.harnessAuthOk
     ? t(this.locale, "configSavedReturn")
-    : `${t(this.locale, "configSavedReturn")} ${credentialGapMessage(this.configDraft) ?? "Harness has no usable credential."}`;
+    : `${t(this.locale, "configSavedReturn")} ${credentialGapMessage(this.configSession.state.draft) ?? "Harness has no usable credential."}`;
   if (applyConfigReturnTarget.call(this, target, {
     inspectionMessage: savedOk,
     staleMessage: t(this.locale, "configSavedReturnStale"),
@@ -273,7 +198,7 @@ async function restoreAfterSave(this: ConfigPanel): Promise<void> {
   await this.loadHome(
     this.harnessAuthOk
       ? t(this.locale, "configSavedIntake")
-      : `Configuration saved locally. ${credentialGapMessage(this.configDraft) ?? "Harness has no usable credential."}`,
+      : `Configuration saved locally. ${credentialGapMessage(this.configSession.state.draft) ?? "Harness has no usable credential."}`,
   );
 }
 
@@ -301,8 +226,8 @@ function applyConfigReturnTarget(
 }
 
 export async function IntakeTui_testConfigConnection(this: ConfigPanel): Promise<void> {
-    if (this.configBusy !== "idle") return;
-    const unset = credentialGapMessage(this.configDraft);
+    if (this.configSession.state.busy !== "idle") return;
+    const unset = credentialGapMessage(this.configSession.state.draft);
     if (unset) {
       // Credential axis only — do not mark the connection-test axis as failed.
       this.message = unset;
@@ -310,10 +235,8 @@ export async function IntakeTui_testConfigConnection(this: ConfigPanel): Promise
       this.render(true);
       return;
     }
-    this.configBusy = "test";
-    const draftVersion = this.configDraftVersion;
-    this.configTestStatus = "testing";
-    this.configTestDetail = undefined;
+    const ticket = this.configSession.beginRequest('test');
+    if (!ticket) return;
     const token = this.beginNavigation();
     const loaderText = t(this.locale, "testingConnection");
     const loader = isViewportTUI(this.tui)
@@ -329,7 +252,7 @@ export async function IntakeTui_testConfigConnection(this: ConfigPanel): Promise
     let outcome: "passed" | "failed";
     let detail: string;
     try {
-      const config = configForDraft(this.configDraft);
+      const config = configForDraft(this.configSession.state.draft);
       this.message = loaderText;
       this.render();
       const caller = harnessCaller(config, this.piModels);
@@ -341,26 +264,24 @@ export async function IntakeTui_testConfigConnection(this: ConfigPanel): Promise
       outcome = "passed";
     } catch (error) {
       detail =
-        credentialGapMessage(this.configDraft) ?? safeConfigError(error);
+        credentialGapMessage(this.configSession.state.draft) ?? safeConfigError(error);
       outcome = "failed";
     } finally {
       loader?.stop();
       overlay?.hide();
       // Only the owning generation may drop the gate — an abandoned probe must not clear a newer request.
-      if (token === this.generation) this.configBusy = "idle";
+      if (token === this.generation) this.configSession.finishRequest(ticket);
     }
     // A provider round trip outlives the keypress; by now the operator may have navigated elsewhere.
     if (token !== this.generation) return;
-    if (draftVersion !== this.configDraftVersion) {
-      this.configTestStatus = "stale";
-      this.configTestDetail = undefined;
+    const status = this.configSession.completeTest(ticket, outcome, detail);
+    if (status === 'ignored') return;
+    if (status === 'stale') {
       this.message = t(this.locale, "configTestDraftChanged");
       this.page = "config";
       this.render(true);
       return;
     }
-    this.configTestStatus = outcome;
-    this.configTestDetail = outcome === "failed" ? detail : undefined;
     this.message = detail;
     this.page = "config";
     this.render(true);
@@ -383,25 +304,5 @@ export async function IntakeTui_refreshHarnessAuth(this: ConfigPanel): Promise<v
   }
 
 export function IntakeTui_configDirty(this: ConfigPanel): boolean {
-    const cached = this.dirtyCache;
-    if (
-      cached &&
-      cached.draft === this.configDraft &&
-      cached.config === this.modelConfig
-    )
-      return cached.dirty;
-    let dirty: boolean;
-    try {
-      dirty =
-        JSON.stringify(configForDraft(this.configDraft)) !==
-        JSON.stringify(this.modelConfig);
-    } catch {
-      dirty = true;
-    }
-    this.dirtyCache = {
-      draft: this.configDraft,
-      config: this.modelConfig,
-      dirty,
-    };
-    return dirty;
-  }
+  return this.configSession.dirty(this.modelConfig);
+}

@@ -143,11 +143,7 @@ export function IntakeTui_backToHome(this: IntakeTui): { consume: true } {
     this.discoveryAbort?.abort();
     this.recoveryAbort?.abort();
     this.generation += 1;
-    this.configEditing = false;
-    this.configBuffer = "";
-    this.configCursor = 0;
-    this.configDraft = this.hasSavedModelConfig ? draftForConfig(this.modelConfig) : emptyHarnessConfigDraft();
-    this.configPendingToggle = false;
+    this.configSession.reset(this.hasSavedModelConfig ? draftForConfig(this.modelConfig) : emptyHarnessConfigDraft());
     this.historyDetail = undefined;
     this.hideHelp();
     this.hideActivityDetail();
@@ -217,7 +213,7 @@ export function IntakeTui_beginNavigation(this: IntakeTui): number {
 
 export function IntakeTui_isEditingText(this: IntakeTui): boolean {
     return (
-      this.configEditing ||
+      this.configSession.state.editing ||
       this.searching ||
       this.canvasFind.state.finding ||
       this.page === "source" ||
