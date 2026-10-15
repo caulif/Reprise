@@ -1,3 +1,4 @@
+import { segmentedTimeout } from '../segmented-timeout.js';
 import { randomUUID } from "node:crypto";
 import { Value } from '@sinclair/typebox/value';
 import { AgentInvocationYieldedSchema, AgentInvocationStartedSchema } from '../../core/schema.js';
@@ -246,7 +247,7 @@ export class AgentSessionHost {
     this.#session!.setToolsEnabled?.(toolsEnabledForAttempt(request, attempts));
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, this.#abort.signal, ...(request.signal ? [request.signal] : [])]);
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let cancelTimer: (() => void) | undefined;
     try {
       this.#cursor.requestIndex += 1;
       const content = redactModelVisibleText(capabilityAwarePrompt(promptBody(request, attempts, lastError), this.#inputCapabilities)).text;
@@ -268,7 +269,7 @@ export class AgentSessionHost {
       if (request.timeoutMs > 0) {
         const remaining = deadline! - Date.now();
         if (remaining <= 0) throw timeoutError();
-        timer = setTimeout(() => controller.abort(), remaining);
+        cancelTimer = segmentedTimeout(() => controller.abort(), remaining);
       }
       if (cancelled()) return { done: true, result: { status: "cancelled", sessionId: this.#sessionId, invocationId } };
       const output = await abortable(
@@ -329,7 +330,7 @@ export class AgentSessionHost {
       const code = kind === "timeout" ? "agent_timeout" : "agent_failure";
       return { done: true, result: await this.#failed(code, errorMessage(error), attempts + 1, invocationId, kind) };
     } finally {
-      if (timer) clearTimeout(timer);
+      cancelTimer?.();
       if (request.timeoutMs > 0) controller.abort();
     }
   }

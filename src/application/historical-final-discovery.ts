@@ -14,7 +14,7 @@ import {
   DERIVED_HISTORY_DIR,
   attemptFinalsRoot,
 } from "./prepare-historical-artifacts.js";
-import { validateLogicalPath } from "../products/shared/historical-artifact-apply.js";
+import { validateLogicalPath } from "../core/logical-paths.js";
 import {
   addHistoricalImageBasenames,
   addHistoricalDeliverableBasenames,

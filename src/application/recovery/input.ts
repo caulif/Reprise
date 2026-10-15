@@ -12,6 +12,8 @@ export type RecoveryAttemptMode =
 
 export type RecoveryAttemptInput = {
   signal?: AbortSignal;
+  /** Overall Recovery deadline; defaults to the shared Agent deadline. */
+  timeoutMs?: number;
   dataDir: string;
   caseId: string;
   experimentId: string;

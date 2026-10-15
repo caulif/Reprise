@@ -1,3 +1,5 @@
+import { DEFAULT_AGENT_DEADLINE_MS } from '../../core/agent-defaults.js';
+import { segmentedTimeout } from '../../infrastructure/segmented-timeout.js';
 import {
   closeRecoveryRunSession,
   createRecoveryRunSession,
@@ -28,8 +30,10 @@ export async function recoverExperiment(
   input: RecoveryAttemptInput,
 ): Promise<RecoveryAttempt> {
   const localAbort = new AbortController();
-  const deadline = AbortSignal.timeout(24 * 60 * 60_000);
-  const signal = AbortSignal.any([...(input.signal ? [input.signal] : []), localAbort.signal, deadline]);
+  const deadline = new AbortController();
+  const signal = AbortSignal.any([...(input.signal ? [input.signal] : []), localAbort.signal, deadline.signal]);
+  const deadlineStartedAt = performance.now();
+  let cancelDeadline = segmentedTimeout(() => deadline.abort(), input.timeoutMs ?? DEFAULT_AGENT_DEADLINE_MS);
   let activity = input.activity;
   let session: RecoveryRunSession | undefined;
   let result: RecoveryAttempt | undefined;
@@ -54,7 +58,16 @@ export async function recoverExperiment(
     session.preflightOperation = 'initialize_recovery_agent';
     if (input.resolveRecovery) session.input = { ...session.input, recovery: await input.resolveRecovery(signal,
       harnessConfigurationScope(session.store, { experimentId: input.experimentId, runId: input.runId, operation: 'recovery' },
-        reference => { effectiveReference = reference; })) };
+        (reference, configuration) => {
+          effectiveReference = reference;
+          if (input.timeoutMs !== undefined && input.timeoutMs !== configuration.recovery.operationTotal.milliseconds)
+            throw new Error('Explicit Recovery timeout conflicts with the bound effective operation budget.');
+          cancelDeadline();
+          const remaining = configuration.recovery.operationTotal.milliseconds - (performance.now() - deadlineStartedAt);
+          if (remaining <= 0) deadline.abort();
+          else cancelDeadline = segmentedTimeout(() => deadline.abort(), remaining);
+          signal.throwIfAborted();
+        })) };
     signal.throwIfAborted();
     await recordRecoveryAttempt(session, recoveryAttemptRecord({ attemptId: 'recovery-attempt-initialization-completed', phase: 'staging',
       operation: 'initialize', attemptNumber: 1, result: 'succeeded', durationMs: Date.now() - initializationStartedAt, recordedAt: new Date().toISOString(),
@@ -69,7 +82,7 @@ export async function recoverExperiment(
         operation: 'initialize', attemptNumber: 1, result: 'failed', failureCode: 'initialization_failed',
         durationMs: Date.now() - initializationStartedAt, recordedAt: new Date().toISOString(), ...(effectiveReference ? { effectiveReference } : {}) }));
       if (signal.aborted) {
-        session.failureStage = deadline.aborted ? 'agent_timeout' : 'cancelled';
+        session.failureStage = deadline.signal.aborted ? 'agent_timeout' : 'cancelled';
         session.recovery = { status: 'cancelled' };
       }
       const completed = session.lastCompletedRecovery ?? session.recovery;
@@ -80,6 +93,8 @@ export async function recoverExperiment(
     } catch (persistenceError) {
       failures.push(error, persistenceError);
     }
+  } finally {
+    cancelDeadline();
   }
   if (activity) await cleanupOperation(cleanup, 'activity', () => finishActivity(activity));
   if (session) await cleanupOperation(cleanup, 'recovery_session', () => closeRecoveryRunSession(session));

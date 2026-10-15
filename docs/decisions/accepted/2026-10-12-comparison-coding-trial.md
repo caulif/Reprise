@@ -2,7 +2,7 @@
 
 状态：accepted
 
-默认时间预算由[24 小时与 256k 默认预算](2026-10-14-agent-default-budgets.md)更新；下文保留当时的选择理由。
+预算状态：superseded；30 分钟默认预算已被[24 小时与 256k 默认预算](2026-10-14-agent-default-budgets.md)取代，其余决定继续有效。
 
 ## 问题
 
