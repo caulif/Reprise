@@ -12,6 +12,8 @@
 
 自主 compare 在所有出口记录资源完成并释放该 attempt 的 Session；外层 release 保持幂等。资源审计和 Session 关闭独立尝试，若收尾失败，AggregateError 同时保留原始失败或取消原因及全部收尾错误。已由共享 Host 归类为 authentication、rate_limited、transient_network、transient_upstream 的失败映射为 provider_failure；其他类型不重分类。
 
+应用将收尾 AggregateError 转成失败结果时，逐项保留实际原因（包括嵌套聚合，重复或循环引用只访问一次），再统一经 safeAgentFailureText 脱敏和去除控制字符。comparison.completed、comparison.json 和失败页面使用同一诊断，不能只保存聚合器的固定标题。未发生收尾错误的取消仍是 cancelled；未发生的 close 失败不得补写。沿用现有失败 message 字段，不新增 on-disk 格式。
+
 评测冻结前缀、输入字节和 run 绑定不变；允许 role=comparison 的 agent.model_stream_completed 作为合法 suffix，Controller 的同名事件仍拒绝。本批迁移是退役准备，旧 executor、历史 schema/reader 和尚未迁移的测试继续保留。
 
 ## 备选方案
@@ -27,6 +29,8 @@
 ## 验证
 
 迁移回归覆盖实际只读拒绝、scratch 命令 exitCode 与文件字节、当前预览图像进入后续 generation、无预览或旧预览拒绝发布、预览后 Provider 失败、空最终文本及重新预览后的发布。原 TCP listener 退出回归迁到自主实现；收尾负例同时注入主失败、audit 失败和 close 失败并检查外层重复 release。冻结输入负例拒绝 Controller 同名 stream 事件、修改过的 committed 前缀与源文件。
+
+comparison-finalization-persistence.test 经默认 createHarnessAgents 构造的自主 Agent，分别走 startExperiment 与 comparePersistedExperiment，核对真实完成事件、comparison.json 和失败页面保留主失败或取消、资源审计与 Session close 的实际原因并脱敏；单独审计失败不伪造 close 错误，正常取消和 Provider 失败不伪造收尾失败。嵌套聚合与环引用另有离线负例。
 
 现行规则见[证据与对照](../../architecture/evidence-and-comparison.md#comparison-attempt)。
 
