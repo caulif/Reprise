@@ -13,7 +13,7 @@ import { sha256 } from '../../src/core/identity.js';
 import { parseCommittedEventLog } from '../../src/infrastructure/agent/model-input.js';
 import { input, patientPolicy, VerifiedRuntime } from '../codex-experiment-support.js';
 
-export const comparisonFixtureModel: Model<'openai-completions'> = {
+const comparisonFixtureModel: Model<'openai-completions'> = {
   id: 'fixture', name: 'fixture', api: 'openai-completions', provider: 'fixture', baseUrl: 'https://example.test',
   reasoning: false, input: ['text', 'image'], contextWindow: 128_000, maxTokens: 16_384,
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -66,7 +66,7 @@ export function scriptedComparison(steps: readonly ComparisonStep[], options: {
   return { agents, contexts };
 }
 
-export const comparisonFixtureRenderer: ArtifactRenderer = async request => {
+const comparisonFixtureRenderer: ArtifactRenderer = async request => {
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
   await mkdir(request.outputRoot, { recursive: true });
   const pngPath = join(request.outputRoot, 'preview.png');
