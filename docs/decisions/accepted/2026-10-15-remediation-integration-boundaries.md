@@ -8,7 +8,7 @@
 
 ## 决定
 
-列表用 metadata reader 校验固定 TaskCase 描述身份，继续保留内容冲突诊断，但不读取绑定附件、不发完整验证 receipt。当前固定绑定的 `taskCaseFilesVerified: false` 明示该边界；所选实验详情用完整 reader 验证，成功才置 true，失败保留原 run 和具体诊断。使用任务和重比仍须完整验证，不能根据轻列表安装可信 TaskCase。
+列表用 metadata reader 校验固定 TaskCase 描述身份，继续保留内容冲突诊断，但不读取绑定附件、不发完整验证 receipt。当前固定绑定的 `taskCaseFilesVerified: false` 明示该边界；所选实验详情用完整 reader 验证，只有具备 v2 文件绑定且完整验证成功才置 true，失败保留原 run 和具体诊断。旧 v1 case 没有完整文件绑定，即使完整 reader 成功也保留 false。使用任务和重比仍须完整验证，不能根据轻列表安装可信 TaskCase。
 
 Recovery 继续先取得 writer、记录初始化 attempt，再发布 activity 并延迟构造 Agent。整体截止由上游分段计时器执行，开始时采用显式 timeout 或共享默认值；有效配置完成不可变绑定后、真实 probe 开始前，按该快照的 recovery.operationTotal 重设剩余截止，扣除自初始化开始已经消耗的单调时间。同一 AbortController 贯穿操作，到期同步拒绝，所有退出路径取消计时器后再聚合清理。
 
