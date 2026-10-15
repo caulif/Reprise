@@ -9,6 +9,7 @@ const M = {
   titleVs: { en: "{category} · {baseline} vs {candidate}", zh: "{category} · {baseline} vs {candidate} 对比" },
   metricTime: { en: "Time", zh: "时间" },
   recommendation: { en: "Recommendation", zh: "推荐" },
+  shareConclusion: { en: "Conclusion", zh: "结论" },
   runtimeMetrics: { en: "Run metrics", zh: "运行指标" },
   compactTime: { en: "Time (min:s)", zh: "耗时（分:秒）" },
   compactTokens: { en: "Tokens (k)", zh: "Token（k）" },

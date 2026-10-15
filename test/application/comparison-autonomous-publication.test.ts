@@ -25,7 +25,7 @@ const model: Model<'openai-completions'> = { id: 'fixture', name: 'fixture', api
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 const config: HarnessModelConfig = { schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' },
   providerId: 'fixture', modelId: 'fixture', effort: 'low' };
-const submission = { boundary: 'Task quality remains unverified.', differences: ['Candidate delivers a focused change.'], status: 'completed', category: 'Delivery', headline: 'The candidate delivered a focused change', path: 'scratch/report.html' };
+const submission = { boundary: 'Task quality remains unverified.', differences: [], status: 'completed', category: 'Delivery', headline: 'The candidate delivered a focused change', path: 'scratch/report.html' };
 const original = '<p>The candidate produced a focused change. Task quality remains unverified.</p>';
 const revised = '<p>The revised comparison retains the uncertainty about task quality.</p>';
 type Step = { name: string; arguments: Record<string, unknown> };
@@ -93,7 +93,7 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
     const comparisonPreviewRenderer: ArtifactRenderer = async request => {
       const html = await readFile(join(request.bundleRoot, request.entryRelativePath), 'utf8');
       assert.ok(html.includes(renders++ === 0 ? original : revised));
-      assert.match(html, /2026-09-21 UTC/);
+      assert.doesNotMatch(html, /2026-09-21 UTC/);
       const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
       await mkdir(request.outputRoot, { recursive: true });
       const pngPath = join(request.outputRoot, 'preview.png');
@@ -136,7 +136,7 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
     const request = events.find(event => event.type === 'comparison.requested');
     assert.ok(request && typeof request.payload === 'object' && request.payload !== null);
     const payload = request.payload as { attemptId: string; autonomousContractVersion: number; reviewInspectionContractVersion?: number };
-    assert.equal(payload.autonomousContractVersion, 2);
+    assert.equal(payload.autonomousContractVersion, 3);
     assert.equal(payload.reviewInspectionContractVersion, undefined);
     const context = JSON.parse(await readFile(join(result.experimentRoot, 'comparison-attempts', payload.attemptId, 'facts', 'context.json'), 'utf8')) as { reportFacts: { sessionDates: { baseline: string; candidate: string } } };
     assert.deepEqual(context.reportFacts.sessionDates, { baseline: '2026-09-21', candidate: base.now.slice(0, 10) });
@@ -172,13 +172,13 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
     if (published) {
       const html = await readFile(reportPath, 'utf8');
       assert.ok(html.includes(mode === 'repreviewed' ? revised : original));
-      assert.match(html, /data-report-format="3"/);
-      assert.match(html, /2026-09-21 UTC/);
-      assert.match(recovery.html, /2026-09-21 UTC/);
+      assert.match(html, /data-report-format="4"/);
+      assert.doesNotMatch(html, /2026-09-21 UTC/);
+      assert.doesNotMatch(recovery.html, /2026-09-21 UTC/);
       assert.doesNotMatch(html, /data-agent-zone="details"|data-host-zone="evidence"|data-host-limitation="hostLimitationShareCardPresentation"/);
       const model: unknown = JSON.parse(await readFile(join(result.experimentRoot, 'report-model.json'), 'utf8'));
       assert.ok(Value.Check(ComparisonReportModelSchema, model));
-      assert.equal(model.formatVersion, 3);
+      assert.equal(model.formatVersion, 4);
       assert.equal(model.boundary, submission.boundary);
       assert.deepEqual(model.differences, submission.differences);
       assert.equal(recovery.model?.boundary, submission.boundary);
