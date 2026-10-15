@@ -242,10 +242,13 @@ async function registerPreviewMedia(
     rendererVersion: entry.derivation.rendererVersion,
     viewport: entry.derivation.viewport,
     sampleTimesMs: [entry.derivation.sampleTimeMs],
+    ...(entry.derivation.captureScope ? { captureScope: entry.derivation.captureScope } : {}),
+    ...(entry.derivation.scrollOffset ? { scrollOffset: entry.derivation.scrollOffset } : {}),
+    ...(entry.derivation.documentHeight !== undefined ? { documentHeight: entry.derivation.documentHeight } : {}),
   };
   const registered = await catalog.registerMedia({
     record: {
-      ref: `media:render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}`,
+      ref: `media:${fileName.slice(0, -4)}`,
       side: entry.side,
       inspectPath,
       reportHref: inspectPath,
@@ -272,7 +275,7 @@ async function registerPreviewMedia(
   return {
     ok: true,
     shortRef: registered.shortRef,
-    mediaRef: recorded?.ref ?? `media:render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}`,
+    mediaRef: recorded?.ref ?? `media:${fileName.slice(0, -4)}`,
     revision: registered.revision,
     readPath: inspectPath,
   };
@@ -298,10 +301,13 @@ async function registerPreviewMediaBatch(
         rendererVersion: entry.derivation.rendererVersion,
         viewport: entry.derivation.viewport,
         sampleTimesMs: [entry.derivation.sampleTimeMs],
+        ...(entry.derivation.captureScope ? { captureScope: entry.derivation.captureScope } : {}),
+        ...(entry.derivation.scrollOffset ? { scrollOffset: entry.derivation.scrollOffset } : {}),
+        ...(entry.derivation.documentHeight !== undefined ? { documentHeight: entry.derivation.documentHeight } : {}),
       };
       inputs.push({
         record: {
-          ref: `media:render-${entry.contentHash.slice(0, 16)}-${entry.derivation.sampleTimeMs}`,
+          ref: `media:${fileName.slice(0, -4)}`,
           side: entry.side,
           inspectPath,
           reportHref: inspectPath,

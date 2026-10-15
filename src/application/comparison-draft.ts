@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { Type } from "@sinclair/typebox";
 import { parseFragment } from "parse5";
-import { comparisonDetailsTextCharacters, comparisonDetailsText, comparisonMainTextCharacters, comparisonVisibleMainText } from "./comparison-report-text.js";
+import { comparisonDetailsTextCharacters, comparisonDetailsText, comparisonMainTextCharacters, comparisonVisibleMainText, comparisonCompactTextCharacters, nonWhitespaceCodePoints } from "./comparison-report-text.js";
 import type { ComparisonReportFacts, ComparisonResult } from "../agents/comparison-contract.js";
 import { sha256, writeAtomic } from "../core/identity.js";
 import { extractInner } from "../core/comparison-html.js";
@@ -328,6 +328,14 @@ export class ComparisonDraft {
       this.#lastRejection = "findings_not_ready: Save findings and resolve decision questions or mark evidence unavailable before composing.";
       return `status=rejected\ncode=findings_not_ready\nmessage=${this.#lastRejection}`;
     }
+    if (draft.formatVersion === 3) {
+      const error = draft.boundary === undefined || draft.differences === undefined || draft.detailsHtml !== undefined
+        ? 'Format 3 requires boundary and differences and forbids details.'
+        : nonWhitespaceCodePoints(draft.headline) > 80 ? 'Recommendation exceeds 80 non-whitespace code points.'
+        : draft.differences.length > 3 || draft.differences.some(text => !text.trim() || nonWhitespaceCodePoints(text) > 60)
+          ? 'Submit zero to three differences of at most 60 non-whitespace code points each.' : undefined;
+      if (error) { this.#lastRejection = error; return `status=rejected\ncode=draft_invalid\nmessage=${error}`; }
+    }
     const discovery = this.#discovery?.snapshot();
     const contractError = decisionContractError(draft, discovery?.submission);
     if (contractError) {
@@ -347,14 +355,16 @@ export class ComparisonDraft {
     };
     const details = `${draft.detailsHtml ?? ''}${decisionSupportDetailsHtml(draft, discovery?.submission, this.#locale)}`;
     const html = renderComparisonReportShell({
+      ...(draft.formatVersion === 3 ? { formatVersion: 3 as const } : {}),
       task: this.#task,
       facts: this.#facts,
       metrics: metricsFromReportFacts(this.#facts),
       evidence: catalog.links,
       media: catalog.media,
       slots: {
+        ...(draft.formatVersion === 3 ? { boundary: draft.boundary, differences: draft.differences } : {}),
         category: draft.category,
-        headline: draft.headline,
+        headline: draft.formatVersion === 3 ? draft.headline.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;") : draft.headline,
         comparison: decisionTextHtml(draft, discovery?.submission, this.#locale),
         ...(details ? { details } : {}),
       },
@@ -370,8 +380,8 @@ export class ComparisonDraft {
       this.#lastRejection = `${verified.code}: ${verified.message}`;
       return `status=rejected\ncode=${verified.code}\nmessage=${verified.message}`;
     }
-    const length = comparisonMainTextCharacters(verified.html);
-    const target = draft.decisionShape === "single_difference" ? 250 : draft.decisionShape === "multiple_differences" ? 600 : undefined;
+    const length = draft.formatVersion === 3 ? comparisonCompactTextCharacters(verified.html) : comparisonMainTextCharacters(verified.html);
+    const target = draft.formatVersion === 3 ? 900 : draft.decisionShape === "single_difference" ? 250 : draft.decisionShape === "multiple_differences" ? 600 : undefined;
     if (target !== undefined && length > target) {
       this.#lastRejection = `draft_too_long: declared ${draft.decisionShape} has ${length} main characters; maximum=${target}.`;
       return `status=rejected\ncode=draft_too_long\ndecisionShape=${draft.decisionShape}\nmainTextCharacters=${length}\nvisibleMainText=${JSON.stringify(comparisonVisibleMainText(verified.html))}\nmaximum=${target}\nmessage=Shorten this actual visible text (including the headline) in one batch revision; do not write a shell counting script. Preserve decisive evidence, counterevidence and limitations that change the choice, and move routine methods to details. Do not relabel one difference as multiple to bypass the limit; then submit and preview.`;
