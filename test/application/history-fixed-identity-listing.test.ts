@@ -11,6 +11,8 @@ import { startExperiment } from '../../src/application/experiment.js';
 import { comparePersistedExperiment } from '../../src/application/experiment-compare-persisted.js';
 import { readLocalHistoryListing, readLocalHistoryExperiment } from '../../src/application/experiment-history-list.js';
 import { input, VerifiedRuntime } from '../codex-experiment-support.js';
+import { renderHistoryDetail } from '../../src/tui/pages/history.js';
+import { createTheme } from '../../src/tui/theme.js';
 
 test('fixed identity listing defers file verification while details and comparison reject tampered bytes', async t => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-history-fixed-listing-'));
@@ -38,6 +40,7 @@ test('fixed identity listing defers file verification while details and comparis
   assert.equal(experiment.taskIdentity, 'fixed-v2');
   assert.equal(experiment.taskCaseFilesVerified, false);
   assert.equal(experiment.modelInputAudit, 'not_checked');
+  assert.match(renderHistoryDetail(createTheme(120, false), 120, experiment, 'zh').join('\n'), /冻结文件未完整验证/);
   assert.equal(experiment.formatError, undefined);
   assert.equal(experiment.runId, 'second-run');
   assert.equal(experiment.taskTitle, task.initialInput.text.replace(/\s+/g, ' ').trim());
