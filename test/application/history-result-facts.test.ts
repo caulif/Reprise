@@ -107,4 +107,5 @@ test('completed insufficient_evidence keeps report.html path and comparisonDetai
   assert.equal(facts.comparisonStatus, 'completed');
   assert.equal(facts.comparisonDetail, 'insufficient_evidence');
   assert.equal(facts.reportAttemptUnconfirmed, undefined);
+  assert.equal(facts.sizeBytes, undefined, 'live result does not claim a zero-byte storage measurement');
 });

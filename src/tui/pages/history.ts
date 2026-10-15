@@ -9,7 +9,7 @@ import { relativeTime } from './intake.js';
 import { pathToFileURL } from 'node:url';
 
 export type HistoryModel = {
-  readonly totalBytes: number;
+  readonly totalBytes: number | undefined;
   readonly invalidCaseCount?: number;
   readonly tab: 'runs' | 'cases';
   readonly items: readonly (HistoryCase | HistoryExperiment)[];
@@ -99,6 +99,7 @@ export function renderHistoryDetailWithHits(
     const key = item.formatError === 'missing_metadata' ? 'historyMissingMetadata'
       : item.formatError === 'invalid_metadata' ? 'historyInvalidMetadata'
         : item.formatError === 'metadata_case_mismatch' ? 'historyMetadataCaseMismatch'
+        : item.formatError === 'unreadable_entry' ? 'historyUnreadableEntry'
         : item.formatError === 'unreadable_record' ? 'historyUnreadableRecord' : 'unsupportedSchema';
     push(kv(theme, t(locale, 'historyFormat'), t(locale, key), width - 2));
   }
@@ -121,7 +122,9 @@ export function renderHistoryDetailWithHits(
   push(kv(theme, t(locale, 'historyTaskId'), item.taskCaseId, width - 2));
   if (item.metadataTaskCaseId) push(kv(theme, t(locale, 'historyMetadataTaskId'), item.metadataTaskCaseId, width - 2));
   push(kv(theme, t(locale, 'historyRunId'), missing(item.runId), width - 2));
-  push(kv(theme, t(locale, 'historyStoredSize'), formatBytes(item.sizeBytes), width - 2));
+  push(kv(theme, t(locale, 'historyStoredSize'), item.sizeBytes === undefined ? t(locale, 'historySizeNotCollected') : formatBytes(item.sizeBytes), width - 2));
+  if (item.modelInputAudit === 'not_checked') push(kv(theme, t(locale, 'modelInputLabel'), t(locale, 'historyInputNotChecked'), width - 2));
+  if (item.eventLogDiagnostic) push(kv(theme, t(locale, 'historyEventLogError'), item.eventLogDiagnostic, width - 2));
   pushLink(kvLinkBlock(theme, t(locale, 'historyLocation'), item.path, item.path, width), item.path);
   return panelWithHits(theme, t(locale, 'historyRunTitle'), body, width, bodyHits);
 }

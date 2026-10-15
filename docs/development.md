@@ -1,5 +1,7 @@
 # 开发与验证
 
+历史查询的离线测量方法、10/100/1000 个实验的观测数据及局限见[历史查询基准](development-history-query-benchmark.md)。生成器使用 Fake Runtime 和专用空目录，不产生真实模型费用；时延不作为自动门禁。
+
 ## 开发环境
 
 图片链路的日常回归使用 fake Provider 与不可变附件，不调用真实服务。`config test-image` 另需显式 `REPRISE_RUN_IMAGE_PROBE=1`，可能产生费用；没有真实模型探测及任务验收时，PR 必须明确边界，不能把能力声明或离线 passed 当成上游已验证。协议与授权决定见[原生图片链路 ADR](./decisions/accepted/2026-09-30-comparison-native-image-pipeline.md)。

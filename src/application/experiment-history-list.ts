@@ -1,5 +1,5 @@
-import { readTaskCase } from '../products/shared/task-case-reader.js';
-import { access, lstat, readdir, readFile } from "node:fs/promises";
+import { readTaskCase, readTaskCaseMetadata } from '../products/shared/task-case-reader.js';
+import { access, readdir, readFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { join, resolve } from "node:path";
 import type { EventEnvelope, TaskCase } from "../core/schema.js";
@@ -9,9 +9,12 @@ import { comparisonDetailOf } from "./comparison-artifacts.js";
 import { listPublishedFrozenCases } from "../products/shared/freeze.js";
 import { actualModelName } from "./actual-model-name.js";
 import { committedRunOrder, committedStartupFailure, latestCommittedAttempt, legacyOrderingKind, matchingRunRecord, readCommittedRunEvents } from "./experiment-run-history.js";
+import { historicalRunStatus } from '../infrastructure/agent/history-read.js';
+import { collectHistoryStorageSize, mapHistoryItems, historyIoErrorCode } from './history-io.js';
+import { resolvedExperimentRoot } from './experiment-layout.js';
 import { readRunComparison } from "./comparison-report-ownership.js";
 
-export type HistoryCase = { readonly taskCase: TaskCase; readonly path: string };
+export type HistoryCase = { readonly taskCase: TaskCase; readonly path: string; readonly filesVerified?: boolean };
 export type HistoryExperiment = {
   readonly experimentId: string;
   readonly taskCaseId: string;
@@ -37,41 +40,57 @@ export type HistoryExperiment = {
   /** True when an on-disk HTML exists but attempt ownership is not confirmed. */
   readonly reportAttemptUnconfirmed?: boolean;
   readonly path: string;
-  readonly sizeBytes: number;
+  readonly sizeBytes: number | undefined;
+  readonly modelInputAudit?: 'checked' | 'not_checked';
+  readonly eventLogDiagnostic?: string;
   readonly incompleteModelInput?: boolean;
   readonly formatError?: string;
   readonly eventLogErrorCode?: string;
 };
 
+type HistoryReadOptions = { readonly audit: boolean; readonly sizes: boolean };
+export type LocalHistory = { readonly cases: readonly HistoryCase[]; readonly experiments: readonly HistoryExperiment[];
+  readonly totalBytes: number | undefined; readonly storageSizeStatus: 'collected' | 'not_collected'; readonly invalidCaseCount: number };
+
 /** Lists only schema-validated local objects beneath Reprise's configured data directory. */
-export async function readLocalHistory(dataDir: string): Promise<{
-  readonly cases: readonly HistoryCase[];
-  readonly experiments: readonly HistoryExperiment[];
-  readonly totalBytes: number;
-  readonly invalidCaseCount: number;
-}> {
+export async function readLocalHistory(dataDir: string): Promise<LocalHistory & { readonly totalBytes: number }> {
+  const history = await readHistory(dataDir, { audit: true, sizes: true });
+  return { ...history, totalBytes: history.totalBytes! };
+}
+
+/** Version 2 listing defers model-input audit and storage walks; selected details remain explicit. */
+export async function readLocalHistoryListing(dataDir: string): Promise<LocalHistory> {
+  return readHistory(dataDir, { audit: false, sizes: false });
+}
+
+export async function readLocalHistoryExperiment(dataDir: string, experimentId: string): Promise<HistoryExperiment> {
+  return readExperiment(resolvedExperimentRoot(dataDir, experimentId), experimentId, { audit: true, sizes: false });
+}
+
+async function readHistory(dataDir: string, options: HistoryReadOptions): Promise<LocalHistory> {
   const root = resolve(dataDir);
-  const [{ cases, invalidCount }, sized, totalBytes] = await Promise.all([readCases(root), readExperiments(root), directorySize(root)]);
+  const [{ cases, invalidCount }, sized, totalBytes] = await Promise.all([readCases(root, options), readExperiments(root, options), options.sizes ? collectHistoryStorageSize(root) : undefined]);
   const titles = new Map(cases.map(({ taskCase }) => [taskCase.caseId, taskCase.initialInput.text.replace(/\s+/g, ' ').trim()]));
   const experiments = sized.map((item) => {
     const title = titles.get(item.taskCaseId);
     return title ? { ...item, taskTitle: title } : item;
   });
-  return { cases, experiments, totalBytes, invalidCaseCount: invalidCount };
+  return { cases, experiments, totalBytes: totalBytes?.bytes, storageSizeStatus: totalBytes ? 'collected' : 'not_collected', invalidCaseCount: invalidCount };
 }
 
-async function readCases(root: string): Promise<{ cases: readonly HistoryCase[]; invalidCount: number }> {
+async function readCases(root: string, options: HistoryReadOptions): Promise<{ cases: readonly HistoryCase[]; invalidCount: number }> {
   const directory = join(root, "cases");
   const entries = await listPublishedFrozenCases(directory);
-  const cases = await Promise.all(entries.map(async (entry) => {
+  const cases = await mapHistoryItems(entries, async (entry) => {
     const path = join(directory, entry, "case.json");
     try {
-      return { taskCase: await readTaskCase(path, { expectedCaseId: entry, requireComplete: true }), path };
+      if (options.audit) return { taskCase: await readTaskCase(path, { expectedCaseId: entry, requireComplete: true }), path };
+      return { taskCase: await readTaskCaseMetadata(path, { expectedCaseId: entry, requireComplete: true }), path, filesVerified: false };
     } catch {
       // The history list counts unreadable or invalid cases instead of allowing them into executable results.
       return undefined;
     }
-  }));
+  });
   const valid = cases.filter((item): item is HistoryCase => item !== undefined);
   return {
     cases: valid.sort((left, right) => right.taskCase.provenance.importedAt.localeCompare(left.taskCase.provenance.importedAt)),
@@ -79,22 +98,30 @@ async function readCases(root: string): Promise<{ cases: readonly HistoryCase[];
   };
 }
 
-async function readExperiments(root: string): Promise<readonly HistoryExperiment[]> {
+async function readExperiments(root: string, options: HistoryReadOptions): Promise<readonly HistoryExperiment[]> {
   const directory = join(root, "experiments");
   const entries = await safeDirectories(directory);
-  const experiments = await Promise.all(entries.map((entry) => readExperiment(join(directory, entry), entry)));
+  const experiments = await mapHistoryItems(entries, async entry => {
+    try { return await readExperiment(join(directory, entry), entry, options); }
+    catch (error) {
+      const eventLogErrorCode = historyIoErrorCode(error);
+      if (!eventLogErrorCode) throw error;
+      return { experimentId: entry, taskCaseId: entry, path: join(directory, entry), sizeBytes: undefined,
+        outcome: 'unknown', eventLogErrorCode, formatError: 'unreadable_entry', modelInputAudit: 'not_checked' as const };
+    }
+  });
   return experiments.sort((left, right) => (right.startedAt ?? "").localeCompare(left.startedAt ?? ""));
 }
 
-async function readExperiment(path: string, experimentId: string): Promise<HistoryExperiment> {
+async function readExperiment(path: string, experimentId: string, options: HistoryReadOptions): Promise<HistoryExperiment> {
   const metadataPath = join(path, "experiment.json");
   const metadata = await readJson(metadataPath);
-  if (!isPersistedExperimentMetadata(metadata)) return historyWithoutMetadata(path, experimentId, await exists(metadataPath));
+  if (!isPersistedExperimentMetadata(metadata)) return historyWithoutMetadata(path, experimentId, await exists(metadataPath), options);
   const runIds = await listPersistedRunIds(path, metadata);
   const runId = runIds.at(-1);
   const recordPath = runId ? join(path, "runs", runId, "record.json") : undefined;
   const value = recordPath ? await readJson(recordPath) : undefined;
-  const { events } = await readCommittedRunEvents(path);
+  const { events, diagnostic } = await readCommittedRunEvents(path);
   const attempt = latestCommittedAttempt(path, events, runId);
   const caseMismatch = attempt !== undefined && attempt.caseId !== metadata.spec.taskCaseId;
   const startup = attempt ? committedStartupFailure(events, attempt) : undefined;
@@ -104,7 +131,8 @@ async function readExperiment(path: string, experimentId: string): Promise<Histo
   const runOrdering = runId ? committedRunOrder(path, events).includes(runId) ? "committed" : await legacyOrderingKind(path, runIds) : undefined;
   const { comparison, ...artifacts } = await readRunComparison({ experimentRoot: path, experimentId, ...(runId ? { runId } : {}), events });
   const comparisonDetail = comparisonDetailOf(comparison);
-  const committed = await readCommittedExperimentHistory(path, experimentId, runId);
+  const committed = options.audit ? await readCommittedExperimentHistory(path, experimentId, runId)
+    : { runStatus: historicalRunStatus(runId ? events.filter(event => event.runId === runId) : events), incompleteModelInput: false, diagnosticCode: diagnostic?.code };
   const outcome = record ? record.outcome.termination.kind : startup ? startup.status : unread ? "record unread" : committed.runStatus;
   return {
     experimentId, taskCaseId: attempt?.caseId ?? metadata.spec.taskCaseId,
@@ -134,20 +162,24 @@ async function readExperiment(path: string, experimentId: string): Promise<Histo
         }
       : {}),
     ...(comparisonDetail ? { comparisonDetail } : {}),
+    modelInputAudit: options.audit ? 'checked' : 'not_checked',
+    ...(diagnostic ? { eventLogDiagnostic: diagnostic.code } : {}),
     ...(committed.incompleteModelInput ? { incompleteModelInput: true } : {}),
     ...(caseMismatch ? { formatError: 'metadata_case_mismatch' } : unread ? { formatError: 'unreadable_record' } : committed.diagnosticCode === "unsupported_schema" ? { formatError: committed.diagnosticCode } : {}),
     path,
-    sizeBytes: await directorySize(path),
+    sizeBytes: options.sizes ? (await collectHistoryStorageSize(path)).bytes : undefined,
   };
 }
 
-async function historyWithoutMetadata(path: string, experimentId: string, metadataExists: boolean): Promise<HistoryExperiment> {
-  const { events, eventLogErrorCode } = await readMetadataFallbackEvents(path);
+async function historyWithoutMetadata(path: string, experimentId: string, metadataExists: boolean, options: HistoryReadOptions): Promise<HistoryExperiment> {
+  const { events, eventLogErrorCode, eventLogDiagnostic } = await readMetadataFallbackEvents(path);
   const attempt = latestCommittedAttempt(path, events);
   const startup = attempt ? committedStartupFailure(events, attempt) : undefined;
   return {
-    experimentId, taskCaseId: attempt?.caseId ?? experimentId, path, sizeBytes: await directorySize(path),
+    experimentId, taskCaseId: attempt?.caseId ?? experimentId, path, sizeBytes: options.sizes ? (await collectHistoryStorageSize(path)).bytes : undefined,
     formatError: metadataExists ? "invalid_metadata" : "missing_metadata",
+    modelInputAudit: 'not_checked',
+    ...(eventLogDiagnostic ? { eventLogDiagnostic } : {}),
     ...(eventLogErrorCode ? { eventLogErrorCode, outcome: "unknown" } : {}),
     ...(attempt ? { runId: attempt.runId, runOrdering: "committed", startedAt: attempt.createdAt,
       candidateProductId: attempt.candidate.productId, outcome: startup?.status ?? "interrupted" } : {}),
@@ -155,8 +187,11 @@ async function historyWithoutMetadata(path: string, experimentId: string, metada
   };
 }
 
-async function readMetadataFallbackEvents(path: string): Promise<{ events: readonly EventEnvelope[]; eventLogErrorCode?: string }> {
-  try { return await readCommittedRunEvents(path); }
+async function readMetadataFallbackEvents(path: string): Promise<{ events: readonly EventEnvelope[]; eventLogErrorCode?: string; eventLogDiagnostic?: string }> {
+  try {
+    const { events, diagnostic } = await readCommittedRunEvents(path);
+    return { events, ...(diagnostic ? { eventLogDiagnostic: diagnostic.code } : {}) };
+  }
   catch (error) {
     if (!(error instanceof Error && "code" in error && typeof error.code === "string" && /^E[A-Z0-9]+$/.test(error.code))) throw error;
     // Keep damaged metadata visible with the I/O diagnosis; opening detail still reports the actual read failure.
@@ -171,18 +206,6 @@ export async function readJsonFile(path: string): Promise<unknown> {
 }
 
 const readJson = readJsonFile;
-
-async function directorySize(path: string): Promise<number> {
-  let entries;
-  try { entries = await readdir(path, { withFileTypes: true }); } catch (error) { if (isMissing(error)) return 0; throw error; }
-  const sizes = await Promise.all(entries.map(async (entry) => {
-    const child = join(path, entry.name);
-    if (entry.isDirectory()) return directorySize(child);
-    if (!entry.isFile()) return 0;
-    return (await lstat(child)).size;
-  }));
-  return sizes.reduce((total, size) => total + size, 0);
-}
 
 async function safeDirectories(path: string): Promise<readonly string[]> {
   try { return (await readdir(path, { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name); } catch (error) {

@@ -3,7 +3,7 @@ import { findProductPack, createProductLookup, productPacks, defaultSessionsRoot
 import { packHas, packRoles } from "../products/pack-access.js";
 import type { SessionDiscoveryProject, SessionSummary } from "../products/contract.js";
 import { readHarnessModelConfig, publicHarnessConfig, saveHarnessModelConfig, configForDraft, emptyHarnessConfigDraft, type HarnessConfigDraft } from "../infrastructure/harness-model-config.js";
-import { readLocalHistory, type HistoryExperiment } from "./experiment-history-list.js";
+import { readLocalHistoryListing, type HistoryExperiment } from "./experiment-history-list.js";
 import { CliError } from "./cli-error.js";
 import { createExperimentWorkflow, type ExperimentWorkflow } from "./experiment-workflow.js";
 
@@ -107,10 +107,10 @@ export async function listHistoryPage(input: {
   readonly dataDir: string;
   readonly limit?: number;
   readonly cursor?: string;
-}): Promise<Page<HistoryExperiment> & { readonly cases: number; readonly totalBytes: number }> {
-  const history = await readLocalHistory(input.dataDir);
+}): Promise<Page<HistoryExperiment> & { readonly schemaVersion: 2; readonly cases: number; readonly storageSizeStatus: 'not_collected'; readonly totalBytes: undefined }> {
+  const history = await readLocalHistoryListing(input.dataDir);
   const page = paginate(history.experiments, input.limit, input.cursor, (item) => item.experimentId);
-  return { ...page, cases: history.cases.length, totalBytes: history.totalBytes };
+  return { ...page, schemaVersion: 2, cases: history.cases.length, storageSizeStatus: 'not_collected', totalBytes: undefined };
 }
 
 export async function readPublicConfig(dataDir: string) {
@@ -218,6 +218,6 @@ export async function importSourceSession(input: {
   });
 }
 
-export async function readTaskCaseFile(path: string) {
-  return readTaskCase(path);
+export async function readTaskCaseFile(path: string, options: { expectedCaseId?: string; requireComplete?: boolean } = {}) {
+  return readTaskCase(path, options);
 }

@@ -1,0 +1,4025 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "baseline": {
+    "node": "v24.11.1",
+    "platform": "win32",
+    "arch": "x64",
+    "cache": "fresh process, shared OS file cache, no forced cold-cache eviction",
+    "samples": [
+      {
+        "size": 10,
+        "repetition": 0,
+        "operation": "recent",
+        "elapsedMs": 107.97450000000003,
+        "counts": {
+          "readFile": 321,
+          "readBytes": 2964040,
+          "readdir": 777,
+          "lstat": 2147,
+          "stat": 2
+        },
+        "startRss": 118554624,
+        "peakRss": 140587008,
+        "processMaxRssKiB": 137296,
+        "result": "bench-0009"
+      },
+      {
+        "size": 10,
+        "repetition": 1,
+        "operation": "recent",
+        "elapsedMs": 107.29329999999993,
+        "counts": {
+          "readFile": 321,
+          "readBytes": 2964040,
+          "readdir": 777,
+          "lstat": 2147,
+          "stat": 2
+        },
+        "startRss": 118300672,
+        "peakRss": 144420864,
+        "processMaxRssKiB": 142016,
+        "result": "bench-0009"
+      },
+      {
+        "size": 10,
+        "repetition": 2,
+        "operation": "recent",
+        "elapsedMs": 95.92130000000009,
+        "counts": {
+          "readFile": 321,
+          "readBytes": 2964040,
+          "readdir": 777,
+          "lstat": 2147,
+          "stat": 2
+        },
+        "startRss": 118689792,
+        "peakRss": 145731584,
+        "processMaxRssKiB": 142732,
+        "result": "bench-0009"
+      },
+      {
+        "size": 10,
+        "repetition": 3,
+        "operation": "recent",
+        "elapsedMs": 96.13509999999997,
+        "counts": {
+          "readFile": 321,
+          "readBytes": 2964040,
+          "readdir": 777,
+          "lstat": 2147,
+          "stat": 2
+        },
+        "startRss": 118284288,
+        "peakRss": 141664256,
+        "processMaxRssKiB": 138348,
+        "result": "bench-0009"
+      },
+      {
+        "size": 10,
+        "repetition": 4,
+        "operation": "recent",
+        "elapsedMs": 94.82460000000003,
+        "counts": {
+          "readFile": 321,
+          "readBytes": 2964040,
+          "readdir": 777,
+          "lstat": 2147,
+          "stat": 2
+        },
+        "startRss": 118206464,
+        "peakRss": 142020608,
+        "processMaxRssKiB": 138696,
+        "result": "bench-0009"
+      },
+      {
+        "size": 10,
+        "repetition": 0,
+        "operation": "first",
+        "elapsedMs": 110.11839999999995,
+        "counts": {
+          "readFile": 321,
+          "readBytes": 2964040,
+          "readdir": 777,
+          "lstat": 2147,
+          "stat": 2
+        },
+        "startRss": 117932032,
+        "peakRss": 142610432,
+        "processMaxRssKiB": 139272,
+        "result": [
+          "bench-0009",
+          "bench-0008",
+          "bench-0007",
+          "bench-0006",
+          "bench-0005",
+          "bench-0004",
+          "bench-0003",
+          "bench-0002",
+          "bench-0001",
+          "bench-0000"
+        ]
+      },
+      {
+        "size": 10,
+        "repetition": 1,
+        "operation": "first",
+        "elapsedMs": 92.4642,
+        "counts": {
+          "readFile": 321,
+          "readBytes": 2964040,
+          "readdir": 777,
+          "lstat": 2147,
+          "stat": 2
+        },
+        "startRss": 117895168,
+        "peakRss": 141701120,
+        "processMaxRssKiB": 138384,
+        "result": [
+          "bench-0009",
+          "bench-0008",
+          "bench-0007",
+          "bench-0006",
+          "bench-0005",
+          "bench-0004",
+          "bench-0003",
+          "bench-0002",
+          "bench-0001",
+          "bench-0000"
+        ]
+      },
+      {
+        "size": 10,
+        "repetition": 2,
+        "operation": "first",
+        "elapsedMs": 112.96299999999997,
+        "counts": {
+          "readFile": 321,
+          "readBytes": 2964040,
+          "readdir": 777,
+          "lstat": 2147,
+          "stat": 2
+        },
+        "startRss": 118448128,
+        "peakRss": 140185600,
+        "processMaxRssKiB": 136904,
+        "result": [
+          "bench-0009",
+          "bench-0008",
+          "bench-0007",
+          "bench-0006",
+          "bench-0005",
+          "bench-0004",
+          "bench-0003",
+          "bench-0002",
+          "bench-0001",
+          "bench-0000"
+        ]
+      },
+      {
+        "size": 10,
+        "repetition": 3,
+        "operation": "first",
+        "elapsedMs": 133.60950000000003,
+        "counts": {
+          "readFile": 321,
+          "readBytes": 2964040,
+          "readdir": 777,
+          "lstat": 2147,
+          "stat": 2
+        },
+        "startRss": 118648832,
+        "peakRss": 144625664,
+        "processMaxRssKiB": 142060,
+        "result": [
+          "bench-0009",
+          "bench-0008",
+          "bench-0007",
+          "bench-0006",
+          "bench-0005",
+          "bench-0004",
+          "bench-0003",
+          "bench-0002",
+          "bench-0001",
+          "bench-0000"
+        ]
+      },
+      {
+        "size": 10,
+        "repetition": 4,
+        "operation": "first",
+        "elapsedMs": 96.74329999999998,
+        "counts": {
+          "readFile": 321,
+          "readBytes": 2964040,
+          "readdir": 777,
+          "lstat": 2147,
+          "stat": 2
+        },
+        "startRss": 118140928,
+        "peakRss": 141475840,
+        "processMaxRssKiB": 138164,
+        "result": [
+          "bench-0009",
+          "bench-0008",
+          "bench-0007",
+          "bench-0006",
+          "bench-0005",
+          "bench-0004",
+          "bench-0003",
+          "bench-0002",
+          "bench-0001",
+          "bench-0000"
+        ]
+      },
+      {
+        "size": 10,
+        "repetition": 0,
+        "operation": "detail",
+        "elapsedMs": 4.328399999999988,
+        "counts": {
+          "readFile": 1,
+          "readBytes": 73711,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 118870016,
+        "peakRss": 120328192,
+        "processMaxRssKiB": 117784,
+        "result": 104
+      },
+      {
+        "size": 10,
+        "repetition": 1,
+        "operation": "detail",
+        "elapsedMs": 4.600799999999936,
+        "counts": {
+          "readFile": 1,
+          "readBytes": 73711,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 118554624,
+        "peakRss": 120324096,
+        "processMaxRssKiB": 117748,
+        "result": 104
+      },
+      {
+        "size": 10,
+        "repetition": 2,
+        "operation": "detail",
+        "elapsedMs": 4.684700000000021,
+        "counts": {
+          "readFile": 1,
+          "readBytes": 73711,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 118407168,
+        "peakRss": 119808000,
+        "processMaxRssKiB": 117440,
+        "result": 104
+      },
+      {
+        "size": 10,
+        "repetition": 3,
+        "operation": "detail",
+        "elapsedMs": 4.545100000000048,
+        "counts": {
+          "readFile": 1,
+          "readBytes": 73711,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 117911552,
+        "peakRss": 119463936,
+        "processMaxRssKiB": 116860,
+        "result": 104
+      },
+      {
+        "size": 10,
+        "repetition": 4,
+        "operation": "detail",
+        "elapsedMs": 4.339099999999917,
+        "counts": {
+          "readFile": 1,
+          "readBytes": 73711,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 117968896,
+        "peakRss": 120246272,
+        "processMaxRssKiB": 117432,
+        "result": 104
+      },
+      {
+        "size": 10,
+        "repetition": 0,
+        "operation": "audit",
+        "elapsedMs": 16.55250000000001,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 118505472,
+        "peakRss": 122363904,
+        "processMaxRssKiB": 119496,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 10,
+        "repetition": 1,
+        "operation": "audit",
+        "elapsedMs": 12.274699999999939,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 118247424,
+        "peakRss": 120729600,
+        "processMaxRssKiB": 117904,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 10,
+        "repetition": 2,
+        "operation": "audit",
+        "elapsedMs": 12.604600000000005,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 118321152,
+        "peakRss": 120279040,
+        "processMaxRssKiB": 117464,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 10,
+        "repetition": 3,
+        "operation": "audit",
+        "elapsedMs": 23.419399999999996,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 118198272,
+        "peakRss": 120295424,
+        "processMaxRssKiB": 117480,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 10,
+        "repetition": 4,
+        "operation": "audit",
+        "elapsedMs": 14.078599999999938,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 117743616,
+        "peakRss": 120324096,
+        "processMaxRssKiB": 117508,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 10,
+        "repetition": 0,
+        "operation": "size",
+        "elapsedMs": 119.36610000000007,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 385,
+          "lstat": 1072,
+          "stat": 0
+        },
+        "startRss": 118312960,
+        "peakRss": 124919808,
+        "processMaxRssKiB": 121996,
+        "result": 4153790
+      },
+      {
+        "size": 10,
+        "repetition": 1,
+        "operation": "size",
+        "elapsedMs": 111.69040000000007,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 385,
+          "lstat": 1072,
+          "stat": 0
+        },
+        "startRss": 118091776,
+        "peakRss": 124338176,
+        "processMaxRssKiB": 121428,
+        "result": 4153790
+      },
+      {
+        "size": 10,
+        "repetition": 2,
+        "operation": "size",
+        "elapsedMs": 137.46900000000005,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 385,
+          "lstat": 1072,
+          "stat": 0
+        },
+        "startRss": 118104064,
+        "peakRss": 124858368,
+        "processMaxRssKiB": 121936,
+        "result": 4153790
+      },
+      {
+        "size": 10,
+        "repetition": 3,
+        "operation": "size",
+        "elapsedMs": 97.82310000000007,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 385,
+          "lstat": 1072,
+          "stat": 0
+        },
+        "startRss": 118136832,
+        "peakRss": 124530688,
+        "processMaxRssKiB": 121616,
+        "result": 4153790
+      },
+      {
+        "size": 10,
+        "repetition": 4,
+        "operation": "size",
+        "elapsedMs": 141.2867,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 385,
+          "lstat": 1072,
+          "stat": 0
+        },
+        "startRss": 118366208,
+        "peakRss": 124862464,
+        "processMaxRssKiB": 121940,
+        "result": 4153790
+      },
+      {
+        "size": 100,
+        "repetition": 0,
+        "operation": "recent",
+        "elapsedMs": 873.4613999999999,
+        "counts": {
+          "readFile": 3201,
+          "readBytes": 29630590,
+          "readdir": 7707,
+          "lstat": 21407,
+          "stat": 2
+        },
+        "startRss": 118579200,
+        "peakRss": 311746560,
+        "processMaxRssKiB": 306476,
+        "result": "bench-0099"
+      },
+      {
+        "size": 100,
+        "repetition": 1,
+        "operation": "recent",
+        "elapsedMs": 911.9869000000001,
+        "counts": {
+          "readFile": 3201,
+          "readBytes": 29630590,
+          "readdir": 7707,
+          "lstat": 21407,
+          "stat": 2
+        },
+        "startRss": 118059008,
+        "peakRss": 299114496,
+        "processMaxRssKiB": 307216,
+        "result": "bench-0099"
+      },
+      {
+        "size": 100,
+        "repetition": 2,
+        "operation": "recent",
+        "elapsedMs": 867.3328,
+        "counts": {
+          "readFile": 3201,
+          "readBytes": 29630590,
+          "readdir": 7707,
+          "lstat": 21407,
+          "stat": 2
+        },
+        "startRss": 118370304,
+        "peakRss": 298856448,
+        "processMaxRssKiB": 308040,
+        "result": "bench-0099"
+      },
+      {
+        "size": 100,
+        "repetition": 3,
+        "operation": "recent",
+        "elapsedMs": 917.0403999999999,
+        "counts": {
+          "readFile": 3201,
+          "readBytes": 29630590,
+          "readdir": 7707,
+          "lstat": 21407,
+          "stat": 2
+        },
+        "startRss": 118353920,
+        "peakRss": 298692608,
+        "processMaxRssKiB": 307116,
+        "result": "bench-0099"
+      },
+      {
+        "size": 100,
+        "repetition": 4,
+        "operation": "recent",
+        "elapsedMs": 909.5286,
+        "counts": {
+          "readFile": 3201,
+          "readBytes": 29630590,
+          "readdir": 7707,
+          "lstat": 21407,
+          "stat": 2
+        },
+        "startRss": 117800960,
+        "peakRss": 298758144,
+        "processMaxRssKiB": 307704,
+        "result": "bench-0099"
+      },
+      {
+        "size": 100,
+        "repetition": 0,
+        "operation": "first",
+        "elapsedMs": 847.2519,
+        "counts": {
+          "readFile": 3201,
+          "readBytes": 29630590,
+          "readdir": 7707,
+          "lstat": 21407,
+          "stat": 2
+        },
+        "startRss": 118583296,
+        "peakRss": 299134976,
+        "processMaxRssKiB": 307652,
+        "result": [
+          "bench-0099",
+          "bench-0098",
+          "bench-0097",
+          "bench-0096",
+          "bench-0095",
+          "bench-0094",
+          "bench-0093",
+          "bench-0092",
+          "bench-0091",
+          "bench-0090",
+          "bench-0089",
+          "bench-0088",
+          "bench-0087",
+          "bench-0086",
+          "bench-0085",
+          "bench-0084",
+          "bench-0083",
+          "bench-0082",
+          "bench-0081",
+          "bench-0080"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 1,
+        "operation": "first",
+        "elapsedMs": 914.7821999999999,
+        "counts": {
+          "readFile": 3201,
+          "readBytes": 29630590,
+          "readdir": 7707,
+          "lstat": 21407,
+          "stat": 2
+        },
+        "startRss": 118386688,
+        "peakRss": 298463232,
+        "processMaxRssKiB": 306056,
+        "result": [
+          "bench-0099",
+          "bench-0098",
+          "bench-0097",
+          "bench-0096",
+          "bench-0095",
+          "bench-0094",
+          "bench-0093",
+          "bench-0092",
+          "bench-0091",
+          "bench-0090",
+          "bench-0089",
+          "bench-0088",
+          "bench-0087",
+          "bench-0086",
+          "bench-0085",
+          "bench-0084",
+          "bench-0083",
+          "bench-0082",
+          "bench-0081",
+          "bench-0080"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 2,
+        "operation": "first",
+        "elapsedMs": 1035.5956,
+        "counts": {
+          "readFile": 3201,
+          "readBytes": 29630590,
+          "readdir": 7707,
+          "lstat": 21407,
+          "stat": 2
+        },
+        "startRss": 117628928,
+        "peakRss": 299094016,
+        "processMaxRssKiB": 307548,
+        "result": [
+          "bench-0099",
+          "bench-0098",
+          "bench-0097",
+          "bench-0096",
+          "bench-0095",
+          "bench-0094",
+          "bench-0093",
+          "bench-0092",
+          "bench-0091",
+          "bench-0090",
+          "bench-0089",
+          "bench-0088",
+          "bench-0087",
+          "bench-0086",
+          "bench-0085",
+          "bench-0084",
+          "bench-0083",
+          "bench-0082",
+          "bench-0081",
+          "bench-0080"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 3,
+        "operation": "first",
+        "elapsedMs": 871.6489,
+        "counts": {
+          "readFile": 3201,
+          "readBytes": 29630590,
+          "readdir": 7707,
+          "lstat": 21407,
+          "stat": 2
+        },
+        "startRss": 118476800,
+        "peakRss": 298745856,
+        "processMaxRssKiB": 307200,
+        "result": [
+          "bench-0099",
+          "bench-0098",
+          "bench-0097",
+          "bench-0096",
+          "bench-0095",
+          "bench-0094",
+          "bench-0093",
+          "bench-0092",
+          "bench-0091",
+          "bench-0090",
+          "bench-0089",
+          "bench-0088",
+          "bench-0087",
+          "bench-0086",
+          "bench-0085",
+          "bench-0084",
+          "bench-0083",
+          "bench-0082",
+          "bench-0081",
+          "bench-0080"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 4,
+        "operation": "first",
+        "elapsedMs": 979.217,
+        "counts": {
+          "readFile": 3201,
+          "readBytes": 29630590,
+          "readdir": 7707,
+          "lstat": 21407,
+          "stat": 2
+        },
+        "startRss": 118398976,
+        "peakRss": 298893312,
+        "processMaxRssKiB": 306232,
+        "result": [
+          "bench-0099",
+          "bench-0098",
+          "bench-0097",
+          "bench-0096",
+          "bench-0095",
+          "bench-0094",
+          "bench-0093",
+          "bench-0092",
+          "bench-0091",
+          "bench-0090",
+          "bench-0089",
+          "bench-0088",
+          "bench-0087",
+          "bench-0086",
+          "bench-0085",
+          "bench-0084",
+          "bench-0083",
+          "bench-0082",
+          "bench-0081",
+          "bench-0080"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 0,
+        "operation": "next",
+        "elapsedMs": 887.8593,
+        "counts": {
+          "readFile": 3201,
+          "readBytes": 29630590,
+          "readdir": 7707,
+          "lstat": 21407,
+          "stat": 2
+        },
+        "startRss": 118329344,
+        "peakRss": 299388928,
+        "processMaxRssKiB": 305960,
+        "result": [
+          "bench-0079",
+          "bench-0078",
+          "bench-0077",
+          "bench-0076",
+          "bench-0075",
+          "bench-0074",
+          "bench-0073",
+          "bench-0072",
+          "bench-0071",
+          "bench-0070",
+          "bench-0069",
+          "bench-0068",
+          "bench-0067",
+          "bench-0066",
+          "bench-0065",
+          "bench-0064",
+          "bench-0063",
+          "bench-0062",
+          "bench-0061",
+          "bench-0060"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 1,
+        "operation": "next",
+        "elapsedMs": 885.3414,
+        "counts": {
+          "readFile": 3201,
+          "readBytes": 29630590,
+          "readdir": 7707,
+          "lstat": 21407,
+          "stat": 2
+        },
+        "startRss": 118738944,
+        "peakRss": 299716608,
+        "processMaxRssKiB": 308348,
+        "result": [
+          "bench-0079",
+          "bench-0078",
+          "bench-0077",
+          "bench-0076",
+          "bench-0075",
+          "bench-0074",
+          "bench-0073",
+          "bench-0072",
+          "bench-0071",
+          "bench-0070",
+          "bench-0069",
+          "bench-0068",
+          "bench-0067",
+          "bench-0066",
+          "bench-0065",
+          "bench-0064",
+          "bench-0063",
+          "bench-0062",
+          "bench-0061",
+          "bench-0060"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 2,
+        "operation": "next",
+        "elapsedMs": 871.3968000000001,
+        "counts": {
+          "readFile": 3201,
+          "readBytes": 29630590,
+          "readdir": 7707,
+          "lstat": 21407,
+          "stat": 2
+        },
+        "startRss": 118239232,
+        "peakRss": 311443456,
+        "processMaxRssKiB": 305852,
+        "result": [
+          "bench-0079",
+          "bench-0078",
+          "bench-0077",
+          "bench-0076",
+          "bench-0075",
+          "bench-0074",
+          "bench-0073",
+          "bench-0072",
+          "bench-0071",
+          "bench-0070",
+          "bench-0069",
+          "bench-0068",
+          "bench-0067",
+          "bench-0066",
+          "bench-0065",
+          "bench-0064",
+          "bench-0063",
+          "bench-0062",
+          "bench-0061",
+          "bench-0060"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 3,
+        "operation": "next",
+        "elapsedMs": 932.088,
+        "counts": {
+          "readFile": 3201,
+          "readBytes": 29630590,
+          "readdir": 7707,
+          "lstat": 21407,
+          "stat": 2
+        },
+        "startRss": 118857728,
+        "peakRss": 298180608,
+        "processMaxRssKiB": 307284,
+        "result": [
+          "bench-0079",
+          "bench-0078",
+          "bench-0077",
+          "bench-0076",
+          "bench-0075",
+          "bench-0074",
+          "bench-0073",
+          "bench-0072",
+          "bench-0071",
+          "bench-0070",
+          "bench-0069",
+          "bench-0068",
+          "bench-0067",
+          "bench-0066",
+          "bench-0065",
+          "bench-0064",
+          "bench-0063",
+          "bench-0062",
+          "bench-0061",
+          "bench-0060"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 4,
+        "operation": "next",
+        "elapsedMs": 861.7979999999999,
+        "counts": {
+          "readFile": 3201,
+          "readBytes": 29630590,
+          "readdir": 7707,
+          "lstat": 21407,
+          "stat": 2
+        },
+        "startRss": 118599680,
+        "peakRss": 299610112,
+        "processMaxRssKiB": 306372,
+        "result": [
+          "bench-0079",
+          "bench-0078",
+          "bench-0077",
+          "bench-0076",
+          "bench-0075",
+          "bench-0074",
+          "bench-0073",
+          "bench-0072",
+          "bench-0071",
+          "bench-0070",
+          "bench-0069",
+          "bench-0068",
+          "bench-0067",
+          "bench-0066",
+          "bench-0065",
+          "bench-0064",
+          "bench-0063",
+          "bench-0062",
+          "bench-0061",
+          "bench-0060"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 0,
+        "operation": "detail",
+        "elapsedMs": 4.351399999999899,
+        "counts": {
+          "readFile": 1,
+          "readBytes": 73711,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 118468608,
+        "peakRss": 120467456,
+        "processMaxRssKiB": 117648,
+        "result": 104
+      },
+      {
+        "size": 100,
+        "repetition": 1,
+        "operation": "detail",
+        "elapsedMs": 4.2794999999999845,
+        "counts": {
+          "readFile": 1,
+          "readBytes": 73711,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 117923840,
+        "peakRss": 120500224,
+        "processMaxRssKiB": 117680,
+        "result": 104
+      },
+      {
+        "size": 100,
+        "repetition": 2,
+        "operation": "detail",
+        "elapsedMs": 4.446900000000028,
+        "counts": {
+          "readFile": 1,
+          "readBytes": 73711,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 118276096,
+        "peakRss": 120320000,
+        "processMaxRssKiB": 117504,
+        "result": 104
+      },
+      {
+        "size": 100,
+        "repetition": 3,
+        "operation": "detail",
+        "elapsedMs": 4.448199999999929,
+        "counts": {
+          "readFile": 1,
+          "readBytes": 73711,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 118296576,
+        "peakRss": 120320000,
+        "processMaxRssKiB": 117504,
+        "result": 104
+      },
+      {
+        "size": 100,
+        "repetition": 4,
+        "operation": "detail",
+        "elapsedMs": 4.767399999999952,
+        "counts": {
+          "readFile": 1,
+          "readBytes": 73711,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 117956608,
+        "peakRss": 120250368,
+        "processMaxRssKiB": 117436,
+        "result": 104
+      },
+      {
+        "size": 100,
+        "repetition": 0,
+        "operation": "audit",
+        "elapsedMs": 14.473800000000097,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 117866496,
+        "peakRss": 120590336,
+        "processMaxRssKiB": 117768,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 100,
+        "repetition": 1,
+        "operation": "audit",
+        "elapsedMs": 13.46690000000001,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 118747136,
+        "peakRss": 120848384,
+        "processMaxRssKiB": 118020,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 100,
+        "repetition": 2,
+        "operation": "audit",
+        "elapsedMs": 12.462400000000002,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 118484992,
+        "peakRss": 120827904,
+        "processMaxRssKiB": 118000,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 100,
+        "repetition": 3,
+        "operation": "audit",
+        "elapsedMs": 14.748300000000086,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 117882880,
+        "peakRss": 120438784,
+        "processMaxRssKiB": 117620,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 100,
+        "repetition": 4,
+        "operation": "audit",
+        "elapsedMs": 15.317800000000034,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 118095872,
+        "peakRss": 120016896,
+        "processMaxRssKiB": 117208,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 100,
+        "repetition": 0,
+        "operation": "size",
+        "elapsedMs": 1269.2542999999998,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 3805,
+          "lstat": 10702,
+          "stat": 0
+        },
+        "startRss": 118231040,
+        "peakRss": 145715200,
+        "processMaxRssKiB": 143376,
+        "result": 41528090
+      },
+      {
+        "size": 100,
+        "repetition": 1,
+        "operation": "size",
+        "elapsedMs": 1332.0230999999999,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 3805,
+          "lstat": 10702,
+          "stat": 0
+        },
+        "startRss": 118554624,
+        "peakRss": 145686528,
+        "processMaxRssKiB": 142548,
+        "result": 41528090
+      },
+      {
+        "size": 100,
+        "repetition": 2,
+        "operation": "size",
+        "elapsedMs": 1203.7428,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 3805,
+          "lstat": 10702,
+          "stat": 0
+        },
+        "startRss": 118165504,
+        "peakRss": 145788928,
+        "processMaxRssKiB": 143468,
+        "result": 41528090
+      },
+      {
+        "size": 100,
+        "repetition": 3,
+        "operation": "size",
+        "elapsedMs": 1216.5785999999998,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 3805,
+          "lstat": 10702,
+          "stat": 0
+        },
+        "startRss": 118435840,
+        "peakRss": 145666048,
+        "processMaxRssKiB": 142536,
+        "result": 41528090
+      },
+      {
+        "size": 100,
+        "repetition": 4,
+        "operation": "size",
+        "elapsedMs": 1237.8713,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 3805,
+          "lstat": 10702,
+          "stat": 0
+        },
+        "startRss": 118865920,
+        "peakRss": 146427904,
+        "processMaxRssKiB": 143472,
+        "result": 41528090
+      },
+      {
+        "size": 1000,
+        "repetition": 0,
+        "operation": "recent",
+        "elapsedMs": 16045.020100000002,
+        "counts": {
+          "readFile": 32001,
+          "readBytes": 296247153,
+          "readdir": 77008,
+          "lstat": 214007,
+          "stat": 2
+        },
+        "startRss": 118435840,
+        "peakRss": 960339968,
+        "processMaxRssKiB": 938156,
+        "result": "bench-0999"
+      },
+      {
+        "size": 1000,
+        "repetition": 1,
+        "operation": "recent",
+        "elapsedMs": 13674.8392,
+        "counts": {
+          "readFile": 32001,
+          "readBytes": 296247153,
+          "readdir": 77008,
+          "lstat": 214007,
+          "stat": 2
+        },
+        "startRss": 118575104,
+        "peakRss": 947081216,
+        "processMaxRssKiB": 925104,
+        "result": "bench-0999"
+      },
+      {
+        "size": 1000,
+        "repetition": 2,
+        "operation": "recent",
+        "elapsedMs": 13719.8488,
+        "counts": {
+          "readFile": 32001,
+          "readBytes": 296247153,
+          "readdir": 77008,
+          "lstat": 214007,
+          "stat": 2
+        },
+        "startRss": 118763520,
+        "peakRss": 1275715584,
+        "processMaxRssKiB": 1245848,
+        "result": "bench-0999"
+      },
+      {
+        "size": 1000,
+        "repetition": 3,
+        "operation": "recent",
+        "elapsedMs": 14038.537,
+        "counts": {
+          "readFile": 32001,
+          "readBytes": 296247153,
+          "readdir": 77008,
+          "lstat": 214007,
+          "stat": 2
+        },
+        "startRss": 118173696,
+        "peakRss": 1274294272,
+        "processMaxRssKiB": 1244608,
+        "result": "bench-0999"
+      },
+      {
+        "size": 1000,
+        "repetition": 4,
+        "operation": "recent",
+        "elapsedMs": 16012.9418,
+        "counts": {
+          "readFile": 32001,
+          "readBytes": 296247153,
+          "readdir": 77008,
+          "lstat": 214007,
+          "stat": 2
+        },
+        "startRss": 118439936,
+        "peakRss": 975806464,
+        "processMaxRssKiB": 953280,
+        "result": "bench-0999"
+      },
+      {
+        "size": 1000,
+        "repetition": 0,
+        "operation": "first",
+        "elapsedMs": 16358.2981,
+        "counts": {
+          "readFile": 32001,
+          "readBytes": 296247153,
+          "readdir": 77008,
+          "lstat": 214007,
+          "stat": 2
+        },
+        "startRss": 118132736,
+        "peakRss": 1258848256,
+        "processMaxRssKiB": 1229356,
+        "result": [
+          "bench-0999",
+          "bench-0998",
+          "bench-0997",
+          "bench-0996",
+          "bench-0995",
+          "bench-0994",
+          "bench-0993",
+          "bench-0992",
+          "bench-0991",
+          "bench-0990",
+          "bench-0989",
+          "bench-0988",
+          "bench-0987",
+          "bench-0986",
+          "bench-0985",
+          "bench-0984",
+          "bench-0983",
+          "bench-0982",
+          "bench-0981",
+          "bench-0980"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 1,
+        "operation": "first",
+        "elapsedMs": 15186.214199999999,
+        "counts": {
+          "readFile": 32001,
+          "readBytes": 296247153,
+          "readdir": 77008,
+          "lstat": 214007,
+          "stat": 2
+        },
+        "startRss": 118669312,
+        "peakRss": 1280868352,
+        "processMaxRssKiB": 1250992,
+        "result": [
+          "bench-0999",
+          "bench-0998",
+          "bench-0997",
+          "bench-0996",
+          "bench-0995",
+          "bench-0994",
+          "bench-0993",
+          "bench-0992",
+          "bench-0991",
+          "bench-0990",
+          "bench-0989",
+          "bench-0988",
+          "bench-0987",
+          "bench-0986",
+          "bench-0985",
+          "bench-0984",
+          "bench-0983",
+          "bench-0982",
+          "bench-0981",
+          "bench-0980"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 2,
+        "operation": "first",
+        "elapsedMs": 15637.7702,
+        "counts": {
+          "readFile": 32001,
+          "readBytes": 296247153,
+          "readdir": 77008,
+          "lstat": 214007,
+          "stat": 2
+        },
+        "startRss": 119078912,
+        "peakRss": 966545408,
+        "processMaxRssKiB": 944616,
+        "result": [
+          "bench-0999",
+          "bench-0998",
+          "bench-0997",
+          "bench-0996",
+          "bench-0995",
+          "bench-0994",
+          "bench-0993",
+          "bench-0992",
+          "bench-0991",
+          "bench-0990",
+          "bench-0989",
+          "bench-0988",
+          "bench-0987",
+          "bench-0986",
+          "bench-0985",
+          "bench-0984",
+          "bench-0983",
+          "bench-0982",
+          "bench-0981",
+          "bench-0980"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 3,
+        "operation": "first",
+        "elapsedMs": 17780.5724,
+        "counts": {
+          "readFile": 32001,
+          "readBytes": 296247153,
+          "readdir": 77008,
+          "lstat": 214007,
+          "stat": 2
+        },
+        "startRss": 118964224,
+        "peakRss": 1219252224,
+        "processMaxRssKiB": 1191024,
+        "result": [
+          "bench-0999",
+          "bench-0998",
+          "bench-0997",
+          "bench-0996",
+          "bench-0995",
+          "bench-0994",
+          "bench-0993",
+          "bench-0992",
+          "bench-0991",
+          "bench-0990",
+          "bench-0989",
+          "bench-0988",
+          "bench-0987",
+          "bench-0986",
+          "bench-0985",
+          "bench-0984",
+          "bench-0983",
+          "bench-0982",
+          "bench-0981",
+          "bench-0980"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 4,
+        "operation": "first",
+        "elapsedMs": 18454.4502,
+        "counts": {
+          "readFile": 32001,
+          "readBytes": 296247153,
+          "readdir": 77008,
+          "lstat": 214007,
+          "stat": 2
+        },
+        "startRss": 118980608,
+        "peakRss": 990965760,
+        "processMaxRssKiB": 968076,
+        "result": [
+          "bench-0999",
+          "bench-0998",
+          "bench-0997",
+          "bench-0996",
+          "bench-0995",
+          "bench-0994",
+          "bench-0993",
+          "bench-0992",
+          "bench-0991",
+          "bench-0990",
+          "bench-0989",
+          "bench-0988",
+          "bench-0987",
+          "bench-0986",
+          "bench-0985",
+          "bench-0984",
+          "bench-0983",
+          "bench-0982",
+          "bench-0981",
+          "bench-0980"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 0,
+        "operation": "next",
+        "elapsedMs": 11850.840999999999,
+        "counts": {
+          "readFile": 32001,
+          "readBytes": 296247153,
+          "readdir": 77008,
+          "lstat": 214007,
+          "stat": 2
+        },
+        "startRss": 118968320,
+        "peakRss": 982863872,
+        "processMaxRssKiB": 959864,
+        "result": [
+          "bench-0979",
+          "bench-0978",
+          "bench-0977",
+          "bench-0976",
+          "bench-0975",
+          "bench-0974",
+          "bench-0973",
+          "bench-0972",
+          "bench-0971",
+          "bench-0970",
+          "bench-0969",
+          "bench-0968",
+          "bench-0967",
+          "bench-0966",
+          "bench-0965",
+          "bench-0964",
+          "bench-0963",
+          "bench-0962",
+          "bench-0961",
+          "bench-0960"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 1,
+        "operation": "next",
+        "elapsedMs": 11998.784099999999,
+        "counts": {
+          "readFile": 32001,
+          "readBytes": 296247153,
+          "readdir": 77008,
+          "lstat": 214007,
+          "stat": 2
+        },
+        "startRss": 118738944,
+        "peakRss": 966270976,
+        "processMaxRssKiB": 943816,
+        "result": [
+          "bench-0979",
+          "bench-0978",
+          "bench-0977",
+          "bench-0976",
+          "bench-0975",
+          "bench-0974",
+          "bench-0973",
+          "bench-0972",
+          "bench-0971",
+          "bench-0970",
+          "bench-0969",
+          "bench-0968",
+          "bench-0967",
+          "bench-0966",
+          "bench-0965",
+          "bench-0964",
+          "bench-0963",
+          "bench-0962",
+          "bench-0961",
+          "bench-0960"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 2,
+        "operation": "next",
+        "elapsedMs": 11978.7407,
+        "counts": {
+          "readFile": 32001,
+          "readBytes": 296247153,
+          "readdir": 77008,
+          "lstat": 214007,
+          "stat": 2
+        },
+        "startRss": 119750656,
+        "peakRss": 987496448,
+        "processMaxRssKiB": 964624,
+        "result": [
+          "bench-0979",
+          "bench-0978",
+          "bench-0977",
+          "bench-0976",
+          "bench-0975",
+          "bench-0974",
+          "bench-0973",
+          "bench-0972",
+          "bench-0971",
+          "bench-0970",
+          "bench-0969",
+          "bench-0968",
+          "bench-0967",
+          "bench-0966",
+          "bench-0965",
+          "bench-0964",
+          "bench-0963",
+          "bench-0962",
+          "bench-0961",
+          "bench-0960"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 3,
+        "operation": "next",
+        "elapsedMs": 11902.209299999999,
+        "counts": {
+          "readFile": 32001,
+          "readBytes": 296247153,
+          "readdir": 77008,
+          "lstat": 214007,
+          "stat": 2
+        },
+        "startRss": 119390208,
+        "peakRss": 1266364416,
+        "processMaxRssKiB": 1236684,
+        "result": [
+          "bench-0979",
+          "bench-0978",
+          "bench-0977",
+          "bench-0976",
+          "bench-0975",
+          "bench-0974",
+          "bench-0973",
+          "bench-0972",
+          "bench-0971",
+          "bench-0970",
+          "bench-0969",
+          "bench-0968",
+          "bench-0967",
+          "bench-0966",
+          "bench-0965",
+          "bench-0964",
+          "bench-0963",
+          "bench-0962",
+          "bench-0961",
+          "bench-0960"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 4,
+        "operation": "next",
+        "elapsedMs": 13438.738500000001,
+        "counts": {
+          "readFile": 32001,
+          "readBytes": 296247153,
+          "readdir": 77008,
+          "lstat": 214007,
+          "stat": 2
+        },
+        "startRss": 118800384,
+        "peakRss": 983146496,
+        "processMaxRssKiB": 960836,
+        "result": [
+          "bench-0979",
+          "bench-0978",
+          "bench-0977",
+          "bench-0976",
+          "bench-0975",
+          "bench-0974",
+          "bench-0973",
+          "bench-0972",
+          "bench-0971",
+          "bench-0970",
+          "bench-0969",
+          "bench-0968",
+          "bench-0967",
+          "bench-0966",
+          "bench-0965",
+          "bench-0964",
+          "bench-0963",
+          "bench-0962",
+          "bench-0961",
+          "bench-0960"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 0,
+        "operation": "detail",
+        "elapsedMs": 3.4937999999999647,
+        "counts": {
+          "readFile": 1,
+          "readBytes": 73711,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 118714368,
+        "peakRss": 119549952,
+        "processMaxRssKiB": 116972,
+        "result": 104
+      },
+      {
+        "size": 1000,
+        "repetition": 1,
+        "operation": "detail",
+        "elapsedMs": 3.6195999999999913,
+        "counts": {
+          "readFile": 1,
+          "readBytes": 73711,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 119021568,
+        "peakRss": 119939072,
+        "processMaxRssKiB": 117132,
+        "result": 104
+      },
+      {
+        "size": 1000,
+        "repetition": 2,
+        "operation": "detail",
+        "elapsedMs": 3.5990000000000464,
+        "counts": {
+          "readFile": 1,
+          "readBytes": 73711,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 118652928,
+        "peakRss": 119840768,
+        "processMaxRssKiB": 117036,
+        "result": 104
+      },
+      {
+        "size": 1000,
+        "repetition": 3,
+        "operation": "detail",
+        "elapsedMs": 3.2030999999999494,
+        "counts": {
+          "readFile": 1,
+          "readBytes": 73711,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 119263232,
+        "peakRss": 120139776,
+        "processMaxRssKiB": 117328,
+        "result": 104
+      },
+      {
+        "size": 1000,
+        "repetition": 4,
+        "operation": "detail",
+        "elapsedMs": 4.40319999999997,
+        "counts": {
+          "readFile": 1,
+          "readBytes": 73711,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 118263808,
+        "peakRss": 120233984,
+        "processMaxRssKiB": 117420,
+        "result": 104
+      },
+      {
+        "size": 1000,
+        "repetition": 0,
+        "operation": "audit",
+        "elapsedMs": 15.518399999999929,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 118738944,
+        "peakRss": 121303040,
+        "processMaxRssKiB": 118464,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 1000,
+        "repetition": 1,
+        "operation": "audit",
+        "elapsedMs": 14.963499999999954,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 118546432,
+        "peakRss": 120627200,
+        "processMaxRssKiB": 117804,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 1000,
+        "repetition": 2,
+        "operation": "audit",
+        "elapsedMs": 14.021399999999971,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 119185408,
+        "peakRss": 120479744,
+        "processMaxRssKiB": 117660,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 1000,
+        "repetition": 3,
+        "operation": "audit",
+        "elapsedMs": 14.66960000000006,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 119173120,
+        "peakRss": 120438784,
+        "processMaxRssKiB": 117620,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 1000,
+        "repetition": 4,
+        "operation": "audit",
+        "elapsedMs": 13.774800000000027,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 119033856,
+        "peakRss": 120377344,
+        "processMaxRssKiB": 117560,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 1000,
+        "repetition": 0,
+        "operation": "size",
+        "elapsedMs": 9662.6003,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 38006,
+          "lstat": 107002,
+          "stat": 0
+        },
+        "startRss": 118329344,
+        "peakRss": 146591744,
+        "processMaxRssKiB": 143444,
+        "result": 415233666
+      },
+      {
+        "size": 1000,
+        "repetition": 1,
+        "operation": "size",
+        "elapsedMs": 9216.4046,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 38006,
+          "lstat": 107002,
+          "stat": 0
+        },
+        "startRss": 118435840,
+        "peakRss": 146305024,
+        "processMaxRssKiB": 143232,
+        "result": 415233666
+      },
+      {
+        "size": 1000,
+        "repetition": 2,
+        "operation": "size",
+        "elapsedMs": 9563.277300000002,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 38006,
+          "lstat": 107002,
+          "stat": 0
+        },
+        "startRss": 119181312,
+        "peakRss": 146485248,
+        "processMaxRssKiB": 143380,
+        "result": 415233666
+      },
+      {
+        "size": 1000,
+        "repetition": 3,
+        "operation": "size",
+        "elapsedMs": 11919.2681,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 38006,
+          "lstat": 107002,
+          "stat": 0
+        },
+        "startRss": 119320576,
+        "peakRss": 147120128,
+        "processMaxRssKiB": 144100,
+        "result": 415233666
+      },
+      {
+        "size": 1000,
+        "repetition": 4,
+        "operation": "size",
+        "elapsedMs": 10275.7378,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 38006,
+          "lstat": 107002,
+          "stat": 0
+        },
+        "startRss": 118849536,
+        "peakRss": 145698816,
+        "processMaxRssKiB": 142776,
+        "result": 415233666
+      }
+    ]
+  },
+  "optimized": {
+    "node": "v24.11.1",
+    "platform": "win32",
+    "arch": "x64",
+    "cache": "fresh process, shared OS file cache, no forced cold-cache eviction",
+    "samples": [
+      {
+        "size": 10,
+        "repetition": 0,
+        "operation": "recent",
+        "elapsedMs": 45.50610000000006,
+        "counts": {
+          "readFile": 71,
+          "readBytes": 1508930,
+          "readdir": 12,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 107421696,
+        "peakRss": 117723136,
+        "processMaxRssKiB": 114968,
+        "result": "bench-0009"
+      },
+      {
+        "size": 10,
+        "repetition": 1,
+        "operation": "recent",
+        "elapsedMs": 45.56729999999993,
+        "counts": {
+          "readFile": 71,
+          "readBytes": 1508930,
+          "readdir": 12,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 110006272,
+        "peakRss": 119369728,
+        "processMaxRssKiB": 116576,
+        "result": "bench-0009"
+      },
+      {
+        "size": 10,
+        "repetition": 2,
+        "operation": "recent",
+        "elapsedMs": 41.773099999999886,
+        "counts": {
+          "readFile": 71,
+          "readBytes": 1508930,
+          "readdir": 12,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 109981696,
+        "peakRss": 118484992,
+        "processMaxRssKiB": 115712,
+        "result": "bench-0009"
+      },
+      {
+        "size": 10,
+        "repetition": 3,
+        "operation": "recent",
+        "elapsedMs": 40.72159999999997,
+        "counts": {
+          "readFile": 71,
+          "readBytes": 1508930,
+          "readdir": 12,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 109940736,
+        "peakRss": 118337536,
+        "processMaxRssKiB": 115568,
+        "result": "bench-0009"
+      },
+      {
+        "size": 10,
+        "repetition": 4,
+        "operation": "recent",
+        "elapsedMs": 36.655700000000024,
+        "counts": {
+          "readFile": 71,
+          "readBytes": 1508930,
+          "readdir": 12,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 110260224,
+        "peakRss": 118546432,
+        "processMaxRssKiB": 115772,
+        "result": "bench-0009"
+      },
+      {
+        "size": 10,
+        "repetition": 0,
+        "operation": "first",
+        "elapsedMs": 39.27499999999998,
+        "counts": {
+          "readFile": 71,
+          "readBytes": 1508930,
+          "readdir": 12,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 110190592,
+        "peakRss": 118181888,
+        "processMaxRssKiB": 115416,
+        "result": [
+          "bench-0009",
+          "bench-0008",
+          "bench-0007",
+          "bench-0006",
+          "bench-0005",
+          "bench-0004",
+          "bench-0003",
+          "bench-0002",
+          "bench-0001",
+          "bench-0000"
+        ]
+      },
+      {
+        "size": 10,
+        "repetition": 1,
+        "operation": "first",
+        "elapsedMs": 40.0412,
+        "counts": {
+          "readFile": 71,
+          "readBytes": 1508930,
+          "readdir": 12,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 110641152,
+        "peakRss": 118349824,
+        "processMaxRssKiB": 115580,
+        "result": [
+          "bench-0009",
+          "bench-0008",
+          "bench-0007",
+          "bench-0006",
+          "bench-0005",
+          "bench-0004",
+          "bench-0003",
+          "bench-0002",
+          "bench-0001",
+          "bench-0000"
+        ]
+      },
+      {
+        "size": 10,
+        "repetition": 2,
+        "operation": "first",
+        "elapsedMs": 39.8356,
+        "counts": {
+          "readFile": 71,
+          "readBytes": 1508930,
+          "readdir": 12,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 110751744,
+        "peakRss": 119517184,
+        "processMaxRssKiB": 116720,
+        "result": [
+          "bench-0009",
+          "bench-0008",
+          "bench-0007",
+          "bench-0006",
+          "bench-0005",
+          "bench-0004",
+          "bench-0003",
+          "bench-0002",
+          "bench-0001",
+          "bench-0000"
+        ]
+      },
+      {
+        "size": 10,
+        "repetition": 3,
+        "operation": "first",
+        "elapsedMs": 36.11759999999981,
+        "counts": {
+          "readFile": 71,
+          "readBytes": 1508930,
+          "readdir": 12,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 110575616,
+        "peakRss": 118718464,
+        "processMaxRssKiB": 115940,
+        "result": [
+          "bench-0009",
+          "bench-0008",
+          "bench-0007",
+          "bench-0006",
+          "bench-0005",
+          "bench-0004",
+          "bench-0003",
+          "bench-0002",
+          "bench-0001",
+          "bench-0000"
+        ]
+      },
+      {
+        "size": 10,
+        "repetition": 4,
+        "operation": "first",
+        "elapsedMs": 36.307000000000016,
+        "counts": {
+          "readFile": 71,
+          "readBytes": 1508930,
+          "readdir": 12,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 110284800,
+        "peakRss": 118882304,
+        "processMaxRssKiB": 116100,
+        "result": [
+          "bench-0009",
+          "bench-0008",
+          "bench-0007",
+          "bench-0006",
+          "bench-0005",
+          "bench-0004",
+          "bench-0003",
+          "bench-0002",
+          "bench-0001",
+          "bench-0000"
+        ]
+      },
+      {
+        "size": 10,
+        "repetition": 0,
+        "operation": "detail",
+        "elapsedMs": 25.953000000000088,
+        "counts": {
+          "readFile": 33,
+          "readBytes": 370006,
+          "readdir": 1,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 109969408,
+        "peakRss": 113590272,
+        "processMaxRssKiB": 110932,
+        "result": {
+          "events": 104,
+          "modelInputAudit": "checked"
+        }
+      },
+      {
+        "size": 10,
+        "repetition": 1,
+        "operation": "detail",
+        "elapsedMs": 55.57740000000001,
+        "counts": {
+          "readFile": 33,
+          "readBytes": 370006,
+          "readdir": 1,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 110428160,
+        "peakRss": 113205248,
+        "processMaxRssKiB": 110556,
+        "result": {
+          "events": 104,
+          "modelInputAudit": "checked"
+        }
+      },
+      {
+        "size": 10,
+        "repetition": 2,
+        "operation": "detail",
+        "elapsedMs": 29.53280000000018,
+        "counts": {
+          "readFile": 33,
+          "readBytes": 370006,
+          "readdir": 1,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 110325760,
+        "peakRss": 113434624,
+        "processMaxRssKiB": 110780,
+        "result": {
+          "events": 104,
+          "modelInputAudit": "checked"
+        }
+      },
+      {
+        "size": 10,
+        "repetition": 3,
+        "operation": "detail",
+        "elapsedMs": 26.146999999999935,
+        "counts": {
+          "readFile": 33,
+          "readBytes": 370006,
+          "readdir": 1,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 110829568,
+        "peakRss": 113741824,
+        "processMaxRssKiB": 111184,
+        "result": {
+          "events": 104,
+          "modelInputAudit": "checked"
+        }
+      },
+      {
+        "size": 10,
+        "repetition": 4,
+        "operation": "detail",
+        "elapsedMs": 29.5925000000002,
+        "counts": {
+          "readFile": 33,
+          "readBytes": 370006,
+          "readdir": 1,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 110399488,
+        "peakRss": 113778688,
+        "processMaxRssKiB": 111116,
+        "result": {
+          "events": 104,
+          "modelInputAudit": "checked"
+        }
+      },
+      {
+        "size": 10,
+        "repetition": 0,
+        "operation": "audit",
+        "elapsedMs": 15.283900000000017,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 110645248,
+        "peakRss": 112533504,
+        "processMaxRssKiB": 109900,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 10,
+        "repetition": 1,
+        "operation": "audit",
+        "elapsedMs": 14.774700000000053,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 110612480,
+        "peakRss": 112955392,
+        "processMaxRssKiB": 110312,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 10,
+        "repetition": 2,
+        "operation": "audit",
+        "elapsedMs": 14.674399999999991,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 110379008,
+        "peakRss": 112619520,
+        "processMaxRssKiB": 109984,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 10,
+        "repetition": 3,
+        "operation": "audit",
+        "elapsedMs": 14.380100000000084,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 110333952,
+        "peakRss": 112959488,
+        "processMaxRssKiB": 110316,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 10,
+        "repetition": 4,
+        "operation": "audit",
+        "elapsedMs": 18.35200000000009,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 110698496,
+        "peakRss": 114544640,
+        "processMaxRssKiB": 111864,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 10,
+        "repetition": 0,
+        "operation": "size",
+        "elapsedMs": 172.1593999999999,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 385,
+          "lstat": 1072,
+          "stat": 0
+        },
+        "startRss": 110669824,
+        "peakRss": 116989952,
+        "processMaxRssKiB": 114252,
+        "result": 4153790
+      },
+      {
+        "size": 10,
+        "repetition": 1,
+        "operation": "size",
+        "elapsedMs": 142.0403,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 385,
+          "lstat": 1072,
+          "stat": 0
+        },
+        "startRss": 110505984,
+        "peakRss": 117137408,
+        "processMaxRssKiB": 114396,
+        "result": 4153790
+      },
+      {
+        "size": 10,
+        "repetition": 2,
+        "operation": "size",
+        "elapsedMs": 124.49649999999997,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 385,
+          "lstat": 1072,
+          "stat": 0
+        },
+        "startRss": 110718976,
+        "peakRss": 116187136,
+        "processMaxRssKiB": 113588,
+        "result": 4153790
+      },
+      {
+        "size": 10,
+        "repetition": 3,
+        "operation": "size",
+        "elapsedMs": 168.7288000000001,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 385,
+          "lstat": 1072,
+          "stat": 0
+        },
+        "startRss": 110575616,
+        "peakRss": 116707328,
+        "processMaxRssKiB": 113976,
+        "result": 4153790
+      },
+      {
+        "size": 10,
+        "repetition": 4,
+        "operation": "size",
+        "elapsedMs": 158.53830000000005,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 385,
+          "lstat": 1072,
+          "stat": 0
+        },
+        "startRss": 110354432,
+        "peakRss": 116666368,
+        "processMaxRssKiB": 113936,
+        "result": 4153790
+      },
+      {
+        "size": 100,
+        "repetition": 0,
+        "operation": "recent",
+        "elapsedMs": 205.90829999999994,
+        "counts": {
+          "readFile": 701,
+          "readBytes": 15079490,
+          "readdir": 102,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 107118592,
+        "peakRss": 155017216,
+        "processMaxRssKiB": 153724,
+        "result": "bench-0099"
+      },
+      {
+        "size": 100,
+        "repetition": 1,
+        "operation": "recent",
+        "elapsedMs": 206.56619999999998,
+        "counts": {
+          "readFile": 701,
+          "readBytes": 15079490,
+          "readdir": 102,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 107556864,
+        "peakRss": 155320320,
+        "processMaxRssKiB": 152776,
+        "result": "bench-0099"
+      },
+      {
+        "size": 100,
+        "repetition": 2,
+        "operation": "recent",
+        "elapsedMs": 221.46659999999997,
+        "counts": {
+          "readFile": 701,
+          "readBytes": 15079490,
+          "readdir": 102,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 107569152,
+        "peakRss": 152965120,
+        "processMaxRssKiB": 153760,
+        "result": "bench-0099"
+      },
+      {
+        "size": 100,
+        "repetition": 3,
+        "operation": "recent",
+        "elapsedMs": 201.20989999999995,
+        "counts": {
+          "readFile": 701,
+          "readBytes": 15079490,
+          "readdir": 102,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 107257856,
+        "peakRss": 155308032,
+        "processMaxRssKiB": 153100,
+        "result": "bench-0099"
+      },
+      {
+        "size": 100,
+        "repetition": 4,
+        "operation": "recent",
+        "elapsedMs": 206.47140000000002,
+        "counts": {
+          "readFile": 701,
+          "readBytes": 15079490,
+          "readdir": 102,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 107704320,
+        "peakRss": 155160576,
+        "processMaxRssKiB": 152976,
+        "result": "bench-0099"
+      },
+      {
+        "size": 100,
+        "repetition": 0,
+        "operation": "first",
+        "elapsedMs": 220.13890000000004,
+        "counts": {
+          "readFile": 701,
+          "readBytes": 15079490,
+          "readdir": 102,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 106782720,
+        "peakRss": 153341952,
+        "processMaxRssKiB": 152256,
+        "result": [
+          "bench-0099",
+          "bench-0098",
+          "bench-0097",
+          "bench-0096",
+          "bench-0095",
+          "bench-0094",
+          "bench-0093",
+          "bench-0092",
+          "bench-0091",
+          "bench-0090",
+          "bench-0089",
+          "bench-0088",
+          "bench-0087",
+          "bench-0086",
+          "bench-0085",
+          "bench-0084",
+          "bench-0083",
+          "bench-0082",
+          "bench-0081",
+          "bench-0080"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 1,
+        "operation": "first",
+        "elapsedMs": 215.0902000000001,
+        "counts": {
+          "readFile": 701,
+          "readBytes": 15079490,
+          "readdir": 102,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 107552768,
+        "peakRss": 154587136,
+        "processMaxRssKiB": 154128,
+        "result": [
+          "bench-0099",
+          "bench-0098",
+          "bench-0097",
+          "bench-0096",
+          "bench-0095",
+          "bench-0094",
+          "bench-0093",
+          "bench-0092",
+          "bench-0091",
+          "bench-0090",
+          "bench-0089",
+          "bench-0088",
+          "bench-0087",
+          "bench-0086",
+          "bench-0085",
+          "bench-0084",
+          "bench-0083",
+          "bench-0082",
+          "bench-0081",
+          "bench-0080"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 2,
+        "operation": "first",
+        "elapsedMs": 203.77919999999995,
+        "counts": {
+          "readFile": 701,
+          "readBytes": 15079490,
+          "readdir": 102,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 106569728,
+        "peakRss": 153530368,
+        "processMaxRssKiB": 153000,
+        "result": [
+          "bench-0099",
+          "bench-0098",
+          "bench-0097",
+          "bench-0096",
+          "bench-0095",
+          "bench-0094",
+          "bench-0093",
+          "bench-0092",
+          "bench-0091",
+          "bench-0090",
+          "bench-0089",
+          "bench-0088",
+          "bench-0087",
+          "bench-0086",
+          "bench-0085",
+          "bench-0084",
+          "bench-0083",
+          "bench-0082",
+          "bench-0081",
+          "bench-0080"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 3,
+        "operation": "first",
+        "elapsedMs": 208.22180000000003,
+        "counts": {
+          "readFile": 701,
+          "readBytes": 15079490,
+          "readdir": 102,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 106749952,
+        "peakRss": 156782592,
+        "processMaxRssKiB": 154024,
+        "result": [
+          "bench-0099",
+          "bench-0098",
+          "bench-0097",
+          "bench-0096",
+          "bench-0095",
+          "bench-0094",
+          "bench-0093",
+          "bench-0092",
+          "bench-0091",
+          "bench-0090",
+          "bench-0089",
+          "bench-0088",
+          "bench-0087",
+          "bench-0086",
+          "bench-0085",
+          "bench-0084",
+          "bench-0083",
+          "bench-0082",
+          "bench-0081",
+          "bench-0080"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 4,
+        "operation": "first",
+        "elapsedMs": 210.8736,
+        "counts": {
+          "readFile": 701,
+          "readBytes": 15079490,
+          "readdir": 102,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 107307008,
+        "peakRss": 152514560,
+        "processMaxRssKiB": 152912,
+        "result": [
+          "bench-0099",
+          "bench-0098",
+          "bench-0097",
+          "bench-0096",
+          "bench-0095",
+          "bench-0094",
+          "bench-0093",
+          "bench-0092",
+          "bench-0091",
+          "bench-0090",
+          "bench-0089",
+          "bench-0088",
+          "bench-0087",
+          "bench-0086",
+          "bench-0085",
+          "bench-0084",
+          "bench-0083",
+          "bench-0082",
+          "bench-0081",
+          "bench-0080"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 0,
+        "operation": "next",
+        "elapsedMs": 216.24390000000005,
+        "counts": {
+          "readFile": 701,
+          "readBytes": 15079490,
+          "readdir": 102,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 107601920,
+        "peakRss": 155541504,
+        "processMaxRssKiB": 152708,
+        "result": [
+          "bench-0079",
+          "bench-0078",
+          "bench-0077",
+          "bench-0076",
+          "bench-0075",
+          "bench-0074",
+          "bench-0073",
+          "bench-0072",
+          "bench-0071",
+          "bench-0070",
+          "bench-0069",
+          "bench-0068",
+          "bench-0067",
+          "bench-0066",
+          "bench-0065",
+          "bench-0064",
+          "bench-0063",
+          "bench-0062",
+          "bench-0061",
+          "bench-0060"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 1,
+        "operation": "next",
+        "elapsedMs": 203.10889999999995,
+        "counts": {
+          "readFile": 701,
+          "readBytes": 15079490,
+          "readdir": 102,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 107495424,
+        "peakRss": 152641536,
+        "processMaxRssKiB": 153492,
+        "result": [
+          "bench-0079",
+          "bench-0078",
+          "bench-0077",
+          "bench-0076",
+          "bench-0075",
+          "bench-0074",
+          "bench-0073",
+          "bench-0072",
+          "bench-0071",
+          "bench-0070",
+          "bench-0069",
+          "bench-0068",
+          "bench-0067",
+          "bench-0066",
+          "bench-0065",
+          "bench-0064",
+          "bench-0063",
+          "bench-0062",
+          "bench-0061",
+          "bench-0060"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 2,
+        "operation": "next",
+        "elapsedMs": 218.1323,
+        "counts": {
+          "readFile": 701,
+          "readBytes": 15079490,
+          "readdir": 102,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 107114496,
+        "peakRss": 153493504,
+        "processMaxRssKiB": 152228,
+        "result": [
+          "bench-0079",
+          "bench-0078",
+          "bench-0077",
+          "bench-0076",
+          "bench-0075",
+          "bench-0074",
+          "bench-0073",
+          "bench-0072",
+          "bench-0071",
+          "bench-0070",
+          "bench-0069",
+          "bench-0068",
+          "bench-0067",
+          "bench-0066",
+          "bench-0065",
+          "bench-0064",
+          "bench-0063",
+          "bench-0062",
+          "bench-0061",
+          "bench-0060"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 3,
+        "operation": "next",
+        "elapsedMs": 214.11430000000007,
+        "counts": {
+          "readFile": 701,
+          "readBytes": 15079490,
+          "readdir": 102,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 108027904,
+        "peakRss": 154005504,
+        "processMaxRssKiB": 154824,
+        "result": [
+          "bench-0079",
+          "bench-0078",
+          "bench-0077",
+          "bench-0076",
+          "bench-0075",
+          "bench-0074",
+          "bench-0073",
+          "bench-0072",
+          "bench-0071",
+          "bench-0070",
+          "bench-0069",
+          "bench-0068",
+          "bench-0067",
+          "bench-0066",
+          "bench-0065",
+          "bench-0064",
+          "bench-0063",
+          "bench-0062",
+          "bench-0061",
+          "bench-0060"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 4,
+        "operation": "next",
+        "elapsedMs": 220.49109999999985,
+        "counts": {
+          "readFile": 701,
+          "readBytes": 15079490,
+          "readdir": 102,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 109420544,
+        "peakRss": 157696000,
+        "processMaxRssKiB": 155324,
+        "result": [
+          "bench-0079",
+          "bench-0078",
+          "bench-0077",
+          "bench-0076",
+          "bench-0075",
+          "bench-0074",
+          "bench-0073",
+          "bench-0072",
+          "bench-0071",
+          "bench-0070",
+          "bench-0069",
+          "bench-0068",
+          "bench-0067",
+          "bench-0066",
+          "bench-0065",
+          "bench-0064",
+          "bench-0063",
+          "bench-0062",
+          "bench-0061",
+          "bench-0060"
+        ]
+      },
+      {
+        "size": 100,
+        "repetition": 0,
+        "operation": "detail",
+        "elapsedMs": 21.334299999999985,
+        "counts": {
+          "readFile": 33,
+          "readBytes": 370006,
+          "readdir": 1,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 110088192,
+        "peakRss": 113307648,
+        "processMaxRssKiB": 110656,
+        "result": {
+          "events": 104,
+          "modelInputAudit": "checked"
+        }
+      },
+      {
+        "size": 100,
+        "repetition": 1,
+        "operation": "detail",
+        "elapsedMs": 26.668699999999944,
+        "counts": {
+          "readFile": 33,
+          "readBytes": 370006,
+          "readdir": 1,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 110469120,
+        "peakRss": 113950720,
+        "processMaxRssKiB": 111352,
+        "result": {
+          "events": 104,
+          "modelInputAudit": "checked"
+        }
+      },
+      {
+        "size": 100,
+        "repetition": 2,
+        "operation": "detail",
+        "elapsedMs": 24.130100000000084,
+        "counts": {
+          "readFile": 33,
+          "readBytes": 370006,
+          "readdir": 1,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 110215168,
+        "peakRss": 114024448,
+        "processMaxRssKiB": 111380,
+        "result": {
+          "events": 104,
+          "modelInputAudit": "checked"
+        }
+      },
+      {
+        "size": 100,
+        "repetition": 3,
+        "operation": "detail",
+        "elapsedMs": 23.551999999999907,
+        "counts": {
+          "readFile": 33,
+          "readBytes": 370006,
+          "readdir": 1,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 109600768,
+        "peakRss": 113725440,
+        "processMaxRssKiB": 111212,
+        "result": {
+          "events": 104,
+          "modelInputAudit": "checked"
+        }
+      },
+      {
+        "size": 100,
+        "repetition": 4,
+        "operation": "detail",
+        "elapsedMs": 23.174900000000093,
+        "counts": {
+          "readFile": 33,
+          "readBytes": 370006,
+          "readdir": 1,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 109928448,
+        "peakRss": 113184768,
+        "processMaxRssKiB": 110552,
+        "result": {
+          "events": 104,
+          "modelInputAudit": "checked"
+        }
+      },
+      {
+        "size": 100,
+        "repetition": 0,
+        "operation": "audit",
+        "elapsedMs": 12.851200000000063,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 110174208,
+        "peakRss": 112537600,
+        "processMaxRssKiB": 109904,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 100,
+        "repetition": 1,
+        "operation": "audit",
+        "elapsedMs": 18.644800000000032,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 109309952,
+        "peakRss": 112320512,
+        "processMaxRssKiB": 109692,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 100,
+        "repetition": 2,
+        "operation": "audit",
+        "elapsedMs": 15.857899999999972,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 110469120,
+        "peakRss": 112996352,
+        "processMaxRssKiB": 110352,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 100,
+        "repetition": 3,
+        "operation": "audit",
+        "elapsedMs": 13.912899999999922,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 110481408,
+        "peakRss": 112209920,
+        "processMaxRssKiB": 109624,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 100,
+        "repetition": 4,
+        "operation": "audit",
+        "elapsedMs": 13.807500000000005,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 110510080,
+        "peakRss": 112619520,
+        "processMaxRssKiB": 109984,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 100,
+        "repetition": 0,
+        "operation": "size",
+        "elapsedMs": 1319.5331999999999,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 3805,
+          "lstat": 10702,
+          "stat": 0
+        },
+        "startRss": 110280704,
+        "peakRss": 137744384,
+        "processMaxRssKiB": 135056,
+        "result": 41528090
+      },
+      {
+        "size": 100,
+        "repetition": 1,
+        "operation": "size",
+        "elapsedMs": 1185.1885,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 3805,
+          "lstat": 10702,
+          "stat": 0
+        },
+        "startRss": 109756416,
+        "peakRss": 137539584,
+        "processMaxRssKiB": 134804,
+        "result": 41528090
+      },
+      {
+        "size": 100,
+        "repetition": 2,
+        "operation": "size",
+        "elapsedMs": 1146.7343,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 3805,
+          "lstat": 10702,
+          "stat": 0
+        },
+        "startRss": 109957120,
+        "peakRss": 137809920,
+        "processMaxRssKiB": 134964,
+        "result": 41528090
+      },
+      {
+        "size": 100,
+        "repetition": 3,
+        "operation": "size",
+        "elapsedMs": 1123.0121,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 3805,
+          "lstat": 10702,
+          "stat": 0
+        },
+        "startRss": 110198784,
+        "peakRss": 137445376,
+        "processMaxRssKiB": 134808,
+        "result": 41528090
+      },
+      {
+        "size": 100,
+        "repetition": 4,
+        "operation": "size",
+        "elapsedMs": 1122.0588,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 3805,
+          "lstat": 10702,
+          "stat": 0
+        },
+        "startRss": 109879296,
+        "peakRss": 137850880,
+        "processMaxRssKiB": 134776,
+        "result": 41528090
+      },
+      {
+        "size": 1000,
+        "repetition": 0,
+        "operation": "recent",
+        "elapsedMs": 1863.3557,
+        "counts": {
+          "readFile": 7001,
+          "readBytes": 150752404,
+          "readdir": 1002,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 110194688,
+        "peakRss": 163201024,
+        "processMaxRssKiB": 160300,
+        "result": "bench-0999"
+      },
+      {
+        "size": 1000,
+        "repetition": 1,
+        "operation": "recent",
+        "elapsedMs": 1834.0833,
+        "counts": {
+          "readFile": 7001,
+          "readBytes": 150752404,
+          "readdir": 1002,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 110555136,
+        "peakRss": 161562624,
+        "processMaxRssKiB": 159284,
+        "result": "bench-0999"
+      },
+      {
+        "size": 1000,
+        "repetition": 2,
+        "operation": "recent",
+        "elapsedMs": 1875.0105,
+        "counts": {
+          "readFile": 7001,
+          "readBytes": 150752404,
+          "readdir": 1002,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 107679744,
+        "peakRss": 160948224,
+        "processMaxRssKiB": 158536,
+        "result": "bench-0999"
+      },
+      {
+        "size": 1000,
+        "repetition": 3,
+        "operation": "recent",
+        "elapsedMs": 1964.6504,
+        "counts": {
+          "readFile": 7001,
+          "readBytes": 150752404,
+          "readdir": 1002,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 107364352,
+        "peakRss": 160153600,
+        "processMaxRssKiB": 157532,
+        "result": "bench-0999"
+      },
+      {
+        "size": 1000,
+        "repetition": 4,
+        "operation": "recent",
+        "elapsedMs": 2143.5712999999996,
+        "counts": {
+          "readFile": 7001,
+          "readBytes": 150752404,
+          "readdir": 1002,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 108912640,
+        "peakRss": 161153024,
+        "processMaxRssKiB": 159656,
+        "result": "bench-0999"
+      },
+      {
+        "size": 1000,
+        "repetition": 0,
+        "operation": "first",
+        "elapsedMs": 2157.5425000000005,
+        "counts": {
+          "readFile": 7001,
+          "readBytes": 150752404,
+          "readdir": 1002,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 109752320,
+        "peakRss": 162672640,
+        "processMaxRssKiB": 159444,
+        "result": [
+          "bench-0999",
+          "bench-0998",
+          "bench-0997",
+          "bench-0996",
+          "bench-0995",
+          "bench-0994",
+          "bench-0993",
+          "bench-0992",
+          "bench-0991",
+          "bench-0990",
+          "bench-0989",
+          "bench-0988",
+          "bench-0987",
+          "bench-0986",
+          "bench-0985",
+          "bench-0984",
+          "bench-0983",
+          "bench-0982",
+          "bench-0981",
+          "bench-0980"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 1,
+        "operation": "first",
+        "elapsedMs": 1993.9318000000003,
+        "counts": {
+          "readFile": 7001,
+          "readBytes": 150752404,
+          "readdir": 1002,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 109621248,
+        "peakRss": 162349056,
+        "processMaxRssKiB": 159780,
+        "result": [
+          "bench-0999",
+          "bench-0998",
+          "bench-0997",
+          "bench-0996",
+          "bench-0995",
+          "bench-0994",
+          "bench-0993",
+          "bench-0992",
+          "bench-0991",
+          "bench-0990",
+          "bench-0989",
+          "bench-0988",
+          "bench-0987",
+          "bench-0986",
+          "bench-0985",
+          "bench-0984",
+          "bench-0983",
+          "bench-0982",
+          "bench-0981",
+          "bench-0980"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 2,
+        "operation": "first",
+        "elapsedMs": 2208.8274,
+        "counts": {
+          "readFile": 7001,
+          "readBytes": 150752404,
+          "readdir": 1002,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 109928448,
+        "peakRss": 162848768,
+        "processMaxRssKiB": 160220,
+        "result": [
+          "bench-0999",
+          "bench-0998",
+          "bench-0997",
+          "bench-0996",
+          "bench-0995",
+          "bench-0994",
+          "bench-0993",
+          "bench-0992",
+          "bench-0991",
+          "bench-0990",
+          "bench-0989",
+          "bench-0988",
+          "bench-0987",
+          "bench-0986",
+          "bench-0985",
+          "bench-0984",
+          "bench-0983",
+          "bench-0982",
+          "bench-0981",
+          "bench-0980"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 3,
+        "operation": "first",
+        "elapsedMs": 2470.1915,
+        "counts": {
+          "readFile": 7001,
+          "readBytes": 150752404,
+          "readdir": 1002,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 110256128,
+        "peakRss": 163241984,
+        "processMaxRssKiB": 160384,
+        "result": [
+          "bench-0999",
+          "bench-0998",
+          "bench-0997",
+          "bench-0996",
+          "bench-0995",
+          "bench-0994",
+          "bench-0993",
+          "bench-0992",
+          "bench-0991",
+          "bench-0990",
+          "bench-0989",
+          "bench-0988",
+          "bench-0987",
+          "bench-0986",
+          "bench-0985",
+          "bench-0984",
+          "bench-0983",
+          "bench-0982",
+          "bench-0981",
+          "bench-0980"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 4,
+        "operation": "first",
+        "elapsedMs": 2231.1715999999997,
+        "counts": {
+          "readFile": 7001,
+          "readBytes": 150752404,
+          "readdir": 1002,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 109764608,
+        "peakRss": 161964032,
+        "processMaxRssKiB": 159328,
+        "result": [
+          "bench-0999",
+          "bench-0998",
+          "bench-0997",
+          "bench-0996",
+          "bench-0995",
+          "bench-0994",
+          "bench-0993",
+          "bench-0992",
+          "bench-0991",
+          "bench-0990",
+          "bench-0989",
+          "bench-0988",
+          "bench-0987",
+          "bench-0986",
+          "bench-0985",
+          "bench-0984",
+          "bench-0983",
+          "bench-0982",
+          "bench-0981",
+          "bench-0980"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 0,
+        "operation": "next",
+        "elapsedMs": 1968.7909999999997,
+        "counts": {
+          "readFile": 7001,
+          "readBytes": 150752404,
+          "readdir": 1002,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 109690880,
+        "peakRss": 161693696,
+        "processMaxRssKiB": 160144,
+        "result": [
+          "bench-0979",
+          "bench-0978",
+          "bench-0977",
+          "bench-0976",
+          "bench-0975",
+          "bench-0974",
+          "bench-0973",
+          "bench-0972",
+          "bench-0971",
+          "bench-0970",
+          "bench-0969",
+          "bench-0968",
+          "bench-0967",
+          "bench-0966",
+          "bench-0965",
+          "bench-0964",
+          "bench-0963",
+          "bench-0962",
+          "bench-0961",
+          "bench-0960"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 1,
+        "operation": "next",
+        "elapsedMs": 2065.7407000000003,
+        "counts": {
+          "readFile": 7001,
+          "readBytes": 150752404,
+          "readdir": 1002,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 109682688,
+        "peakRss": 161480704,
+        "processMaxRssKiB": 159480,
+        "result": [
+          "bench-0979",
+          "bench-0978",
+          "bench-0977",
+          "bench-0976",
+          "bench-0975",
+          "bench-0974",
+          "bench-0973",
+          "bench-0972",
+          "bench-0971",
+          "bench-0970",
+          "bench-0969",
+          "bench-0968",
+          "bench-0967",
+          "bench-0966",
+          "bench-0965",
+          "bench-0964",
+          "bench-0963",
+          "bench-0962",
+          "bench-0961",
+          "bench-0960"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 2,
+        "operation": "next",
+        "elapsedMs": 2076.5919999999996,
+        "counts": {
+          "readFile": 7001,
+          "readBytes": 150752404,
+          "readdir": 1002,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 109637632,
+        "peakRss": 163229696,
+        "processMaxRssKiB": 160064,
+        "result": [
+          "bench-0979",
+          "bench-0978",
+          "bench-0977",
+          "bench-0976",
+          "bench-0975",
+          "bench-0974",
+          "bench-0973",
+          "bench-0972",
+          "bench-0971",
+          "bench-0970",
+          "bench-0969",
+          "bench-0968",
+          "bench-0967",
+          "bench-0966",
+          "bench-0965",
+          "bench-0964",
+          "bench-0963",
+          "bench-0962",
+          "bench-0961",
+          "bench-0960"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 3,
+        "operation": "next",
+        "elapsedMs": 2008.4862,
+        "counts": {
+          "readFile": 7001,
+          "readBytes": 150752404,
+          "readdir": 1002,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 109584384,
+        "peakRss": 161755136,
+        "processMaxRssKiB": 159240,
+        "result": [
+          "bench-0979",
+          "bench-0978",
+          "bench-0977",
+          "bench-0976",
+          "bench-0975",
+          "bench-0974",
+          "bench-0973",
+          "bench-0972",
+          "bench-0971",
+          "bench-0970",
+          "bench-0969",
+          "bench-0968",
+          "bench-0967",
+          "bench-0966",
+          "bench-0965",
+          "bench-0964",
+          "bench-0963",
+          "bench-0962",
+          "bench-0961",
+          "bench-0960"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 4,
+        "operation": "next",
+        "elapsedMs": 2201.3831,
+        "counts": {
+          "readFile": 7001,
+          "readBytes": 150752404,
+          "readdir": 1002,
+          "lstat": 4,
+          "stat": 2
+        },
+        "startRss": 109998080,
+        "peakRss": 164085760,
+        "processMaxRssKiB": 161232,
+        "result": [
+          "bench-0979",
+          "bench-0978",
+          "bench-0977",
+          "bench-0976",
+          "bench-0975",
+          "bench-0974",
+          "bench-0973",
+          "bench-0972",
+          "bench-0971",
+          "bench-0970",
+          "bench-0969",
+          "bench-0968",
+          "bench-0967",
+          "bench-0966",
+          "bench-0965",
+          "bench-0964",
+          "bench-0963",
+          "bench-0962",
+          "bench-0961",
+          "bench-0960"
+        ]
+      },
+      {
+        "size": 1000,
+        "repetition": 0,
+        "operation": "detail",
+        "elapsedMs": 45.39480000000003,
+        "counts": {
+          "readFile": 33,
+          "readBytes": 370006,
+          "readdir": 1,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 109862912,
+        "peakRss": 113000448,
+        "processMaxRssKiB": 110356,
+        "result": {
+          "events": 104,
+          "modelInputAudit": "checked"
+        }
+      },
+      {
+        "size": 1000,
+        "repetition": 1,
+        "operation": "detail",
+        "elapsedMs": 24.36329999999998,
+        "counts": {
+          "readFile": 33,
+          "readBytes": 370006,
+          "readdir": 1,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 107696128,
+        "peakRss": 110624768,
+        "processMaxRssKiB": 108036,
+        "result": {
+          "events": 104,
+          "modelInputAudit": "checked"
+        }
+      },
+      {
+        "size": 1000,
+        "repetition": 2,
+        "operation": "detail",
+        "elapsedMs": 22.990800000000036,
+        "counts": {
+          "readFile": 33,
+          "readBytes": 370006,
+          "readdir": 1,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 107270144,
+        "peakRss": 110424064,
+        "processMaxRssKiB": 107840,
+        "result": {
+          "events": 104,
+          "modelInputAudit": "checked"
+        }
+      },
+      {
+        "size": 1000,
+        "repetition": 3,
+        "operation": "detail",
+        "elapsedMs": 22.38670000000002,
+        "counts": {
+          "readFile": 33,
+          "readBytes": 370006,
+          "readdir": 1,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 107581440,
+        "peakRss": 110772224,
+        "processMaxRssKiB": 108180,
+        "result": {
+          "events": 104,
+          "modelInputAudit": "checked"
+        }
+      },
+      {
+        "size": 1000,
+        "repetition": 4,
+        "operation": "detail",
+        "elapsedMs": 23.38429999999994,
+        "counts": {
+          "readFile": 33,
+          "readBytes": 370006,
+          "readdir": 1,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 107663360,
+        "peakRss": 110866432,
+        "processMaxRssKiB": 108272,
+        "result": {
+          "events": 104,
+          "modelInputAudit": "checked"
+        }
+      },
+      {
+        "size": 1000,
+        "repetition": 0,
+        "operation": "audit",
+        "elapsedMs": 17.047399999999925,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 107933696,
+        "peakRss": 110239744,
+        "processMaxRssKiB": 107660,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 1000,
+        "repetition": 1,
+        "operation": "audit",
+        "elapsedMs": 14.88799999999992,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 108097536,
+        "peakRss": 109965312,
+        "processMaxRssKiB": 107392,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 1000,
+        "repetition": 2,
+        "operation": "audit",
+        "elapsedMs": 16.127200000000016,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 107483136,
+        "peakRss": 110174208,
+        "processMaxRssKiB": 107596,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 1000,
+        "repetition": 3,
+        "operation": "audit",
+        "elapsedMs": 16.75630000000001,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 107876352,
+        "peakRss": 110149632,
+        "processMaxRssKiB": 107572,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 1000,
+        "repetition": 4,
+        "operation": "audit",
+        "elapsedMs": 18.086200000000076,
+        "counts": {
+          "readFile": 25,
+          "readBytes": 145511,
+          "readdir": 0,
+          "lstat": 0,
+          "stat": 0
+        },
+        "startRss": 107589632,
+        "peakRss": 109764608,
+        "processMaxRssKiB": 107196,
+        "result": {
+          "runStatus": "finished",
+          "incompleteModelInput": false,
+          "legacyRequestComplete": false
+        }
+      },
+      {
+        "size": 1000,
+        "repetition": 0,
+        "operation": "size",
+        "elapsedMs": 20180.0527,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 38006,
+          "lstat": 107002,
+          "stat": 0
+        },
+        "startRss": 107220992,
+        "peakRss": 135614464,
+        "processMaxRssKiB": 132752,
+        "result": 415233666
+      },
+      {
+        "size": 1000,
+        "repetition": 1,
+        "operation": "size",
+        "elapsedMs": 23571.864100000003,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 38006,
+          "lstat": 107002,
+          "stat": 0
+        },
+        "startRss": 109240320,
+        "peakRss": 137596928,
+        "processMaxRssKiB": 134800,
+        "result": 415233666
+      },
+      {
+        "size": 1000,
+        "repetition": 2,
+        "operation": "size",
+        "elapsedMs": 21161.487399999998,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 38006,
+          "lstat": 107002,
+          "stat": 0
+        },
+        "startRss": 110829568,
+        "peakRss": 138997760,
+        "processMaxRssKiB": 136236,
+        "result": 415233666
+      },
+      {
+        "size": 1000,
+        "repetition": 3,
+        "operation": "size",
+        "elapsedMs": 14929.1379,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 38006,
+          "lstat": 107002,
+          "stat": 0
+        },
+        "startRss": 110997504,
+        "peakRss": 138780672,
+        "processMaxRssKiB": 135780,
+        "result": 415233666
+      },
+      {
+        "size": 1000,
+        "repetition": 4,
+        "operation": "size",
+        "elapsedMs": 30787.4354,
+        "counts": {
+          "readFile": 0,
+          "readBytes": 0,
+          "readdir": 38006,
+          "lstat": 107002,
+          "stat": 0
+        },
+        "startRss": 110764032,
+        "peakRss": 139087872,
+        "processMaxRssKiB": 136228,
+        "result": 415233666
+      }
+    ]
+  }
+}

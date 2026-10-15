@@ -10,6 +10,15 @@ const origins = new WeakMap<TaskCase, string>();
 export function taskCaseOrigin(task: TaskCase): string | undefined { return origins.get(task); }
 
 export async function readTaskCase(path: string, options: { expectedCaseId?: string; requireComplete?: boolean } = {}): Promise<TaskCase> {
+  const task = await readTaskCaseMetadata(path, options);
+  const root = dirname(resolve(path));
+  await verifyTaskCaseFiles(task, root, !options.expectedCaseId && !options.requireComplete);
+  origins.set(task, root);
+  return task;
+}
+
+/** Validates the metadata boundary only; no file-integrity receipt is issued. */
+export async function readTaskCaseMetadata(path: string, options: { expectedCaseId?: string; requireComplete?: boolean } = {}): Promise<TaskCase> {
   const root = dirname(resolve(path));
   await assertRealDirectory(root);
   if (options.expectedCaseId) await assertRealDirectory(dirname(root));
@@ -18,8 +27,6 @@ export async function readTaskCase(path: string, options: { expectedCaseId?: str
   const task = validateTaskCase(JSON.parse(await readFile(path, 'utf8')) as unknown);
   if (options.expectedCaseId && task.caseId !== options.expectedCaseId) throw new Error('TaskCase does not match the requested owner.');
   if (options.requireComplete && !(await lstat(join(root, 'case.complete'))).isFile()) throw new Error('TaskCase complete marker is not a file.');
-  await verifyTaskCaseFiles(task, root, !options.expectedCaseId && !options.requireComplete);
-  origins.set(task, root);
   return task;
 }
 

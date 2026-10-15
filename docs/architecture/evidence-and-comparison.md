@@ -30,6 +30,8 @@ v2 读端校验 schema、身份、内部 owner、每个清单文件长度/hash�
 
 ## 运行与报告归属
 
+首页与历史列表使用 v2 轻量查询：实验 `modelInputAudit: not_checked`，空间 `storageSizeStatus: not_collected`，数值缺失不代表零。列表仍核对提交前缀和运行/报告归属；冻结 case 的元数据读取保留真实目录、普通 JSON、完整标记、owner 和内容描述校验，`filesVerified: false` 不认证绑定文件。打开任务详情才完整校验冻结文件，打开实验详情只审计所选实验的模型输入；独立空间统计返回采集时间。条目 I/O 错误和日志前缀诊断保持可见，读取并发有界、过期导航不回写页面。旧完整查询仍供显式审计使用。见[列表与显式审计](../decisions/accepted/2026-10-15-history-listing-and-explicit-audit.md)。
+
 启动失败仅按 core schema 与已提交 attempt owner 匹配的 run.startup_failed 显示 failed/cancelled、stage 和诊断；没有 experiment.json 时保留最小身份与 missing_metadata，孤立失败文件不认证。已接纳 attempt 的任务与固定实验元数据冲突时，History 保留真实 attempt 任务和启动诊断，并显式展示原元数据任务 ID 与冲突。元数据缺失或损坏且事件日志发生 I/O 错误时，列表保留损坏条目、unknown 和安全错误码，不生成运行事实；打开详情仍报告实际日志读取错误。
 
 History 的默认运行按已提交 `run.attempt_created` 顺序选择，日志校验后再按选中 run 重建模型输入及终态，另一 run 的完成不能补成当前 run 的完成。缺少该 run 生命周期日志的旧运行按经过 schema 和身份校验的 attempt/record 时间排序；其他 run 或后续 Comparison 事件不改变其旧格式资格；缺有效时间或最新时间并列时只给确定性的选择并标 `runOrdering: unknown`，不宣称时间上的最新。重比默认倒序查找合法 finished RunRecord；多条 legacy 的时间未知或最新并列时必须显式选 runId，唯一合法 finished 仍可默认选择。显式 runId 精确选择且不回退。record.attempt、manifest.attempt 与已提交 attempt 必须一致；该 run 存在生命周期日志时还须匹配已提交 run.finished 的运行事实，不能以孤立 record 认定完成。已提交 artifactRefs 保持原值和顺序；无本 run 提交锚点的旧 record 仅接受精确本 case 或本实验/本 run 的单 owner refs，跨 run、双 owner 与未绑定 run 的引用拒绝认证；仅允许额外一个精确属于本实验、本 run 的 host-trace.json，并须对应晚于 finished 的 artifact.created，实际读取仍校验 Store manifest、提交来源与 hash。

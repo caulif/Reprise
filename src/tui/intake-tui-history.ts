@@ -1,6 +1,7 @@
 import { CliError } from "../application/cli-error.js";
 import { readExperimentEvents } from "../application/experiment-event-read.js";
-import { readLocalHistory, type HistoryCase, type HistoryExperiment } from "./local-history.js";
+import { readLocalHistoryListing, readLocalHistoryExperiment, type HistoryCase, type HistoryExperiment } from "./local-history.js";
+import { readTaskCaseFile } from '../application/experiment-queries.js';
 import { handleHistoryInput } from "./history-input.js";
 import { t, type Locale } from "./i18n.js";
 import { resetActivityIndex, type ActivityIndexState } from "./activity-index.js";
@@ -21,7 +22,7 @@ export type HistoryPanel = {
   historySelected: number;
   historyCases: readonly HistoryCase[];
   historyExperiments: readonly HistoryExperiment[];
-  historyTotalBytes: number;
+  historyTotalBytes: number | undefined;
   invalidHistoryCaseCount: number;
   historyDetail: HistoryCase | HistoryExperiment | undefined;
   recentExperiment: HistoryExperiment | undefined;
@@ -60,11 +61,8 @@ export function IntakeTui_historyInput(this: HistoryPanel, data: string): { cons
   this.historySelected = result.state.selected;
   if (result.detail) {
     if ("taskCase" in result.detail) {
-      this.historyDetail = result.detail;
-      this.timelineReadOffset = 0;
-      this.processExpanded = false;
-      this.page = "history-detail";
-      this.message = t(this.locale, "historyDetailMsg");
+      void openHistoryCase(this, result.detail);
+      return result;
     } else {
       void openHistoryExperiment(this, result.detail);
       return result;
@@ -77,9 +75,10 @@ export function IntakeTui_historyInput(this: HistoryPanel, data: string): { cons
 async function openHistoryExperiment(c: HistoryPanel, item: HistoryExperiment): Promise<void> {
   const token = c.beginNavigation();
   try {
+    const detail = await readLocalHistoryExperiment(c.dataDir, item.experimentId);
     const events = await historyEvents(c.dataDir, item);
     if (token !== c.generation) return;
-    c.historyDetail = item;
+    c.historyDetail = { ...detail, ...(item.taskTitle && item.taskCaseId === detail.taskCaseId ? { taskTitle: item.taskTitle } : {}) };
     c.timelineReadOffset = 0;
     c.processExpanded = false;
     resetActivityIndex(c.activityIndex, { experimentId: item.experimentId });
@@ -93,6 +92,23 @@ async function openHistoryExperiment(c: HistoryPanel, item: HistoryExperiment): 
   } catch (error) {
     if (token !== c.generation) return;
     c.showError(error, "history");
+  }
+  c.render(true);
+}
+
+async function openHistoryCase(c: HistoryPanel, item: HistoryCase): Promise<void> {
+  const token = c.beginNavigation();
+  try {
+    const taskCase = await readTaskCaseFile(item.path, { expectedCaseId: item.taskCase.caseId, requireComplete: true });
+    if (token !== c.generation) return;
+    c.historyDetail = { taskCase, path: item.path, filesVerified: true };
+    c.timelineReadOffset = 0;
+    c.processExpanded = false;
+    c.page = 'history-detail';
+    c.message = t(c.locale, 'historyDetailMsg');
+  } catch (error) {
+    if (token !== c.generation) return;
+    c.showError(error, 'history');
   }
   c.render(true);
 }
@@ -117,7 +133,7 @@ export function IntakeTui_historyItems(this: HistoryPanel): readonly (HistoryCas
 export async function IntakeTui_loadHistory(this: HistoryPanel): Promise<void> {
   const token = this.beginNavigation();
   try {
-    const history = await readLocalHistory(this.dataDir);
+    const history = await readLocalHistoryListing(this.dataDir);
     if (token !== this.generation) return;
     this.historyCases = history.cases;
     this.historyExperiments = history.experiments;

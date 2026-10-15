@@ -69,7 +69,7 @@ test('local history reports experiment and total persisted data sizes', async (t
   const history = await readLocalHistory(root);
   assert.equal(history.experiments.length, 1);
   assert.ok((history.experiments[0]?.sizeBytes ?? 0) >= 12);
-  assert.ok(history.totalBytes >= history.experiments[0]!.sizeBytes);
+  assert.ok(history.totalBytes >= (history.experiments[0]!.sizeBytes ?? 0));
   await writeFile(join(experiment, 'comparison.json'), JSON.stringify({ status: 'failed', failure: { code: 'agent_failure', message: 'context_length_exceeded', kind: 'protocol', attempts: 1 } }));
   const failed = (await readLocalHistory(root)).experiments[0]!;
   assert.equal(failed.comparisonStatus, 'unknown');

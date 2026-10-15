@@ -148,7 +148,7 @@ export class IntakeTui {
   taskCase: TaskCase | undefined;
   historyCases: readonly HistoryCase[] = [];
   historyExperiments: readonly HistoryExperiment[] = [];
-  historyTotalBytes = 0;
+  historyTotalBytes: number | undefined = undefined;
   invalidHistoryCaseCount = 0;
   historyTab: "runs" | "cases" = "runs";
   historySelected = 0;

@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readLocalHistory } from '../../src/tui/local-history.js';
+import { readLocalHistory, readLocalHistoryListing } from '../../src/tui/local-history.js';
+import { input, VerifiedRuntime } from '../codex-experiment-support.js';
+import { sealFrozenCase } from '../../src/products/shared/frozen-case-files.js';
+import { publishFrozenCase } from '../../src/products/shared/freeze.js';
 import { createActivityIndex } from '../../src/tui/activity-index.js';
 import { IntakeTui_historyInput, type HistoryPanel } from '../../src/tui/intake-tui-history.js';
 import { renderHistoryDetail } from '../../src/tui/pages/history.js';
@@ -29,7 +32,7 @@ test('clicking damaged history opens its format diagnosis without a readable eve
     const panel = panelFor(dataDir, item);
     IntakeTui_historyInput.call(panel, '\r');
     await waitFor(() => panel.page === 'history-detail');
-    assert.equal(panel.historyDetail, item);
+    assert.deepEqual(panel.historyDetail, { ...item, sizeBytes: undefined });
     assert.deepEqual(panel.timeline, []);
     assert.match(renderHistoryDetail(createTheme(80, false), 80, panel.historyDetail, 'zh').join('\n'), new RegExp(diagnosis));
   }
@@ -66,15 +69,32 @@ test('a damaged history entry reports event log I/O errors', async (t) => {
   assert.equal(panel.historyDetail, undefined);
 });
 
-function panelFor(dataDir: string, item: HistoryPanel['historyExperiments'][number]): HistoryPanel {
+test('selecting a metadata-only case validates frozen files before installing its detail', async t => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'reprise-history-select-case-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true }));
+  const task = input(dataDir, new VerifiedRuntime()).taskCase;
+  const files = [{ relativePath: 'source.txt', content: 'original' }];
+  const sealed = await sealFrozenCase(task, files);
+  await publishFrozenCase({ taskCase: sealed, files, casesRoot: join(dataDir, 'cases') });
+  await writeFile(join(dataDir, 'cases', sealed.caseId, 'source.txt'), 'tampered');
+  const item = (await readLocalHistoryListing(dataDir)).cases[0]!;
+  assert.equal(item.filesVerified, false);
+  const panel = panelFor(dataDir, item);
+  IntakeTui_historyInput.call(panel, '\r');
+  await waitFor(() => panel.page === 'error');
+  assert.equal(panel.historyDetail, undefined);
+});
+
+function panelFor(dataDir: string, item: HistoryPanel['historyExperiments'][number] | HistoryPanel['historyCases'][number]): HistoryPanel {
   const panel = {
     dataDir, locale: 'zh', generation: 0, page: 'history', message: '',
-    historyTab: 'runs', historySelected: 0, historyCases: [], historyExperiments: [item],
+    historyTab: 'taskCase' in item ? 'cases' : 'runs', historySelected: 0,
+    historyCases: 'taskCase' in item ? [item] : [], historyExperiments: 'taskCase' in item ? [] : [item],
     historyTotalBytes: 0, invalidHistoryCaseCount: 0, historyDetail: undefined,
     recentExperiment: undefined, timeline: [], activityIndex: createActivityIndex(),
     timelineRevision: 0, timelineSelected: 0, timelineFollowing: false,
     timelineReadOffset: 0, processExpanded: false,
-    historyItems() { return this.historyExperiments; },
+    historyItems() { return this.historyTab === 'runs' ? this.historyExperiments : this.historyCases; },
     beginNavigation() { return ++this.generation; },
     render() {},
     showError() { this.page = 'error'; },
