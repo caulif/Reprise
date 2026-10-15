@@ -2,22 +2,28 @@ import { access, lstat, readdir, readFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { join, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
-import { ComparisonInvocationSchema, RunRecordSchema, TaskCaseSchema, type RunRecord, type TaskCase } from "../core/schema.js";
+import { TaskCaseSchema, type EventEnvelope, type TaskCase } from "../core/schema.js";
 import { readCommittedExperimentHistory } from "./experiment-history-read.js";
 import { isPersistedExperimentMetadata, listPersistedRunIds } from "./experiment-layout.js";
-import { comparisonDetailOf, selectComparisonArtifacts } from "./comparison-artifacts.js";
+import { comparisonDetailOf } from "./comparison-artifacts.js";
 import { listPublishedFrozenCases } from "../products/shared/freeze.js";
 import { actualModelName } from "./actual-model-name.js";
+import { committedRunOrder, committedStartupFailure, latestCommittedAttempt, legacyOrderingKind, matchingRunRecord, readCommittedRunEvents } from "./experiment-run-history.js";
+import { readRunComparison } from "./comparison-report-ownership.js";
 
 export type HistoryCase = { readonly taskCase: TaskCase; readonly path: string };
 export type HistoryExperiment = {
   readonly experimentId: string;
   readonly taskCaseId: string;
+  readonly metadataTaskCaseId?: string;
   readonly taskTitle?: string;
   readonly candidateProductId?: string;
   readonly candidateModel?: string;
   readonly runId?: string;
+  readonly runOrdering?: "committed" | "legacy_timestamp" | "unknown";
   readonly outcome?: string;
+  readonly startupFailureStage?: string;
+  readonly startupFailure?: string;
   readonly taskStatus?: string;
   readonly cleanupStatus?: string;
   readonly comparisonStatus?: string;
@@ -34,6 +40,7 @@ export type HistoryExperiment = {
   readonly sizeBytes: number;
   readonly incompleteModelInput?: boolean;
   readonly formatError?: string;
+  readonly eventLogErrorCode?: string;
 };
 
 /** Lists only schema-validated local objects beneath Reprise's configured data directory. */
@@ -78,33 +85,31 @@ async function readExperiments(root: string): Promise<readonly HistoryExperiment
 async function readExperiment(path: string, experimentId: string): Promise<HistoryExperiment> {
   const metadataPath = join(path, "experiment.json");
   const metadata = await readJson(metadataPath);
-  if (!isPersistedExperimentMetadata(metadata)) return {
-    experimentId, taskCaseId: experimentId, path, sizeBytes: await directorySize(path),
-    formatError: await exists(metadataPath) ? 'invalid_metadata' : 'missing_metadata',
-  };
+  if (!isPersistedExperimentMetadata(metadata)) return historyWithoutMetadata(path, experimentId, await exists(metadataPath));
   const runIds = await listPersistedRunIds(path, metadata);
   const runId = runIds.at(-1);
   const recordPath = runId ? join(path, "runs", runId, "record.json") : undefined;
-  const record = recordPath ? await readRunRecord(recordPath) : undefined;
+  const value = recordPath ? await readJson(recordPath) : undefined;
+  const { events } = await readCommittedRunEvents(path);
+  const attempt = latestCommittedAttempt(path, events, runId);
+  const caseMismatch = attempt !== undefined && attempt.caseId !== metadata.spec.taskCaseId;
+  const startup = attempt ? committedStartupFailure(events, attempt) : undefined;
+  const record = runId && matchingRunRecord(value, experimentId, runId, metadata.spec.taskCaseId, events) ? value : undefined;
   const candidateModel = actualModelName(record?.manifest?.resolvedModel.resolved);
   const unread = Boolean(recordPath && !record && await exists(recordPath));
-  const comparisonValue = await readJson(join(path, "comparison.json"));
-  const comparison = Value.Check(ComparisonInvocationSchema, comparisonValue) ? comparisonValue : undefined;
-  const diagnostic = await exists(join(path, "comparison-failure.html")) ? join(path, "comparison-failure.html") : undefined;
-  const success = await exists(join(path, "report.html")) ? join(path, "report.html") : undefined;
-  const artifacts = selectComparisonArtifacts({
-    ...(comparison ? { comparisonStatus: comparison.status } : {}),
-    ...(diagnostic ? { diagnosticPath: diagnostic } : {}),
-    ...(success ? { successPath: success } : {}),
-    ...(comparisonValue !== undefined ? { comparisonReadable: comparison !== undefined } : {}),
-  });
+  const runOrdering = runId ? committedRunOrder(path, events).includes(runId) ? "committed" : await legacyOrderingKind(path, runIds) : undefined;
+  const { comparison, ...artifacts } = await readRunComparison({ experimentRoot: path, experimentId, ...(runId ? { runId } : {}), events });
   const comparisonDetail = comparisonDetailOf(comparison);
-  const committed = await readCommittedExperimentHistory(path, experimentId);
-  const outcome = record ? record.outcome.termination.kind : unread ? "record unread" : committed.runStatus;
+  const committed = await readCommittedExperimentHistory(path, experimentId, runId);
+  const outcome = record ? record.outcome.termination.kind : startup ? startup.status : unread ? "record unread" : committed.runStatus;
   return {
-    experimentId, taskCaseId: metadata.spec.taskCaseId,
+    experimentId, taskCaseId: attempt?.caseId ?? metadata.spec.taskCaseId,
+    ...(caseMismatch ? { metadataTaskCaseId: metadata.spec.taskCaseId } : {}),
     ...(runId ? { runId } : {}),
+    ...(runOrdering ? { runOrdering } : {}),
+    ...(attempt ? { startedAt: attempt.createdAt, candidateProductId: attempt.candidate.productId } : {}),
     outcome,
+    ...(startup ? { startupFailureStage: startup.stage, startupFailure: startup.error.message } : {}),
     ...(record
       ? {
           taskStatus: record.outcome.task.status,
@@ -115,6 +120,7 @@ async function readExperiment(path: string, experimentId: string): Promise<Histo
         }
       : {}),
     ...artifacts,
+    ...(artifacts.reportAttemptUnconfirmed && !comparison ? { comparisonStatus: "unknown" } : {}),
     ...(comparison
       ? {
           comparisonStatus: comparison.status,
@@ -125,15 +131,33 @@ async function readExperiment(path: string, experimentId: string): Promise<Histo
       : {}),
     ...(comparisonDetail ? { comparisonDetail } : {}),
     ...(committed.incompleteModelInput ? { incompleteModelInput: true } : {}),
-    ...(unread ? { formatError: 'unreadable_record' } : committed.diagnosticCode === "unsupported_schema" ? { formatError: committed.diagnosticCode } : {}),
+    ...(caseMismatch ? { formatError: 'metadata_case_mismatch' } : unread ? { formatError: 'unreadable_record' } : committed.diagnosticCode === "unsupported_schema" ? { formatError: committed.diagnosticCode } : {}),
     path,
     sizeBytes: await directorySize(path),
   };
 }
 
-async function readRunRecord(path: string): Promise<RunRecord | undefined> {
-  const value = await readJson(path);
-  return Value.Check(RunRecordSchema, value) ? value : undefined;
+async function historyWithoutMetadata(path: string, experimentId: string, metadataExists: boolean): Promise<HistoryExperiment> {
+  const { events, eventLogErrorCode } = await readMetadataFallbackEvents(path);
+  const attempt = latestCommittedAttempt(path, events);
+  const startup = attempt ? committedStartupFailure(events, attempt) : undefined;
+  return {
+    experimentId, taskCaseId: attempt?.caseId ?? experimentId, path, sizeBytes: await directorySize(path),
+    formatError: metadataExists ? "invalid_metadata" : "missing_metadata",
+    ...(eventLogErrorCode ? { eventLogErrorCode, outcome: "unknown" } : {}),
+    ...(attempt ? { runId: attempt.runId, runOrdering: "committed", startedAt: attempt.createdAt,
+      candidateProductId: attempt.candidate.productId, outcome: startup?.status ?? "interrupted" } : {}),
+    ...(startup ? { startupFailureStage: startup.stage, startupFailure: startup.error.message } : {}),
+  };
+}
+
+async function readMetadataFallbackEvents(path: string): Promise<{ events: readonly EventEnvelope[]; eventLogErrorCode?: string }> {
+  try { return await readCommittedRunEvents(path); }
+  catch (error) {
+    if (!(error instanceof Error && "code" in error && typeof error.code === "string" && /^E[A-Z0-9]+$/.test(error.code))) throw error;
+    // Keep damaged metadata visible with the I/O diagnosis; opening detail still reports the actual read failure.
+    return { events: [], eventLogErrorCode: error.code };
+  }
 }
 
 export async function readJsonFile(path: string): Promise<unknown> {

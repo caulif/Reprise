@@ -2,6 +2,15 @@
  * Disk ownership for comparison HTML under an experiment root.
  * Labels belong to T01 presentation; this module only picks paths.
  */
+import { basename } from "node:path";
+
+export function comparisonHtmlKind(path: string): "success" | "diagnostic" | undefined {
+  const name = basename(path).toLowerCase();
+  if (name === "report.html" || /^report-[a-z0-9][a-z0-9._-]{0,127}\.html$/.test(name)) return "success";
+  if (name === "comparison-failure.html" || /^comparison-failure-[a-z0-9][a-z0-9._-]{0,127}\.html$/.test(name)) return "diagnostic";
+  return undefined;
+}
+
 export type ComparisonArtifactSelection = {
   readonly reportPath?: string;
   readonly previousReportPath?: string;

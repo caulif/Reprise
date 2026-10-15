@@ -7,6 +7,7 @@ import { ExperimentSpecSchema, type ExperimentSpec } from "../core/schema.js";
 import { writeImmutableJson } from "../infrastructure/store/experiment-store.js";
 import { CliError } from "./cli-error.js";
 import { isMissing } from "./experiment-helpers.js";
+import { committedRunOrder, legacyRunOrder, readCommittedRunEvents } from "./experiment-run-history.js";
 
 export type PersistedExperimentMetadata = {
   readonly spec: ExperimentSpec;
@@ -51,14 +52,17 @@ export async function persistExperimentSpec(experimentRoot: string, spec: Experi
 }
 
 export async function listPersistedRunIds(experimentRoot: string, metadata?: PersistedExperimentMetadata): Promise<readonly string[]> {
+  const { events } = await readCommittedRunEvents(experimentRoot);
+  const committed = committedRunOrder(experimentRoot, events);
+  let legacy = metadata?.runIds ?? [];
   try {
-    const names = await readdir(join(experimentRoot, "runs"));
-    const ids = names.filter((name) => SAFE_ID.test(name)).sort();
-    if (ids.length) return ids;
+    const names = await readdir(join(experimentRoot, "runs"), { withFileTypes: true });
+    const ids = names.filter((entry) => entry.isDirectory() && SAFE_ID.test(entry.name)).map((entry) => entry.name).sort();
+    if (ids.length) legacy = ids;
   } catch (error) {
     if (!isMissing(error)) throw error;
   }
-  return metadata?.runIds ?? [];
+  return [...await legacyRunOrder(experimentRoot, legacy.filter((id) => !committed.includes(id))), ...committed];
 }
 
 export async function persistRunPreflight(experimentRoot: string, runId: string, preflight: unknown): Promise<void> {

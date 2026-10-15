@@ -14,6 +14,16 @@ Recovery 的固定 artifact 与决定、诊断等不可变 JSON 按 `runs/<runId
 
 候选启动在首次实验事实写入与工作区准备之前取得 writer，RunAttempt 成为接纳点；构造前终态使用启动失败协议，详见[执行与结果](./execution.md#candidaterun-生命周期)。Store 的启动/清理补充事件同时校验 schema、envelope owner 与已提交 attempt 的 case；writer lease 读写使用 core schema，锁无法读取、解析或确认合法身份时保留原锁并报告失败。释放只处理本次 owner/nonce，不删除替换 owner 的锁；关闭与 flush 错误不能相互覆盖。
 
+## 运行与报告归属
+
+启动失败仅按 core schema 与已提交 attempt owner 匹配的 run.startup_failed 显示 failed/cancelled、stage 和诊断；没有 experiment.json 时保留最小身份与 missing_metadata，孤立失败文件不认证。已接纳 attempt 的任务与固定实验元数据冲突时，History 保留真实 attempt 任务和启动诊断，并显式展示原元数据任务 ID 与冲突。元数据缺失或损坏且事件日志发生 I/O 错误时，列表保留损坏条目、unknown 和安全错误码，不生成运行事实；打开详情仍报告实际日志读取错误。
+
+History 的默认运行按已提交 `run.attempt_created` 顺序选择，日志校验后再按选中 run 重建模型输入及终态，另一 run 的完成不能补成当前 run 的完成。缺少该 run 生命周期日志的旧运行按经过 schema 和身份校验的 attempt/record 时间排序；其他 run 或后续 Comparison 事件不改变其旧格式资格；缺有效时间或最新时间并列时只给确定性的选择并标 `runOrdering: unknown`，不宣称时间上的最新。重比默认倒序查找合法 finished RunRecord；多条 legacy 的时间未知或最新并列时必须显式选 runId，唯一合法 finished 仍可默认选择。显式 runId 精确选择且不回退。record.attempt、manifest.attempt 与已提交 attempt 必须一致；该 run 存在生命周期日志时还须匹配已提交 run.finished 的运行事实，不能以孤立 record 认定完成。已提交 artifactRefs 保持原值和顺序；无本 run 提交锚点的旧 record 仅接受精确本 case 或本实验/本 run 的单 owner refs，跨 run、双 owner 与未绑定 run 的引用拒绝认证；仅允许额外一个精确属于本实验、本 run 的 host-trace.json，并须对应晚于 finished 的 artifact.created，实际读取仍校验 Store manifest、提交来源与 hash。
+
+每次 Comparison 将最终发布 HTML 保存为实验根目录下唯一的 `report-<attemptId>.html` 或 `comparison-failure-<attemptId>.html`。这些文件与便利投影同深度，保持内容寻址 media/evidence 与 attempt 独占 historical finals 的相对链接；最终发布模型另存在 attempt 的 `published-report-model.json`。`comparison-attempts/<attemptId>/result.json` 经核心 schema 校验，绑定 experiment/run/attempt、invocation、相对报告路径与完整 SHA-256。只有匹配的已提交 `report.created.reportOwner`、此前完成事件、owner 清单及实际文件 hash 都成立才确认归属；无提交、错配、损坏或逃逸路径不采用根级文件补缺。失败重比只展示当前 run 的诊断及该 run 的此前成功报告。
+
+根级 `report.html`、`comparison-failure.html`、`comparison.json` 仍供既有工具访问，但只是可替换便利投影。旧格式缺 owner 的报告可打开，History 标为 unknown/unconfirmed；不迁移旧字节，不将根级 completed 归到当前选择。协议取舍见[运行与报告归属](../decisions/accepted/2026-10-14-run-report-ownership.md)。
+
 ## 模型输入可追溯
 
 Controller、Recovery、Comparison 都通过 Agent Session Host 生成模型请求。Host 把 system prompt、用户消息、工具结果和结构化结果写入审计事实；普通 generation 另保存 Pi 转换与裁剪后、经过凭据脱敏的实际上下文快照，保留原生工具参数及 SDK 拒绝消息；[`model-input.ts`](../../src/infrastructure/agent/model-input.ts) 从事件日志重建请求。上下文压缩必须追加 `agent.context_compacted`，其中 summary 与 retained tail 是后续请求可见的输入来源。新增模型可见事实必须先写入事件审计（必要时再由 briefing 做可读投影），不能只存在内存变量。
