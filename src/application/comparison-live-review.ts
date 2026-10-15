@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { sha256 } from '../core/identity.js';
-import type { ComparisonContext, ComparisonResult } from '../agents/comparison-agent.js';
+import type { ComparisonContext, ComparisonResult } from '../agents/comparison-contract.js';
 import type { ExperimentStore } from '../infrastructure/store/experiment-store.js';
 import type { ComparisonDraft } from './comparison-draft.js';
 import type { ComparisonEvidenceCatalog } from './comparison-evidence.js';

@@ -1,6 +1,6 @@
 import { COMPARISON_IMAGE_GUIDANCE } from './comparison-image-guidance.js';
 import { comparisonProtocol } from './comparison-stage-policy.js';
-import type { ComparisonCompareOptions } from './comparison-agent.js';
+import type { ComparisonCompareOptions } from './comparison-contract.js';
 import type { ComparisonWorkPass } from './comparison-invocation-boundaries.js';
 import type { AgentToolResult } from '../infrastructure/agent/host.js';
 import { withLanguageBlock, type AgentLocale } from './language.js';

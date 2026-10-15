@@ -1,5 +1,5 @@
 import { comparisonProtocol } from './comparison-stage-policy.js';
-import type { ComparisonCompareOptions } from './comparison-agent.js';
+import type { ComparisonCompareOptions } from './comparison-contract.js';
 
 export const COMPARISON_COMPOSITION_BOUNDARY_PROMPT = [
   'This is report composition from the observations and saved findings already received.',

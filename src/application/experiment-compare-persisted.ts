@@ -12,7 +12,7 @@ import { finishExperimentActivity, registerActivity, activityControlReady, type 
 import { isPersistedExperimentMetadata, listPersistedRunIds, readRunPreflight, resolvedExperimentRoot } from "./experiment-layout.js";
 import type { ExperimentInput, ExperimentResult, ExperimentAgentConfig } from "./experiment.js";
 import type { ExperimentPreflight } from "./experiment-preflight.js";
-import type { ComparisonAgentPort } from "../agents/comparison-agent.js";
+import type { ComparisonAgentPort } from "../agents/comparison-contract.js";
 import type { ControllerPort } from "../agents/controller-agent.js";
 import type { RunPolicy } from "../core/schema.js";
 import type { HistoricalArtifactExtractFn } from "../products/shared/freeze.js";

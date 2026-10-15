@@ -29,7 +29,7 @@ import { ComparisonVisualMediaError } from "./comparison-openable-media.js";
 import { prepareHistoricalArtifacts } from "./prepare-historical-artifacts.js";
 import { buildResultPathLinks } from "./result-paths.js";
 import { controllerBriefingRoot } from "./controller-briefing.js";
-import { assertComparisonResult, type ComparisonContext, type ComparisonResult } from "../agents/comparison-agent.js";
+import { assertComparisonResult, type ComparisonContext, type ComparisonResult } from "../agents/comparison-contract.js";
 import type { AgentAuditSink, AgentInvocation, AgentToolDefinition } from "../infrastructure/agent/host.js";
 import { extractHostZoneSnapshot, metricsFromReportFacts, renderComparisonReportShell } from "./comparison-report-shell.js";
 import { readOperatorLocale } from "./operator-locale.js";
