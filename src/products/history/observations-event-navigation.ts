@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { writeAtomic } from '../../core/identity.js';
 import { isRecord } from '../../core/json.js';
 import type { EventEnvelope, TaskCase } from '../../core/schema.js';
-import { recoveryEvidenceCatalog } from './source-refs.js';
+import { recoveryEvidenceCatalog } from '../../core/recovery-evidence.js';
 
 type Row = { source: string; order: number; ref: string; path: string; value: unknown };
 const cell = (value: unknown) => (typeof value === 'string' ? value : typeof value === 'number' ? String(value) : '').replace(/[\t\r\n]/g, ' ');
