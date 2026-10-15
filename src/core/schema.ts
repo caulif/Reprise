@@ -1,4 +1,8 @@
 import { Type, type Static } from "@sinclair/typebox";
+export { EffectiveHarnessConfigurationSchema, HarnessSdkPackageSchema, HarnessConfigurationReferenceSchema, HarnessConfigurationBoundSchema,
+  HarnessProbeRequestedSchema, HarnessProbeCompletedSchema, type EffectiveHarnessConfiguration,
+  type HarnessConfigurationReference, type HarnessProbeRequested, HARNESS_COMPAT_BOOLEAN_KEYS, HARNESS_COMPAT_SCALAR_KEYS,
+  ComparisonOperationFailureSchema, type ComparisonOperationFailure } from './schemas/harness-configuration.js';
 export { RunStartupFailureSchema, RunCleanupFailureSchema, type RunStartupFailure, type RunCleanupFailure } from './schemas/run-startup.js';
 export { ExperimentWriterLeaseSchema, type ExperimentWriterLease } from './schemas/run-startup.js';
 

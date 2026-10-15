@@ -16,6 +16,8 @@ import { recordRecoveryAttempt } from './session.js';
 import { recoveryAttemptRecord } from './orchestrator.js';
 import type { RecoveryAttemptInput } from "./input.js";
 import type { RecoveryAttempt } from "./types.js";
+import { harnessConfigurationScope } from '../harness-configuration.js';
+import type { HarnessConfigurationReference } from '../../core/schema.js';
 
 export { classifyRecoveryFailureStage };
 export type { RecoveryAttempt } from "./types.js";
@@ -32,6 +34,7 @@ export async function recoverExperiment(
   let session: RecoveryRunSession | undefined;
   let result: RecoveryAttempt | undefined;
   let initializing = false;
+  let effectiveReference: HarnessConfigurationReference | undefined;
   const initializationStartedAt = Date.now();
   const failures: unknown[] = [];
   const cleanup: CleanupFailure[] = [];
@@ -49,10 +52,13 @@ export async function recoverExperiment(
     input.onActivity?.(activity);
     await activityControlReady(activity);
     session.preflightOperation = 'initialize_recovery_agent';
-    if (input.resolveRecovery) session.input = { ...session.input, recovery: await input.resolveRecovery(signal) };
+    if (input.resolveRecovery) session.input = { ...session.input, recovery: await input.resolveRecovery(signal,
+      harnessConfigurationScope(session.store, { experimentId: input.experimentId, runId: input.runId, operation: 'recovery' },
+        reference => { effectiveReference = reference; })) };
     signal.throwIfAborted();
     await recordRecoveryAttempt(session, recoveryAttemptRecord({ attemptId: 'recovery-attempt-initialization-completed', phase: 'staging',
-      operation: 'initialize', attemptNumber: 1, result: 'succeeded', durationMs: Date.now() - initializationStartedAt, recordedAt: new Date().toISOString() }));
+      operation: 'initialize', attemptNumber: 1, result: 'succeeded', durationMs: Date.now() - initializationStartedAt, recordedAt: new Date().toISOString(),
+      ...(effectiveReference ? { effectiveReference } : {}) }));
     initializing = false;
     session.preflightOperation = 'begin_recovery_staging';
     result = await runRecoverExperiment(session);
@@ -61,7 +67,7 @@ export async function recoverExperiment(
     else try {
       if (initializing) await recordRecoveryAttempt(session, recoveryAttemptRecord({ attemptId: 'recovery-attempt-initialization-failed', phase: 'staging',
         operation: 'initialize', attemptNumber: 1, result: 'failed', failureCode: 'initialization_failed',
-        durationMs: Date.now() - initializationStartedAt, recordedAt: new Date().toISOString() }));
+        durationMs: Date.now() - initializationStartedAt, recordedAt: new Date().toISOString(), ...(effectiveReference ? { effectiveReference } : {}) }));
       if (signal.aborted) {
         session.failureStage = deadline.aborted ? 'agent_timeout' : 'cancelled';
         session.recovery = { status: 'cancelled' };

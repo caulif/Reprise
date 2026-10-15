@@ -32,6 +32,9 @@ export type HistoryExperiment = {
   readonly comparisonStatus?: string;
   readonly comparisonFailure?: string;
   /** Saved comparison value status, including completed; missing detail remains unknown. */
+
+  readonly comparisonFailureStage?: string;
+  readonly comparisonFailureMessage?: string;
   readonly comparisonDetail?: string;
   readonly startedAt?: string;
   readonly reportPath?: string;

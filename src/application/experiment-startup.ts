@@ -6,6 +6,7 @@ import { safeAgentFailureText } from '../infrastructure/agent/failure.js';
 import { runOperationId } from '../core/identity.js';
 import { assertIds, assertPaths } from './experiment-helpers.js';
 import type { ExperimentInput } from './experiment.js';
+import { frozenSnapshot } from '../core/json.js';
 
 type Admission = Pick<ExperimentInput, 'dataDir' | 'sourceRoot' | 'experimentId' | 'runId' | 'caseId' | 'candidate' | 'policy' | 'now' | 'onEvent'>;
 export type CleanupFailure = { resource: string; error: unknown };
@@ -16,6 +17,8 @@ function startupErrorFact(error: unknown): { name: string; message: string } {
   return { name: safeAgentFailureText(error instanceof Error ? String(error.name) : 'unknown'),
     message: safeAgentFailureText(message).slice(0, 4096) };
 }
+export function throwFailures(errors: readonly [unknown, ...unknown[]], message: string): never;
+export function throwFailures(errors: readonly unknown[], message: string): void;
 export function throwFailures(errors: readonly unknown[], message: string): void {
   if (errors.length === 1) throw errors[0];
   if (errors.length > 1) throw new AggregateError(errors, message, { cause: errors[0] });
@@ -31,8 +34,8 @@ export class ExperimentStartup {
   static async admit(input: Admission): Promise<ExperimentStartup> {
     assertIds(input);
     assertPaths(input.dataDir, input.sourceRoot);
-    const attempt: RunAttempt = { schemaVersion: 1, experimentId: input.experimentId, runId: input.runId,
-      caseId: input.caseId, candidate: input.candidate, policy: input.policy, createdAt: input.now };
+    const attempt: RunAttempt = frozenSnapshot({ schemaVersion: 1, experimentId: input.experimentId, runId: input.runId,
+      caseId: input.caseId, candidate: input.candidate, policy: input.policy, createdAt: input.now });
     if (!Value.Check(RunAttemptSchema, attempt)) throw new Error('Invalid startup RunAttempt.');
     const root = join(resolve(input.dataDir), 'experiments', input.experimentId);
     const store = await ExperimentStore.open(root, input.experimentId);
@@ -47,7 +50,6 @@ export class ExperimentStartup {
       unsubscribe?.();
       await cleanupOperation(cleanup, 'store_close', () => store.close());
       throwFailures([error, ...cleanup.map(item => item.error)], 'Startup admission and cleanup failed.');
-      throw error;
     }
     return new ExperimentStartup(root, store, attempt, unsubscribe);
   }

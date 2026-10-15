@@ -1,4 +1,9 @@
 import { setTimeout as delay } from 'node:timers/promises';
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Value } from '@sinclair/typebox/value';
 import { classifyAgentFailure } from './failure.js';
 import { builtinModels } from '@earendil-works/pi-ai/providers/all';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
@@ -11,6 +16,9 @@ import { sha256 } from '../../core/identity.js';
 import type { ModelConfigSnapshot } from './types.js';
 import { imageProbeChallenge } from './image-probe.js';
 import type { HarnessImageProbe } from '../../core/schemas/image-probe.js';
+import type { EffectiveHarnessConfiguration, HarnessProbeRequested } from '../../core/schema.js';
+import { HarnessSdkPackageSchema, HARNESS_COMPAT_BOOLEAN_KEYS, HARNESS_COMPAT_SCALAR_KEYS } from '../../core/schema.js';
+import { frozenSnapshot } from '../../core/json.js';
 
 export type PiModels = Pick<Models, 'getProviders' | 'getModels' | 'getModel' | 'getAuth' | 'completeSimple' | 'streamSimple'>;
 type MutablePiModels = PiModels & Pick<MutableModels, 'setProvider'>;
@@ -22,6 +30,17 @@ const STREAM_RETRIES = 3;
 const STREAM_RETRY_DELAY_MS = 8_000;
 /** Outer budget for the billed probe, including Pi retries. Must exceed one slow gateway round-trip. */
 export const PI_PROBE_TIMEOUT_MS = 180_000;
+export const PI_PROBE_POLICY = Object.freeze({ deadlineMs: PI_PROBE_TIMEOUT_MS, maxOuterAttempts: 3, sdkMaxRetries: STREAM_RETRIES, sdkMaxRetryDelayMs: STREAM_RETRY_DELAY_MS });
+const sdkPackage: unknown = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.resolve('@earendil-works/pi-ai'))), '..', 'package.json'), 'utf8'));
+if (!Value.Check(HarnessSdkPackageSchema, sdkPackage)) throw new Error('Installed Pi SDK package metadata is invalid.');
+const PI_SDK_VERSION = sdkPackage.version;
+export type HarnessProbeAudit = {
+  requested(input: Omit<HarnessProbeRequested, 'schemaVersion' | 'reference'>): Promise<void>;
+  completed(input: { requestId: string; result: 'passed' | 'empty' | 'error' | 'aborted'; failureKind?: string }): Promise<void>;
+};
+export class HarnessProbeAuditError extends Error {
+  constructor(cause: unknown) { super('Harness probe audit failed.', { cause }); this.name = 'HarnessProbeAuditError'; }
+}
 
 /** Builds Pi's native custom-provider path. The key comes from the local config file, or env:NAME. */
 export function modelsForConfig(config: HarnessModelConfig, models: MutablePiModels = builtinModels()): MutablePiModels {
@@ -69,15 +88,18 @@ export function modelsForConfig(config: HarnessModelConfig, models: MutablePiMod
 export class PiModelCaller implements ProviderAdapter {
   readonly #models: PiModels;
   readonly #config: HarnessModelConfig;
+  #resolvedModel: NonNullable<ReturnType<PiModels['getModel']>> | undefined;
 
   constructor(config: HarnessModelConfig, models?: PiModels) {
-    this.#config = config;
-    this.#models = models ?? modelsForConfig(config);
+    this.#config = frozenSnapshot(config);
+    this.#models = models ?? modelsForConfig(this.#config);
   }
 
   get inputCapabilities(): readonly string[] {
     return this.#model().input;
   }
+
+  get executionFingerprint(): string { return sha256(JSON.stringify(this.#model())); }
 
   get modelSnapshot(): ModelConfigSnapshot {
     const model = this.#model();
@@ -87,6 +109,24 @@ export class PiModelCaller implements ProviderAdapter {
       contextWindow: model.contextWindow, maxTokens: model.maxTokens, inputCapabilities: [...model.input], capabilitySource };
     const endpoint = model.baseUrl ? new URL(model.baseUrl) : undefined;
     return { ...snapshot, configFingerprint: sha256(JSON.stringify({ ...snapshot, endpoint: endpoint ? `${endpoint.protocol}//${endpoint.host}${endpoint.pathname}` : '', reasoning: model.reasoning, effort: this.#config.effort, compat: this.#config.schemaVersion === 2 ? this.#config.compat : undefined })) };
+  }
+
+  get effectiveModelConfiguration(): EffectiveHarnessConfiguration['model'] {
+    const model = this.#model();
+    const snapshot = this.modelSnapshot;
+    const compat = 'compat' in model ? model.compat as Record<string, unknown> | undefined : undefined;
+    const booleanKeys: readonly string[] = HARNESS_COMPAT_BOOLEAN_KEYS;
+    const scalarKeys: readonly string[] = HARNESS_COMPAT_SCALAR_KEYS;
+    const scalarOptions = Object.fromEntries(scalarKeys.flatMap(key => typeof compat?.[key] === 'string' ? [[key, compat[key]]] : []));
+    return {
+      providerId: model.provider, modelId: model.id, api: model.api, contextWindow: model.contextWindow,
+      maxTokens: model.maxTokens, inputCapabilities: [...model.input], capabilitySource: snapshot.capabilitySource!,
+      configFingerprint: snapshot.configFingerprint!, reasoning: model.reasoning, effort: this.#config.effort,
+      compat: Object.fromEntries(booleanKeys.flatMap(key => typeof compat?.[key] === 'boolean' ? [[key, compat[key]]] : [])),
+      compatScalarOptions: scalarOptions, compatCoverage: 'explicit-overrides', compatDefaults: 'sdk-derived-not-recorded',
+      unrecordedCompat: Object.keys(compat ?? {}).filter(key => !booleanKeys.includes(key) && !scalarKeys.includes(key)),
+      routing: 'operator-local-not-recorded', sdkVersion: PI_SDK_VERSION,
+    };
   }
 
   async probeImageInput(signal?: AbortSignal): Promise<HarnessImageProbe> {
@@ -129,7 +169,7 @@ export class PiModelCaller implements ProviderAdapter {
     }
   }
 
-  async validate(signal?: AbortSignal): Promise<{ source?: string }> {
+  async validate(signal?: AbortSignal, audit?: HarnessProbeAudit): Promise<{ source?: string }> {
     signal?.throwIfAborted();
     const model = this.#model();
     const auth = await this.#models.getAuth(model);
@@ -144,11 +184,16 @@ export class PiModelCaller implements ProviderAdapter {
     let lastError: Error | undefined;
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       probeSignal.throwIfAborted();
+      const request = { requestId: randomUUID(), outerAttempt: attempt, template: 'reprise-connection-check-v1' as const,
+        timestamp: Date.now(), systemPrompt: 'Reprise connection check. Reply with exactly OK.' as const,
+        userText: 'Reply with exactly OK.' as const, sdkRetries: 'managed-by-pi-sdk' as const,
+        ...(relayReasoning ? { reasoning: this.#config.effort } : {}) };
+      try { await audit?.requested(request); } catch (error) { throw new HarnessProbeAuditError(error); }
       let response: Awaited<ReturnType<PiModels['completeSimple']>>;
       try {
         response = await this.#models.completeSimple(model, {
-          systemPrompt: 'Reprise connection check. Reply with exactly OK.',
-          messages: [{ role: 'user', content: 'Reply with exactly OK.', timestamp: Date.now() }],
+          systemPrompt: request.systemPrompt,
+          messages: [{ role: 'user', content: request.userText, timestamp: request.timestamp }],
         }, {
           maxRetries: STREAM_RETRIES,
           maxRetryDelayMs: STREAM_RETRY_DELAY_MS,
@@ -156,11 +201,24 @@ export class PiModelCaller implements ProviderAdapter {
           ...(relayReasoning ? { reasoning: this.#config.effort } : {}),
         });
       } catch (error) {
+        try {
+          await audit?.completed({ requestId: request.requestId, result: probeSignal.aborted ? 'aborted' : 'error', failureKind: classifyAgentFailure(error) });
+        } catch (auditError) {
+          const failures: unknown[] = [error, auditError];
+          const abortReason: unknown = signal?.reason;
+          if (signal?.aborted) failures.push(abortReason);
+          throw new AggregateError(failures, 'Harness probe and completion audit failed.', { cause: auditError });
+        }
         signal?.throwIfAborted();
         throw new Error(hintThinking(this.#config, error instanceof Error ? error.message : String(error)), { cause: error });
       }
+      const passed = response.stopReason !== 'error' && response.stopReason !== 'aborted' && Boolean(contentText(response.content).trim());
+      try {
+        await audit?.completed({ requestId: request.requestId, result: probeSignal.aborted || response.stopReason === 'aborted' ? 'aborted'
+          : passed ? 'passed' : response.stopReason === 'error' ? 'error' : 'empty' });
+      } catch (error) { throw new HarnessProbeAuditError(error); }
       signal?.throwIfAborted();
-      if (response.stopReason !== 'error' && response.stopReason !== 'aborted' && contentText(response.content).trim()) {
+      if (passed) {
         return auth.source === undefined ? {} : { source: auth.source };
       }
       lastError = new Error(hintThinking(this.#config, response.errorMessage ?? `Pi model connection check stopped: ${response.stopReason}.`));
@@ -177,17 +235,18 @@ export class PiModelCaller implements ProviderAdapter {
   }
 
   #model() {
+    if (this.#resolvedModel) return this.#resolvedModel;
     const model = this.#models.getModel(this.#config.providerId, this.#config.modelId);
     if (!model) throw new Error(`Pi provider ${this.#config.providerId} does not expose model ${this.#config.modelId}.`);
     if (!model.input.includes('text')) throw new Error(`Pi model ${this.#config.modelId} does not accept text input.`);
-    if (isCatalog(this.#config)) return model;
+    if (isCatalog(this.#config)) return this.#resolvedModel = frozenSnapshot(model);
     const overlay = windowOverlay(this.#config);
-    if (this.#config.baseUrl === undefined && overlay.contextWindow === undefined && overlay.maxTokens === undefined) return model;
-    return {
+    if (this.#config.baseUrl === undefined && overlay.contextWindow === undefined && overlay.maxTokens === undefined) return this.#resolvedModel = frozenSnapshot(model);
+    return this.#resolvedModel = frozenSnapshot({
       ...model,
       ...(this.#config.baseUrl ? { baseUrl: this.#config.baseUrl } : {}),
       ...overlay,
-    };
+    });
   }
 }
 

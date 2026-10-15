@@ -90,6 +90,7 @@ export async function finishExperiment(input: {
   candidateSnapshotStatus: "complete" | "incomplete" | "missing";
   compare?: boolean;
   onComparisonAttempt?: (attemptId: string) => void;
+  comparisonAttempt?: ReturnType<typeof newComparisonAttempt>;
 }): Promise<ExperimentResult> {
   const finishedRecord = input.run.result().record;
   if (!finishedRecord)
@@ -242,9 +243,9 @@ async function compareExperimentOutcome(
   record: NonNullable<ReturnType<CandidateRun["result"]>["record"]>,
   inspection: Awaited<ReturnType<typeof inspectRun>>,
 ) {
-  const { attemptId, attemptRoot } = newComparisonAttempt(input.experimentRoot);
+  const { attemptId, attemptRoot } = input.comparisonAttempt ?? newComparisonAttempt(input.experimentRoot);
   input.onComparisonAttempt?.(attemptId);
-  await input.store.append({
+  if (!input.comparisonAttempt) await input.store.append({
     type: "comparison.started",
     runId: input.input.runId,
     operationId: `comparison-started-${attemptId}`,
@@ -252,6 +253,8 @@ async function compareExperimentOutcome(
       attemptId,
       model: (input.input.comparisonAgentConfig ?? input.input.agentConfig)
         .requestedModel,
+      ...((input.input.comparisonAgentConfig ?? input.input.agentConfig).effectiveReference
+        ? { effectiveReference: (input.input.comparisonAgentConfig ?? input.input.agentConfig).effectiveReference } : {}),
     },
   });
   await materializeComparisonSandbox(input.store, record.artifactRefs, attemptRoot);

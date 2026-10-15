@@ -44,6 +44,16 @@ History 的默认运行按已提交 `run.attempt_created` 顺序选择，日志�
 
 ## 模型输入可追溯
 
+默认 Pi Harness 为每次 Candidate、Recovery 与持久化重比提交版本 1 的有效配置 DTO：先提交 run-owned 配置 artifact，再写 `harness.configuration_bound`，其中保留同一配置正文、hash 和 owner 引用。该事件先于本操作的连接 probe；artifact 残留不能认证配置。RunManifest 的角色配置、Recovery initialize 记录和 Comparison 操作绑定准确引用；重用 Agent 或连接检查缓存时仍提交本次 owner，引用不写回共享 Agent 实例。自定义 Port 与旧记录缺有效引用时保持未记录，不从 requested budget 推断已经生效。
+
+快照区分 Controller 单次无限、Recovery 单次上限与固定 24 小时操作截止，以及自主 Comparison 配置单次上限、整体截止和逐请求 `min(剩余整体时间, 单次上限)` 规则。空 Comparison resources override 保留默认整体截止；未在自主模式执行的旧阶段限额只放 requestedResources，不冒充 enforcedResources。快照与 Agent 构造共用预算解析，Candidate/policy 以及 Pi 私有配置、首次解析模型使用冻结副本，后续调用方对象或模型注册表变化不能改写本次执行条件。
+
+模型 DTO 显式挑选 provider/model、API、上下文和输出窗口、输入能力、reasoning/effort、已知无敏感标量 compat override 与已安装 SDK 版本。嵌套 schema 拒绝未知字段；不展开本机配置，不保存 apiKey、keyRef、headers 或 endpoint。SDK 按 URL 推导的默认 compat、复杂未记录参数和网络路由明确不完整；fingerprint 仅供比对，不能重建这些内容或凭据。此 DTO 记录 Harness 可控制条件，不宣称完整重建 Provider wire 请求；普通 generation 的实际输入仍以 Host 快照为准。
+
+`harness.probe_requested` 在每次实际 outer 调用前保存版本化模板、实际 timestamp、reasoning 与配置引用，结果事件只保存通过、空响应、失败或取消分类。连接检查最多三次 outer 调用，每次允许 Pi SDK 内部重试；日志不虚构 SDK 未公开的各次传输。请求审计失败不调用模型；传输与完成审计同时失败时保留两者，成功响应后的审计失败也不标记连接验证成功。连接验证缓存包含凭据变更，Agent 缓存另包含 locale、budget 与 recoveryBudget。
+
+持久化重比先在 writer 下保留 `comparison.started` attempt，再初始化 Harness。准备/Host 失败保存该 attempt 的不可变 `operation-failure.json`、版本化 `comparison.operation_failed` 和失败/取消完成事实，不挤入候选启动协议，不伪造 Comparison Session。History 显示当前 attempt 失败并保留同 run 此前确认报告。只有明确连接 probe 来源才归为 Provider 失败，配置绑定/磁盘/审计失败保持 Host 初始化失败。
+
 Controller、Recovery、Comparison 都通过 Agent Session Host 生成模型请求。Host 把 system prompt、用户消息、工具结果和结构化结果写入审计事实；普通 generation 另保存 Pi 转换与裁剪后、经过凭据脱敏的实际上下文快照，保留原生工具参数及 SDK 拒绝消息；[`model-input.ts`](../../src/infrastructure/agent/model-input.ts) 从事件日志重建请求。上下文压缩必须追加 `agent.context_compacted`，其中 summary 与 retained tail 是后续请求可见的输入来源。新增模型可见事实必须先写入事件审计（必要时再由 briefing 做可读投影），不能只存在内存变量。
 
 压缩请求另在 `agent.model_request` 的 `compactionInput: AgentTextBody` 保存实际上下文，仅含 systemPrompt、messages 与 tools；经同一秘密过滤的上下文用于审计和发送，不保存 Provider 凭据或只留不可重建的 digest。大正文沿用附件溢出、字节长度与 hash 校验，图片记录为不可变附件引用，不把 base64 写入日志。History 重建可返回独立的 `compactionRequests`，不将压缩混入普通生成请求；历史缺输入体标记 contentComplete=false，附件缺失、损坏或图片校验失败保留不完整与诊断，不把压缩后的 summary 当作压缩请求原始输入。

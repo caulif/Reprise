@@ -407,6 +407,7 @@ const M = {
   historySavedAt: { en: 'Saved', zh: '保存时间' },
   historyStartedAt: { en: 'Started', zh: '开始时间' },
   historyStartupStage: { en: 'Startup stage', zh: '启动阶段' },
+  historyComparisonFailureStage: { en: 'Comparison failure stage', zh: '比较失败阶段' },
   historyEventLogError: { en: 'Event log unreadable', zh: '事件日志无法读取' },
   historyMetadataCaseMismatch: { en: 'Run task differs from experiment metadata', zh: '运行任务与实验元数据不一致' },
   historyMetadataTaskId: { en: 'Experiment metadata task ID', zh: '实验元数据任务 ID' },

@@ -4,5 +4,5 @@ Reprise
    重做任务             /intake
    运行记录             /history  尚无运行记录
  ❯ Reprise 模型设置     /config  需要凭据
- 当前任务是 reprise（case-v2-9d325994a346d5565c6f2d1926d4f17e）。
+ 当前任务是 reprise（case-v2-6435245ecdca2845687aee9e69d8709f）。
  [↑↓] 选择动作  [Enter] 执行  [/] 命令  [Ctrl+C] 退出
