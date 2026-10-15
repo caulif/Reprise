@@ -30,17 +30,25 @@ test('default harness and application entrypoints load without the legacy execut
     .map((name) => new URL(`../../src/application/${name}.js`, import.meta.url).href);
   const script = `
     import { registerHooks } from 'node:module';
+    import { relative, sep } from 'node:path';
+    import { fileURLToPath } from 'node:url';
     registerHooks({ resolve(specifier, context, next) {
-      if (specifier === process.argv[1]) throw new Error('Legacy Comparison executor entered the production graph');
-      return next(specifier, context);
+      const target = specifier.startsWith('.') && context.parentURL ? new URL(specifier, context.parentURL).href : specifier;
+      if (target === process.argv[1]) throw new Error('Legacy Comparison executor entered the production graph');
+      const resolved = next(specifier, context);
+      if (resolved.url === process.argv[1]) throw new Error('Legacy Comparison executor entered the production graph');
+      return resolved;
     } });
     for (const entry of JSON.parse(process.argv[2])) await import(entry);
-    let rejected = false;
-    try { await import(process.argv[1]); } catch (error) {
-      if (!(error instanceof Error) || !error.message.includes('Legacy Comparison executor entered')) throw error;
-      rejected = true;
+    const relativeLegacy = './' + relative(process.cwd(), fileURLToPath(process.argv[1])).split(sep).join('/');
+    for (const specifier of [process.argv[1], relativeLegacy]) {
+      let rejected = false;
+      try { await import(specifier); } catch (error) {
+        if (!(error instanceof Error) || !error.message.includes('Legacy Comparison executor entered')) throw error;
+        rejected = true;
+      }
+      if (!rejected) throw new Error('The import blocker did not reject the legacy executor: ' + specifier);
     }
-    if (!rejected) throw new Error('The import blocker did not reject the legacy executor');
     process.stdout.write('production entrypoints loaded; legacy executor rejected');
   `;
   const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
