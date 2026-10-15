@@ -5,6 +5,7 @@ import { segmentedTimeout } from '../../src/infrastructure/segmented-timeout.js'
 
 test('long deadlines wait through multiple Node timer segments', t => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1000 });
+  t.mock.method(performance, 'now', () => Date.now());
   const maximum = 2 ** 31 - 1;
   let fired = 0;
   segmentedTimeout(() => { fired++; }, maximum * 2 + 100);
@@ -20,6 +21,7 @@ test('long deadlines wait through multiple Node timer segments', t => {
 
 test('MAX_SAFE_INTEGER does not expire immediately and cancellation clears a rearmed timer', t => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1000 });
+  t.mock.method(performance, 'now', () => Date.now());
   let fired = false;
   const cancel = segmentedTimeout(() => { fired = true; }, Number.MAX_SAFE_INTEGER);
   t.mock.timers.tick(1);
@@ -33,6 +35,7 @@ test('MAX_SAFE_INTEGER does not expire immediately and cancellation clears a rea
 
 test('short deadlines and cancellation preserve normal timeout behavior', t => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1000 });
+  t.mock.method(performance, 'now', () => Date.now());
   let fired = 0;
   const cancel = segmentedTimeout(() => { fired++; }, 10);
   segmentedTimeout(() => { fired++; }, 20);
@@ -45,6 +48,29 @@ test('short deadlines and cancellation preserve normal timeout behavior', t => {
   assert.equal(fired, 1);
 });
 
+test('wall clock rollback does not extend a segmented deadline', t => {
+  const maximum = 2 ** 31 - 1;
+  const wallStart = maximum * 4;
+  t.mock.timers.enable({ apis: ['setTimeout'], now: wallStart });
+  let wallNow = wallStart;
+  t.mock.method(Date, 'now', () => wallNow);
+  let monotonicNow = 0;
+  t.mock.method(performance, 'now', () => monotonicNow);
+  let fired = 0;
+  segmentedTimeout(() => { fired++; }, maximum + 100);
+
+  wallNow = 1000;
+  monotonicNow += maximum;
+  t.mock.timers.tick(maximum);
+  assert.ok(Date.now() < wallStart);
+  assert.equal(fired, 0);
+  monotonicNow += 99;
+  t.mock.timers.tick(99);
+  assert.equal(fired, 0);
+  monotonicNow++;
+  t.mock.timers.tick(1);
+  assert.equal(fired, 1);
+});
 
 test('Agent Session accepts MAX_SAFE_INTEGER timeout without immediately aborting', async () => {
   const host = new AgentHost({ createSession: () => ({

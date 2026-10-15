@@ -102,7 +102,10 @@ for (const mode of ['cancel', 'deadline'] as const) test(`Recovery ${mode} abort
   const recovery = new RecoveryAgent({ host: new AgentHost({ createSession: () => ({
     append: ({ signal }) => { assert.equal(signal.aborted, false); started(); return new Promise<string>(() => {}); }, cancel() {},
   }) }), timeoutMs: 0, maxRepairAttempts: 1 });
-  if (mode === 'deadline') t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+  if (mode === 'deadline') {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+    t.mock.method(performance, 'now', () => Date.now());
+  }
   const pending = recoverExperiment({ ...(mode === 'deadline' ? { timeoutMs: 500 } : {}), dataDir: base.dataDir, caseId: base.caseId, experimentId: 'recovery-cancel', runId: 'recovery-cancel-run', sourceRoot: base.sourceRoot, taskCase: base.taskCase, recovery, environmentProvider: provider, now, signal: abort.signal });
   await ready;
   if (mode === 'deadline') t.mock.timers.tick(500);
