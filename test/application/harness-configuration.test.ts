@@ -22,6 +22,7 @@ import { readLocalHistory } from '../../src/application/experiment-history-list.
 import { readRunComparison } from '../../src/application/comparison-report-ownership.js';
 import { renderHistoryDetail } from '../../src/tui/pages/history.js';
 import { createTheme } from '../../src/tui/theme.js';
+import { recoverExperiment } from '../../src/application/recovery/run.js';
 
 const config = { schemaVersion: 2 as const, provider: { kind: 'openai-compatible' as const, id: 'fixture-provider' },
   providerId: 'fixture-provider', modelId: 'fixture-model', effort: 'high' as const,
@@ -37,6 +38,45 @@ function fixtureCaller(complete: NonNullable<Partial<PiModels>['completeSimple']
     getAuth: async () => ({ auth: { apiKey: config.apiKey } }), completeSimple: complete,
     streamSimple: () => { throw new Error('not a session fixture'); } } as unknown as PiModels;
   return new PiModelCaller(config, models);
+}
+
+for (const mode of ['expired_at_bind', 'expires_during_probe', 'explicit_conflict'] as const) {
+test(`Recovery effective operation deadline closes initialization: ${mode}`, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-recovery-bound-deadline-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const base = input(root, new VerifiedRuntime());
+  await mkdir(base.sourceRoot, { recursive: true });
+  let monotonic = 1000;
+  t.mock.method(performance, 'now', () => monotonic);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const agents = createHarnessAgents(config, fixtureCaller(), { recoveryBudget: { callTimeoutMs: 10, maxStructuredRepairAttempts: 0 } });
+  let probes = 0;
+  const pending = recoverExperiment({ dataDir: base.dataDir, caseId: base.caseId, experimentId: base.experimentId,
+    runId: base.runId, sourceRoot: base.sourceRoot, taskCase: base.taskCase, now: base.now,
+    ...(mode === 'explicit_conflict' ? { timeoutMs: 20 } : {}),
+    recovery: { recover: async () => { throw new Error('must not run a Recovery model'); } },
+    resolveRecovery: async (signal, scope) => {
+      if (mode === 'expired_at_bind') monotonic += 11;
+      await scope.bind(agents.config.effective!);
+      probes++;
+      monotonic += 10;
+      t.mock.timers.tick(10);
+      signal.throwIfAborted();
+      throw new Error('the effective deadline failed to abort before model work');
+    } });
+  await assert.rejects(pending, mode === 'explicit_conflict' ? /conflicts with the bound effective/ : /abort/i);
+  assert.equal(probes, mode === 'expires_during_probe' ? 1 : 0);
+  const experimentRoot = join(base.dataDir, 'experiments', base.experimentId);
+  const store = await ExperimentStore.open(experimentRoot, base.experimentId);
+  const events = store.events(base.runId);
+  const bound = events.find(event => event.type === 'harness.configuration_bound');
+  assert.ok(bound && Value.Check(HarnessConfigurationBoundSchema, bound.payload));
+  assert.equal(bound.payload.configuration.recovery.operationTotal.milliseconds, 10);
+  assert.ok(events.some(event => event.type === 'recovery.attempt' && typeof event.payload === 'object'
+    && event.payload !== null && 'result' in event.payload && event.payload.result === 'failed'));
+  await store.acquireWriter();
+  await store.close();
+});
 }
 
 async function fixtureStore(t: TestContext) {
