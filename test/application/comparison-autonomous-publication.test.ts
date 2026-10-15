@@ -41,7 +41,7 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
     const abort = new AbortController();
     const steps: Step[] = [
       { name: 'write', arguments: { path: submission.path, content: mode === 'selected-delivery' || mode === 'git-delivery'
-        ? `${original}<p>Chosen substitute, not the historical model's original delivery.</p><a href="finals/baseline.txt">Chosen baseline</a>` : original } },
+        ? `${original}<a href="finals/baseline.txt">Chosen baseline</a>` : original } },
       { name: 'submit_report', arguments: submission },
     ];
     if (mode === 'selected-delivery' || mode === 'git-delivery') steps.unshift({ name: 'read', arguments: { path: 'finals/manifest.json' } });
@@ -149,6 +149,8 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
       const facts = JSON.parse(await readFile(join(result.experimentRoot, 'comparison-attempts', payload.attemptId, 'facts', 'context.json'), 'utf8')) as { reportFacts: { replay: { conditions: string[] } } };
       assert.ok(facts.reportFacts.replay.conditions.some(condition => /user-selected substitute|用户指定替代基准/.test(condition)));
       const report = await readFile(join(result.experimentRoot, 'report.html'), 'utf8');
+      assert.match(report, /data-host="substitute-baseline"/);
+      assert.match(report, /历史材料为用户指定替代品，非历史模型原件；模型与指标属于原会话。/);
       const href = report.match(/href="([^"]*published-finals[^"]*baseline\.txt)"/)?.[1];
       assert.ok(href);
       assert.equal(await readFile(join(result.experimentRoot, ...href.split('/')), 'utf8'), 'chosen baseline bytes');
@@ -161,6 +163,7 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
       && (event.payload as { role?: string }).role === 'comparison').length, 1);
     const recovery = await inspectComparisonRecovery({ dataDir: base.dataDir, experimentId: base.experimentId, attemptId: payload.attemptId });
     assert.equal(recovery.ready, published, recovery.reason);
+    if (mode === 'selected-delivery') assert.match(recovery.html, /历史材料为用户指定替代品，非历史模型原件；模型与指标属于原会话。/);
     const history = await readCommittedExperimentHistory(result.experimentRoot, base.experimentId);
     assert.equal(history.diagnosticCode, undefined);
     assert.equal(history.incompleteModelInput, false);

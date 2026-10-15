@@ -278,6 +278,7 @@ async function compareExperimentOutcome(
     ownedEvidenceRefs: comparisonOwnedObservationRefs(input.taskCase, events),
   };
   if (preparedHistory.manifest?.schemaVersion === 2 && preparedHistory.manifest.capture.kind === 'user_selected_substitute') {
+    context.reportFacts.replay.baselineIsSubstitute = true;
     context.reportFacts.replay.conditions = [...context.reportFacts.replay.conditions, locale === 'zh'
       ? '历史侧材料是用户指定替代基准，不是历史原件；历史运行指标仍来自原会话。'
       : 'Baseline material is a user-selected substitute, not the historical original; historical metrics still describe the original session.'];

@@ -52,7 +52,7 @@ const ComparisonReportFactsSchema = Type.Object({
   limits: Type.Object({ wallClockMs: Type.Optional(Type.Number()), maxTargetTurns: Type.Optional(Type.Integer({ minimum: 0 })), maxModelCalls: Type.Optional(Type.Integer({ minimum: 0 })), triggered: Type.Array(Type.String()) }),
   runtime: Type.Object({ productId: Type.String(), sandbox: Type.Optional(Type.String()), approvalPolicy: Type.Optional(Type.String()), network: Type.Optional(Type.String()) }),
   delivery: Type.Object({ changedPaths: Type.Array(Type.String()), targetArtifactStatus: Type.String(), verificationStatus: Type.String(), changedPathsIndexed: Type.Optional(Type.Integer({ minimum: 0 })), changedPathsOmitted: Type.Optional(Type.Integer({ minimum: 0 })) }),
-  replay: Type.Object({ sourceRootKind: Type.Optional(Type.String()), conditions: Type.Array(Type.String()), baselineEvidence: Type.String(), candidateEvidence: Type.String() }),
+  replay: Type.Object({ sourceRootKind: Type.Optional(Type.String()), conditions: Type.Array(Type.String()), baselineEvidence: Type.String(), candidateEvidence: Type.String(), baselineIsSubstitute: Type.Optional(Type.Boolean()) }),
   metrics: Type.Optional(Type.Object({
     timingComparable: Type.Optional(Type.Boolean()),
     baseline: Type.Optional(MetricSideSchema),

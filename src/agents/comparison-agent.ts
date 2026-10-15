@@ -54,7 +54,7 @@ export type ComparisonReportFacts = {
   limits: { wallClockMs?: number; maxTargetTurns?: number; maxModelCalls?: number; triggered: readonly string[] };
   runtime: { productId: string; sandbox?: string; approvalPolicy?: string; network?: string };
   delivery: { changedPaths: readonly string[]; targetArtifactStatus: string; verificationStatus: string; changedPathsIndexed?: number; changedPathsOmitted?: number };
-  replay: { sourceRootKind?: string; conditions: readonly string[]; baselineEvidence: string; candidateEvidence: string };
+  replay: { sourceRootKind?: string; conditions: readonly string[]; baselineEvidence: string; candidateEvidence: string; baselineIsSubstitute?: boolean };
   metrics?: {
     baseline?: ComparisonMetricSide;
     candidate?: ComparisonMetricSide;

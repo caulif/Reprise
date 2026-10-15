@@ -15,6 +15,7 @@ const M = {
   compactCost: { en: "Estimated cost (USD)", zh: "估算费用（USD）" },
   compactNote: { en: "Tokens include cache; 1 k = 1,000 tokens. Costs are estimates, excluding tool costs. Missing data stays unknown.", zh: "Token 含缓存；1 k = 1,000 Token。费用为估算，不含工具费用；缺失保持未知。" },
   analysisModel: { en: "Report analysis model", zh: "报告分析模型" },
+  substituteBaselineNote: { en: "Historical material is a user-selected substitute, not the historical model's original delivery. Model and metrics refer to the original session.", zh: "历史材料为用户指定替代品，非历史模型原件；模型与指标属于原会话。" },
   timingTurns: { en: "sum of recorded turn durations", zh: "记录轮次耗时累计" },
   timingSpan: { en: "whole-run elapsed time", zh: "运行整体区间" },
   timingCoverage: { en: " (partial: {measured}/{completed} completed turns measured, {open} open)", zh: "（覆盖不完整：已计{measured}/{completed}个完成轮次，{open}个未结束）" },
