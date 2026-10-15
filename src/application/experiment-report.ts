@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { comparisonFailureText } from './comparison-failure-text.js';
 import { join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { createComparisonImageDeliveryRecorder } from './comparison-image-delivery-recorder.js';
@@ -900,7 +901,7 @@ function comparisonFailed(
   error: unknown,
   sessionId?: string,
 ): AgentInvocation<ComparisonResult> {
-  const message = error instanceof Error ? error.message : "Comparison host failed.";
+  const message = comparisonFailureText(error);
   return {
     status: "failed",
     ...(sessionId ? { sessionId } : {}),
