@@ -6,6 +6,8 @@
 
 ### Fixed
 
+- Comparison 自主会话在完成、失败或取消后关闭模型 Session；同时保留原始错误与收尾错误，并统一 Provider 失败诊断。离线评测允许当前 Comparison 模型流审计事件追加到冻结输入之后。
+
 - task_completion 首次交接由 Host 补齐冻结目标、授权原文、实际副本与输入映射，发送、事件和 briefing 保存同一完整消息；后续消息及历史模拟保持原语义。默认操作边界仅为任务层声明，不提供运行权限隔离。
 - Recovery 与 Comparison 的默认时间预算从 30 分钟延长到 24 小时，覆盖 Recovery 外层准备/校验/封存与 Comparison coding 试验及命令执行。自定义模型和压缩逻辑的默认上下文窗口改为 256,000 tokens；显式模型配置、目录模型及单次输出上限保持原值。
 
