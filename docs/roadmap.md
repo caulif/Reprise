@@ -35,11 +35,11 @@
 
 每项包含用户影响、修复完成条件和当前验证范围。
 
-### 早期准备失败缺少 attempt 记录
+### 实验身份与配置接纳
 
-- **用户影响：** Runtime 解析等早期准备失败发生在 CandidateRun/attempt 持久化之前，失败启动无法从 attempt 列表解释。
-- **修复完成条件：** 确定启动尝试的边界并形成一致终态。相关顺序位于 [experiment.ts](../src/application/experiment.ts) 和 [candidate-run.ts](../src/application/candidate-run.ts)。
-- **当前验证范围：** 代码审查与离线行为观察；无统一回归用例。
+- **用户影响：** 同一 experiment ID 的冲突 spec 仍可能被忽略，workflow 可读取后来配置，实验身份与新增 run 的条件缺少完整接纳约束。
+- **修复完成条件：** 明确实验身份、允许变化的每次运行条件与拒绝时机，并对同 ID 冲突补一致性回归；不能只依赖进程内对象或操作配置快照。
+- **当前验证范围：** 每次操作的有效配置 DTO 已记录实际预算和模型条件，但尚未证明实验身份闭环。已接纳启动的 Runtime 校验/准备失败已有 attempt 与诊断回归；接纳前非法输入、竞争及写入失败的边界见[执行流程](./architecture/execution.md#candidaterun-生命周期)。
 
 修复后应补回归用例，并按变更风险运行构建、相关测试和门禁。
 
@@ -55,4 +55,4 @@
 
 命令的当前定义以 [package.json](../package.json) 和对应 [scripts](../scripts/) 为准；费用与执行边界见[开发指南](./development.md#真实调用与费用)。新证据记录日期、环境、命令和未通过项，不以旧报告重渲染关闭验收。
 
-配置记录还需收口：内部 Agent 的有效 timeout 与通用 budget 不一致；同一 Experiment 的冲突 spec 被忽略而 workflow 可读取新配置。需决定配置固定到 Experiment 还是记录到每个 Run，再补一致性检查；本轮不把建议当成已实施协议。
+有效配置快照的当前范围和未记录条件见[模型输入可追溯](./architecture/evidence-and-comparison.md#模型输入可追溯)；它不构成真实 Provider wire 请求的完整复现保证。

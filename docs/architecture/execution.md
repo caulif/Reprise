@@ -30,7 +30,9 @@ RunOutcome 分别保存任务判断、运行终止和清理结果；调用 Runne
 
 ## 配置与证据
 
-候选启动上下文写入 experiment/run 目录，至少绑定 experimentId、runId、产品、请求模型、解析模型、隔离工作区和权限。实验配置的保存与执行目前没有完整冻结闭环：相同 experiment ID 的冲突 spec 可能被静默忽略，而 workflow 仍读取当前 Harness 配置。Comparison 可使用独立的已记录配置，不应把它混入候选条件。
+候选启动上下文写入 experiment/run 目录，绑定实验、run、产品、请求与解析模型、工作副本和权限。默认 Pi Harness 已按每次操作保存无凭据的有效配置，并冻结本次实际使用的预算和模型条件；Comparison 的独立配置不混入候选条件。快照、连接 probe 与引用边界见[模型输入可追溯](./evidence-and-comparison.md#模型输入可追溯)。
+
+操作配置快照不等于实验身份接纳已经闭环：当前同一 experiment ID 的冲突 spec 仍可能被忽略，后续 workflow 可能读取新配置。该剩余问题见[路线图](../roadmap.md#实验身份与配置接纳)。
 
 实际编排见 [Controller loop](../../src/application/experiment-controller-loop.ts)、[cleanup](../../src/application/candidate-run-cleanup.ts) 和 [Run schema](../../src/core/schemas/run.ts)。已知缺口与完成条件集中在[路线图](../roadmap.md#已知实现问题)。
 

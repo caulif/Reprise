@@ -70,15 +70,19 @@ Comparison 的共享 Context、Port、Result、Facts 与输出校验由 [`compar
 
 默认自主 Session 的输入以用户需求和实际交付物为先，完整导航与过程材料按需展开。`render_artifact` 支持一次调用中重放受控点击、表单输入、按键、滚动、等待和 DOM 状态观察，加载前可设置弱动效和主题偏好。每次新开冻结页面，传完整动作序列；带动作的帧时间相对序列完成，观察对应其动作位置。工具回执记录动作、条件及观察，沿现有审计和测量分页保存；不开放任意脚本、任意网址或用户浏览器。初始和工具后的剩余时间与实际整体截止保持一致。见[交付优先与浏览器检查](../decisions/accepted/2026-10-11-comparison-browser-actions.md)。
 
-默认由 [`AutonomousComparisonAgent`](../../src/agents/comparison-autonomous.ts) 执行单个自主 Session、一个初始任务 prompt。模型自主调查、验证、编写、预览及修订；read/search、write/edit、shell、受控渲染、图片读取/变换及证据登记工具全程可用，独立只读工具仍按已有声明并行。没有强制 understand/investigate/compose/review 阶段、周期语义保存、独立 reviewer 或 findings/disposition 提交要求；原始交付只读，工作文件写入 scratch/。模型选择证据与判断，Host 不对任务语义增加专用判题规则。
+默认由 [`AutonomousComparisonAgent`](../../src/agents/comparison-autonomous.ts) 执行单个自主 Session、一个初始任务 prompt。模型自主调查、验证、编写、预览及修订；read/search、write/edit、shell、受控渲染、图片读取/变换及证据登记工具全程可用，独立只读工具仍按已有声明并行。没有强制 understand/investigate/compose/review 阶段、周期语义保存、独立 reviewer 或 findings/disposition 提交要求；文件工具把原始交付作为只读挂载，工作文件写入 scratch/。模型选择证据与判断，Host 不对任务语义增加专用判题规则。
+
+Shell 的只读命令 guard 仅提前阻止已知写命令，不是 OS 文件权限或沙箱；例如 echo 重定向不在当前识别范围。报告 Host 区 fingerprint、引用 hash 与预览绑定校验只约束报告及实际引用证据，不提供整个文件系统的写隔离。具体回归边界见[当前路径决策](../decisions/accepted/2026-10-15-comparison-current-path-regressions.md#shell-回归的验证范围)。
 
 Host 指标固定在已审计的自主 Session system prompt，压缩摘要丢失指标时，后续实际请求与 History 重建仍可取得原值。当前 Port 的 completed 结果必须实际具有 `reportPath=report.html`；assert 不通过临时副本替调用方填充字段，旧历史 envelope schema/reader 继续兼容原记录。见[指标输入与结果断言](../decisions/accepted/2026-10-15-comparison-pinned-input-and-result-validation.md)。
 
 `submit_report` 从 scratch/ 读取 UTF-8 证据片段，另提交推荐、必要边界及最多三条差异，复用安全 shell 和原有来源验证。新报告 formatVersion=3：突出历史/当前实际模型，推荐最多80个非空白码点、每条差异60、全部作者正文900，含表格/图注/代码；不提供详情展开区。Host 生成耗时、Token（k）和估算费用三行表，未知不作零，计时来源或覆盖不一致时短句提示。完整视口图优先、裁剪保留来源，长页沿受控滚动观察，视口图不等于全文。接受后须 `preview_report` 当前 digest/catalog，实际回执进入同 Session 后续 generation 快照并正常完成才可发布。新 `comparison.requested` 标记 `autonomousContractVersion=2`，旧1及报告1/2按原契约恢复，不与独立复审标记混用。版本完整性不认证语义或审美，见[紧凑报告决策](../decisions/accepted/2026-10-14-comparison-compact-report.md)。
 
-旧内置阶段执行器已退役。下文关于多阶段、独立审阅、findings、inspection、decisionSummary/disposition、周期 source-save 与字符配额的文字保留退休前的协议背景及历史恢复认证要求，不提供可构造的旧内置 executor，也不再是默认生产流程。旧请求仍按原标记验证，不自动降级成自主模式。共享的授权、证据、原生图片、审计、安全 shell 和原子发布规则继续适用。
-
 默认 Comparison 仅有整体 24 小时预算，不默认限制请求数、工具数、费用、来源阶段时间、保存累计耗时或续查次数。自主模式的空资源 override 也保留默认整体截止；显式请求/工具/费用限制仍执行，但不引入阶段截止。每次调用使用整体实际剩余时间与单次调用 timeout 的较小值。取消、数据授权、工具大小和并发容量及发布完整性检查继续有效。详见[整体时间预算](../decisions/accepted/2026-10-14-agent-default-budgets.md)。
+
+## 历史多阶段协议与共享兼容
+
+旧内置阶段执行器已退役。以下多阶段、独立审阅、findings、inspection、decisionSummary/disposition、周期 source-save 与字符配额保留退休前的协议背景及历史恢复认证要求，不提供可构造的旧内置 executor，也不提供仍可启用的阶段配额模式。旧请求仍按原标记验证，不自动降级成自主模式。共享的授权、证据、原生图片、审计、有限 Shell 命令检查和原子发布规则继续适用；段落中的旧“新流程”“生产路径”只指对应历史协议。
 
 严格三会话路径向模型提供单一 schema 的 `update_comparison_findings_delta`，专用端点允许省略重复 `kind`，由 Host 补为 delta 并校验；通用工具仍要求原判别字段。范围字段允许字面标签名且在报告中转义，仍限制非空单行、长度及数量。delta 的 `addedFindings` / `addedQuestions` 可新增观察或问题；已有每个 ID 仍须完整且恰好一次 retain/replace，新增不能覆盖旧身份。Host 根据真实当前记录合成 canonical submission，继续经过原 `Value.Check`、来源及 catalog/findings 绑定校验，不补造语义内容。完整工具保留兼容，两个名称在全部阶段、完成回调和副作用入口服从相同守卫。
 
@@ -110,7 +114,7 @@ Attempt 作用域持有可修订的证据 catalog：权威 revision 落在 `fact
 
 Host 预置 HTML 模板并拥有 header、metrics、cost-note、evidence、process 等区域；新报告 `data-report-format="2"` 的 Agent 区为 `comparison`（主创作）与可选 `details`（可见 `<details>`）。Agent 在 `comparison` 内自主选择并排图、表格、短片段或步骤；无图时不强制空视觉段；单侧真实结果可保留但须就近写明缺失方。Host 从草稿中结构化提取唯一、完整的 Agent 区与允许的槽，以本 attempt 的任务、指标、证据、媒体和受控模板重建整页；不明确的槽边界拒绝提取。Agent 区禁止可执行标签、SVG/MathML、事件属性和危险 URL；只允许链接的 `href` 与图片的 `src` 使用相对 URL，图片仍须经过媒体登记和文件可读性检查，其他资源属性直接拒绝。矢量内容须作为已登记媒体进入报告。重建后仍经过 schema、HTML 契约、evidence/media 引用、模型已见图片和外部资源检查，失败则不发布。展示问题由 Host 确定性修复，无法修复时记录 limitations 并仍可发布，不能把所有样式问题提升为失败门禁。Agent 的自然语言判断不能覆盖确定性事实，证据缺失必须明确说明，不得伪造引用。版式与发布取舍见[自主任务比较报告区与安全发布](../decisions/accepted/2026-09-19-comparison-autonomous-report-zones.md)和[Host 重建报告](../decisions/accepted/2026-09-23-host-rebuilt-comparison-report.md)。
 
-新 format 2 报告以独立结论区突出判断，随后紧凑展示时间、估算费用与 Token 总量，再呈现关键差异；仅 Token 分项默认折叠。初始结论、比较正文与可选详情槽位留空，组件原型只在不可见的 `<template>` 内提供结构，不预填赢家、差异数量、核验标签或媒体引用；已登记媒体仍在 Host 目录中供 Agent 选择，不自动配入正文。Agent 按任务组织实际差异、用户影响、必要证据及重要未知，省略不用的组件。旧整页草稿的缺失内容修复与限制说明继续兼容。理由见[空槽位与结论优先的报告骨架](../decisions/accepted/2026-10-14-comparison-empty-report-template.md)。
+兼容 format 2 报告以独立结论区突出判断，随后紧凑展示时间、估算费用与 Token 总量，再呈现关键差异；仅 Token 分项默认折叠。初始结论、比较正文与可选详情槽位留空，组件原型只在不可见的 `<template>` 内提供结构，不预填赢家、差异数量、核验标签或媒体引用；已登记媒体仍在 Host 目录中供 Agent 选择，不自动配入正文。Agent 按任务组织实际差异、用户影响、必要证据及重要未知，省略不用的组件。旧整页草稿的缺失内容修复与限制说明继续兼容。当前 format 3 不设详情区，见上文[Comparison attempt](#comparison-attempt)。历史理由见[空槽位与结论优先的报告骨架](../decisions/accepted/2026-10-14-comparison-empty-report-template.md)。
 
 Host metrics 的 `data-metrics-layout="compact"` 标记与区域顺序不变；旧无标记的正文先于指标布局和四字段指纹仍可读取，不重写旧报告。时间保留分秒，极小正费用显示 `<0.001` 美元，避免舍入为零。费用说明价格快照、非供应商账单和工具费排除，Token 分项可能重叠或缺失，不能直接当作跨工具效率评分。证据链接具有可见样式与键盘焦点，配对图片按自然比例显示；窄屏将双侧证据纵向排列，不强制表格的桌面最小宽度。
 
@@ -121,6 +125,12 @@ Agent 区的内联 `style` 属性和原生 `dialog` / popover 浮层一律拒绝
 Host 双侧会话标签同时显示日期（UTC）：格式3置于模型名下方，以次要文字显示；格式2置于会话标签内，共用日期格式化逻辑。历史侧取 `taskContext.historyStartedAt` 与历史事件顶层 `timestamp` 中最早的合法时间，当前侧取 manifest 开始时间，缺失或非法时退回 attempt 创建时间；不使用导入时间、文件修改时间或报告生成时间。日期冻结在可选 `reportFacts.sessionDates` 中，沿现有 `comparison.requested` 输入 artifact 和 briefing 审计链保存、恢复。旧 facts 缺字段时显示“日期未知”，旧已发布报告不原地重写；日期仍由 Host 所有，不能由 Agent 推断或改写。日期不代表模型版本或能力变化。取舍见[双侧会话日期](../decisions/accepted/2026-10-14-comparison-session-dates.md)。
 
 ## 报告发布
+
+当前自主报告由 `submit_report` 接受 fragment，按当前 digest/catalog 预览并将实际回执交付后续 generation；正常完成与未取消仍是发布条件。最终不可变报告、owner 认证和根级便利投影的路径与规则统一见[运行与报告归属](#运行与报告归属)，不把可替换的根级文件当作归属证明。
+
+### 历史草稿发布与恢复认证
+
+以下为旧整页与 format 2 草稿的协议；其中的工具、独立审阅和字符配额不属于当前自主工具面。旧日志仍按原标记检查，不因执行器退役而跳过认证。下文“根报告”指对应旧发布布局；当前新增报告按上面的 owner 协议保存不可变文件。
 
 正式报告是 experiment 根部的 `report.html` 及其媒体。新流程用 `submit_comparison_draft` 接收 category、headline、comparisonHtml、可选 detailsHtml 和证据不足状态；Host 即时校验并生成完整页面。模型文件工具不能直接改写新流程的 `report.html`，自定义旧端口仍可按旧整页契约写 attempt 草稿并接受末尾发布校验。新流程仅在草稿完整校验通过、当前 catalog revision 与草稿 digest 均匹配成功 `preview_report`、审阅调用正常完成且未取消时发布；末尾自由文本为空不阻止有效版本发布，也不表示模型作过最终质量确认。`publishComparisonArtifacts` 先把被引用媒体拷到内容寻址路径（`media/<hash>.…`）并校验，再写审计 `report-model.json`（含 `formatVersion: 2` 与 `comparison` / `details` slots；旧四区 model 仍可读），最后原子替换根 `report.html`。失败或取消不得覆盖旧成功报告仍引用的资产。
 
@@ -148,6 +158,8 @@ Comparison 是运行后的可选证据视图，不是新的实验状态机，也
 
 ## 文件与兼容边界
 
+本节中的严格三会话、阶段保存/推理档位和来源复审描述退休前执行策略及历史材料；当前内置 executor 不再执行它们。TaskCase 发布、模型输入、引用与图片完整性等共享边界仍适用。
+
 严格 Comparison 的保存检查点在完整工具 turn 后切换，允许同批已请求来源工具完成；欠保存重入才阻止来源副作用。阶段截止、整体硬保护及取消仍优先。发现闭合和核稿有已有 snapshot 时优先仅暴露 delta 更新，调查及来源保留完整更新兼容；核稿保留读取、引文、图片、提交、检查与更新工具。完整核稿 turn 实际接受改稿后，可进入仅检查工具的 final-inspection，共享原 audit 绝对截止；仍须当前完整正文进入下一真实 generation 后才预览发布。Pi 按每次实际曝光工具计算上下文开销，窄阶段不预留未曝光 schema。
 
 紧凑 decision 可选 media（最多四个注册短引用及纯文本 caption），由 Host 生成现有图片组件。caption 计入原正文预算，引用、路径、hash、绑定和预览校验不变；无媒体 decision 保持兼容，持久化仍为规范化完整草稿。caption 是待审呈现，不自动增加视觉认证；独立复审需要实际查图并核稿。视觉任务先查结果中的接触、遮挡、裁切及缺陷，再解释会影响取舍的机制；非视觉任务不强制截图。理由见[完整批次与最小核稿工具面](../decisions/accepted/2026-10-10-comparison-batch-and-audit-closure.md)。
@@ -168,7 +180,7 @@ Comparison 每次使用独立 attempt。严格三会话路径的调查、短作�
 
 旧 attempt 可通过 `recover-comparison` 离线复核：只读冻结 context、catalog revision、预览事件与原草稿，重新运行当前校验器。缺失预览、digest/revision 不一致或校验失败不得恢复；`--publish` 是显式操作且拒绝覆盖已有根报告，成功后追加恢复事件，不篡改原失败事件。
 
-默认新路径以一次定向调查进入创作与审阅；旧四轮端口仍保留阶段边界。调查按下一项检查能否改变取舍、证据强度或重要限制决定是否继续，不把调用次数当成充分理解的标准。可配置 `AgentBudget.comparisonResources` 另提供调查软预算和整体硬保护，生产工厂默认调查 12 次模型请求 / 30 次工具 / 120 秒，整体 40 次模型请求 / 120 次工具 / 600 秒，不默认启用金额上限；调用方传入 `comparisonResources` 完整替换默认值，`{}` 关闭这些保护，复杂任务须显式调高。软预算限制继续调查，但允许保存带限制的发现并完成创作审阅。硬保护或取消不发布无效草稿，不覆盖旧成功报告。Pi 的生成与压缩分别审计实际模型请求和 `agent.usage_reported`；阶段与结束事件记录资源。金额保护基于已返回 usage 和价格估算，缺失时拒绝继续，不能精确限制在途费用或替代供应商账单。协议见[关键发现与资源保护](../decisions/accepted/2026-10-05-comparison-scoped-findings-and-resource-protection.md)。
+退休前的阶段执行器曾按调查软额度、审阅预留与整体硬保护决定调查和创作时机；这些旧默认值及 override 语义仅见历史[资源保护决策](../decisions/accepted/2026-10-05-comparison-scoped-findings-and-resource-protection.md)，不再是当前可启用配置。当前预算只以上文[Comparison attempt](#comparison-attempt)和有效配置快照为准。Pi 生成与压缩的真实请求及 usage 审计、费用未知保护与失败/取消不覆盖已发布报告等共享不变量继续保留。
 
 旧端口未启用局部 deadline 时，调查与 source pass 的软预算在 Pi 完整 turn 的安全边界机械执行：usage 汇报后，Host 的 yieldAfterTurn 通过 SDK 现有 shouldStopAfterTurn 阻止下一次生成，返回明确 yielded，记录 agent.invocation_yielded；comparison.phase_completed 附实际 outcome、pass 与 yieldReason。它允许正在执行的 Provider 请求与整批工具完成，不宣称精确抢占；原整体硬预算不变。调查可用剩余额度做至多两次实际 findings closure invocation；严格路径同样受原调查阶段绝对截止约束，不能因 closure 重新获得时间；closure 工具边界先检查共享硬额度，再机械拒绝除可用发现更新以外的工具，软额度未耗尽时也不允许新调查；内部工具反馈可在同次调用继续修正，仅真实 findingsReady 就绪后才 findings_ready yield 并进入 compose，口头承诺不制造保存状态，第二次仍未就绪即失败；source pass 被让出时明确不完整，未知成功保证不得认证。draft 收尾不按累计 review 软额度在每个内部 batch 后退出，允许修复历史发现、重提、正式 inspection、preview 及后续 generation 在同次调用内推进；扩展 read/render/register 调查继续按原软限制拒绝，共享硬额度和无进展边界不变。Provider 必须 idle 才能进入下一阶段；取消、真实错误与硬失败优先。正式发布还须证明当前完整 inspection 已进入后续 generation 实际输入，inspect 与 preview 同批成功不足以立刻 report_ready。生产新路径在每次实际核稿开始时撤销正文检查点的正式认证和旧预览，保留已经真实送入 Session 的正文用于核稿；只有该核稿边界之后新完成的正式 inspection 才能让出并进入收尾，拒绝读取或口头结束不能沿用旧认证。新增 comparison.draft_audit_started 记录此边界，新的 reviewInspectionContractVersion=2 在 live/Recovery 都要求最终 inspection 晚于当前 audit-start；新 reader 兼容版本 1，旧 reader 拒绝版本 2。在实际完整核稿 turn 后，让当前正式 inspection 进入同 Session 的下一次真实 generation，再仅执行 preview_report；该工具 turn 的 report_ready 仅表示机械预览就绪；严格生产路径随后以同一独立 Session 的真实预览结果发起 presentation-review。审阅者检查任务差异、用户影响、关键未知及展示质量；可提交基于已核证据的修订，修订后重新核稿、正式读取与预览。只有后续审阅真实 completed 且当前绑定仍可发布，Agent 才返回成功；失败、取消、截断或截止不能用旧预览覆盖。旧非严格端口保留原收尾。见[通用报告展示审阅](../decisions/accepted/2026-10-11-comparison-presentation-review.md)。预览失败或版本失效回到有界核稿修复，取消、硬限与真实错误仍优先；旧无 getter 端口保持原流程。新 audit 调用开始时若 reviewReason 已耗尽，实际工具集合按原资源策略隐藏执行边界本来拒绝的扩展检查，保留 read 供合法修复及检查、提交；未耗额度仍保留扩展检查，原执行守卫不变。见[仅预览收尾](../decisions/accepted/2026-10-06-comparison-preview-only-closure.md)与[安全阶段让出](../decisions/accepted/2026-10-05-comparison-safe-turn-yield.md)。
 
@@ -210,33 +222,35 @@ Comparison 合成评估的新输入由每个隔离 row 的 `evaluation-inputs.js
 | `checksum` | string | 否 |
 <!-- END GENERATED event-catalog -->
 
-严格三会话路径审阅 work pass 按来源、保存、最终发现、核稿及预览使用各自不重置的阶段绝对截止；扩展调查在 attempt 剩余请求不超过4或工具不超过6时停止，为合法修稿、inspection 和 preview 留资源，任何工具均不能越过阶段截止。实际 findings更新只校验结构与来源，不自动回答未知问题；决定性 unavailable 必须使结论 conditional/undetermined 且边界可见。非严格路径继续原复审累计软额度，repair不重置，剩余不超过6请求、20工具或90秒时拒绝扩展检索/渲染/登记。各路径硬限与取消仍生效，工具回执附真实阶段、余额和绑定，经标准事件复原；不以旧预览兜底。空资源 override 保持兼容。
+旧严格三会话路径曾按来源、保存、最终发现、核稿及预览使用不重置的阶段截止，并为收尾预留请求与工具额度。该调度及软额度已经退休，不因历史字段仍可读取而重新生效；历史回执按已记录的阶段、余额和绑定复原，缺失证据不补造。findings 结构/来源验证不认证自然语言，当前与历史发布都不能用失效预览兜底。
+
+## 共享工具与历史认证
 
 Comparison的read结果现在只将实际存在的available/truncated/offset/byteLength/returnedBytes/totalBytes/nextCursor白名单投影到模型可见hostProgress.readCoverage；类型不符或缺失不补造false/0，不透出物理路径/任意details。读取覆盖描述本次返回范围，不保证原运行完整记录；模型不能因正文很长猜测截断。该反馈与原工具结果一同审计/压缩/恢复，文本和原生图片工具实际块均可见，旧直接端口不受影响。
 
 Comparison 的 `quote_evidence` 只读取当前 catalog 的已登记文本引用，并从实际 UTF-8 字节生成带 ref、完整来源 SHA-256、字节范围及全文/节选标签的固定 HTML。原文展示复用该组件；派生解释不能冒称原文。提交、预览、发布和离线恢复重读安全 mounts 并核验组件，不因先前工具成功而跳过来源变化检查；有组件却无法验证则拒绝，无组件的旧报告保持兼容。工具尊重 allowModelText，拒绝二进制、非法 UTF-8、越界或切断多字节范围以及超出 16KiB 输出的请求，不静默截断。该能力认证引文字节和范围，不认证自由文字中的事实、判断或完整性；这些仍须语义审阅。
 
-新生产独立复审须在最后一次接受修订后重新读取实际正文，绑定当前稿 digest/catalog/findings/声明；作者阶段读取不跨 Session 生效。预览仍负责布局，不返回全部解释正文，不能代替该读取。恢复对新启用契约的 attempt 校验当前 review Session 的读取记录，旧未启用报告保持兼容。主文250/600以外，单差异附属解释最多400、多差异1000字符，包括隐藏或折叠解释，排除已核验的固定原文引文。读取与篇幅门均不认证语义正确。
+历史独立复审协议要求在最后一次接受修订后重新读取实际正文，绑定稿件 digest/catalog/findings/声明；作者阶段读取不跨 Session 生效。预览不代替正文读取。恢复对启用该契约的 attempt 校验其 review Session 的读取记录，未启用的旧报告保持原认证。历史篇幅按其原格式限制，不套用当前 format 3 预算；读取与篇幅门均不认证语义正确。
 
-独立复审在同一新 Session 内先审原任务与决定性原件，再核接受稿；严格来源初始输入将保存findings作为待证假设及绑定导航，旧端口不注入作者findings；取得实际正文后仍只将保存记录作为修复假设；严格路径按上述来源、保存与最终发现截止推进，其他旧路径累计原 review 软额度，均累计同一 attempt 硬额度。来源审查优先追实际输出链并寻找决定性反例，不能把内部目标或作者自检当作最终输出验证。第一调用失败或取消不会进入核稿，稿件 inspection/submit/preview 在来源审查阶段拒绝；read/shell 未隔离作者文件，因此该顺序保护不是完全盲化。第二调用沿用自己的来源审查上下文，修订后仍须最终正文读取和当前版本预览；正常完成不认证语义。
+旧独立复审在同一新 Session 内先审原任务与决定性原件，再核接受稿；其来源/保存截止和工具曝光属于退休策略。历史 review 认证仍要求对应实际输入和有效版本，保存的 findings 不是事实认证。read/shell 未隔离作者文件，该旧顺序也不是完全盲化；正常完成不认证语义。当前自主实现不创建独立 reviewer。
 
-Comparison 紧凑 decision 的 Host 范围投影按精确相等共享字段，保留依据及双侧范围映射；不同范围和未知不合并，自动文字仍计入原详情篇幅。作者不得仅为满足篇幅改变 findings 的检查范围或 disposition。workspace 工具的纯非法路径前置拒绝允许模型纠正合法虚拟路径，仍审计实际失败；权限、真实文件系统、审计及持久化错误边界不变。见[收敛改造](../decisions/accepted/2026-10-06-comparison-bounded-review-convergence.md)。
+历史紧凑 decision 的 Host 范围投影按精确相等共享字段，保留依据及双侧范围映射；不同范围和未知不合并，自动文字仍计入原详情篇幅。作者不得仅为满足篇幅改变 findings 的检查范围或 disposition。共享 workspace 工具的纯非法路径前置拒绝仍允许模型纠正合法虚拟路径，并审计实际失败；权限、真实文件系统、审计及持久化错误边界不变。历史理由见[收敛改造](../decisions/accepted/2026-10-06-comparison-bounded-review-convergence.md)。
 
-紧凑 decision 的 scopeSummaries 是报告展示层：每项 basis/boundary 对应一个 findingId 及历史/当前双侧简短范围，非空白并精确覆盖当前ID。Host 转义展示且计入原详情预算；完整supportBoundary保留于findings，既有legacy稿无此字段仍完整投影。独立正式audit每轮收到当前完整saved state与实际稿件，真实消息和generation snapshot保留revision/binding和全部范围；摘要的语义仍须独审，结构通过不认证它。固定Host导航不计入实际来源检查次数，资源与审计照常计入；严格有界阶段已有实际观察时，在完成边界按6次检查或本批次最多30秒（不超过其剩余来源窗口三分之一）触发实际保存，纯导航及已过期窗口不触发时间保存点。只有接受的更新重置批次计时，同阶段重入及拒绝不重置，原来源截止与保存上限不变；恢复不重复整份briefing。最终发现关闭有delta工具时只开放delta及原受限修复读取，缺少delta的旧调用方保留完整更新。参见[按时间保存来源观察](../decisions/accepted/2026-10-10-comparison-timed-source-checkpoints.md)。闭包截止立即失败，避免记录不存在的额外模型请求。
+历史紧凑 decision 的 scopeSummaries 是报告展示层：每项 basis/boundary 对应一个 findingId 及双侧简短范围，非空白并精确覆盖绑定 ID。Host 转义展示且计入原详情预算；完整 supportBoundary 保留于 findings，无此字段的旧稿按原规则投影。摘要语义仍须独审，结构通过不认证它。退休前的正式 audit、按时间 source-save、批次计时及 delta 工具曝光见[历史保存决策](../decisions/accepted/2026-10-10-comparison-timed-source-checkpoints.md)，当前自主实现不执行这些步骤；恢复只认证原日志实际保存的输入与版本，不补造模型请求。
 
-来源窗口因 bounded_source_timeout 中断后，在整体收尾资源充足时可有界续查，最多两次；拒绝后才进入实际最终 findings 关闭。旧保存状态不能替代该完整动作。未知仍由模型显式处置，随后实际核稿和版本匹配的发布门禁继续执行。原始生成是否截断只能依据原事件明确字段；完整读回执不能证明生成完整，无关导航库存不进入任务取舍。
+旧来源窗口的 bounded_source_timeout 与最多两次续查属于退休策略，不是当前 Provider timeout 的正常恢复路径。原始生成是否截断仍只能依据原事件明确字段；完整读回执不能证明生成完整，无关导航库存不进入任务取舍。
 
-报告结构检查从实际 DOM 元素属性读取 Host 区数量、顺序、必需槽位、组件模板及布局声明；转义的精确引文正文不能补足缺失结构或制造额外 Host 区。核验措辞诊断、媒体引用投影、派生证据暂存、单侧图片缺失说明及预览会话标签检查复用同一引文保护，原文字节仍在提交、发布和恢复时验证。阶段 helper 只持有观察状态、提示词和收尾，权限测试直接使用 ComparisonStages 或统一阶段策略。实验端口可注入 Comparison 预览 renderer，用于固定请求序列的测试；默认继续使用真实浏览器，预览工具、版本绑定和发布校验保持原流程。
+报告结构检查从实际 DOM 元素属性读取 Host 区数量、顺序、必需槽位、组件模板及布局声明；转义的精确引文正文不能补足缺失结构或制造额外 Host 区。核验措辞诊断、媒体引用投影、派生证据暂存、单侧图片缺失说明及预览会话标签检查复用同一引文保护，原文字节仍在提交、发布和恢复时验证。旧 ComparisonStages 与阶段策略已删除；当前权限和发布不变量从默认工厂及实际 Host 工具入口验证。实验端口可注入 Comparison 预览 renderer，用于固定请求序列的结构测试；默认仍使用真实浏览器，fixture PNG 不认证浏览器能力或视觉质量。
 
-Comparison 的 `view_image({ref})` 只观察当前 catalog 注册的 PNG 媒体，复用原生图片授权、hash、真实路径和交付预算。每图最多 3 MiB、9,216,000 像素，每次附件最多4图及8 MiB；非 PNG 来源须先渲染。工具纳入来源检查与保存计数，在理解、纯保存、作者和纯预览阶段不新增权限。旧 `read(format=image)` 保留，默认图片上限独立于文本64 KiB分页，文本最大256 KiB不变；PNG检查限于头部和像素，不代表完整解码。普通图片参数、大小、授权拒绝返回可修正反馈；注册图片完整性、审计与取消仍终止。实际模型输入manifest才认证图片送达，静态截图不认证整个动画或模型判断。理由见[图片工具决策](../decisions/accepted/2026-10-10-comparison-image-tools.md)。
+Comparison 的 `view_image({ref})` 只观察当前 catalog 注册的 PNG 媒体，复用原生图片授权、hash、真实路径和交付预算。每图最多 3 MiB、9,216,000 像素，每次附件最多4图及8 MiB；非 PNG 来源须先渲染。当前自主 Session 中工具全程可用；旧阶段权限与保存计数不再执行。旧 `read(format=image)` 保留，默认图片上限独立于文本64 KiB分页，文本最大256 KiB不变；PNG检查限于头部和像素，不代表完整解码。普通图片参数、大小、授权拒绝返回可修正反馈；注册图片完整性、审计与取消仍终止。实际模型输入manifest才认证图片送达，静态截图不认证整个动画或模型判断。理由见[图片工具决策](../decisions/accepted/2026-10-10-comparison-image-tools.md)。
 
-严格中途 source-save 优先只开放 `save_comparison_checkpoint`：输入精确当前 binding、最多一条完整 finding 和可选 finals。Host 保留全部问题、criteria、limitations 和其它 findings，通过原 delta 校验及持久化队列保存；接受不计作独立来源显式复审，不提前结束来源查证。最终 review-findings 仍须显式处置每个历史 ID。无新工具的旧调用方继续专用 delta。见[中途单条保存](../decisions/accepted/2026-10-10-comparison-batch-and-audit-closure.md#中途单条保存)。
+历史 `save_comparison_checkpoint` 契约接收精确 binding、最多一条完整 finding 和可选 finals；保留全部问题、criteria、limitations 与其它 findings，继续由原 delta 校验及持久化队列处理。其 schema、队列与历史认证回归保留，但当前自主工具面不暴露该工具，也不执行 source-save/review-findings 阶段。历史理由见[中途单条保存](../decisions/accepted/2026-10-10-comparison-batch-and-audit-closure.md#中途单条保存)。
 
 
-## Comparison 并行与阶段续查
+## Comparison 并行与历史续查
 
-Comparison 的独立 read/ls/grep/view_image/render_artifact 使用 Pi 原生并行批次；其它工具省略执行模式时保持串行，混合批整体串行。渲染采用独立输出目录、最多两路并发，媒体登记沿用有序队列。默认仅整体 24 小时截止，不设置来源或保存阶段配额。显式旧配额模式才使用累计保存窗口、来源活动时间暂停及最多两次有界续查；授予及拒绝进入 comparison.sources_continued。
+Comparison 的独立 read/ls/grep/view_image/render_artifact 使用 Pi 原生并行批次；其它工具省略执行模式时保持串行，混合批整体串行。渲染采用独立输出目录、最多两路并发，媒体登记沿用有序队列。当前默认不设置来源或保存阶段配额。累计保存窗口、来源活动时间暂停及最多两次有界续查属于已退休执行器；旧 comparison.sources_continued 事件保留读取，不能据事件 schema 推断仍可启用该模式。
 
-transform_image 裁剪/缩放已有冻结 PNG，使用原图像素坐标并记录父 hash 和变换顺序；返回派生 media ref，再由 view_image 交付图片。工具不重新渲染来源，不证明视觉理解。source-save 的 evidence 投影保留全部 user 材料、工具结果与调用配对，仅省略 assistant 叙述，实际输入仍按 generation 快照恢复。首流事件、首文本 delta 与工具执行计时用于诊断，不把首 SDK 事件当网络 TTFT。详见[并行与续查决定](../decisions/accepted/2026-10-11-comparison-parallel-continuation.md)。
+transform_image 裁剪/缩放已有冻结 PNG，使用原图像素坐标并记录父 hash 和变换顺序；返回派生 media ref，再由 view_image 交付图片。工具不重新渲染来源，不证明视觉理解。旧 source-save 的 evidence 投影只是历史输入协议，当前不再执行该阶段；实际输入仍按 generation 快照恢复。首流事件、首文本 delta 与工具执行计时用于诊断，不把首 SDK 事件当网络 TTFT。历史理由见[并行与续查决定](../decisions/accepted/2026-10-11-comparison-parallel-continuation.md)。
 
 候选快照的依赖省略、可取消收尾与旧格式兼容按 [Controller 执行可靠性](../decisions/accepted/2026-10-13-controller-execution-reliability.md) 执行。候选工作树保留实际依赖，封存仅省略有清单、锁和生成标记支持的可重建目录；scope 记录省略路径与恢复命令，用户明确交付路径可保留。省略目录不是删除执行工作树，也不保证重新安装后与原依赖二进制相同。
