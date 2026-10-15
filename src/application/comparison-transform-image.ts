@@ -19,7 +19,7 @@ export function createComparisonTransformImageTool(input: {
 }): AgentToolDefinition {
   const reply = (code: string, message: string): AgentToolResult => ({ content: JSON.stringify({ code, message }) });
   return { name: 'transform_image', parameters: Params,
-    description: 'Crop and/or resize a registered frozen PNG, then view_image the returned media ref. Crop coordinates are original image pixels; crop is applied before resizing. Omit height to preserve aspect ratio with width. No source rerender or arbitrary file path.',
+    description: 'Crop and/or resize a registered frozen PNG, then view_image the returned media ref. Prefer the original complete viewport in the main report; a crop is a supplemental detail and cannot replace the whole result. Crop coordinates are original image pixels; crop is applied before resizing. Omit height to preserve aspect ratio with width. No source rerender or arbitrary file path.',
     async execute(params, signal) {
       signal.throwIfAborted();
       if (!Value.Check(Params, params)) return reply('invalid_transform', 'Use ref, optional pixel crop and bounded output width/height.');
@@ -54,6 +54,9 @@ export function createComparisonTransformImageTool(input: {
         sourceRefs: [parent.shortRef ?? parent.ref], origin: 'derived_analysis', derivation }, signal);
       if (registered.status !== 'registered') return reply(registered.code, registered.message);
       return { content: JSON.stringify({ status: 'registered', shortRef: registered.shortRef, contentHash, derivation,
+        parentRef: parent.shortRef ?? parent.ref,
+        captureScope: crop.x !== 0 || crop.y !== 0 || crop.width !== originalWidth || crop.height !== originalHeight ? 'crop' : 'parent_extent',
+        presentationNote: 'Keep the parent image for the primary complete-view comparison; this derived image retains its crop source and does not prove whole-document coverage.',
         nextAction: 'view_image the returned shortRef to inspect these pixels.' }) };
     },
   };

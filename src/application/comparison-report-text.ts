@@ -1,5 +1,6 @@
 import { parseFragment, type DefaultTreeAdapterMap } from 'parse5';
 import { extractInner } from '../core/comparison-html.js';
+import { extractHostLimitations } from './comparison-host-limitations.js';
 
 export function comparisonVisibleMainText(html: string): string {
   const textContent = (node: DefaultTreeAdapterMap['node']): string => {
@@ -71,4 +72,47 @@ export function comparisonDetailsText(html: string, options: ComparisonDetailsTe
 
 export function comparisonDetailsTextCharacters(html: string, options: ComparisonDetailsTextOptions = {}): number {
   return [...comparisonDetailsText(html, options)].length;
+}
+
+/** Format 3 counts every author code point, including closed and hidden fragments. */
+export function comparisonCompactTextCharacters(html: string): number {
+  html = extractHostLimitations(html).html;
+  const parts = [extractInner(html, 'data-agent-slot', 'category'), extractInner(html, 'data-agent-slot', 'headline'), extractInner(html, 'data-agent-slot', 'boundary'),
+    extractInner(html, 'data-agent-zone', 'comparison'), extractInner(html, 'data-agent-zone', 'differences')];
+  const text = (node: Node): string => {
+    if (nonExplanatory(node)) return '';
+    if (node.nodeName === '#text' && 'value' in node) return node.value;
+    return 'childNodes' in node ? node.childNodes.map(text).join(' ') : '';
+  };
+  return nonWhitespaceCodePoints(text(parseFragment(parts.join(' '))));
+}
+export function nonWhitespaceCodePoints(text: string): number { return [...text.replace(/\s/gu, '')].length; }
+
+function nodePlainText(node: Node): string {
+  if (node.nodeName === '#text' && 'value' in node) return node.value;
+  return 'childNodes' in node ? node.childNodes.map(nodePlainText).join('') : '';
+}
+export function comparisonPlainText(html: string): string { return nodePlainText(parseFragment(html)).trim(); }
+export function comparisonDifferenceTexts(html: string): string[] {
+  const items: string[] = [];
+  const visit = (node: Node): void => {
+    if ('attrs' in node && node.attrs.some(attr => attr.name === 'data-difference')) {
+      items.push(nodePlainText(node).trim()); return;
+    }
+    if ('childNodes' in node) for (const child of node.childNodes) visit(child);
+  };
+  visit(parseFragment(extractInner(html, 'data-agent-zone', 'differences')));
+  return items;
+}
+
+export function comparisonCompactTextBudgetError(html: string): string | undefined {
+  const hasDetails = (node: Node): boolean => node.nodeName === 'details' || ('childNodes' in node && node.childNodes.some(hasDetails));
+  if (hasDetails(parseFragment(html))) return 'Format 3 cannot contain expandable details.';
+  const headline = comparisonPlainText(extractInner(html, 'data-agent-slot', 'headline'));
+  const differences = comparisonDifferenceTexts(html);
+  if (!headline.trim() || nonWhitespaceCodePoints(headline) > 80 || differences.length > 3
+    || differences.some(text => !text.trim() || nonWhitespaceCodePoints(text) > 60) || comparisonCompactTextCharacters(html) > 900) {
+    return 'Format 3 author text exceeds the recommendation, difference or 900-character budget.';
+  }
+  return undefined;
 }

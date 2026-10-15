@@ -31,7 +31,7 @@ test('autonomous contract is explicit, versioned and cannot downgrade an indepen
   const f = fixture();
   assert.equal(autonomousComparisonRequested(f.events, 'attempt'), true);
   assert.equal(autonomousComparisonRequested([], 'attempt'), false);
-  assert.throws(() => autonomousComparisonRequested([event(1, 'comparison.requested', { autonomousContractVersion: 2 })], 'attempt'), /Invalid/);
+  assert.throws(() => autonomousComparisonRequested([event(1, 'comparison.requested', { autonomousContractVersion: 3 })], 'attempt'), /Invalid/);
   assert.throws(() => autonomousComparisonRequested([event(1, 'comparison.requested', { autonomousContractVersion: 1, reviewInspectionContractVersion: 2 })], 'attempt'), /Conflicting/);
 });
 
@@ -63,4 +63,13 @@ test('binding requires actual same-session preview input, current accepted versi
   const changed = fixture();
   assert.ok(await autonomousComparisonBinding({ ...changed, draftDigest: 'd'.repeat(64) }));
   assert.ok(await autonomousComparisonBinding({ ...changed, catalogRevision: 2 }));
+});
+
+test('autonomous contract 2 binds compact format while contract 1 remains readable', async () => {
+  const f = fixture();
+  f.events[0] = event(1, 'comparison.requested', { autonomousContractVersion: 2 });
+  assert.equal(autonomousComparisonRequested(f.events, f.attemptId), true);
+  assert.match((await autonomousComparisonBinding(f))!, /format 3/);
+  assert.match((await autonomousComparisonBinding({ ...f, reportFormat: 2 }))!, /format 3/);
+  assert.equal(await autonomousComparisonBinding({ ...f, reportFormat: 3 }), undefined);
 });

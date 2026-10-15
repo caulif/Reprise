@@ -282,6 +282,7 @@ async function compareExperimentOutcome(
     ownedEvidenceRefs: comparisonOwnedObservationRefs(input.taskCase, events),
   };
   if (preparedHistory.manifest?.schemaVersion === 2 && preparedHistory.manifest.capture.kind === 'user_selected_substitute') {
+    context.reportFacts.replay.baselineIsSubstitute = true;
     context.reportFacts.replay.conditions = [...context.reportFacts.replay.conditions, locale === 'zh'
       ? '历史侧材料是用户指定替代基准，不是历史原件；历史运行指标仍来自原会话。'
       : 'Baseline material is a user-selected substitute, not the historical original; historical metrics still describe the original session.'];
@@ -300,6 +301,7 @@ async function compareExperimentOutcome(
       ...(input.signal ? { signal: input.signal } : {}),
     });
     const reportShellHtml = renderComparisonReportShell({
+      ...(input.input.comparison.workflow === 'autonomous' ? { formatVersion: 3 as const } : {}),
       task: context.task.summary,
       facts: context.reportFacts,
       metrics: metricsFromReportFacts(context.reportFacts),
@@ -843,7 +845,7 @@ function comparisonAudit(
 
 async function persistComparisonRequest(store: ExperimentStore, runId: string, attemptId: string, context: unknown, reviewInspectionRequired = false, workflow?: 'autonomous'): Promise<void> {
   const reviewContract = reviewInspectionRequired ? { attemptId, reviewInspectionContractVersion: 2 as const } : undefined;
-  const autonomousContract = workflow === 'autonomous' ? { attemptId, autonomousContractVersion: 1 as const } : undefined;
+  const autonomousContract = workflow === 'autonomous' ? { attemptId, autonomousContractVersion: 2 as const } : undefined;
   if (autonomousContract && (!Value.Check(ComparisonAutonomousContractSchema, autonomousContract) || reviewContract)) throw new Error('Invalid autonomous Comparison request contract.');
   if (reviewContract && !Value.Check(ComparisonReviewRequestSchema, reviewContract)) throw new Error('Invalid Comparison review request contract.');
   const bytes = Buffer.from(JSON.stringify(context), "utf8");

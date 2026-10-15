@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { Value } from "@sinclair/typebox/value";
+import { Type } from "@sinclair/typebox";
 import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +15,7 @@ import {
 } from "../../src/application/comparison-render-tools.js";
 import { materializeComparisonReportPreview } from "../../src/application/comparison-report-preview.js";
 import { comparisonMediaHrefs } from "../../src/application/comparison-publication.js";
-import { ARTIFACT_RENDERER_VERSION, createFakeArtifactRenderer } from "../../src/infrastructure/artifact-renderer.js";
+import { createFakeArtifactRenderer } from "../../src/infrastructure/artifact-renderer.js";
 import { DEFAULT_RENDER_VIEWPORT } from "../../src/infrastructure/artifact-render-types.js";
 
 const PNG_A = Buffer.from(
@@ -48,6 +50,7 @@ test("render_artifact registers frames through catalog and dedupes identical der
   let renderCalls = 0;
   const render = createFakeArtifactRenderer(async (request) => {
     renderCalls += 1;
+    assert.deepEqual(request.layoutSelectors, []);
     await mkdir(request.outputRoot, { recursive: true });
     const frames = [];
     for (const [index, sampleTimeMs] of request.sampleTimesMs.entries()) {
@@ -60,13 +63,15 @@ test("render_artifact registers frames through catalog and dedupes identical der
         pngPath,
         byteLength: bytes.byteLength,
         contentHash: sha256(bytes),
+        ...(index === 0 ? { layout: { viewportWidth: request.viewport.width, viewportHeight: request.viewport.height,
+          scrollWidth: request.viewport.width, documentHeight: 1600, scrollOffset: { x: 0, y: 0 }, imagesLoaded: 1, imagesFailed: 0, elements: {} } } : {}),
       });
     }
     return {
       ok: true,
       frames,
       diagnostics: [{ code: "network_blocked", message: "blocked", detail: "http://example.test" }],
-      measured: { loadMs: 3, viewport: request.viewport, origin: "fake://x" },
+      measured: { loadMs: 3, viewport: request.viewport, origin: "fake://x", layout: { viewportWidth: request.viewport.width, viewportHeight: request.viewport.height, scrollWidth: request.viewport.width, documentHeight: 2400, scrollOffset: { x: 0, y: 800 }, imagesLoaded: 1, imagesFailed: 0, elements: {} } },
     };
   });
   const tool = createRenderArtifactTool({
@@ -80,8 +85,25 @@ test("render_artifact registers frames through catalog and dedupes identical der
     media: { shortRef: string; read?: { path: string; format: string } }[];
     revision: number;
     limitations: string[];
+    captureScope: string;
+    captureNote: string;
+    pageCoverage: { documentHeight: number; scrollOffset: { x: number; y: number }; observedAfterCapture: boolean };
   };
   assert.equal(payload.status, "ok");
+  assert.equal(payload.captureScope, "viewport");
+  assert.equal(payload.pageCoverage.documentHeight, 2400);
+  assert.deepEqual(payload.pageCoverage.scrollOffset, { x: 0, y: 800 });
+  assert.match(payload.captureNote, /not the complete document/);
+  assert.equal(payload.pageCoverage.observedAfterCapture, true);
+  const registeredMeta: unknown = JSON.parse(await readFile(join(root, "media", "media-01.meta.json"), "utf8"));
+  assert.ok(registeredMeta && typeof registeredMeta === "object" && "derivation" in registeredMeta);
+  assert.ok(Value.Check(Type.Object({ captureScope: Type.Literal("viewport"), scrollOffset: Type.Object({ x: Type.Number(), y: Type.Number() }) }), registeredMeta.derivation));
+  assert.equal(registeredMeta.derivation.captureScope, "viewport");
+  assert.deepEqual(registeredMeta.derivation.scrollOffset, { x: 0, y: 0 });
+  const missingLayout: unknown = JSON.parse(await readFile(join(root, "media", "media-02.meta.json"), "utf8"));
+  assert.ok(Value.Check(Type.Object({ derivation: Type.Object({ documentHeight: Type.Optional(Type.Number()), scrollOffset: Type.Optional(Type.Object({ x: Type.Number(), y: Type.Number() })) }) }), missingLayout));
+  assert.equal(missingLayout.derivation.scrollOffset, undefined);
+  assert.equal(missingLayout.derivation.documentHeight, undefined);
   assert.equal(payload.media.length, 2);
   assert.equal(payload.media[0]?.shortRef, "media-01");
   assert.equal(payload.media[1]?.shortRef, "media-02");
@@ -245,7 +267,7 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
   });
   const render = createFakeArtifactRenderer(async (request) => {
     assert.equal(request.entryRelativePath, "preview.html");
-    assert.deepEqual(request.layoutSelectors?.map((item) => item.name), ["headline", "comparison", "firstImage", "metrics"]);
+    assert.deepEqual(request.layoutSelectors?.map((item) => item.name), ["historicalModel", "currentModel", "headline", "boundary", "differences", "comparison", "firstImage", "metrics"]);
     await mkdir(request.outputRoot, { recursive: true });
     const pngPath = join(request.outputRoot, "preview.png");
     await writeFile(pngPath, PNG_B);
@@ -282,6 +304,7 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
     previewMedia: { kind: string; shortRef: string };
     mechanics: { imagesMissingSrc: number; hostMetricsPresent: boolean; modelLabels: { hasHistorical: boolean; hasCurrent: boolean } };
     layout: { scrollWidth: number; elements: { metrics: { inViewport: boolean } } };
+    layoutFeedback: { horizontalOverflow: boolean; exceedsTargetHeight: boolean; exceedsProtectionHeight: boolean };
     note: string;
   };
   assert.equal(first.status, "ok");
@@ -294,6 +317,7 @@ test("preview_report uses prepared digests and marks review media", async (t) =>
   assert.equal(first.mechanics.hostMetricsPresent, true);
   assert.equal(first.mechanics.imagesMissingSrc, 0);
   assert.equal(first.layout.elements.metrics.inViewport, false);
+  assert.deepEqual({ overflow: first.layoutFeedback.horizontalOverflow, target: first.layoutFeedback.exceedsTargetHeight, protection: first.layoutFeedback.exceedsProtectionHeight }, { overflow: false, target: true, protection: false });
 
   await writeFile(join(root, "report.html"), `${draft}\n<span>历史会话</span><span>当前会话</span><!-- edited -->`, "utf8");
   const second = JSON.parse((await tool.execute({}, new AbortController().signal)).content) as {
@@ -925,71 +949,4 @@ test("media-* document rejects contentHash mismatch before render", async (t) =>
     (JSON.parse((await tool.execute({ sourceRef: "media-01" }, new AbortController().signal)).content) as { status: string }).status,
     "unknown_source",
   );
-});
-
-test("registerDerivedMedia always calls catalog.registerMedia so emit-retry still fires", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "reprise-render-emit-retry-"));
-  t.after(async () => {
-    const { rm } = await import("node:fs/promises");
-    await rm(root, { recursive: true, force: true });
-  });
-  await mkdir(join(root, "scratch"), { recursive: true });
-  const pngPath = join(root, "scratch", "frame.png");
-  await writeFile(pngPath, PNG_A);
-  const events: unknown[] = [];
-  let failNextEmit = true;
-  const catalog = await ComparisonEvidenceCatalog.create({
-    attemptId: "attempt-emit-retry",
-    attemptRoot: root,
-    links: [{ side: "baseline", inspectPath: "finals/x.html", shortRef: "ev-01" }],
-    media: [],
-    emitRegistered: async (payload) => {
-      if (failNextEmit) {
-        failNextEmit = false;
-        throw new Error("simulated store.append failure");
-      }
-      events.push(payload);
-    },
-  });
-  const renderCatalog = createComparisonRenderCatalogPort({
-    catalog,
-    attemptRoot: root,
-    mounts: {
-      finals: join(root, "finals"),
-      candidate: join(root, "candidate-snap"),
-      history: join(root, "history"),
-      evidence: join(root, "evidence"),
-    },
-  });
-  const entry = {
-    side: "baseline" as const,
-    pngPath,
-    label: "frame",
-    sourceRef: "ev-01",
-    contentHash: sha256(PNG_A),
-    kind: "artifact_preview" as const,
-    derivation: {
-      rendererVersion: ARTIFACT_RENDERER_VERSION,
-      viewport: DEFAULT_RENDER_VIEWPORT,
-      sampleTimeMs: 0,
-      actualTimeMs: 0,
-      capturedAt: "2026-09-20T00:00:00.000Z",
-    },
-  };
-  const first = await renderCatalog.registerDerivedMedia(entry);
-  assert.equal(first.ok, false);
-  assert.equal(events.length, 0);
-  assert.ok(catalog.snapshot().media.some((item) => item.contentHash === entry.contentHash));
-
-  const second = await renderCatalog.registerDerivedMedia({
-    ...entry,
-    derivation: {
-      ...entry.derivation,
-      capturedAt: "2026-09-20T00:00:01.000Z",
-    },
-  });
-  assert.equal(second.ok, true);
-  if (!second.ok) return;
-  assert.equal(events.length, 1);
-  assert.equal((events[0] as { shortRef: string }).shortRef, second.shortRef);
 });

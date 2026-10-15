@@ -63,14 +63,15 @@ test('legitimate persisted comparisons can append events and artifacts without i
           }, signal);
           if (turns === 3) throw new Error('Offline fixture review failure');
           return '';
-        }, cancel() {} }) }), timeoutMs: 1000, maxRepairAttempts: 0 }),
-      agentConfig: { providerId: 'offline', requestedModel: 'offline', budget: { callTimeoutMs: 1000, maxStructuredRepairAttempts: 0 } },
+        }, cancel() {} }) }), timeoutMs: 30_000, maxRepairAttempts: 0 }),
+      agentConfig: { providerId: 'offline', requestedModel: 'offline', budget: { callTimeoutMs: 30_000, maxStructuredRepairAttempts: 0 } },
       policy: EVALUATION_POLICY, now: new Date().toISOString() });
     assert.equal(result.comparison.result.status, attempt === 0 ? 'cancelled' : 'failed');
     await verifyComparisonEvaluationInputs(root, item, prepared.inputIdentityHash);
   }
   const eventsPath = join(prepared.dataDir, 'experiments', prepared.experimentId, 'events.jsonl');
   const events = await readFile(eventsPath);
+  assert.equal(turns, 3, 'Offline review must reach its deliberate failure rather than time out');
   assert.match(events.toString('utf8'), /comparison.review_started/);
   await writeFile(eventsPath, events.subarray(1));
   await assert.rejects(verifyComparisonEvaluationInputs(root, item, prepared.inputIdentityHash), /event prefix changed/);
