@@ -17,6 +17,8 @@ import { experimentModelInputResolver } from '../../src/application/experiment-h
 import { startExperiment } from '../../src/application/experiment.js';
 import { input, VerifiedRuntime } from '../codex-experiment-support.js';
 import { retainComparisonFindings } from '../comparison-findings-support.js';
+import type { ArtifactRenderer } from '../../src/infrastructure/artifact-renderer.js';
+import { sha256 } from '../../src/core/identity.js';
 
 const model: Model<'openai-completions'> = { id: 'fixture', name: 'fixture', api: 'openai-completions', provider: 'fixture', baseUrl: 'https://example.test',
   reasoning: false, input: ['text'], contextWindow: 128000, maxTokens: 16384, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
@@ -98,8 +100,24 @@ for (const mode of ['repaired', 'unfinished'] as const) test(`production native 
   } } as unknown as PiModels;
   const comparison = new ComparisonAgent({ requireFindings: true, timeoutMs: 0, maxRepairAttempts: 0,
     host: new AgentHost(new PiModelCaller({ schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' }, providerId: 'fixture', modelId: 'fixture', effort: 'low' }, models)) });
-  const result = await startExperiment({ ...base, comparison }).result;
+  let previewRenders = 0;
+  const comparisonPreviewRenderer: ArtifactRenderer = async request => {
+    previewRenders++;
+    assert.equal(request.entryRelativePath, 'preview.html');
+    const prepared = await readFile(join(request.bundleRoot, request.entryRelativePath), 'utf8');
+    assert.match(prepared, /No verified preference/);
+    assert.match(prepared, new RegExp(candidateUnknown));
+    assert.match(prepared, new RegExp(baselineUnknown));
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    await mkdir(request.outputRoot, { recursive: true });
+    const pngPath = join(request.outputRoot, 'preview.png');
+    await writeFile(pngPath, png);
+    return { ok: true, frames: [{ sampleTimeMs: 0, actualTimeMs: 0, pngPath, byteLength: png.byteLength, contentHash: sha256(png) }],
+      diagnostics: [], measured: { loadMs: 1, viewport: request.viewport, origin: 'fixture://preview' } };
+  };
+  const result = await startExperiment({ ...base, comparison, comparisonPreviewRenderer }).result;
   assert.equal(result.comparison.result.status, mode === 'repaired' ? 'completed' : 'failed', JSON.stringify(result.comparison.result));
+  assert.equal(previewRenders, mode === 'repaired' ? 1 : 0, 'only the inspected repaired draft reaches the real Host preview');
   const parsed = parseCommittedEventLog(await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8'));
   assert.equal(parsed.diagnostic, undefined);
   const events = parsed.events.map(event => ({ ...event, payload: event.payload as Record<string, unknown> }));
