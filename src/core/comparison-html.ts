@@ -59,28 +59,44 @@ const COMPONENT_TEMPLATES = [
   "pair-pages",
 ] as const;
 export type HostZoneName = (typeof HOST_ZONES)[number];
-export type AgentZoneName = (typeof AGENT_ZONES)[number];
-export type HostZoneSnapshot = Record<HostZoneName, string>;
+export type AgentZoneName = (typeof AGENT_ZONES)[number] | "differences";
+export type HostZoneSnapshot = Partial<Record<HostZoneName, string>>;
 
-const ZONE_TAG = "header|section|style|p|span";
+export function comparisonReportFormat(html: string): 2 | 3 {
+  return hasMarker(html, "data-report-format", "3") ? 3 : 2;
+}
+export function comparisonAgentZones(html: string): readonly AgentZoneName[] {
+  return comparisonReportFormat(html) === 3 ? ["comparison", "differences"] : AGENT_ZONES;
+}
+function comparisonHostZones(html: string): readonly HostZoneName[] {
+  return comparisonReportFormat(html) === 3 ? ["style", "header", "metrics", "cost-note"] : HOST_ZONES;
+}
+
+const ZONE_TAG = "header|section|style|p|span|h[1-6]|div|footer";
 
 export function missingComparisonSlots(html: string): string | undefined {
-  for (const zone of HOST_ZONES) {
+  for (const zone of comparisonHostZones(html)) {
     if (!hasMarker(html, "data-host-zone", zone)) return `Comparison report is missing data-host-zone="${zone}".`;
   }
-  for (const zone of AGENT_ZONES) {
+  for (const zone of comparisonAgentZones(html)) {
     if (!hasMarker(html, "data-agent-zone", zone)) return `Comparison report is missing data-agent-zone="${zone}".`;
   }
-  for (const slot of AGENT_SLOTS) {
+  for (const slot of comparisonReportFormat(html) === 3 ? [...AGENT_SLOTS, "boundary"] : AGENT_SLOTS) {
     if (!hasMarker(html, "data-agent-slot", slot)) return `Comparison report is missing data-agent-slot="${slot}".`;
   }
-  for (const name of COMPONENT_TEMPLATES) {
+  for (const name of comparisonReportFormat(html) === 3 ? [] : COMPONENT_TEMPLATES) {
     if (!hasMarker(html, "data-component-template", name)) return `Comparison report is missing component template "${name}".`;
   }
   return shareCardLayoutError(html);
 }
 
 function shareCardLayoutError(html: string): string | undefined {
+  if (comparisonReportFormat(html) === 3) {
+    const order = [["data-host-zone", "header"], ["data-agent-slot", "headline"], ["data-agent-slot", "boundary"], ["data-agent-zone", "comparison"], ["data-agent-zone", "differences"], ["data-host-zone", "metrics"]].map(([attr, value]) => tagMarkerIndex(html, attr!, value!));
+    if (order.some((pos, i) => pos < 0 || (i > 0 && pos <= order[i - 1]!))) return "Share card order must be header, headline, boundary, comparison, differences, then metrics.";
+    if (hasMarker(html, "data-agent-zone", "details") || hasMarker(html, "data-host-zone", "evidence") || hasMarker(html, "data-host-zone", "process")) return "Format 3 cannot contain details or reader source catalogs.";
+    return undefined;
+  }
   if (!hasMarker(html, "data-report-format", "2")) {
     return 'Share card must declare data-report-format="2".';
   }
@@ -133,7 +149,7 @@ function hasMarker(html: string, attr: string, value: string): boolean {
 
 export function extractHostZoneSnapshot(html: string): HostZoneSnapshot | undefined {
   const snapshot = {} as HostZoneSnapshot;
-  for (const zone of HOST_ZONES) {
+  for (const zone of comparisonHostZones(html)) {
     const outer = extractOuter(html, "data-host-zone", zone);
     if (!outer) return undefined;
     snapshot[zone] = canonicalizeHostZone(outer);
@@ -147,8 +163,8 @@ export function hostZoneIntegrityError(html: string, snapshot: HostZoneSnapshot)
   const current = extractHostZoneSnapshot(html);
   if (!current) return "Host zone snapshot is incomplete.";
   const order = comparisonElements(html).flatMap(node => node.attrs.filter(attr => attr.name === "data-host-zone").map(attr => attr.value));
-  if (order.join("\0") !== HOST_ZONES.join("\0")) return "Host zone order or count was modified.";
-  for (const zone of HOST_ZONES) {
+  if (order.join("\0") !== comparisonHostZones(html).join("\0")) return "Host zone order or count was modified.";
+  for (const zone of comparisonHostZones(html)) {
     if (current[zone] !== snapshot[zone]) return `Host zone "${zone}" was modified.`;
   }
   return undefined;

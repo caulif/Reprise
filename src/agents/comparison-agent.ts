@@ -17,6 +17,7 @@ import { composeComparisonAuthorSystemPrompt, COMPARISON_AUTHOR_COMPOSE_PROMPT }
 import { comparisonProtocol } from './comparison-stage-policy.js';
 import { ComparisonStages } from './comparison-stages.js';
 import { ComparisonInitialFindings, COMPARISON_INITIAL_FINDINGS_PROMPT, composeComparisonInvestigatorSystemPrompt } from './comparison-initial-findings.js';
+import type { TimingFacts } from '../core/timing-schema.js';
 export type { ComparisonAgentEnvelope } from '../core/schema.js';
 export type ComparisonResult = Omit<ComparisonAgentEnvelope, 'reportPath'> & { reportPath: 'report.html' };
 export type ComparisonContext = {
@@ -46,21 +47,25 @@ export type ComparisonContext = {
 
 export type ComparisonFactsContext = Omit<ComparisonContext, "attemptId">;
 export type ComparisonReportFacts = {
+  sessionDates?: { baseline?: string; candidate?: string };
   run: { runId: string; outcome: string; terminationCode: string; initiatedBy: string; elapsedMs?: number; candidateElapsedMs?: number };
   models: { candidate: string; candidateRequested?: string; candidateResolved?: string; baseline?: string; controller?: string; comparison?: string };
   activity: { candidateTurns?: number; controllerCalls?: number; toolCalls?: { total: number; succeeded: number; failed: number; rejectedApprovals: number } };
   limits: { wallClockMs?: number; maxTargetTurns?: number; maxModelCalls?: number; triggered: readonly string[] };
   runtime: { productId: string; sandbox?: string; approvalPolicy?: string; network?: string };
   delivery: { changedPaths: readonly string[]; targetArtifactStatus: string; verificationStatus: string; changedPathsIndexed?: number; changedPathsOmitted?: number };
-  replay: { sourceRootKind?: string; conditions: readonly string[]; baselineEvidence: string; candidateEvidence: string };
+  replay: { sourceRootKind?: string; conditions: readonly string[]; baselineEvidence: string; candidateEvidence: string; baselineIsSubstitute?: boolean };
   metrics?: {
     baseline?: ComparisonMetricSide;
     candidate?: ComparisonMetricSide;
+    timingComparable?: boolean;
   };
 };
 
 export type ComparisonMetricSide = {
   elapsedMs?: number;
+  timing?: TimingFacts;
+  spanElapsedMs?: number;
   tokens?: { total: number; input?: number; output?: number; cached?: number; reasoning?: number };
   costUsd?: number;
   usageStatus?: "collected" | "not_collected" | "unknown";

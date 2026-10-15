@@ -1,7 +1,7 @@
 import { Type } from '@sinclair/typebox';
 
 export const ComparisonAutonomousContractSchema = Type.Object({
-  attemptId: Type.String({ minLength: 1 }), autonomousContractVersion: Type.Literal(1),
+  attemptId: Type.String({ minLength: 1 }), autonomousContractVersion: Type.Union([Type.Literal(1), Type.Literal(2)]),
 }, { additionalProperties: false });
 
 export const ComparisonReviewRequestSchema = Type.Object({
