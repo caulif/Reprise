@@ -1,7 +1,16 @@
 import type { ComparisonResources } from '../core/schema.js';
 import type { AgentAuditEvent } from '../infrastructure/agent/host.js';
 
-export const DEFAULT_COMPARISON_RESOURCES: Readonly<ComparisonResources> = Object.freeze({ maxElapsedMs: 24 * 60 * 60_000 });
+export const DEFAULT_COMPARISON_RESOURCES: Readonly<ComparisonResources> = Object.freeze({
+  maxElapsedMs: 24 * 60 * 60_000,
+});
+
+export function resolveAutonomousComparisonResources(timeoutMs: number, requested?: ComparisonResources): ComparisonResources {
+  const limits = { ...DEFAULT_COMPARISON_RESOURCES, ...requested };
+  limits.maxElapsedMs = Math.min(limits.maxElapsedMs ?? DEFAULT_COMPARISON_RESOURCES.maxElapsedMs!, timeoutMs > 0 ? timeoutMs : Infinity);
+  return limits;
+}
+
 class ComparisonResourceLimit extends Error {}
 
 export class ComparisonResourceTracker {

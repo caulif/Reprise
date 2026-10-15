@@ -307,9 +307,9 @@ test('explicit recovery publishes a validated legacy attempt without model calls
   assert.equal((comparison as { sessionId: string }).sessionId, 'comparison-session-1');
   assert.equal((comparison as { status: string }).status, 'completed');
   const history = (await readLocalHistory(ready.dataDir)).experiments[0]!;
-  assert.equal(history.comparisonStatus, 'completed');
+  assert.equal(history.comparisonStatus, 'unknown');
   assert.equal(await realpath(history.reportPath!), await realpath(published.reportPath));
-  assert.equal(history.reportAttemptUnconfirmed, undefined);
+  assert.equal(history.reportAttemptUnconfirmed, true);
   assert.match(await readFile(join(ready.experimentRoot, 'events.jsonl'), 'utf8'), /comparison.recovered/);
   const retried = await publishRecoveredComparison({ ...ready.input, status: 'completed' });
   assert.deepEqual(retried, published);

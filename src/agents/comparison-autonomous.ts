@@ -1,7 +1,7 @@
 import type { ComparisonAgentPort, ComparisonCompareOptions, ComparisonContext, ComparisonResult } from './comparison-contract.js';
 import { AgentHost, type AgentAuditSink, type AgentInvocation, type AgentToolDefinition } from '../infrastructure/agent/host.js';
 import { RoleSessions } from '../infrastructure/agent/role-sessions.js';
-import { ComparisonResourceTracker, DEFAULT_COMPARISON_RESOURCES } from './comparison-resources.js';
+import { ComparisonResourceTracker, resolveAutonomousComparisonResources } from './comparison-resources.js';
 import { comparisonOutputContinuation } from './comparison-invocation-boundaries.js';
 import { comparisonToolFeedback } from './comparison-tool-feedback.js';
 import { withLanguageBlock, type AgentLocale } from './language.js';
@@ -34,8 +34,7 @@ export class AutonomousComparisonAgent implements ComparisonAgentPort {
     const controller = new AbortController();
     this.#active.set(id, controller);
     const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
-    const limits = { ...DEFAULT_COMPARISON_RESOURCES, ...this.input.resources };
-    limits.maxElapsedMs = Math.min(limits.maxElapsedMs ?? DEFAULT_COMPARISON_RESOURCES.maxElapsedMs!, this.timeoutMs > 0 ? this.timeoutMs : Infinity);
+    const limits = resolveAutonomousComparisonResources(this.timeoutMs, this.input.resources);
     const resources = new ComparisonResourceTracker(limits);
     const measured: AgentAuditSink = {
       append: async event => {

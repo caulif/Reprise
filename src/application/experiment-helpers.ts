@@ -1,11 +1,13 @@
-import { readFile, stat } from "node:fs/promises";
-import { dirname, isAbsolute } from "node:path";
+import { readTaskCase, taskCaseOrigin } from '../products/shared/task-case-reader.js';
+import { canonicalJson, validateTaskCase } from '../core/task-case-identity.js';
+import { stat } from "node:fs/promises";
+import { dirname, isAbsolute, join } from "node:path";
 import { isRecord } from "../core/json.js";
 import { SAFE_ID, sha256 } from "../core/identity.js";
 import type { TaskCase } from "../core/schema.js";
 import type { AgentAuditSink, StructuredAgentResult } from "../infrastructure/agent/host.js";
 import { type ExperimentStore } from "../infrastructure/store/experiment-store.js";
-import { isFrozenCase, publishFrozenCase } from "../products/shared/freeze.js";
+import { publishFrozenCase } from "../products/shared/freeze.js";
 import { spillImageRefs, spillInlineBody, type ArtifactBodyResolver } from "../infrastructure/agent/model-input.js";
 
 export function recordValue(value: unknown): Record<string, unknown> {
@@ -75,24 +77,32 @@ export async function sourceDirectoryExists(path: string): Promise<boolean> {
 }
 
 export async function persistTaskCase(path: string, taskCase: TaskCase): Promise<void> {
+  validateTaskCase(taskCase);
   const caseDir = dirname(path);
   const casesRoot = dirname(caseDir);
-  if (await isFrozenCase(caseDir)) {
-    const persisted = JSON.parse(await readFile(path, "utf8")) as Partial<TaskCase>;
-    if (persisted.caseId !== taskCase.caseId || persisted.contentHash !== taskCase.contentHash)
-      throw new Error(`TaskCase ${taskCase.caseId} conflicts with existing immutable content.`);
-    return;
-  }
   try {
     await stat(caseDir);
+    const existing = await readTaskCase(path, { expectedCaseId: taskCase.caseId, requireComplete: true });
+    const normalized = { ...existing, provenance: { ...existing.provenance, importedAt: taskCase.provenance.importedAt } };
+    if (existing.schemaVersion === 2 ? existing.contentHash !== taskCase.contentHash : canonicalJson(normalized) !== canonicalJson(taskCase)) {
+      throw new Error(`TaskCase ${taskCase.caseId} conflicts with existing immutable content.`);
+    }
+    return;
   } catch (error) {
-    if (isMissing(error)) {
-      await publishFrozenCase({ taskCase, casesRoot, files: [] });
+    if (!isMissing(error)) throw error;
+    // A missing target directory is creatable; missing files inside an existing case are preserved as incomplete evidence.
+    try { await stat(caseDir); } catch (missingDirectory) {
+      if (!isMissing(missingDirectory)) throw missingDirectory;
+      const origin = taskCaseOrigin(taskCase);
+      const files = (taskCase.freezeIdentity?.files ?? []).map((file) => {
+        if (!origin) throw new Error('Frozen TaskCase files need a verified source directory before copying.');
+        return { relativePath: file.relativePath, copyFrom: join(origin, file.relativePath) };
+      });
+      await publishFrozenCase({ taskCase, casesRoot, files, reuseExisting: true });
       return;
     }
-    throw error;
+    throw new Error(`TaskCase ${taskCase.caseId} is an unpublished incomplete freeze.`, { cause: error });
   }
-  throw new Error(`TaskCase ${taskCase.caseId} is an unpublished incomplete freeze.`);
 }
 
 export async function persistAgentAuditEvent(store: ExperimentStore, runId: string, event: Parameters<AgentAuditSink["append"]>[0]): Promise<void> {

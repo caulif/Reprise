@@ -6,6 +6,7 @@ import { localPathFromFileUrl } from '../open-report.js';
 import type { Theme } from '../theme.js';
 import { kv, kvBlock, kvLinkBlock, panel, panelWithHits, type LinkValueHit } from '../widgets.js';
 import { relativeTime } from './intake.js';
+import { pathToFileURL } from 'node:url';
 
 export type HistoryModel = {
   readonly totalBytes: number;
@@ -88,12 +89,18 @@ export function renderHistoryDetailWithHits(
   push(kv(theme, t(locale, 'resultTermination'), item.outcome === 'interrupted' ? t(locale, 'historyInterrupted') : presentation.terminationLabel, width - 2));
   push(kv(theme, t(locale, 'resultCleanup'), presentation.cleanupLabel, width - 2));
   push(kv(theme, t(locale, 'resultComparison'), presentation.comparisonLabel, width - 2));
+  if (item.startupFailureStage) push(kv(theme, t(locale, 'historyStartupStage'), item.startupFailureStage, width - 2));
+  if (item.startupFailure) for (const line of kvBlock(theme, t(locale, 'resultDiagnostic'), item.startupFailure, width)) push(line);
+  if (item.comparisonFailureStage) push(kv(theme, t(locale, 'historyComparisonFailureStage'), item.comparisonFailureStage, width - 2));
+  if (item.comparisonFailureMessage) for (const line of kvBlock(theme, t(locale, 'resultDiagnostic'), item.comparisonFailureMessage, width)) push(line);
+  if (item.eventLogErrorCode) push(kv(theme, t(locale, 'historyEventLogError'), item.eventLogErrorCode, width - 2));
   if (item.incompleteModelInput) {
     for (const line of kvBlock(theme, t(locale, 'modelInputLabel'), t(locale, 'incompleteModelInput'), width)) push(line);
   }
   if (item.formatError) {
     const key = item.formatError === 'missing_metadata' ? 'historyMissingMetadata'
       : item.formatError === 'invalid_metadata' ? 'historyInvalidMetadata'
+        : item.formatError === 'metadata_case_mismatch' ? 'historyMetadataCaseMismatch'
         : item.formatError === 'unreadable_record' ? 'historyUnreadableRecord' : 'unsupportedSchema';
     push(kv(theme, t(locale, 'historyFormat'), t(locale, key), width - 2));
   }
@@ -114,6 +121,7 @@ export function renderHistoryDetailWithHits(
   push(theme.style.muted(` ${t(locale, 'historyTechnical')}`));
   push(kv(theme, t(locale, 'historyRecordId'), item.experimentId, width - 2));
   push(kv(theme, t(locale, 'historyTaskId'), item.taskCaseId, width - 2));
+  if (item.metadataTaskCaseId) push(kv(theme, t(locale, 'historyMetadataTaskId'), item.metadataTaskCaseId, width - 2));
   push(kv(theme, t(locale, 'historyRunId'), missing(item.runId), width - 2));
   push(kv(theme, t(locale, 'historyStoredSize'), formatBytes(item.sizeBytes), width - 2));
   pushLink(kvLinkBlock(theme, t(locale, 'historyLocation'), item.path, item.path, width), item.path);
@@ -146,19 +154,18 @@ export function historyDetailPointerAction(
   const href = directHit?.path ?? hitFileLink(lines[row] ?? '', col);
   if (!href) return undefined;
   const clicked = directHit?.path ?? hrefPath(href);
-  if (!isComparisonHtml(clicked)) return { action: 'open-local' };
-  const reportPath = item ? resolveHistoryHtmlPath(item, clicked) : clicked;
-  return { action: 'open-report', reportPath };
+  const reportPath = item ? resolveHistoryHtmlPath(item, clicked, href) : isComparisonHtml(clicked) ? clicked : undefined;
+  return reportPath ? { action: 'open-report', reportPath } : { action: 'open-local' };
 }
 
 /** Map an OSC-8 / file URL target back onto the experiment's stored HTML paths. */
-function resolveHistoryHtmlPath(item: HistoryExperiment, clicked: string): string {
+function resolveHistoryHtmlPath(item: HistoryExperiment, clicked: string, href: string): string | undefined {
   const candidates = [item.reportPath, item.previousReportPath].filter((path): path is string => Boolean(path));
   const clickedKey = pathMatchKey(clicked);
   for (const candidate of candidates) {
-    if (pathMatchKey(candidate) === clickedKey) return candidate;
+    if (pathMatchKey(candidate) === clickedKey || pathToFileURL(candidate).href === href) return candidate;
   }
-  return clicked;
+  return undefined;
 }
 
 function historyPrimaryReportLabel(
@@ -188,7 +195,7 @@ function isComparisonHtml(path: string): boolean {
 }
 
 function pathMatchKey(path: string): string {
-  return pathBasename(path).toLowerCase();
+  return path.replaceAll('\\', '/').toLowerCase();
 }
 
 function pathBasename(path: string): string {

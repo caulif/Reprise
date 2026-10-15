@@ -7,7 +7,6 @@ import {
   detectContamination,
   type ContaminationSignals,
 } from "../environment/contamination.js";
-import { findProductPack } from "../products/index.js";
 import type { ExperimentInput } from "./experiment.js";
 import { assertPaths } from "./experiment-helpers.js";
 
@@ -34,7 +33,6 @@ export async function preflightExperiment(
   > & { taskCase: TaskCase; verifyCandidate?: boolean },
 ): Promise<ExperimentPreflight> {
   assertPaths(input.dataDir, input.sourceRoot);
-  if (input.verifyCandidate !== false) findProductPack(input.candidate.productId);
   if (input.caseId !== input.taskCase.caseId)
     throw new Error("Experiment caseId must match TaskCase.caseId.");
   const resolved = input.verifyCandidate === false
@@ -78,13 +76,15 @@ export async function resolveVerifiedCandidate(
   candidate: CandidateSpec,
 ): Promise<ResolvedRuntime> {
   const resolved = await runtime.validateCandidate(candidate);
+  if (resolved.productId !== candidate.productId)
+    throw new Error(`Candidate product '${candidate.productId}' does not match resolved runtime product '${resolved.productId}'.`);
   if (resolved.resolvedModel === "unknown")
     throw new Error("Candidate model is not verified by the target runtime.");
   return resolved;
 }
 
 async function pendingResolved(runtime: ProductRuntime, candidate: CandidateSpec): Promise<ResolvedRuntime> {
-  const available = (await runtime.inspectAvailable())[0];
+  const available = (await runtime.inspectAvailable()).find((item) => item.productId === candidate.productId);
   if (available) {
     return { ...available, requestedModel: candidate.requestedModel, resolvedModel: "pending" };
   }

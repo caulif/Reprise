@@ -5,10 +5,17 @@ import { hostname } from 'node:os';
 import { Value } from '@sinclair/typebox/value';
 import { ComparisonFindingsUpdatedSchema, ComparisonDraftAcceptedSchema, ComparisonInvestigationClosedSchema } from '../../core/comparison-discovery-schema.js';
 import { AgentUsageFactsSchema } from '../../core/schema.js';
+import { HarnessConfigurationBoundSchema, HarnessProbeRequestedSchema, HarnessProbeCompletedSchema, ComparisonOperationFailureSchema } from '../../core/schema.js';
+import { HarnessConfigurationReferenceSchema, RecoveryLifecycleAttemptSchema, type HarnessConfigurationReference } from '../../core/schema.js';
+import { canonicalJson } from '../../core/task-case-identity.js';
 import { ComparisonResourceSummarySchema, ComparisonSourceContinuationSchema, AgentModelStreamSchema } from '../../core/comparison-resources-schema.js';
-import { SAFE_ID, sha256, eventEnvelopeChecksum, runOperationId, writeAtomic } from '../../core/identity.js';
+import { SAFE_ID, sha256, eventEnvelopeChecksum, runOperationId, writeAtomic, writeImmutable } from '../../core/identity.js';
 import {
   ArtifactRefSchema,
+  RunStartupFailureSchema,
+  RunCleanupFailureSchema,
+  ExperimentWriterLeaseSchema,
+  type ExperimentWriterLease,
   ArtifactManifestSchema,
   EventEnvelopeSchema,
   ComparisonPhaseRequestedPayloadSchema,
@@ -72,13 +79,7 @@ export interface ReplayedRun {
   readonly eventIds: readonly string[];
 }
 
-interface LockInfo {
-  readonly experimentId: string;
-  readonly pid: number;
-  readonly nonce: string;
-  readonly startedAt: string;
-  readonly host: string;
-}
+type LockInfo = ExperimentWriterLease;
 
 function eventChecksum(event: Omit<EventEnvelope, 'checksum'>): string {
   return eventEnvelopeChecksum(event);
@@ -99,9 +100,7 @@ function freezeEvent(event: EventEnvelope): EventEnvelope {
 }
 
 function isLockInfo(value: unknown): value is LockInfo {
-  if (!value || typeof value !== 'object') return false;
-  const lock = value as Partial<LockInfo>;
-  return typeof lock.experimentId === 'string' && typeof lock.pid === 'number' && Number.isInteger(lock.pid) && lock.pid > 0 && typeof lock.nonce === 'string' && typeof lock.startedAt === 'string' && typeof lock.host === 'string';
+  return Value.Check(ExperimentWriterLeaseSchema, value);
 }
 
 function assertId(value: string, name: string): void {
@@ -120,13 +119,7 @@ function inside(root: string, candidate: string): string {
 
 /** Writes a JSON artifact once, leaving an existing acceptance/fact file untouched. */
 export async function writeImmutableJson(path: string, value: unknown): Promise<void> {
-  try {
-    await stat(path);
-    throw new Error(`Immutable file already exists: ${path}.`);
-  } catch (error: unknown) {
-    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
-  }
-  await writeAtomic(path, `${JSON.stringify(value)}\n`);
+  await writeImmutable(path, `${JSON.stringify(value)}\n`);
 }
 
 export class ExperimentStore {
@@ -177,6 +170,7 @@ export class ExperimentStore {
       startedAt: new Date().toISOString(),
       host: hostname(),
     };
+    if (!Value.Check(ExperimentWriterLeaseSchema, lock)) throw new Error('Invalid writer lease.');
     try {
       await writeFile(this.#lockPath, `${JSON.stringify(lock)}\n`, { encoding: 'utf8', flag: 'wx' });
       this.#lockHeld = true;
@@ -193,16 +187,20 @@ export class ExperimentStore {
 
   async close(): Promise<void> {
     if (!this.#lockHeld) return;
-    let tailError: unknown;
+    const errors: unknown[] = [];
     try {
       await this.#artifactTail;
       await this.#appendTail;
     } catch (error) {
-      tailError = error;
-    } finally {
-      await this.#releaseWriterLock();
+      errors.push(error);
     }
-    if (tailError !== undefined) throw tailError instanceof Error ? tailError : new Error('Experiment store close failed.');
+    try {
+      await this.#releaseWriterLock();
+    } catch (error) {
+      errors.push(error);
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) throw new AggregateError(errors, 'Experiment store flush and lock release failed.', { cause: errors[0] });
   }
 
   async #releaseWriterLock(): Promise<void> {
@@ -219,12 +217,14 @@ export class ExperimentStore {
       let value: unknown;
       try {
         value = JSON.parse(raw) as unknown;
-      } catch {
-        value = undefined;
+      } catch (error) {
+        throw new Error('Writer lock is malformed; ownership cannot be verified.', { cause: error });
       }
-      if (isLockInfo(value) && (value.experimentId !== this.#experimentId || value.nonce !== nonce)) owned = false;
+      if (!isLockInfo(value)) throw new Error('Writer lock is invalid; ownership cannot be verified.');
+      if (value.experimentId !== this.#experimentId || value.nonce !== nonce) owned = false;
     } catch (error: unknown) {
       if (errorCode(error) === 'ENOENT') return;
+      throw error;
     }
     if (!owned) return;
     await rm(this.#lockPath, { force: true });
@@ -373,11 +373,92 @@ export class ExperimentStore {
     if (event.type === 'comparison.resources_completed' && !Value.Check(ComparisonResourceSummarySchema, event.payload)) throw new Error('comparison.resources_completed payload does not satisfy its schema.');
     if ((event.type === 'comparison.plan_requested' || event.type === 'comparison.report_requested') && !Value.Check(ComparisonPhaseRequestedPayloadSchema, event.payload)) throw new Error(`${event.type} payload does not satisfy its schema.`);
     if (event.type === 'candidate.user_view_persisted' && !Value.Check(UserVisibleTurnSchema, event.payload)) throw new Error('candidate.user_view_persisted payload does not satisfy its schema.');
+    if (event.type === 'run.startup_failed' || event.type === 'run.cleanup_failed') {
+      const schema = event.type === 'run.startup_failed' ? RunStartupFailureSchema : RunCleanupFailureSchema;
+      if (!Value.Check(schema, event.payload) || event.payload.experimentId !== this.#experimentId || event.payload.runId !== event.runId) {
+        throw new Error(`${event.type} payload does not satisfy its schema and owner.`);
+      }
+      const attempt = this.#events.find(item => item.type === 'run.attempt_created' && item.runId === event.runId)?.payload;
+      if (!Value.Check(RunAttemptSchema, attempt) || attempt.caseId !== event.payload.caseId) {
+        throw new Error(`${event.type} must belong to a committed RunAttempt.`);
+      }
+    }
+    await this.#validateHarnessEvent(event, persist);
     freezeEvent(event);
     if (persist) await writeFile(this.#eventsPath, `${JSON.stringify(event)}\n`, { encoding: 'utf8', flag: 'a' });
     this.#events.push(event);
     if (notify) this.#notify(event);
     return event;
+  }
+
+  async #validateHarnessEvent(event: EventEnvelope, persist: boolean): Promise<void> {
+    if (event.type === 'run.manifest_created' && Value.Check(RunManifestSchema, event.payload)) {
+      for (const role of [event.payload.controller, event.payload.comparison]) {
+        if (role.effectiveReference) this.#assertHarnessBinding(role.effectiveReference, event.runId, 'run');
+      }
+    }
+    if (event.type === 'recovery.attempt' && event.payload && typeof event.payload === 'object' && 'effectiveReference' in event.payload) {
+      if (!Value.Check(RecoveryLifecycleAttemptSchema, event.payload) || !event.payload.effectiveReference) throw new Error('Invalid Recovery configuration reference.');
+      this.#assertHarnessBinding(event.payload.effectiveReference, event.runId, 'recovery');
+    }
+    if (event.type === 'comparison.started' && event.payload && typeof event.payload === 'object' && 'effectiveReference' in event.payload) {
+      if (!Value.Check(HarnessConfigurationReferenceSchema, event.payload.effectiveReference)) throw new Error('Invalid Comparison configuration reference.');
+      this.#assertHarnessBinding(event.payload.effectiveReference, event.runId, 'comparison',
+        'attemptId' in event.payload && typeof event.payload.attemptId === 'string' ? event.payload.attemptId : undefined, true);
+    }
+    if (event.type === 'harness.configuration_bound') {
+      if (!Value.Check(HarnessConfigurationBoundSchema, event.payload)) throw new Error('Invalid Harness configuration binding.');
+      const { reference, configuration } = event.payload;
+      if (reference.experimentId !== this.#experimentId || reference.runId !== event.runId
+        || reference.artifactId !== `${reference.configurationId}.json`
+        || sha256(canonicalJson(configuration)) !== reference.contentHash) throw new Error('Harness configuration owner or digest mismatch.');
+      const committed = this.#events.some(item => item.type === 'artifact.created' && item.runId === event.runId
+        && item.payload && typeof item.payload === 'object' && 'artifactId' in item.payload && item.payload.artifactId === reference.artifactId);
+      if (!committed) throw new Error('Harness configuration requires its committed artifact.');
+      if (reference.operation !== 'comparison' && reference.comparisonAttemptId !== undefined) throw new Error('Only a Comparison configuration may identify its comparison attempt.');
+      if (reference.operation === 'run' && !this.#events.some(item => item.type === 'run.attempt_created' && item.runId === event.runId
+        && Value.Check(RunAttemptSchema, item.payload))) throw new Error('Run configuration requires its admitted attempt.');
+      if (reference.operation === 'recovery' && !this.#events.some(item => item.type === 'recovery.attempt' && item.runId === event.runId
+        && Value.Check(RecoveryLifecycleAttemptSchema, item.payload) && item.payload.operation === 'initialize' && item.payload.result === 'started')) {
+        throw new Error('Recovery configuration requires its initialization attempt.');
+      }
+      if (reference.operation === 'comparison' && (!reference.comparisonAttemptId || !this.#events.some(item => item.type === 'comparison.started'
+        && item.runId === event.runId && item.payload && typeof item.payload === 'object' && 'attemptId' in item.payload
+        && item.payload.attemptId === reference.comparisonAttemptId))) throw new Error('Comparison configuration requires its reserved attempt.');
+      if (persist && sha256(await this.readArtifact({ experimentId: this.#experimentId, runId: reference.runId, artifactId: reference.artifactId })) !== reference.contentHash) {
+        throw new Error('Harness configuration artifact digest mismatch.');
+      }
+    } else if (event.type === 'comparison.operation_failed') {
+      if (!Value.Check(ComparisonOperationFailureSchema, event.payload) || event.payload.experimentId !== this.#experimentId || event.payload.runId !== event.runId) {
+        throw new Error('Invalid Comparison operation failure owner.');
+      }
+      const { attemptId, effectiveReference } = event.payload;
+      if (!this.#events.some(item => item.type === 'comparison.started' && item.runId === event.runId && item.payload
+        && typeof item.payload === 'object' && 'attemptId' in item.payload && item.payload.attemptId === attemptId)) throw new Error('Comparison failure requires its reserved attempt.');
+      if (effectiveReference) {
+        this.#assertHarnessBinding(effectiveReference, event.runId, 'comparison', attemptId);
+        if (effectiveReference.operation !== 'comparison' || effectiveReference.comparisonAttemptId !== attemptId) throw new Error('Comparison failure configuration belongs to another operation.');
+      }
+    } else if (event.type === 'harness.probe_requested' || event.type === 'harness.probe_completed') {
+      const schema = event.type === 'harness.probe_requested' ? HarnessProbeRequestedSchema : HarnessProbeCompletedSchema;
+      if (!Value.Check(schema, event.payload)) throw new Error('Invalid Harness probe audit.');
+      const { reference, requestId } = event.payload;
+      const binding = this.#events.find(item => item.type === 'harness.configuration_bound' && item.runId === event.runId
+        && Value.Check(HarnessConfigurationBoundSchema, item.payload) && canonicalJson(item.payload.reference) === canonicalJson(reference));
+      if (!binding) throw new Error('Harness probe requires a prior configuration binding.');
+      const requested = this.#events.find(item => item.type === 'harness.probe_requested' && Value.Check(HarnessProbeRequestedSchema, item.payload)
+        && item.payload.requestId === requestId && canonicalJson(item.payload.reference) === canonicalJson(reference));
+      if (event.type === 'harness.probe_requested' ? Boolean(requested) : !requested) throw new Error('Harness probe request ownership mismatch.');
+    }
+  }
+
+  #assertHarnessBinding(reference: HarnessConfigurationReference, runId: string | undefined, operation: HarnessConfigurationReference['operation'],
+    comparisonAttemptId?: string, allowRun = false): void {
+    if ((reference.operation !== operation && !(operation === 'comparison' && allowRun && reference.operation === 'run'))
+      || (reference.operation === 'comparison' && reference.comparisonAttemptId !== comparisonAttemptId)) throw new Error('Configuration reference belongs to a different operation.');
+    if (reference.experimentId !== this.#experimentId || reference.runId !== runId || !this.#events.some(event => event.type === 'harness.configuration_bound'
+      && event.runId === runId && Value.Check(HarnessConfigurationBoundSchema, event.payload)
+      && canonicalJson(event.payload.reference) === canonicalJson(reference))) throw new Error('Configuration reference requires its committed operation binding.');
   }
 
   #notify(event: EventEnvelope): void {
@@ -405,6 +486,9 @@ export class ExperimentStore {
     const runId = manifest.attempt.runId;
     if (!this.#events.some((event) => event.type === 'run.attempt_created' && event.runId === runId)) {
       throw new Error(`RunAttempt must be committed before RunManifest for ${runId}.`);
+    }
+    for (const role of [manifest.controller, manifest.comparison]) {
+      if (role.effectiveReference) this.#assertHarnessBinding(role.effectiveReference, runId, 'run');
     }
     const path = inside(this.#root, join('runs', runId, 'manifest.json'));
     if (!this.#events.some((event) => event.type === 'run.manifest_created' && event.runId === runId)) {

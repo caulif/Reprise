@@ -26,7 +26,7 @@ test('frozen input identity rejects task changes with old contentHash and candid
   const { root, item, prepared } = await fixture(t);
   const verify = () => verifyComparisonEvaluationInputs(root, item, prepared.inputIdentityHash);
   await verify();
-  const casePath = join(prepared.dataDir, 'cases', `case-${item.id}`, 'case.json');
+  const casePath = join(prepared.dataDir, 'cases', prepared.taskCaseId, 'case.json');
   const original = await readFile(casePath);
   const task: unknown = JSON.parse(original.toString('utf8'));
   assert.ok(Value.Check(TaskCaseSchema, task));

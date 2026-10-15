@@ -112,7 +112,9 @@ async function generate() {
   const recordBody = [
     '### TaskCase',
     '',
-    table(fieldsOf(schema.TaskCaseSchema)),
+    '当前新冻结使用 v2；v1 保留原身份，由兼容读端读取。下表为 v2。',
+    '',
+    table(fieldsOf(schema.TaskCaseSchema.anyOf[1])),
     '### RunRecord',
     '',
     table(fieldsOf(schema.RunRecordSchema)),

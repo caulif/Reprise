@@ -1,3 +1,4 @@
+import { readTaskCase } from '../products/shared/task-case-reader.js';
 import { findProductPack, createProductLookup, productPacks, defaultSessionsRoots, packLoadDiagnostics } from "../products/index.js";
 import { packHas, packRoles } from "../products/pack-access.js";
 import type { SessionDiscoveryProject, SessionSummary } from "../products/contract.js";
@@ -215,4 +216,8 @@ export async function importSourceSession(input: {
     privacy: { allowModelText: true, allowBinary: false, redactions: [] },
     now: input.now ?? new Date().toISOString(),
   });
+}
+
+export async function readTaskCaseFile(path: string) {
+  return readTaskCase(path);
 }

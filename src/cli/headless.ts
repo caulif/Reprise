@@ -1,14 +1,12 @@
-import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { Value } from "@sinclair/typebox/value";
-import { TaskCaseSchema, type EventEnvelope, type TaskCase } from "../core/schema.js";
+import { type EventEnvelope, type TaskCase } from "../core/schema.js";
 import { CLI_EXIT, exitCodeForKind, type CliActivity, type CliOutputMode } from "../core/cli-protocol.js";
 import { classifyCliError, CliError } from "../application/cli-error.js";
 import { createHarnessWorkflow, type ExperimentWorkflow } from "../application/experiment-workflow.js";
 import { saveTuiPreferences } from "../tui/preferences.js";
 import { assertExclusiveRunInputs, compareExperiment, prepareExperiment, runFullExperiment, runSealedScenario } from "../application/experiment-operations.js";
-import { importSourceSession, inspectSourceSession } from "../application/experiment-queries.js";
+import { importSourceSession, inspectSourceSession, readTaskCaseFile as readTaskCase } from "../application/experiment-queries.js";
 import { activityControlReady, type ExperimentActivity } from "../application/experiment-activity.js";
 import { createProductLookup, loadAndActivateProductPacks, packLoadDiagnostics, productPacks } from "../products/index.js";
 import { errorBody, parseOutputMode, writeActivity, writeEnd, writeEvent, writeJsonResult, type ProtocolIo } from "./protocol.js";
@@ -293,10 +291,4 @@ async function resolvePrepareSource(values: { "source-root"?: string; "task-case
     taskCase: frozen.taskCase,
     sourceRoot: values["source-root"] ? resolve(values["source-root"]) : inspected?.cwd ?? dirname(values["source-path"]),
   };
-}
-
-async function readTaskCase(path: string): Promise<TaskCase> {
-  const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
-  if (!Value.Check(TaskCaseSchema, parsed)) throw new Error(`TaskCase at ${path} does not satisfy TaskCaseSchema.`);
-  return parsed;
 }

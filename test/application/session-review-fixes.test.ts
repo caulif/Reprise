@@ -197,10 +197,10 @@ test('freeze hashes the snapshot copy so later source edits cannot desync raw', 
     sourcePath: file, casesRoot: join(home, 'cases'), now: STARTED, privacy: PRIVACY,
   });
   const raw = join(home, 'cases', frozen.taskCase.caseId, 'raw', 'session.jsonl');
-  assert.equal(await sha256File(raw), frozen.taskCase.contentHash);
-  assert.equal(frozen.taskCase.provenance.sourceHash, frozen.taskCase.contentHash);
+  assert.equal(await sha256File(raw), frozen.taskCase.provenance.sourceHash);
+  assert.notEqual(frozen.taskCase.provenance.sourceHash, frozen.taskCase.contentHash);
   await writeFile(file, `${original}${JSON.stringify({ timestamp: STARTED, type: 'event_msg', payload: { type: 'user_message', message: 'later write' } })}\n`);
-  assert.equal(await sha256File(raw), frozen.taskCase.contentHash);
+  assert.equal(await sha256File(raw), frozen.taskCase.provenance.sourceHash);
   assert.notEqual(await sha256File(file), frozen.taskCase.contentHash);
 });
 
@@ -228,5 +228,5 @@ test('Claude inspect and freeze succeed for a transcript larger than 64 MiB', as
   const imported = await importClaudeSession(file);
   const frozen = await freezeCase(imported, join(home, 'cases'), PRIVACY, STARTED);
   assert.equal(frozen.taskCase.source.sessionId, sessionId);
-  assert.equal(await sha256File(join(home, 'cases', frozen.taskCase.caseId, 'raw', 'session.jsonl')), frozen.taskCase.contentHash);
+  assert.equal(await sha256File(join(home, 'cases', frozen.taskCase.caseId, 'raw', 'session.jsonl')), frozen.taskCase.provenance.sourceHash);
 });

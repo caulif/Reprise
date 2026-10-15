@@ -14,7 +14,41 @@
 
 Recovery 的固定 artifact 与决定、诊断等不可变 JSON 按 `runs/<runId>/` 保存；默认 Recovery Provider 的 baseline 按 `environment/recovery/<runId>/` 隔离。baseline marker 的 `reportRunId` 指向 run 所属报告，旧 marker 缺字段时只查实验级报告；旧 scene 缺 `recoveryProviderRunId` 时继续使用 `environment/baselines/`。旧根级文件不迁移、不覆写，新读端按明确 owner 读取，不能用另一 run 的同名 artifact 填补缺失。
 
+## 冻结任务保全
+
+共享冻结入口不删除或重写任何已有 case 目录。当前新冻结写入显式版本 2；统一读端支持版本 1 和 2，未知版本拒绝。旧版本保留原 ID、hash、路径与起点，不自动升级或补认证。损坏、缺完整标记或同身份内容冲突均保留旧证据并明确拒绝。历史列表只统计非法 case，执行读端暴露诊断。
+
+v2 的 `provenance.sourceHash` 表示脱敏后来源字节，`contentHash` 是 `task-case-v2` 算法对任务内容与保留文件清单的 SHA-256；`caseId` 为 `case-v2-` 加 digest 的前 32 个十六进制字符。同来源不同起点、执行/授权、有效隐私条件、解释版本、证据或文件字节变化形成新身份，可以并存；只改变 importedAt、来源存储路径或 casesRoot 不改变身份。排序对象键但保留消息和事件顺序；正文及 taskContext 中有任务语义的路径保留。自身 caseId/contentHash 和 case-owned artifactRefs 的 caseId 不参加递归 hash。observations 元数据分别提供 case schema/identity 算法和 sourceHash/contentHash；逐消息 source refs 仍使用原行内容 hash，不把 case digest 当作来源行 hash。
+
+v2 读端校验 schema、身份、内部 owner、每个清单文件长度/hash，以及封存 artifact manifest 与绑定文件的关系；私有 case 拒绝清单之外的文件，发布输入也必须准确匹配清单。case.json 必须是常规文件；case root、私有 casesRoot 及绑定文件内部路径不允许 junction/符号链接。配置的数据目录及其上级由操作者选择，不宣称阻止恶意同权限进程替换整棵父目录。显式外部 `--task-case` 可以读取无发布标记的完整 JSON 与绑定文件，但同样要求真实 case root，仅复制清单内文件而不认领外部根的其它文件；读端保存进程内 origin receipt，重新持久化时复制绑定文件并在私有 staging 再核验，不能把旧校验当作后来复制字节的证明。
+
+目录发布先取得同身份的文件系统独占 nonce 租约，失败/并发等待有界，不自动清未知旧锁；再沿用私有 staging、完整标记与 Windows 有界 rename 重试。释放前核对 nonce 和文件身份，替换后的他人租约保留。正常同内容并发幂等，冲突拒绝；读者只列出已发布完整目录。不迁移旧数据，不认证模型语义或新增断电持久性承诺。理由与兼容边界见[版本化冻结身份](../decisions/accepted/2026-10-14-frozen-case-identity.md)。
+
+文件发布原语统一位于 [`identity.ts`](../../src/core/identity.ts)：`writeAtomic` 替换可变投影；`writeImmutable` 和 Store 的 `writeImmutableJson` 创建不可变事实，先写完并关闭同目录私有临时文件，再用 hard link 原子创建目标。目标已存在即拒绝；不支持 hard link 时不回退到覆盖写。失败只清理本次临时文件，清理失败保留原错误及已发布状态；成功发布后不回滚目标。低层不判断内容幂等，schema、owner 与同内容重试仍由各提交边界负责；不新增断电持久性承诺。文件原语不能用于目录发布。理由见[不可变文件无覆盖发布](../decisions/accepted/2026-10-14-immutable-file-publication.md)。
+
+候选启动在首次实验事实写入与工作区准备之前取得 writer，RunAttempt 成为接纳点；构造前终态使用启动失败协议，详见[执行与结果](./execution.md#candidaterun-生命周期)。Store 的启动/清理补充事件同时校验 schema、envelope owner 与已提交 attempt 的 case；writer lease 读写使用 core schema，锁无法读取、解析或确认合法身份时保留原锁并报告失败。释放只处理本次 owner/nonce，不删除替换 owner 的锁；关闭与 flush 错误不能相互覆盖。
+
+## 运行与报告归属
+
+启动失败仅按 core schema 与已提交 attempt owner 匹配的 run.startup_failed 显示 failed/cancelled、stage 和诊断；没有 experiment.json 时保留最小身份与 missing_metadata，孤立失败文件不认证。已接纳 attempt 的任务与固定实验元数据冲突时，History 保留真实 attempt 任务和启动诊断，并显式展示原元数据任务 ID 与冲突。元数据缺失或损坏且事件日志发生 I/O 错误时，列表保留损坏条目、unknown 和安全错误码，不生成运行事实；打开详情仍报告实际日志读取错误。
+
+History 的默认运行按已提交 `run.attempt_created` 顺序选择，日志校验后再按选中 run 重建模型输入及终态，另一 run 的完成不能补成当前 run 的完成。缺少该 run 生命周期日志的旧运行按经过 schema 和身份校验的 attempt/record 时间排序；其他 run 或后续 Comparison 事件不改变其旧格式资格；缺有效时间或最新时间并列时只给确定性的选择并标 `runOrdering: unknown`，不宣称时间上的最新。重比默认倒序查找合法 finished RunRecord；多条 legacy 的时间未知或最新并列时必须显式选 runId，唯一合法 finished 仍可默认选择。显式 runId 精确选择且不回退。record.attempt、manifest.attempt 与已提交 attempt 必须一致；该 run 存在生命周期日志时还须匹配已提交 run.finished 的运行事实，不能以孤立 record 认定完成。已提交 artifactRefs 保持原值和顺序；无本 run 提交锚点的旧 record 仅接受精确本 case 或本实验/本 run 的单 owner refs，跨 run、双 owner 与未绑定 run 的引用拒绝认证；仅允许额外一个精确属于本实验、本 run 的 host-trace.json，并须对应晚于 finished 的 artifact.created，实际读取仍校验 Store manifest、提交来源与 hash。
+
+每次 Comparison 将最终发布 HTML 保存为实验根目录下唯一的 `report-<attemptId>.html` 或 `comparison-failure-<attemptId>.html`。这些文件与便利投影同深度，保持内容寻址 media/evidence 与 attempt 独占 historical finals 的相对链接；最终发布模型另存在 attempt 的 `published-report-model.json`。`comparison-attempts/<attemptId>/result.json` 经核心 schema 校验，绑定 experiment/run/attempt、invocation、相对报告路径与完整 SHA-256。只有匹配的已提交 `report.created.reportOwner`、此前完成事件、owner 清单及实际文件 hash 都成立才确认归属；无提交、错配、损坏或逃逸路径不采用根级文件补缺。失败重比只展示当前 run 的诊断及该 run 的此前成功报告。
+
+根级 `report.html`、`comparison-failure.html`、`comparison.json` 仍供既有工具访问，但只是可替换便利投影。旧格式缺 owner 的报告可打开，History 标为 unknown/unconfirmed；不迁移旧字节，不将根级 completed 归到当前选择。协议取舍见[运行与报告归属](../decisions/accepted/2026-10-14-run-report-ownership.md)。
+
 ## 模型输入可追溯
+
+默认 Pi Harness 为每次 Candidate、Recovery 与持久化重比提交版本 1 的有效配置 DTO：先提交 run-owned 配置 artifact，再写 `harness.configuration_bound`，其中保留同一配置正文、hash 和 owner 引用。该事件先于本操作的连接 probe；artifact 残留不能认证配置。RunManifest 的角色配置、Recovery initialize 记录和 Comparison 操作绑定准确引用；重用 Agent 或连接检查缓存时仍提交本次 owner，引用不写回共享 Agent 实例。自定义 Port 与旧记录缺有效引用时保持未记录，不从 requested budget 推断已经生效。
+
+快照区分 Controller 单次无限、Recovery 单次上限与固定 24 小时操作截止，以及自主 Comparison 配置单次上限、整体截止和逐请求 `min(剩余整体时间, 单次上限)` 规则。空 Comparison resources override 保留默认整体截止；未在自主模式执行的旧阶段限额只放 requestedResources，不冒充 enforcedResources。快照与 Agent 构造共用预算解析，Candidate/policy 以及 Pi 私有配置、首次解析模型使用冻结副本，后续调用方对象或模型注册表变化不能改写本次执行条件。
+
+模型 DTO 显式挑选 provider/model、API、上下文和输出窗口、输入能力、reasoning/effort、已知无敏感标量 compat override 与已安装 SDK 版本。嵌套 schema 拒绝未知字段；不展开本机配置，不保存 apiKey、keyRef、headers 或 endpoint。SDK 按 URL 推导的默认 compat、复杂未记录参数和网络路由明确不完整；fingerprint 仅供比对，不能重建这些内容或凭据。此 DTO 记录 Harness 可控制条件，不宣称完整重建 Provider wire 请求；普通 generation 的实际输入仍以 Host 快照为准。
+
+`harness.probe_requested` 在每次实际 outer 调用前保存版本化模板、实际 timestamp、reasoning 与配置引用，结果事件只保存通过、空响应、失败或取消分类。连接检查最多三次 outer 调用，每次允许 Pi SDK 内部重试；日志不虚构 SDK 未公开的各次传输。请求审计失败不调用模型；传输与完成审计同时失败时保留两者，成功响应后的审计失败也不标记连接验证成功。连接验证缓存包含凭据变更，Agent 缓存另包含 locale、budget 与 recoveryBudget。
+
+持久化重比先在 writer 下保留 `comparison.started` attempt，再初始化 Harness。准备/Host 失败保存该 attempt 的不可变 `operation-failure.json`、版本化 `comparison.operation_failed` 和失败/取消完成事实，不挤入候选启动协议，不伪造 Comparison Session。History 显示当前 attempt 失败并保留同 run 此前确认报告。只有明确连接 probe 来源才归为 Provider 失败，配置绑定/磁盘/审计失败保持 Host 初始化失败。
 
 Controller、Recovery、Comparison 都通过 Agent Session Host 生成模型请求。Host 把 system prompt、用户消息、工具结果和结构化结果写入审计事实；普通 generation 另保存 Pi 转换与裁剪后、经过凭据脱敏的实际上下文快照，保留原生工具参数及 SDK 拒绝消息；[`model-input.ts`](../../src/infrastructure/agent/model-input.ts) 从事件日志重建请求。上下文压缩必须追加 `agent.context_compacted`，其中 summary 与 retained tail 是后续请求可见的输入来源。新增模型可见事实必须先写入事件审计（必要时再由 briefing 做可读投影），不能只存在内存变量。
 

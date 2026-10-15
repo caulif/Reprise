@@ -20,6 +20,8 @@ Provider 在已有隔离 staging 上建立新独立 Git 树，仅获取指定 co
 
 ## Recovery Agent 单任务会话
 
+Recovery 请求先取得该实验 writer、保存自身生命周期的 `initialize` attempt，再发布 activity/control 并初始化 Agent；初始化失败保存 Recovery 的失败诊断与终态，再向调用方返回原错误，保留 HarnessProbeError 重试指导与 AbortError 取消语义，不生成 Candidate RunAttempt。准备、Agent release、Store.close 与准确 activity 的收尾分别执行，后一步不因前一步失败而被跳过；control 先于 writer 释放，关键收尾错误向调用方传播，不改写已形成的 baseline 判断。生命周期字段以 [Recovery schema](../../src/core/schemas/recovery.ts) 为准。
+
 一个 Recovery attempt 使用同一 Session 与隔离工作副本，首次只交付一个恢复目标。Agent 自行调查、恢复与核对，返回短 ready/blocked decision；不固定 understand/restore/conclude 三轮，也不在项目内写 notes 或 recovery.md。上下文压缩由实际压力触发，摘要保留起点、证据位置、已完成动作和未解决项。旧 freeform request ID 仅保留历史读取兼容。
 
 Host 将报告、process logs、临时 home 和冻结 Git 依据放在项目之外，报告仍发布为 recovery-md artifact。新 baseline marker 带 artifactLayout: external-v1；Candidate 副本保留用户原有 recovery.md 和 .reprise/recovery-work 文件。旧 marker 沿用旧清理和报告读取契约，不静默迁移。

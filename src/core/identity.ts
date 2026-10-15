@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import fs from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -55,5 +56,39 @@ export async function writeAtomic(path: string, value: string | Uint8Array, sign
   }
 }
 
-/** Writes a new fact; immutability is the caller's contract, atomicity is this function's. */
-export const writeImmutable = writeAtomic;
+/** Publishes complete bytes once; an existing target is never replaced. */
+export async function writeImmutable(path: string, value: string | Uint8Array, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  await fs.mkdir(dirname(path), { recursive: true });
+  const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`;
+  const handle = await fs.open(temporary, 'wx');
+  const failures: unknown[] = [];
+  let published = false;
+  try {
+    const writeFailures: unknown[] = [];
+    try {
+      await handle.writeFile(value, signal ? { signal } : {});
+    } catch (error) {
+      writeFailures.push(error);
+    }
+    try {
+      await handle.close();
+    } catch (closeError) {
+      writeFailures.push(closeError);
+    }
+    if (writeFailures.length === 1) throw writeFailures[0];
+    if (writeFailures.length > 1) throw new AggregateError(writeFailures, `Immutable temporary write and close failed: ${temporary}.`, { cause: writeFailures[0] });
+    signal?.throwIfAborted();
+    await fs.link(temporary, path);
+    published = true;
+  } catch (error) {
+    failures.push(error);
+  }
+  try {
+    await fs.unlink(temporary);
+  } catch (cleanupError) {
+    throw new AggregateError([...failures, cleanupError],
+      `Immutable file ${published ? 'published but temporary cleanup failed' : 'publication and temporary cleanup failed'}: ${path}; temporary: ${temporary}.`, { cause: cleanupError });
+  }
+  if (failures.length) throw failures[0];
+}

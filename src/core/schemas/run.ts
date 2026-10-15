@@ -3,6 +3,7 @@ import { EvidenceRefSchema, Hash, Id, JsonRecord, Timestamp } from "./ids.js";
 import { ArtifactRefSchema, CandidateSpecSchema } from "./task-case.js";
 import { CandidateSessionHandleSchema } from "./candidate.js";
 import { ComparisonResourcesSchema } from '../comparison-resources-schema.js';
+import { HarnessConfigurationReferenceSchema } from './harness-configuration.js';
 
 const AgentBudgetSchema = Type.Object({
   callTimeoutMs: Type.Integer({ minimum: 1 }),
@@ -51,6 +52,7 @@ const ResolvedAgentConfigSchema = Type.Object({
   providerId: Type.String({ minLength: 1 }),
   requestedModel: Type.String({ minLength: 1 }),
   budget: AgentBudgetSchema,
+  effectiveReference: Type.Optional(HarnessConfigurationReferenceSchema),
 });
 export const RunManifestSchema = Type.Object({
   schemaVersion: Type.Integer({ minimum: 1 }),

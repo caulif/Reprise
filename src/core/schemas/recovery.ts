@@ -1,4 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
+import { HarnessConfigurationReferenceSchema } from './harness-configuration.js';
 import { EvidenceRefSchema, Hash, Id, Timestamp } from "./ids.js";
 
 /** One sentence, 1–240 characters, no newline. Host copies this string unchanged. */
@@ -317,6 +318,7 @@ export type RecoveryTaskOutcome = Static<typeof RecoveryTaskOutcomeSchema>;
 /** A single Host-audited operation in the Recovery lifecycle. */
 export const RecoveryLifecycleAttemptSchema = Type.Object({
   schemaVersion: Type.Literal(2),
+  effectiveReference: Type.Optional(HarnessConfigurationReferenceSchema),
   attemptId: Id,
   phase: Type.Union([
     Type.Literal("staging"),
@@ -325,6 +327,7 @@ export const RecoveryLifecycleAttemptSchema = Type.Object({
     Type.Literal("validated"),
   ]),
   operation: Type.Union([
+    Type.Literal("initialize"),
     Type.Literal("begin_staging"),
     Type.Literal("restore_confirmed_git_start"),
     Type.Literal("resolve_facts"),
