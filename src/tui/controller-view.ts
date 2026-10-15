@@ -230,7 +230,7 @@ export function view(c: IntakeTui): WorkbenchView {
     ...(c.resultHover ? { resultHover: c.resultHover } : {}),
     resultDetails: c.resultDetails,
     result: c.result,
-    ...(c.finding ? { finding: true, findQuery: c.findQuery, findCursor: c.findCursor } : {}),
+    ...(c.canvasFind.state.finding ? { finding: true, findQuery: c.canvasFind.state.query, findCursor: c.canvasFind.state.cursor } : {}),
     ...(c.timelineReadOffset ? { timelineReadOffset: c.timelineReadOffset } : {}),
     ...(c.readingMode ? { readingMode: true } : {}),
     surfaceScope: c.surfaceScope,
