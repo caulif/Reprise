@@ -319,7 +319,7 @@ async function beginWorkflowStart(
     const agents = await workflow.agents(owned.signal, harnessConfigurationScope(startup.store,
       { experimentId: input.experimentId, runId: input.runId, operation: 'run' }));
     owned.signal.throwIfAborted();
-    return startExperiment({ ...input, candidate: startup.attempt.candidate, policy: startup.attempt.policy,
+    return startExperiment({ ...input, taskCase: startup.taskCase, candidate: startup.attempt.candidate, policy: startup.attempt.policy,
       controller: agents.controller, comparison: agents.comparison, agentConfig: agents.config,
       activity: owned.activity, signal: owned.signal, startup });
   } catch (error) {

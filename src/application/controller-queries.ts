@@ -51,7 +51,7 @@ export async function inspectRun(
   productId: string,
   workspace?: WorkspaceInspection,
   replay?: {
-    sourceRootKind: SourceRootKind;
+    sourceRootKind?: SourceRootKind;
     requestedModel: string;
     resolvedModel?: string;
     lang?: ReplayLang;
@@ -61,7 +61,8 @@ export async function inspectRun(
   const runId = record?.attempt.runId ?? workspace?.runId;
   if (!runId)
     throw new Error("Run inspection requires a RunRecord or active workspace.");
-  const events = store.events(runId);
+  const events = store.events(runId).filter(event => !record
+    || (event.sequence >= record.trace.firstSequence && event.sequence <= record.trace.lastSequence));
   const translator = packProjection(findProductPack(productId));
   const facts = translator.inspectRunFacts(events);
   const finalMessage = facts.finalMessage;
@@ -84,7 +85,7 @@ export async function inspectRun(
   const tokenUsage = factsFromUsage(usage);
   const tokenCount = tokenUsage?.total;
   const priced = priceRunUsage(usage, productId, replay);
-  const replayConditions = replay
+  const replayConditions = replay?.sourceRootKind
     ? hostReplayConditions({
         sourceRootKind: replay.sourceRootKind,
         requestedModel: replay.requestedModel,

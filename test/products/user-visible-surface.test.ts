@@ -9,7 +9,8 @@ import { claudeCodeProductPack } from "../../src/products/packs/claude-code/pack
 import { codexProductPack } from "../../src/products/packs/codex/pack.js";
 import { fakeProductPack } from "../fixtures/fake-pack/pack.js";
 import { joinPublicAssistantSurface, projectUserVisibleTurn } from "../../src/products/contract.js";
-import type { EventEnvelope, RunRecord, TaskCase } from "../../src/core/schema.js";
+import type { EventEnvelope, TaskCase } from "../../src/core/schema.js";
+import { runRecord } from '../support/comparison-fixtures.js';
 import type { ExperimentStore } from "../../src/infrastructure/store/experiment-store.js";
 
 const NARRATION = "short narration";
@@ -97,9 +98,10 @@ test("Controller turnVisibleText and briefing files keep the joined surface", as
     envelope("runtime.visible_output", { item: { type: "agentMessage", text: CLOSING } }, 3),
     envelope("runtime.turn_settled", { status: "completed", turnId: "t1" }, 4),
   ];
+  const record = runRecord();
   const observation = await inspectRun(
     { events: () => events } as unknown as ExperimentStore,
-    { attempt: { runId: "run-1" }, artifactRefs: [] } as unknown as RunRecord,
+    { ...record, trace: { ...record.trace, lastSequence: 4 } },
     "codex",
   );
   assert.equal(observation.finalMessage, CLOSING);

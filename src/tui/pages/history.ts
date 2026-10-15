@@ -101,6 +101,7 @@ export function renderHistoryDetailWithHits(
     const key = item.formatError === 'missing_metadata' ? 'historyMissingMetadata'
       : item.formatError === 'invalid_metadata' ? 'historyInvalidMetadata'
         : item.formatError === 'metadata_case_mismatch' ? 'historyMetadataCaseMismatch'
+        : item.formatError === 'fixed_task_identity_mismatch' ? 'historyFixedTaskMismatch'
         : item.formatError === 'unreadable_record' ? 'historyUnreadableRecord' : 'unsupportedSchema';
     push(kv(theme, t(locale, 'historyFormat'), t(locale, key), width - 2));
   }
@@ -121,6 +122,7 @@ export function renderHistoryDetailWithHits(
   push(theme.style.muted(` ${t(locale, 'historyTechnical')}`));
   push(kv(theme, t(locale, 'historyRecordId'), item.experimentId, width - 2));
   push(kv(theme, t(locale, 'historyTaskId'), item.taskCaseId, width - 2));
+  if (item.taskIdentity) push(kv(theme, t(locale, 'historyTaskIdentity'), t(locale, item.taskIdentity === 'fixed-v2' ? 'historyFixedV2Identity' : 'historyLegacyIdentity'), width - 2));
   if (item.metadataTaskCaseId) push(kv(theme, t(locale, 'historyMetadataTaskId'), item.metadataTaskCaseId, width - 2));
   push(kv(theme, t(locale, 'historyRunId'), missing(item.runId), width - 2));
   push(kv(theme, t(locale, 'historyStoredSize'), formatBytes(item.sizeBytes), width - 2));

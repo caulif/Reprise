@@ -15,15 +15,27 @@ import { input, VerifiedRuntime } from "../codex-experiment-support.js";
 import { startExperiment } from "../../src/application/experiment.js";
 import { renderHistoryDetail } from "../../src/tui/pages/history.js";
 import { createTheme } from "../../src/tui/theme.js";
+import { persistTaskCase } from '../../src/application/experiment-helpers.js';
 
-test("a conflicting admitted task shows its own startup failure and preserves the fixed metadata identity", async (t) => {
+test("a historical conflicting admitted task remains readable without inheriting the fixed metadata identity", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "reprise-history-case-conflict-"));
   t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const base = input(root, new VerifiedRuntime());
   await mkdir(base.sourceRoot, { recursive: true });
   const first = await startExperiment(base).result;
   const taskCase = { ...base.taskCase, caseId: "case-conflicting", initialInput: { ...base.taskCase.initialInput, text: "Conflicting task B" } };
-  await assert.rejects(startExperiment({ ...base, caseId: taskCase.caseId, taskCase, runId: "run-conflicting" }).result, /metadata does not match/);
+  await writeFile(join(first.experimentRoot, 'experiment.json'), JSON.stringify({ spec: {
+    experimentId: base.experimentId, taskCaseId: base.caseId, candidates: [base.candidate], controller: base.agentConfig,
+    comparison: base.agentConfig, runPolicy: base.policy, outputRoot: first.experimentRoot,
+  } }));
+  await persistTaskCase(join(base.dataDir, 'cases', taskCase.caseId, 'case.json'), taskCase);
+  const store = await ExperimentStore.open(first.experimentRoot, base.experimentId);
+  await store.acquireWriter();
+  await store.commitAttempt({ ...first.record.attempt, runId: 'run-conflicting', caseId: taskCase.caseId });
+  await store.append({ type: 'run.startup_failed', runId: 'run-conflicting', payload: { schemaVersion: 1,
+    experimentId: base.experimentId, runId: 'run-conflicting', caseId: taskCase.caseId, stage: 'checkpoint', status: 'failed',
+    error: { name: 'Error', message: 'metadata does not match' }, cleanupErrors: [], recordedAt: base.now } });
+  await store.close();
   const history = await readLocalHistory(base.dataDir);
   const item = history.experiments[0]!;
   assert.equal(item.runId, "run-conflicting");
@@ -46,7 +58,7 @@ test("a conflicting admitted task shows its own startup failure and preserves th
 });
 
 for (const cancelled of [false, true]) {
-  test(`History shows ${cancelled ? "cancelled" : "failed"} startup even before experiment metadata exists`, async (t) => {
+  test(`History shows ${cancelled ? "cancelled" : "failed"} startup when experiment metadata is missing`, async (t) => {
     const root = await mkdtemp(join(tmpdir(), "reprise-history-startup-"));
     t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
     const base = input(root, new VerifiedRuntime());
@@ -63,6 +75,7 @@ for (const cancelled of [false, true]) {
       experimentId: base.experimentId, runId: base.runId, onEvent: () => {}, signal: abort.signal,
     }));
     const path = join(base.dataDir, "experiments", base.experimentId);
+    await rm(join(path, 'experiment.json'));
     await assert.rejects(readFile(join(path, "experiment.json")), (error: unknown) => error instanceof Error && "code" in error && error.code === "ENOENT");
     const item = (await readLocalHistory(base.dataDir)).experiments[0]!;
     assert.equal(item.taskCaseId, base.caseId);

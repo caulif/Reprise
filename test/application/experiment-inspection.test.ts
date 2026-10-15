@@ -6,7 +6,15 @@ import { tmpdir } from 'node:os';
 import { captureWorkspaceScope, inspectRun } from '../../src/application/controller-queries.js';
 import type { EventEnvelope, RunRecord } from '../../src/core/schema.js';
 import { ExperimentStore } from '../../src/infrastructure/store/experiment-store.js';
+import { runRecord } from '../support/comparison-fixtures.js';
 import type { LocalWorkspaceProvider, PreparedEnvironmentRef } from '../../src/environment/local-workspace-provider.js';
+
+function inspectionRecord(lastSequence: number, experimentId = 'experiment-1'): RunRecord {
+  const record = runRecord();
+  return { ...record, attempt: { ...record.attempt, experimentId },
+    trace: { ...record.trace, experimentId, lastSequence: Math.max(1, lastSequence) },
+    outcome: { ...record.outcome, termination: { kind: 'completed', code: 'completed.controller_satisfied', initiatedBy: 'controller' } } };
+}
 
 function envelope(type: string, payload: unknown, sequence = 1): EventEnvelope {
   return {
@@ -28,7 +36,7 @@ test('latest settled turn does not reuse a previous assistant reply', async () =
     envelope('runtime.turn_settled', { status: 'failed' }, 3),
   ];
   const store = { events: () => events } as unknown as ExperimentStore;
-  const record = { attempt: { runId: 'run-1' }, artifactRefs: [] } as unknown as RunRecord;
+  const record = inspectionRecord(Math.max(1, ...events.map(event => event.sequence)));
   const observation = await inspectRun(store, record, 'codex');
   assert.equal(observation.finalMessage, 'FIRST_REPLY');
   assert.equal(observation.turnVisibleText, undefined);
@@ -46,7 +54,7 @@ test('latest settled turn prompt comes from visible_prompt, not the previous rep
     envelope('runtime.turn_settled', { status: 'waiting_input' }, 4),
   ];
   const store = { events: () => events } as unknown as ExperimentStore;
-  const record = { attempt: { runId: 'run-1' }, artifactRefs: [] } as unknown as RunRecord;
+  const record = inspectionRecord(Math.max(1, ...events.map(event => event.sequence)));
   const observation = await inspectRun(store, record, 'codex');
   assert.equal(observation.turnVisibleText, undefined);
   assert.equal(observation.turnPrompt, 'Approve editing README.md?');
@@ -60,7 +68,7 @@ test('inspectRun current summary does not inline candidate final text', async ()
     envelope('runtime.turn_settled', { status: 'completed' }, 2),
   ];
   const store = { events: () => events } as unknown as ExperimentStore;
-  const record = { attempt: { runId: 'run-1' }, artifactRefs: [] } as unknown as RunRecord;
+  const record = inspectionRecord(Math.max(1, ...events.map(event => event.sequence)));
   const observation = await inspectRun(store, record, 'codex');
   assert.equal(observation.finalMessage, marker);
   assert.doesNotMatch(observation.currentSummary, new RegExp(marker));
@@ -72,7 +80,7 @@ test('inspectRun uses the candidate product translator, not the source session p
     message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'ls workspace' } }] },
   })];
   const store = { events: () => events } as unknown as ExperimentStore;
-  const record = { attempt: { runId: 'run-1' }, artifactRefs: [] } as unknown as RunRecord;
+  const record = inspectionRecord(Math.max(1, ...events.map(event => event.sequence)));
   const asSourcePack = await inspectRun(store, record, 'codex');
   const asCandidatePack = await inspectRun(store, record, 'claude-code');
   assert.equal(asSourcePack.commands.length, 0);
@@ -81,7 +89,7 @@ test('inspectRun uses the candidate product translator, not the source session p
 
 test('inspectRun distinguishes workspace evidence that was not collected', async () => {
   const store = { events: () => [] } as unknown as ExperimentStore;
-  const record = { attempt: { runId: 'run-1' }, artifactRefs: [] } as unknown as RunRecord;
+  const record = inspectionRecord(1);
   const observation = await inspectRun(store, record, 'codex');
   assert.equal(observation.workspaceEvidenceStatus, 'not_collected');
   assert.match(observation.currentSummary, /Read current-user-view.md/);
@@ -91,7 +99,7 @@ test('inspectRun distinguishes workspace evidence that was not collected', async
 test('persisted Runtime metrics stay unchanged after repeated Harness agent usage and reopening', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-runtime-usage-attribution-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const record = { attempt: { runId: 'run-1' }, artifactRefs: [], outcome: { termination: { kind: 'completed', code: 'completed.controller_satisfied' } } } as unknown as RunRecord;
+  const record = inspectionRecord(2, 'experiment-usage');
   const replay = { sourceRootKind: 'operator_selected' as const, requestedModel: 'deepseek-v4.1-flash' };
   let store = await ExperimentStore.open(root, 'experiment-usage');
   try {
@@ -134,7 +142,7 @@ test('Harness usage cannot turn missing Runtime telemetry into zero or priced ca
     usage: { input: 1_000_000, output: 1_000_000, cacheRead: 0, cacheWrite: 0, totalTokens: 2_000_000 },
   })];
   const store = { events: () => events } as unknown as ExperimentStore;
-  const record = { attempt: { runId: 'run-1' }, artifactRefs: [], outcome: { termination: { kind: 'completed', code: 'completed.controller_satisfied' } } } as unknown as RunRecord;
+  const record = inspectionRecord(Math.max(1, ...events.map(event => event.sequence)));
   const observation = await inspectRun(store, record, 'claude-code', undefined,
     { sourceRootKind: 'operator_selected', requestedModel: 'deepseek-v4.1-flash' });
   assert.equal(observation.tokenUsage, undefined);
@@ -146,19 +154,19 @@ test('Harness usage cannot turn missing Runtime telemetry into zero or priced ca
 test('Runtime Codex watermarks and cache-inclusive deltas retain their original aggregation', async () => {
   const events: EventEnvelope[] = [];
   const store = { events: () => events } as unknown as ExperimentStore;
-  const record = { attempt: { runId: 'run-1' }, artifactRefs: [], outcome: { termination: { kind: 'completed', code: 'completed.controller_satisfied' } } } as unknown as RunRecord;
+  const record = () => inspectionRecord(events.length);
   const replay = { sourceRootKind: 'operator_selected' as const, requestedModel: 'gpt-6-astra' };
   for (const total of [128, 256]) events.push(envelope('runtime.usage_reported', {
     info: { total_token_usage: { total_tokens: total } },
-  }));
-  assert.equal((await inspectRun(store, record, 'codex', undefined, replay)).tokenCount, 256);
+  }, events.length + 1));
+  assert.equal((await inspectRun(store, record(), 'codex', undefined, replay)).tokenCount, 256);
   for (const last of [
     { input_tokens: 100, output_tokens: 10, cached_input_tokens: 20 },
     { input_tokens: 80, output_tokens: 5, cached_input_tokens: 30 },
   ]) events.push(envelope('runtime.usage_reported', {
     info: { last_token_usage: last, total_token_usage: { total_tokens: 9000 } },
-  }));
-  const observation = await inspectRun(store, record, 'codex', undefined, replay);
+  }, events.length + 1));
+  const observation = await inspectRun(store, record(), 'codex', undefined, replay);
   assert.deepEqual(observation.tokenUsage, { total: 195, input: 130, output: 15, cached: 50 });
   assert.equal(observation.costUsd, (130 * 10 + 15 * 50 + 50) / 1_000_000);
 });

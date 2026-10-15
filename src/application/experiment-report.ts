@@ -6,7 +6,7 @@ import type { ControllerDecision } from "../agents/controller-agent.js";
 import { buildComparisonContext, briefingComparisonContext, comparisonOwnedObservationRefs } from "./comparison.js";
 import type { CandidateRun } from "./candidate-run.js";
 import { sha256, writeAtomic } from "../core/identity.js";
-import { ComparisonInvocationSchema, ComparisonReportModelSchema, type ArtifactRef, type ComparisonLinkRecord, type ComparisonMediaRecord, type ComparisonReportModel, type TaskCase } from "../core/schema.js";
+import { ComparisonInvocationSchema, ComparisonReportModelSchema, type ArtifactRef, type ComparisonLinkRecord, type ComparisonMediaRecord, type ComparisonReportModel, type TaskCase, type RunRecord } from "../core/schema.js";
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
 import { workspaceTools } from "../infrastructure/recovery-tools.js";
 import {
@@ -70,28 +70,29 @@ export { comparisonCandidateMount };
 
 const MAX_COMPARISON_INPUT_BYTES = 262_144;
 
-export async function finishExperiment(input: {
+export type CompletedRunContext = {
   signal?: AbortSignal;
-  input: ExperimentInput;
+  input: Pick<ExperimentInput, 'dataDir' | 'experimentId' | 'runId' | 'candidate' | 'agentConfig' | 'comparisonAgentConfig' | 'comparison' | 'comparisonPreviewRenderer' | 'extractHistoricalArtifacts'>;
   taskCase: TaskCase;
   preflight: ExperimentPreflight;
   store: ExperimentStore;
-  run: CandidateRun;
-  controller: {
+  controller?: {
     decision: StructuredAgentResult<ControllerDecision>;
     followupSubmission: boolean;
   };
   experimentRoot: string;
   targetEvents: readonly string[];
   startedAt: number;
-  sourceRootKind: SourceRootKind;
+  sourceRootKind?: SourceRootKind;
   workspaceRoot: string;
   candidateSnapshotRoot: string;
   candidateSnapshotStatus: "complete" | "incomplete" | "missing";
   compare?: boolean;
   onComparisonAttempt?: (attemptId: string) => void;
   comparisonAttempt?: ReturnType<typeof newComparisonAttempt>;
-}): Promise<ExperimentResult> {
+};
+
+export async function finishExperiment(input: CompletedRunContext & { run: CandidateRun; controller: NonNullable<CompletedRunContext['controller']> }): Promise<ExperimentResult> {
   const finishedRecord = input.run.result().record;
   if (!finishedRecord)
     throw new Error("Candidate run did not produce a RunRecord.");
@@ -126,8 +127,8 @@ export async function finishExperiment(input: {
 }
 
 export async function attachExperimentComparison(
-  input: Parameters<typeof finishExperiment>[0],
-  record: NonNullable<ReturnType<CandidateRun["result"]>["record"]>,
+  input: CompletedRunContext,
+  record: RunRecord,
 ): Promise<ExperimentResult> {
   const inspection = await inspectExperimentRun(input, record);
   return await experimentResult(
@@ -146,8 +147,8 @@ function skippedComparison(experimentRoot: string) {
 }
 
 async function experimentResult(
-  input: Parameters<typeof finishExperiment>[0],
-  record: NonNullable<ReturnType<CandidateRun["result"]>["record"]>,
+  input: CompletedRunContext,
+  record: RunRecord,
   inspection: Awaited<ReturnType<typeof inspectRun>>,
   compared: {
     comparisonResult: ExperimentResult["comparison"]["result"];
@@ -187,9 +188,9 @@ async function experimentResult(
     reportPath: compared.reportPath,
     preflight: input.preflight,
     record,
-    decision: input.controller.decision,
+    decision: input.controller?.decision ?? { status: 'not_reconstructed' },
     comparison: { result: compared.comparisonResult },
-    followupSubmission: input.controller.followupSubmission,
+    ...(input.controller ? { followupSubmission: input.controller.followupSubmission } : {}),
     targetEvents: input.targetEvents,
     facts: {
       elapsedMs: Date.now() - input.startedAt,
@@ -218,8 +219,8 @@ async function experimentResult(
 }
 
 async function inspectExperimentRun(
-  input: Parameters<typeof finishExperiment>[0],
-  record: NonNullable<ReturnType<CandidateRun["result"]>["record"]>,
+  input: CompletedRunContext,
+  record: RunRecord,
 ) {
   return inspectRun(
     input.store,
@@ -227,7 +228,7 @@ async function inspectExperimentRun(
     input.input.candidate.productId,
     undefined,
     {
-      sourceRootKind: input.sourceRootKind,
+      ...(input.sourceRootKind ? { sourceRootKind: input.sourceRootKind } : {}),
       requestedModel: input.input.candidate.requestedModel,
       ...(record.manifest?.resolvedModel.resolved
         ? { resolvedModel: record.manifest.resolvedModel.resolved }
@@ -239,8 +240,8 @@ async function inspectExperimentRun(
 }
 
 async function compareExperimentOutcome(
-  input: Parameters<typeof finishExperiment>[0],
-  record: NonNullable<ReturnType<CandidateRun["result"]>["record"]>,
+  input: CompletedRunContext,
+  record: RunRecord,
   inspection: Awaited<ReturnType<typeof inspectRun>>,
 ) {
   const { attemptId, attemptRoot } = input.comparisonAttempt ?? newComparisonAttempt(input.experimentRoot);
@@ -338,7 +339,7 @@ async function compareExperimentOutcome(
   });
 }
 
-async function prepareComparisonHistory(input: Parameters<typeof finishExperiment>[0], record: NonNullable<ReturnType<CandidateRun['result']>['record']>, inspection: Awaited<ReturnType<typeof inspectRun>>, attemptId: string, attemptRoot: string) {
+async function prepareComparisonHistory(input: CompletedRunContext, record: RunRecord, inspection: Awaited<ReturnType<typeof inspectRun>>, attemptId: string, attemptRoot: string) {
   try {
     return await prepareHistoricalArtifacts({ taskCase: input.taskCase, caseDir: join(input.input.dataDir, 'cases', input.taskCase.caseId),
       attemptRoot, ...(input.input.extractHistoricalArtifacts ? { extract: input.input.extractHistoricalArtifacts } : {}) });
@@ -361,7 +362,7 @@ async function auditHistoricalDelivery(store: ExperimentStore, runId: string, at
 }
 
 async function runComparisonAttempt(input: {
-  host: Parameters<typeof finishExperiment>[0];
+  host: CompletedRunContext;
   attemptId: string;
   attemptRoot: string;
   briefing: { links: readonly ComparisonLinkRecord[]; media: readonly ComparisonMediaRecord[]; indexMarkdown: string };
@@ -511,7 +512,7 @@ async function persistComparisonInvocation(input: {
 
 function withOrientation(
   context: ComparisonContext,
-  input: Parameters<typeof finishExperiment>[0],
+  input: CompletedRunContext,
   attemptId: string,
   attemptRoot: string,
   indexMarkdown: string,
@@ -588,7 +589,7 @@ function remapInvalidEnvelope(result: AgentInvocation<ComparisonResult>, reportP
 }
 
 async function invokeCompare(
-  input: Parameters<typeof finishExperiment>[0],
+  input: CompletedRunContext,
   context: ComparisonContext,
   attemptRoot: string,
   attemptId: string,
@@ -677,20 +678,20 @@ async function invokeCompare(
   return { result, deliveredImageContentHashes };
 }
 
-function comparisonWorkspaceRoot(input: Parameters<typeof finishExperiment>[0]): string {
+function comparisonWorkspaceRoot(input: CompletedRunContext): string {
   return input.candidateSnapshotStatus === "complete"
     ? input.candidateSnapshotRoot
     : join(input.experimentRoot, "comparison-attempts", "candidate-snapshot-unavailable");
 }
 
-function quoteSourcesForAttempt(input: Parameters<typeof finishExperiment>[0], attemptRoot: string, catalog: ComparisonEvidenceCatalog, allowModelText: boolean): ComparisonQuoteSourcePort {
+function quoteSourcesForAttempt(input: CompletedRunContext, attemptRoot: string, catalog: ComparisonEvidenceCatalog, allowModelText: boolean): ComparisonQuoteSourcePort {
   return createComparisonQuoteSourcePort({ evidence: () => catalog.snapshot().links, attemptRoot, allowModelText,
     mounts: comparisonAttemptMounts({ experimentRoot: input.experimentRoot, runId: input.input.runId, attemptRoot,
       candidateSnapshotStatus: input.candidateSnapshotStatus, candidateSnapshotRoot: input.candidateSnapshotRoot }) });
 }
 
 function comparisonTools(
-  input: Parameters<typeof finishExperiment>[0],
+  input: CompletedRunContext,
   attemptRoot: string,
   catalog: ComparisonEvidenceCatalog,
   draft: ComparisonDraft,
@@ -828,7 +829,7 @@ function registerEvidenceTool(catalog: ComparisonEvidenceCatalog): AgentToolDefi
 }
 
 function comparisonAudit(
-  input: Parameters<typeof finishExperiment>[0],
+  input: CompletedRunContext,
   attemptId: string,
   deliveredImageContentHashes: Set<string>,
 ): AgentAuditSink {

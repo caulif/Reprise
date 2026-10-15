@@ -30,6 +30,12 @@ v2 读端校验 schema、身份、内部 owner、每个清单文件长度/hash�
 
 ## 运行与报告归属
 
+新 ExperimentSpec v2 只绑定固定 TaskCase 身份：冻结 v2 case 使用完整内容 hash，旧 v1 使用旧 hash 和仅忽略 importedAt 的当前 canonical 观察。旧 metadata（无版本或版本 1）完整校验后原样读取，不重写、不补历史认证；History 明示旧身份未认证。新的当前绑定与保留 case 不一致时显示具体诊断，不展示替换内容的标题。候选、policy 和 Agent 实际配置仍属于每个 run，首轮配置不是永久约束。
+
+metadata 与 preflight 读端分派 missing/corrupt/unsupported/legacy/current；非正整数版本为损坏，合法未知版本为不支持。新 preflight wrapper 绑定 experimentId/runId 并完整校验嵌套内容；只有 nested missing 可读旧根级文件，损坏或未知版本不能回退。缺失旧预检的运行重比明确 sourceBaseline unknown 与证据限制。固定场景和接纳顺序见[固定实验身份决策](../decisions/accepted/2026-10-15-fixed-experiment-identity-and-persisted-comparison-context.md)。
+
+对已结束 RunRecord，inspection、模型可见运行事实与 Target 引用只读 record.trace 的原日志窗口，后续同 run 的 runtime 追加不能改变旧答案、usage 或 settlement；无 record 的运行中查询保持读取当前日志。
+
 启动失败仅按 core schema 与已提交 attempt owner 匹配的 run.startup_failed 显示 failed/cancelled、stage 和诊断；没有 experiment.json 时保留最小身份与 missing_metadata，孤立失败文件不认证。已接纳 attempt 的任务与固定实验元数据冲突时，History 保留真实 attempt 任务和启动诊断，并显式展示原元数据任务 ID 与冲突。元数据缺失或损坏且事件日志发生 I/O 错误时，列表保留损坏条目、unknown 和安全错误码，不生成运行事实；打开详情仍报告实际日志读取错误。
 
 History 的默认运行按已提交 `run.attempt_created` 顺序选择，日志校验后再按选中 run 重建模型输入及终态，另一 run 的完成不能补成当前 run 的完成。缺少该 run 生命周期日志的旧运行按经过 schema 和身份校验的 attempt/record 时间排序；其他 run 或后续 Comparison 事件不改变其旧格式资格；缺有效时间或最新时间并列时只给确定性的选择并标 `runOrdering: unknown`，不宣称时间上的最新。重比默认倒序查找合法 finished RunRecord；多条 legacy 的时间未知或最新并列时必须显式选 runId，唯一合法 finished 仍可默认选择。显式 runId 精确选择且不回退。record.attempt、manifest.attempt 与已提交 attempt 必须一致；该 run 存在生命周期日志时还须匹配已提交 run.finished 的运行事实，不能以孤立 record 认定完成。已提交 artifactRefs 保持原值和顺序；无本 run 提交锚点的旧 record 仅接受精确本 case 或本实验/本 run 的单 owner refs，跨 run、双 owner 与未绑定 run 的引用拒绝认证；仅允许额外一个精确属于本实验、本 run 的 host-trace.json，并须对应晚于 finished 的 artifact.created，实际读取仍校验 Store manifest、提交来源与 hash。

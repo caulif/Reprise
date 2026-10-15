@@ -108,7 +108,7 @@ export {
   type HistoricalArtifactFinality,
 } from "./schemas/historical-artifacts.js";
 export {
-  ExperimentSpecSchema,
+  FixedExperimentSpecSchema,
   type ExperimentSpec,
   type AgentBudget,
   type AgentConfig,
@@ -122,6 +122,8 @@ export {
   RunRecordSchema,
   type RunRecord,
 } from "./schemas/run.js";
+export { PersistedExperimentMetadataSchema, type PersistedExperimentMetadata, ExperimentPreflightSchema,
+  type ExperimentPreflight, RunPreflightRecordSchema } from './schemas/experiment-metadata.js';
 export {
   CandidateLaunchContextSchema,
   type CandidateLaunchContext,

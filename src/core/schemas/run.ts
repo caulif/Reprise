@@ -25,7 +25,8 @@ const RunPolicySchema = Type.Object({
   turnTimeoutMs: Type.Integer({ minimum: 1 }),
   maxConsecutiveNoProgress: Type.Integer({ minimum: 1 }),
 });
-export const ExperimentSpecSchema = Type.Object({
+const LegacyExperimentSpecSchema = Type.Object({
+  schemaVersion: Type.Optional(Type.Literal(1)),
   experimentId: Id,
   taskCaseId: Id,
   candidates: Type.Array(CandidateSpecSchema, { minItems: 1 }),
@@ -34,6 +35,16 @@ export const ExperimentSpecSchema = Type.Object({
   runPolicy: RunPolicySchema,
   outputRoot: Type.String({ minLength: 1 }),
 });
+export const FixedExperimentSpecSchema = Type.Object({
+  schemaVersion: Type.Literal(2),
+  experimentId: Id,
+  taskCaseId: Id,
+  taskCaseIdentity: Type.Union([
+    Type.Object({ kind: Type.Literal('frozen-v2'), contentHash: Hash }, { additionalProperties: false }),
+    Type.Object({ kind: Type.Literal('legacy-v1'), legacyContentHash: Hash, observedCanonicalHash: Hash }, { additionalProperties: false }),
+  ]),
+}, { additionalProperties: false });
+export const ExperimentSpecSchema = Type.Union([LegacyExperimentSpecSchema, FixedExperimentSpecSchema]);
 export type ExperimentSpec = Static<typeof ExperimentSpecSchema>;
 export type AgentBudget = Static<typeof AgentBudgetSchema>;
 export type AgentConfig = Static<typeof AgentConfigSchema>;
