@@ -26,4 +26,6 @@
 
 通过编译后的子进程阻断 comparison-agent.js 的模块解析，加载默认 harness、workflow、comparison 与报告编排入口，证明实际 runtime import 图不依赖旧 executor；同一个 hook 显式加载旧模块必须失败，作为检测器负控。中立/兼容断言保持同一函数，回归覆盖 schema、未知引用和当前 catalog；既有自主与旧执行测试继续执行。只加载模块和 fake Session，不调用真实模型或 Runtime。
 
+阻断器先归一化相对 specifier，并检查实际解析结果 URL；负控同时执行绝对 URL 与真实相对 import。即使后续退休的 executor 文件不存在，相对导入也必须命中阻断器，不能把普通 module-not-found 误作负控通过。
+
 现行规则见[证据与对照](../../architecture/evidence-and-comparison.md#comparison-attempt)。
