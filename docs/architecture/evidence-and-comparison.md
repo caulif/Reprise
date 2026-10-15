@@ -28,6 +28,8 @@ History 的默认运行按已提交 `run.attempt_created` 顺序选择，日志�
 
 根级 `report.html`、`comparison-failure.html`、`comparison.json` 仍供既有工具访问，但只是可替换便利投影。旧格式缺 owner 的报告可打开，History 标为 unknown/unconfirmed；不迁移旧字节，不将根级 completed 归到当前选择。协议取舍见[运行与报告归属](../decisions/accepted/2026-10-14-run-report-ownership.md)。
 
+结果页与 History 共用最小只读展示输入；unknown/pending 是合法展示事实，不构造不存在的 Session、报告或 Agent failure。应用层在既有 comparisonDetail 中保留实际 value.status（包含 completed），缺失详情不作为成功的缩写。失败诊断仅展示已保存的 token；报告路径与 owner 继续由上面的查询协议决定，展示层不补造。取舍见[诚实的结果展示输入](../decisions/accepted/2026-10-15-honest-result-presentation.md)。
+
 ## 模型输入可追溯
 
 Controller、Recovery、Comparison 都通过 Agent Session Host 生成模型请求。Host 把 system prompt、用户消息、工具结果和结构化结果写入审计事实；普通 generation 另保存 Pi 转换与裁剪后、经过凭据脱敏的实际上下文快照，保留原生工具参数及 SDK 拒绝消息；[`model-input.ts`](../../src/infrastructure/agent/model-input.ts) 从事件日志重建请求。上下文压缩必须追加 `agent.context_compacted`，其中 summary 与 retained tail 是后续请求可见的输入来源。新增模型可见事实必须先写入事件审计（必要时再由 briefing 做可读投影），不能只存在内存变量。

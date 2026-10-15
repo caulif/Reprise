@@ -86,7 +86,7 @@ export function renderHistoryDetailWithHits(
   if (item.candidateProductId) push(kv(theme, t(locale, 'candidateLabel'), `${item.candidateProductId}${item.candidateModel ? ` · ${item.candidateModel}` : ''}`, width - 2));
   if (item.startedAt) push(kv(theme, t(locale, 'historyStartedAt'), item.startedAt, width - 2));
   push(kv(theme, t(locale, 'resultTask'), presentation.taskLabel, width - 2));
-  push(kv(theme, t(locale, 'resultTermination'), item.outcome === 'interrupted' ? t(locale, 'historyInterrupted') : presentation.terminationLabel, width - 2));
+  push(kv(theme, t(locale, 'resultTermination'), presentation.terminationLabel, width - 2));
   push(kv(theme, t(locale, 'resultCleanup'), presentation.cleanupLabel, width - 2));
   push(kv(theme, t(locale, 'resultComparison'), presentation.comparisonLabel, width - 2));
   if (item.startupFailureStage) push(kv(theme, t(locale, 'historyStartupStage'), item.startupFailureStage, width - 2));

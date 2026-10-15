@@ -83,6 +83,5 @@ export function comparisonDetailOf(comparison: {
   readonly value?: { readonly status?: string };
 } | undefined): string | undefined {
   if (!comparison || comparison.status !== "completed") return undefined;
-  const detail = comparison.value?.status;
-  return detail && detail !== "completed" ? detail : undefined;
+  return comparison.value?.status;
 }
