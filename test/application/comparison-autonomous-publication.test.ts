@@ -1,4 +1,6 @@
 import test from 'node:test';
+import { Value } from '@sinclair/typebox/value';
+import { ComparisonReportModelSchema } from '../../src/core/schema.js';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -23,7 +25,7 @@ const model: Model<'openai-completions'> = { id: 'fixture', name: 'fixture', api
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 const config: HarnessModelConfig = { schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' },
   providerId: 'fixture', modelId: 'fixture', effort: 'low' };
-const submission = { status: 'completed', category: 'Delivery', headline: 'The candidate delivered a focused change', path: 'scratch/report.html' };
+const submission = { boundary: 'Task quality remains unverified.', differences: ['Candidate delivers a focused change.'], status: 'completed', category: 'Delivery', headline: 'The candidate delivered a focused change', path: 'scratch/report.html' };
 const original = '<p>The candidate produced a focused change. Task quality remains unverified.</p>';
 const revised = '<p>The revised comparison retains the uncertainty about task quality.</p>';
 type Step = { name: string; arguments: Record<string, unknown> };
@@ -33,12 +35,13 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
     const root = await mkdtemp(join(tmpdir(), 'reprise-autonomous-publication-'));
     t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
     const base = input(root, new VerifiedRuntime());
+    base.taskCase.taskContext = { ...base.taskCase.taskContext, historyStartedAt: '2026-09-20T23:30:00-04:00' };
     await mkdir(base.sourceRoot);
     await writeFile(join(base.sourceRoot, 'README.md'), '# frozen source\n');
     const abort = new AbortController();
     const steps: Step[] = [
       { name: 'write', arguments: { path: submission.path, content: mode === 'selected-delivery' || mode === 'git-delivery'
-        ? `${original}<p>Chosen substitute, not the historical model's original delivery.</p><a href="finals/baseline.txt">Chosen baseline</a>` : original } },
+        ? `${original}<a href="finals/baseline.txt">Chosen baseline</a>` : original } },
       { name: 'submit_report', arguments: submission },
     ];
     if (mode === 'selected-delivery' || mode === 'git-delivery') steps.unshift({ name: 'read', arguments: { path: 'finals/manifest.json' } });
@@ -90,6 +93,7 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
     const comparisonPreviewRenderer: ArtifactRenderer = async request => {
       const html = await readFile(join(request.bundleRoot, request.entryRelativePath), 'utf8');
       assert.ok(html.includes(renders++ === 0 ? original : revised));
+      assert.match(html, /2026-09-21 UTC/);
       const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
       await mkdir(request.outputRoot, { recursive: true });
       const pngPath = join(request.outputRoot, 'preview.png');
@@ -132,8 +136,10 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
     const request = events.find(event => event.type === 'comparison.requested');
     assert.ok(request && typeof request.payload === 'object' && request.payload !== null);
     const payload = request.payload as { attemptId: string; autonomousContractVersion: number; reviewInspectionContractVersion?: number };
-    assert.equal(payload.autonomousContractVersion, 1);
+    assert.equal(payload.autonomousContractVersion, 2);
     assert.equal(payload.reviewInspectionContractVersion, undefined);
+    const context = JSON.parse(await readFile(join(result.experimentRoot, 'comparison-attempts', payload.attemptId, 'facts', 'context.json'), 'utf8')) as { reportFacts: { sessionDates: { baseline: string; candidate: string } } };
+    assert.deepEqual(context.reportFacts.sessionDates, { baseline: '2026-09-21', candidate: base.now.slice(0, 10) });
     if (mode === 'git-delivery') {
       const media = JSON.parse(await readFile(join(result.experimentRoot, 'comparison-attempts', payload.attemptId, 'facts', 'media.json'), 'utf8')) as { side: string }[];
       assert.equal(media.filter(item => item.side === 'baseline').length, 0, 'Repository HTML assets must not trigger automatic delivery screenshots');
@@ -143,6 +149,8 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
       const facts = JSON.parse(await readFile(join(result.experimentRoot, 'comparison-attempts', payload.attemptId, 'facts', 'context.json'), 'utf8')) as { reportFacts: { replay: { conditions: string[] } } };
       assert.ok(facts.reportFacts.replay.conditions.some(condition => /user-selected substitute|用户指定替代基准/.test(condition)));
       const report = await readFile(join(result.experimentRoot, 'report.html'), 'utf8');
+      assert.match(report, /data-host="substitute-baseline"/);
+      assert.match(report, /历史材料为用户指定替代品，非历史模型原件；模型与指标属于原会话。/);
       const href = report.match(/href="([^"]*published-finals[^"]*baseline\.txt)"/)?.[1];
       assert.ok(href);
       assert.equal(await readFile(join(result.experimentRoot, ...href.split('/')), 'utf8'), 'chosen baseline bytes');
@@ -155,12 +163,27 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
       && (event.payload as { role?: string }).role === 'comparison').length, 1);
     const recovery = await inspectComparisonRecovery({ dataDir: base.dataDir, experimentId: base.experimentId, attemptId: payload.attemptId });
     assert.equal(recovery.ready, published, recovery.reason);
+    if (mode === 'selected-delivery') assert.match(recovery.html, /历史材料为用户指定替代品，非历史模型原件；模型与指标属于原会话。/);
     const history = await readCommittedExperimentHistory(result.experimentRoot, base.experimentId);
     assert.equal(history.diagnosticCode, undefined);
     assert.equal(history.incompleteModelInput, false);
     assert.deepEqual(await readFile(eventsPath), before, 'Read-only recovery/history must not rewrite committed evidence');
     const reportPath = join(result.experimentRoot, 'report.html');
-    if (published) assert.ok((await readFile(reportPath, 'utf8')).includes(mode === 'repreviewed' ? revised : original));
+    if (published) {
+      const html = await readFile(reportPath, 'utf8');
+      assert.ok(html.includes(mode === 'repreviewed' ? revised : original));
+      assert.match(html, /data-report-format="3"/);
+      assert.match(html, /2026-09-21 UTC/);
+      assert.match(recovery.html, /2026-09-21 UTC/);
+      assert.doesNotMatch(html, /data-agent-zone="details"|data-host-zone="evidence"|data-host-limitation="hostLimitationShareCardPresentation"/);
+      const model: unknown = JSON.parse(await readFile(join(result.experimentRoot, 'report-model.json'), 'utf8'));
+      assert.ok(Value.Check(ComparisonReportModelSchema, model));
+      assert.equal(model.formatVersion, 3);
+      assert.equal(model.boundary, submission.boundary);
+      assert.deepEqual(model.differences, submission.differences);
+      assert.equal(recovery.model?.boundary, submission.boundary);
+      assert.deepEqual(recovery.model?.differences, submission.differences);
+    }
     else await assert.rejects(readFile(reportPath), { code: 'ENOENT' });
   });
 }

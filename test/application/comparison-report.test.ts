@@ -13,8 +13,61 @@ import { input, VerifiedRuntime } from '../codex-experiment-support.js';
 import type { ComparisonAgentPort } from '../../src/agents/comparison-agent.js';
 import type { RunRecord, TaskCase } from '../../src/core/schema.js';
 import { ToolPreconditionRejected } from '../../src/core/tool-precondition-rejected.js';
+import { Value } from '@sinclair/typebox/value';
+import { ComparisonBriefingContextSchema } from '../../src/core/schema.js';
+import { extractHostZoneSnapshot, hostZonesMismatch, renderComparisonReportShell } from '../../src/application/comparison-report-shell.js';
 
 const timestamp = '2026-08-15T00:00:00.000Z';
+
+test('session dates use earliest valid history and run time in UTC and survive frozen facts', () => {
+  const historical = taskCase();
+  historical.historicalEvents = [
+    { timestamp: '2026-10-13T12:00:00Z' },
+    { timestamp: '2026-10-12T00:30:00+08:00' },
+    { timestamp: '2026-02-30T00:00:00Z' },
+    { timestamp: '2026-01-01T00:00:00' },
+  ];
+  const context = buildComparisonContext(historical, [runRecord()]);
+  const frozen = JSON.parse(JSON.stringify(context)) as typeof context;
+  assert.equal(Value.Check(ComparisonBriefingContextSchema, frozen), true);
+  assert.deepEqual(frozen.reportFacts.sessionDates, { baseline: '2026-10-11', candidate: '2026-08-15' });
+  const html = renderComparisonReportShell({ task: 'Dates', facts: frozen.reportFacts, metrics: {} });
+  assert.match(html, /历史会话[^\n]*2026-10-11 UTC/);
+  assert.match(html, /当前会话[^\n]*2026-08-15 UTC/);
+  const snapshot = extractHostZoneSnapshot(html);
+  assert.ok(snapshot);
+  assert.equal(hostZonesMismatch(html.replaceAll('2026-10-11', '2026-10-10'), snapshot, {}), 'Host zone "header" was modified.');
+  delete frozen.reportFacts.sessionDates;
+  assert.equal(Value.Check(ComparisonBriefingContextSchema, frozen), true);
+  const legacy = renderComparisonReportShell({ task: 'Dates', facts: frozen.reportFacts, metrics: {}, locale: 'en' });
+  assert.equal(legacy.match(/Date unknown/g)?.length, 2);
+});
+
+test('session dates retain history-only metadata without substituting import time', () => {
+  const historical = taskCase();
+  historical.taskContext = { historyStartedAt: '2026-10-10T23:30:00-04:00' };
+  assert.deepEqual(buildComparisonContext(historical, []).reportFacts.sessionDates, { baseline: '2026-10-11' });
+  historical.taskContext.historyStartedAt = 'invalid';
+  const run = runRecord();
+  run.attempt.createdAt = '2026-13-01T00:00:00Z';
+  const facts = buildComparisonContext(historical, [run]).reportFacts;
+  assert.deepEqual(facts.sessionDates, {});
+  const html = renderComparisonReportShell({ task: 'Dates', facts, metrics: {} });
+  assert.equal(html.match(/日期未知/g)?.length, 2);
+});
+
+test('session date prefers the manifest start over attempt creation', () => {
+  const run = runRecord();
+  const agent = { providerId: 'fixture', requestedModel: 'fixture', budget: { callTimeoutMs: 1000, maxStructuredRepairAttempts: 0 } };
+  run.manifest = {
+    schemaVersion: 1, attempt: run.attempt,
+    resolvedModel: { requested: 'fixture', resolved: 'fixture' },
+    runtime: { productId: 'codex', executable: 'fixture' },
+    environment: { environmentId: 'env-1', workspacePath: 'fixture' },
+    controller: agent, comparison: agent, startedAt: '2026-08-16T01:00:00Z',
+  };
+  assert.equal(buildComparisonContext(taskCase(), [run]).reportFacts.sessionDates?.candidate, '2026-08-16');
+});
 function taskCase(): TaskCase { return { schemaVersion: 1, caseId: 'case-1', source: { productId: 'codex', sessionId: 'session-1' }, initialInput: { id: 'message-1', role: 'user', text: '修复报告。' }, transcript: [{ id: 'message-1', role: 'user', text: '修复报告。' }], historicalEvents: [], baseline: { status: 'available', finalMessage: 'Done.', artifactRefs: [], evidenceRefs: ['event:baseline-1'] }, sourceRuntimeEvidence: { productId: 'codex', artifactRefs: [] }, provenance: { packVersion: 'fixture', importedAt: timestamp, sourceHash: 'a'.repeat(64) }, privacy: { allowModelText: true, allowBinary: false, redactions: [] }, contentHash: 'b'.repeat(64) }; }
 function runRecord(): RunRecord { return { attempt: { schemaVersion: 1, runId: 'run-1', experimentId: 'experiment-1', caseId: 'case-1', candidate: { candidateId: 'candidate-1', productId: 'codex', requestedModel: 'gpt-5.6' }, policy: { wallClockMs: 1000, maxTargetTurns: 2, maxModelCalls: 3, turnTimeoutMs: 1000, maxConsecutiveNoProgress: 1 }, createdAt: timestamp }, state: 'finished', stageReached: 'awaiting_controller', outcome: { task: { status: 'incomplete', evidenceRefs: [] }, termination: { kind: 'limit_reached', code: 'limit.turns', initiatedBy: 'harness' }, cleanup: { status: 'complete', remainingResourceIds: [], evidenceRefs: [] } }, trace: { experimentId: 'experiment-1', runId: 'run-1', firstSequence: 1, lastSequence: 2 }, artifactRefs: [], warnings: [] }; }
 
@@ -276,8 +329,8 @@ test('Host metrics shell matches the projected fingerprint and fails when number
   assert.match(html, /cacheRead /);
   assert.match(html, /cacheCreation /);
   assert.equal(facts.models.baseline, 'gpt-5');
-  assert.match(html, /<span>历史会话 · gpt-5<\/span>/);
-  assert.match(html, /<span>当前会话 · 未记录<\/span>/);
+  assert.match(html, /<span>历史会话 · gpt-5 ·/);
+  assert.match(html, /<span>当前会话 · 未记录 ·/);
   assert.doesNotMatch(html, />Baseline</);
   const tampered = html.replace('0.49', '9.99');
   assert.equal(hostMetricsMismatch(tampered, facts.metrics ?? {}), 'Host metrics numbers were modified.');

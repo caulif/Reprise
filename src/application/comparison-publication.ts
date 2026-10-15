@@ -18,7 +18,6 @@ import { isMissing } from "./experiment-helpers.js";
 import type { AgentLocale } from "../agents/language.js";
 import { candidateStatusLabel, reportString, type ComparisonReportStringKey } from "./comparison-report-strings.js";
 import {
-  AGENT_ZONES,
   agentContentFromDraft,
   agentUnsafeContentError,
   agentZoneBlank,
@@ -39,7 +38,8 @@ import { extensionForMediaType, rewriteMediaHref, stagePublishedEvidence, stageP
 import type { StructuredAgentResult } from "../infrastructure/agent/host.js";
 import type { ComparisonQuoteSourcePort } from "./comparison-source.js";
 import { validateComparisonEvidenceQuotes } from "./comparison-evidence-quotes.js";
-import { evidenceQuoteMarkupOnly, transformOutsideEvidenceQuotes } from "../core/comparison-html.js";
+import { comparisonReportFormat, comparisonAgentZones, evidenceQuoteMarkupOnly, transformOutsideEvidenceQuotes } from "../core/comparison-html.js";
+import { comparisonCompactTextBudgetError, comparisonPlainText, comparisonDifferenceTexts } from "./comparison-report-text.js";
 import { invalidAgentReferences, unexpectedAgentZones } from "./comparison-reference-validation.js";
 
 export type ComparisonFailureClass =
@@ -203,6 +203,8 @@ export async function verifyAndRenderComparisonReport(input: VerificationInput):
   }
   const finalQuoteError = await validateComparisonEvidenceQuotes(html, input.quoteSources);
   if (finalQuoteError) return { failureClass: "evidence", code: "evidence_unresolved", message: finalQuoteError };
+  const budgetError = comparisonReportFormat(html) === 3 ? comparisonCompactTextBudgetError(html) : undefined;
+  if (budgetError) return { failureClass: 'publication', code: 'report_incomplete', message: budgetError };
   const model = comparisonReportModelFromHtml(html, input.facts, input.result, input.media, input.evidence, locale);
   return { html, model };
 }
@@ -217,6 +219,7 @@ function rebuildHostReport(
   if ("error" in extracted) return { failureClass: "publication", code: "report_incomplete", message: extracted.error };
   return {
     html: renderComparisonReportShell({
+      ...(extracted.formatVersion === 3 ? { formatVersion: 3 as const } : {}),
       task: input.hostTask,
       facts: input.facts,
       metrics,
@@ -376,9 +379,9 @@ export function comparisonReportModelFromHtml(
   const mediaRefs = media.filter((item) => markup.includes(item.reportHref) || (item.shortRef && markup.includes(item.shortRef))).map((item) => item.ref);
   const slotHeadline = oneLineFromHtml(extractInner(html, "data-agent-slot", "headline"));
   const headline = result.headline ?? (slotHeadline.length > 0 && slotHeadline.length <= 280 ? slotHeadline : undefined);
-  return {
-    schemaVersion: 1,
-    formatVersion: 2,
+  const base = {
+    schemaVersion: 1 as const,
+
     task: oneLineFromHtml(extractInner(html, "data-agent-slot", "task")) || oneLineFromHtml(extractInner(html, "data-slot", "task")) || reportString(locale, "defaultCategory"),
     status: {
       baseline: facts.replay.baselineEvidence,
@@ -393,6 +396,9 @@ export function comparisonReportModelFromHtml(
     mediaRefs,
     ...(headline ? { headline } : {}),
   };
+  return comparisonReportFormat(html) === 3
+    ? { ...base, formatVersion: 3, headline: headline ?? '', boundary: comparisonPlainText(extractInner(html, 'data-agent-slot', 'boundary')), differences: comparisonDifferenceTexts(html) }
+    : { ...base, formatVersion: 2 };
 }
 
 export function comparisonFailureDiagnostic(input: {
@@ -495,7 +501,7 @@ async function rewritePublishableHtml(input: {
 
 function rewriteAgentZones(html: string, rewrite: (inner: string) => string): string {
   let next = html;
-  for (const zone of AGENT_ZONES) {
+  for (const zone of comparisonAgentZones(html)) {
     const outer = extractOuter(next, "data-agent-zone", zone);
     const inner = extractInner(next, "data-agent-zone", zone);
     if (!outer || !inner) continue;
@@ -513,7 +519,7 @@ function replaceZoneInner(html: string, attr: string, name: string, nextInner: s
   return html.replace(outer, () => `${open[0]}${nextInner}</${tag}>`);
 }
 
-const ZONE_TAG = "header|section|style|p|span";
+const ZONE_TAG = "header|section|style|p|span|h[1-6]|div|footer";
 
 function appendHostLimitations(html: string, locale: AgentLocale, keys: readonly ComparisonReportStringKey[]): string {
   const uniqueKeys = [...new Set(keys)];
@@ -645,7 +651,9 @@ function shareCardPresentationError(html: string, locale: AgentLocale): string |
   if (/本卡由|Written by /i.test(page)) return "Share card must not print who wrote the card.";
   const visible = share.replace(/<!--[\s\S]*?-->/g, " ");
   if (/历史侧|候选侧/.test(visible)) return "Share card must not use 历史侧 or 候选侧.";
-  const labels = locale === "en"
+  const labels = comparisonReportFormat(html) === 3
+    ? [reportString(locale, 'recommendation'), reportString(locale, 'sessionHistorical'), reportString(locale, 'sessionCurrent')]
+    : locale === "en"
     ? ["Task", "Main conclusion", "Historical session", "Current session"] as const
     : ["任务描述", "主要结论", "历史会话", "当前会话"] as const;
   for (const label of labels) {

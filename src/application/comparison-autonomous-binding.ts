@@ -22,10 +22,12 @@ export function autonomousComparisonRequested(events: readonly EventEnvelope[], 
 
 /** Integrity and actual preview delivery only; this does not certify the model's judgment. */
 export async function autonomousComparisonBinding(input: {
-  events: readonly EventEnvelope[]; attemptId: string; draftDigest: string; catalogRevision: number;
+  events: readonly EventEnvelope[]; attemptId: string; draftDigest: string; catalogRevision: number; reportFormat?: number;
   store: Pick<ExperimentStore, 'experimentId' | 'readArtifact'>;
 }): Promise<string | undefined> {
   const events = input.events.filter(event => record(event.payload).attemptId === input.attemptId);
+  const contract = events.filter(event => event.type === 'comparison.requested').at(-1);
+  if (record(contract?.payload).autonomousContractVersion === 2 && input.reportFormat !== 3) return 'Autonomous contract 2 requires report format 3.';
   const accepted = events.filter(event => event.type === 'agent.tool_completed' && record(event.payload).tool === 'submit_report'
     && !('nativeHook' in record(event.payload)) && Value.Check(ComparisonDraftAcceptanceReceiptSchema, record(event.payload).details)).at(-1);
   const acceptance = record(accepted?.payload);
