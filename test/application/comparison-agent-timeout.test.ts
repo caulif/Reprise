@@ -107,3 +107,19 @@ test("Comparison cancel after hang does not start envelope repair", async () => 
   assert.equal(result.status, "cancelled");
   assert.equal(prompts, 1);
 });
+
+test('autonomous hard attempt deadline remains binding with a disabled per-call timeout', async () => {
+  let prompts = 0;
+  const events: string[] = [];
+  const comparison = new AutonomousComparisonAgent({ timeoutMs: 0, resources: { maxElapsedMs: 20 },
+    host: new AgentHost({ createSession: () => ({ append: async () => {
+      prompts++;
+      return new Promise<string>(() => {});
+    }, cancel() {} }) }) });
+  const result = await comparison.compare(context('hard-attempt'), [], { append: async event => { events.push(event.type); } });
+  assert.equal(result.status, 'failed');
+  if (result.status === 'failed') assert.equal(result.failure.code, 'agent_timeout');
+  assert.equal(prompts, 1);
+  assert.ok(events.includes('comparison.resources_completed'));
+  assert.ok(events.includes('agent.session_completed'));
+});

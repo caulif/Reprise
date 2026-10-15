@@ -104,11 +104,11 @@ export type ComparisonCompareOptions = {
   estimateUsageCost?: (payload: Record<string, unknown>) => number | undefined;
 };
 
-export function comparisonEvidenceAllowlist(context: ComparisonFactsContext): Set<string> {
+function comparisonEvidenceAllowlist(context: ComparisonFactsContext): Set<string> {
   return new Set(context.shortEvidenceRefs ?? []);
 }
 
-export function validateComparisonEvidence(
+function validateComparisonEvidence(
   value: ComparisonAgentEnvelope,
   available: ReadonlySet<string>,
 ): string | undefined {
@@ -140,4 +140,4 @@ export function assertComparisonResult(
   }
 }
 
-export function shortRefsOf(items: readonly { shortRef?: string }[]): string[] { return items.flatMap((item) => (item.shortRef ? [item.shortRef] : [])); }
+function shortRefsOf(items: readonly { shortRef?: string }[]): string[] { return items.flatMap((item) => (item.shortRef ? [item.shortRef] : [])); }

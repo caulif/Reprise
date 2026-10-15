@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Type } from '@sinclair/typebox';
 import { AutonomousComparisonAgent } from '../../src/agents/comparison-autonomous.js';
 import { AgentHost, type AgentAuditEvent } from '../../src/infrastructure/agent/host.js';
-import type { ComparisonContext, ComparisonResult } from '../../src/agents/comparison-agent.js';
+import type { ComparisonContext, ComparisonResult } from '../../src/agents/comparison-contract.js';
 
 const context: ComparisonContext = {
   attemptId: 'attempt', task: { caseId: 'case', summary: 'Compare text deliveries.' },
@@ -123,6 +123,18 @@ test('autonomous finalization retains a thrown undefined primary cause', async (
     assert.equal((error.errors[1] as Error).message, 'Audit failed after undefined');
     return true;
   });
+});
+
+test('cancellation during asynchronous autonomous publication validation cannot return completed', async () => {
+  const abort = new AbortController();
+  const agent = new AutonomousComparisonAgent({ timeoutMs: 0,
+    host: new AgentHost({ createSession: () => ({ append: async () => '', cancel() {} }) }) });
+  const result = await agent.compare(context, [], undefined, abort.signal, { getSubmittedResult: async () => {
+    await new Promise<void>(resolve => setImmediate(resolve));
+    abort.abort();
+    return report;
+  } });
+  assert.equal(result.status, 'cancelled');
 });
 
 test('autonomous budget feedback respects a shorter invocation timeout and preserves structured tool results', async () => {

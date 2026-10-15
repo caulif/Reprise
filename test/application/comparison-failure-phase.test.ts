@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyComparisonFailure, comparisonFailureDiagnostic, comparisonRecordedFailurePhase } from '../../src/application/comparison-publication.js';
 import { renderComparisonReportShell, metricsFromReportFacts } from '../../src/application/comparison-report-shell.js';
-import type { ComparisonReportFacts } from '../../src/agents/comparison-agent.js';
+import type { ComparisonReportFacts } from '../../src/agents/comparison-contract.js';
 import type { EventEnvelope } from '../../src/core/schema.js';
 
 function facts(): ComparisonReportFacts {

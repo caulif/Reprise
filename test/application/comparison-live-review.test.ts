@@ -7,7 +7,7 @@ import { completedReviewedComparison } from '../../src/application/comparison-li
 import { ComparisonEvidenceCatalog } from '../../src/application/comparison-evidence.js';
 import { eventEnvelopeChecksum, sha256 } from '../../src/core/identity.js';
 import type { EventEnvelope } from '../../src/core/schema.js';
-import type { ComparisonContext, ComparisonResult } from '../../src/agents/comparison-agent.js';
+import type { ComparisonContext, ComparisonResult } from '../../src/agents/comparison-contract.js';
 
 const content = { headline: 'Choice', comparisonHtml: '<p>Main</p>', detailsHtml: '<p>Limit</p>' };
 const html = `<p data-agent-slot="headline">Choice</p><section data-agent-zone="comparison">${content.comparisonHtml}</section><section data-agent-zone="details">${content.detailsHtml}</section>`;

@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { assertComparisonResult, type ComparisonFactsContext, type ComparisonCompareOptions } from '../../src/agents/comparison-contract.js';
-import { assertComparisonResult as compatibilityAssertion } from '../../src/agents/comparison-agent.js';
 
 const context: ComparisonFactsContext = {
   task: { caseId: 'case', summary: 'Task' }, baseline: { summary: 'Baseline', evidenceRefs: [] }, candidates: [], telemetry: [],
@@ -13,8 +12,7 @@ const context: ComparisonFactsContext = {
     replay: { conditions: [], baselineEvidence: 'available', candidateEvidence: 'available' } },
 };
 
-test('neutral result validation retains schema, current catalog and compatibility export behavior', () => {
-  assert.equal(assertComparisonResult, compatibilityAssertion);
+test('neutral result validation checks the original schema and current catalog', () => {
   const incomplete = { status: 'completed', evidenceRefs: ['ev-01'] };
   assert.throws(() => assertComparisonResult(incomplete, context), /schema validation failed/);
   assert.equal('reportPath' in incomplete, false, 'A type assertion cannot claim a temporary normalized copy populated the caller object');
@@ -33,9 +31,8 @@ test('default harness and application entrypoints load without the legacy execut
   const script = `
     import { registerHooks } from 'node:module';
     registerHooks({ resolve(specifier, context, next) {
-      const result = next(specifier, context);
-      if (result.url === process.argv[1]) throw new Error('Legacy Comparison executor entered the production graph');
-      return result;
+      if (specifier === process.argv[1]) throw new Error('Legacy Comparison executor entered the production graph');
+      return next(specifier, context);
     } });
     for (const entry of JSON.parse(process.argv[2])) await import(entry);
     let rejected = false;

@@ -2,7 +2,7 @@
 
 状态：accepted
 
-它替代[任务建议与可视化报告旧提案](../archive/superseded/2026-09-08-comparison-task-verdict-and-visual-report.md)。当前运行规范见[Comparison 架构](../../architecture/evidence-and-comparison.md)。可执行 prompt 以 [`comparison-agent.ts`](../../../src/agents/comparison-agent.ts) 为准。
+它替代[任务建议与可视化报告旧提案](../archive/superseded/2026-09-08-comparison-task-verdict-and-visual-report.md)。当前运行规范见[Comparison 架构](../../architecture/evidence-and-comparison.md)。可执行 prompt 以 [`comparison-agent.ts`](https://github.com/caulif/Reprise/blob/8d528d5/src/agents/comparison-agent.ts) 为准。
 
 ## 问题
 

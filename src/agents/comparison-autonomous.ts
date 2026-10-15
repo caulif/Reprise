@@ -3,6 +3,7 @@ import { AgentHost, type AgentAuditSink, type AgentInvocation, type AgentToolDef
 import { RoleSessions } from '../infrastructure/agent/role-sessions.js';
 import { ComparisonResourceTracker, DEFAULT_COMPARISON_RESOURCES } from './comparison-resources.js';
 import { comparisonOutputContinuation } from './comparison-invocation-boundaries.js';
+import { comparisonToolFeedback } from './comparison-tool-feedback.js';
 import { withLanguageBlock, type AgentLocale } from './language.js';
 import type { ComparisonResources } from '../core/schema.js';
 
@@ -35,8 +36,7 @@ export class AutonomousComparisonAgent implements ComparisonAgentPort {
     const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     const limits = { ...DEFAULT_COMPARISON_RESOURCES, ...this.input.resources };
     limits.maxElapsedMs = Math.min(limits.maxElapsedMs ?? DEFAULT_COMPARISON_RESOURCES.maxElapsedMs!, this.timeoutMs > 0 ? this.timeoutMs : Infinity);
-    const resources = new ComparisonResourceTracker(limits, { totalTimeOnly: true });
-    resources.phase('compose');
+    const resources = new ComparisonResourceTracker(limits);
     const measured: AgentAuditSink = {
       append: async event => {
         if (event.type === 'agent.usage_reported') {
@@ -61,13 +61,10 @@ export class AutonomousComparisonAgent implements ComparisonAgentPort {
         systemPrompt: withLanguageBlock(`${AUTONOMOUS_COMPARISON_PROMPT}\n\nPinned Host metrics: ${JSON.stringify(context.reportFacts.metrics ?? {})}\nThese recorded estimates are not invoices or semantic approval. Unknown is not zero; elapsed time does not establish cost.`, this.input.locale ?? 'zh', 'comparison'),
         compactionInstructions: 'Preserve the user task, decisive observations and counterexamples with source refs, important unknowns, working file paths, current report/catalog and preview bindings, and the next useful action. Drop rereadable source bodies and obsolete plans. There are no workflow stages to resume.',
         tools: tools.map(tool => ({ ...tool, execute: async (params, toolSignal) => {
-          resources.checkHard(tool.name);
+          resources.beforeTool(tool.name);
           combined.throwIfAborted();
           const result = await tool.execute(params, toolSignal);
-          return { ...result, contentBlocks: [
-            ...(result.contentBlocks ?? [{ type: 'text' as const, text: result.content }]),
-            { type: 'text' as const, text: `Host total-time budget remaining: ${String(resources.snapshot().remainingMs)} ms. Plan investigation, reporting and revision within this remaining time; no separate stage allowance is reserved.` },
-          ] };
+          return comparisonToolFeedback(result, resources, tool.name);
         } })), audit: measured,
       }));
       sessionId = session.sessionId;
@@ -79,7 +76,7 @@ export class AutonomousComparisonAgent implements ComparisonAgentPort {
         return session.work({ promptContent, timeoutMs, signal: combined, yieldAfterTurn: () => undefined });
       };
       const outcome = await comparisonOutputContinuation(invoke,
-        `Task: ${context.task.summary}\n\nDeliverable: a concise HTML comparison of the actual deliveries against the complete user requirements, highlighting key differences, user impact and consequential uncertainty. Write scratch/report.html, submit_report, preview_report and inspect the result before finishing.\nTotal remaining session budget: ${String(resources.snapshot().remainingMs)} ms. Complete investigation, writing, preview and any revision within this total time. Choose a useful scope and finish a valid report before it expires; do not treat an unfinished investigation as a completed report.\n\n${context.promptContent ?? ''}\n\nOptional Host metrics (already presented by the report shell): ${JSON.stringify(context.reportFacts.metrics ?? {})}`, undefined, true);
+        `Task: ${context.task.summary}\n\nDeliverable: a concise HTML comparison of the actual deliveries against the complete user requirements, highlighting key differences, user impact and consequential uncertainty. Write scratch/report.html, submit_report, preview_report and inspect the result before finishing.\nTotal remaining session budget: ${String(resources.snapshot().remainingMs)} ms. Complete investigation, writing, preview and any revision within this total time. Choose a useful scope and finish a valid report before it expires; do not treat an unfinished investigation as a completed report.\n\n${context.promptContent ?? ''}\n\nOptional Host metrics (already presented by the report shell): ${JSON.stringify(context.reportFacts.metrics ?? {})}`);
       if (combined.aborted) return finish({ status: 'cancelled', sessionId });
       if (outcome.status !== 'completed') {
         if (outcome.status === 'yielded') return finish({ status: 'failed', sessionId,

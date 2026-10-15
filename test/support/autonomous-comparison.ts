@@ -20,7 +20,7 @@ export const comparisonFixtureModel: Model<'openai-completions'> = {
 };
 const config: HarnessModelConfig = { schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' },
   providerId: 'fixture', modelId: 'fixture', effort: 'low' };
-export type ComparisonStep = { name: string; arguments: Record<string, unknown>; error?: boolean };
+export type ComparisonStep = { name: string; arguments: Record<string, unknown>; error?: boolean; outputLimit?: true };
 export const comparisonSubmission = { status: 'completed', category: 'Delivery', headline: 'Quality remains unverified', path: 'scratch/report.html' };
 export const comparisonFragment = '<p>Neither final output is confirmed usable. Final quality could reverse the choice.</p>';
 export function publicationSteps(fragment = comparisonFragment): ComparisonStep[] {
@@ -42,7 +42,7 @@ export function scriptedComparison(steps: readonly ComparisonStep[], options: {
       messages: structuredClone(context.messages), ...(context.tools ? { tools: context.tools.map(({ name, description, parameters }) => ({ name, description, parameters })) } : {}) });
     assert.ok(index <= steps.length, 'No unplanned generation or hidden repair');
     const previous = steps[index - 1];
-    if (previous) {
+    if (previous && !previous.outputLimit) {
       const receipt = context.messages.at(-1);
       assert.ok(receipt?.role === 'toolResult', 'A subsequent real generation must receive the actual tool result');
       assert.equal(receipt.toolName, previous.name);
@@ -51,17 +51,18 @@ export function scriptedComparison(steps: readonly ComparisonStep[], options: {
     options.onGeneration?.(context, index);
     stepIndex++;
     const step = steps[index];
-    if (step) assert.ok(context.tools?.some(tool => tool.name === step.name), `Tool is advertised: ${step.name}`);
+    if (step && !step.outputLimit) assert.ok(context.tools?.some(tool => tool.name === step.name), `Tool is advertised: ${step.name}`);
     const message: AssistantMessage = { role: 'assistant', api: comparisonFixtureModel.api,
       provider: comparisonFixtureModel.provider, model: comparisonFixtureModel.id, timestamp: Date.now(),
-      stopReason: step ? 'toolUse' : 'stop',
-      content: step ? [{ type: 'toolCall', id: `call-${index}`, name: step.name, arguments: step.arguments }]
+      stopReason: step?.outputLimit ? 'length' : step ? 'toolUse' : 'stop',
+      content: step?.outputLimit ? [{ type: 'text', text: 'The current work is unfinished.' }]
+        : step ? [{ type: 'toolCall', id: `call-${index}`, name: step.name, arguments: step.arguments }]
         : [{ type: 'text', text: '' }],
       usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
     options.onResponse?.(message, index);
     const stream = createAssistantMessageEventStream();
-    stream.push({ type: 'done', reason: step ? 'toolUse' : 'stop', message });
+    stream.push({ type: 'done', reason: message.stopReason as 'stop' | 'toolUse', message });
     return stream;
   }, ...(options.summarize ? { completeSimple: options.summarize } : {}) } as unknown as PiModels;
   const agents = createHarnessAgents(config, new PiModelCaller(config, models), options.budget ? { budget: options.budget } : {});

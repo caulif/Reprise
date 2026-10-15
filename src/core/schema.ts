@@ -14,7 +14,6 @@ import {
   ComparisonMediaRecordSchema,
   ComparisonMediaShortRefSchema,
   ComparisonReportModelSchema,
-  ComparisonShortRefSchema,
 } from "./comparison-schema.js";
 export { EvidenceRefSchema, type EvidenceRef } from "./schemas/ids.js";
 export { SceneDescriptorSchema, type SceneDescriptor } from "./schemas/scene.js";
@@ -278,7 +277,6 @@ export {
   ComparisonMediaRecordSchema,
   ComparisonMediaShortRefSchema,
   ComparisonReportModelSchema,
-  ComparisonShortRefSchema,
 };
 export type { ComparisonDraftSubmission, ComparisonMediaDerivation, ComparisonMediaRecord, ComparisonMediaRef, ComparisonReportModel } from "./comparison-schema.js";
 export { ComparisonDecisionDraftSubmissionSchema, type ComparisonDecisionDraftSubmission } from './comparison-schema.js';

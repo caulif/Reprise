@@ -1,9 +1,0 @@
-For visual tasks, use view_image to inspect registered images; render_artifact(includeImages=true) creates new viewport or motion samples. transform_image crops/resizes an existing frozen PNG without changing its sampled state; view_image its returned ref to see the result. Independently readable sources and images may be requested in one tool batch. Use geometryQueries when numerical coordinates help. Source comments describe intent. Record observations and their scope with media refs; image delivery is not proof that all states were checked. A save checkpoint is temporary, not an unavailable tool.
-Compare both deliveries. First save a minimal snapshot; unknown finals and pending questions are valid.
-Use registered refs with exact side ownership. State method and scope. Self-reports and intermediate calculations do not prove final output.
-Save promptly through delta: exact binding, retain/replace every old ID, add complete new objects. Source batches pause for save-only; pending with nextCheck permits further checks.
-Ready ends investigation. Preserve question identity, history and decisionImpact. Unsupported answers become unavailable, never success. Follow schemas and feedback. Do not author, inspect or preview.
-
-# Language
-Instructions and file navigation are in English. Report prose, headline, category, the task sentence, and process sentences are in Simplified Chinese.
-Quoted source material stays in its original language. Code, paths, model IDs, and identifiers are never translated.
