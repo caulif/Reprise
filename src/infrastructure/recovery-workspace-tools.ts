@@ -130,7 +130,7 @@ function createRecoveryToolContext(
         value = await read();
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
-        if (recoveryReadBoundaryError(error) || !code || !["ENOENT", "ENOTDIR", "EACCES", "EPERM"].includes(code)) throw error;
+        if (error instanceof ToolPreconditionRejected || !code || !["ENOENT", "ENOTDIR", "EACCES", "EPERM"].includes(code)) throw error;
         unavailable?.(code);
         if (attempt === 2)
           await options.onOperation?.({
@@ -167,7 +167,7 @@ export function workspaceTools(
       const logRoot = options.processLogRoot ?? base;
       const outputLog = options.processLogRoot ? `process-${randomUUID()}.log` : `.reprise/recovery-work/process-${randomUUID()}.log`;
       const outputLogPath = resolve(logRoot, outputLog);
-      await assertNoSymlinkAncestors(logRoot, outputLogPath);
+      await assertNoSymlinkAncestors(logRoot, outputLogPath, false);
       return { process: startProcessSession({ ...invocation, signal, outputLogPath }), cwd: relativeInside(base, cwd) || '.', outputLog };
     },
   }) : undefined;
@@ -196,8 +196,8 @@ function lsTool(ctx: RecoveryToolContext): AgentToolDefinition {
   return {
     name: "ls",
     description: ctx.options.unrestrictedRead
-      ? "List a directory; the result is capped. Relative paths are against the briefing root; project/ is the isolated replica for file tools (shell_exec uses ./ under the replica cwd instead). Absolute, UNC, and other host-readable paths are accepted."
-      : "List a directory; the result is capped. Omit path or use workspace/ for the writable copy; source/ is the read-only user directory when mounted.",
+      ? "List a directory; the result is capped. Symbolic link entries are listed as symlink and never followed during traversal. Relative paths are against the briefing root; project/ is the isolated replica for file tools (shell_exec uses ./ under the replica cwd instead). Absolute, UNC, and other host-readable paths are accepted."
+      : "List a directory; the result is capped. Symbolic link entries are listed as symlink and never followed during traversal. Omit path or use workspace/ for the writable copy; source/ is the read-only user directory when mounted.",
     parameters: Type.Object({
       path: Type.Optional(Type.String({ maxLength: pathMaxLength(ctx) })),
       depth: Type.Optional(Type.Integer({ minimum: 0, maximum: 4 })),
@@ -351,7 +351,7 @@ function findTool(ctx: RecoveryToolContext): AgentToolDefinition {
           return listTree(ctx, start, 4);
         });
         const hits = (entries ?? [])
-          .map((entry) => entry.replace(/^(?:file|directory|other) /, ""))
+          .map((entry) => entry.replace(/^(?:file|directory|symlink|other) /, ""))
           .filter((path) => path.toLowerCase().includes(needle))
           .slice(0, MAX_LIST_ENTRIES);
         return {
@@ -392,7 +392,7 @@ function editTool(ctx: RecoveryToolContext): AgentToolDefinition {
         if (index < 0) throw new ToolPreconditionRejected("edit_text_mismatch", "oldText was not found in the file. Read the current file and retry with one exact text span.");
         if (current.indexOf(oldText, index + 1) >= 0) throw new ToolPreconditionRejected("edit_text_mismatch", "oldText matches more than once; make it unique. Read the current file and retry with one exact text span.");
         const next = `${current.slice(0, index)}${newText}${current.slice(index + oldText.length)}`;
-        if (Buffer.byteLength(next) > MAX_BYTES) throw new Error(`content exceeds ${MAX_BYTES} bytes.`);
+        if (Buffer.byteLength(next) > MAX_BYTES) throw new ToolPreconditionRejected('invalid_arguments', `content exceeds ${MAX_BYTES} bytes. Use a smaller edit.`);
         await journalControlledRecoveryWrite(
           {
             tool: "edit",
@@ -430,7 +430,7 @@ function writeTool(ctx: RecoveryToolContext): AgentToolDefinition {
             content: "text",
           });
         const content = requiredString(value.content, "content");
-        if (Buffer.byteLength(content) > MAX_BYTES) throw new Error(`content exceeds ${MAX_BYTES} bytes.`);
+        if (Buffer.byteLength(content) > MAX_BYTES) throw new ToolPreconditionRejected('invalid_arguments', `content exceeds ${MAX_BYTES} bytes. Use smaller content.`);
         const containmentRoot = writeContainmentRoot(path);
         await assertNoSymlinkAncestors(containmentRoot, path.absolute);
         await assertWritableFile(path.absolute);
@@ -700,7 +700,7 @@ async function assertReadSymlinkPolicy(path: ResolvedWorkspacePath): Promise<voi
   await assertNoSymlinkAncestors(path.containmentRoot, path.absolute);
 }
 
-async function assertNoSymlinkAncestors(root: string, target: string): Promise<void> {
+async function assertNoSymlinkAncestors(root: string, target: string, precondition = true): Promise<void> {
   const resolvedRoot = resolve(root);
   const resolvedTarget = resolve(target);
   const relativeTarget = relativeInside(resolvedRoot, resolvedTarget);
@@ -709,7 +709,9 @@ async function assertNoSymlinkAncestors(root: string, target: string): Promise<v
   for (const part of relativeTarget.split("/").filter(Boolean)) {
     current = resolve(current, part);
     try {
-      if ((await lstat(current)).isSymbolicLink()) throw new Error("Symbolic links are not supported in staging.");
+      if ((await lstat(current)).isSymbolicLink()) throw precondition
+        ? new ToolPreconditionRejected('symlink_path', "Symbolic links cannot be traversed by contained file tools. Use ls on the parent and choose a regular workspace path.")
+        : new Error('Symbolic link encountered in a Host-owned path.');
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
       throw error;
@@ -858,10 +860,6 @@ function containedPath(root: string, input: string): { absolute: string; relativ
   return { absolute, relative: rel };
 }
 
-function recoveryReadBoundaryError(error: unknown): boolean {
-  return error instanceof Error && /symbolic link|regular file/i.test(error.message);
-}
-
 function directoryReadResult(
   path: string,
   entries: string[] | undefined,
@@ -895,7 +893,10 @@ async function listTree(ctx: RecoveryToolContext, start: ResolvedWorkspacePath, 
     if (output.length >= MAX_LIST_ENTRIES) break;
     const relativePath = start.relative ? `${start.relative}/${entry.name}` : entry.name;
     seen.add(entry.name);
-    if (entry.isSymbolicLink()) throw new Error(`Symbolic link encountered: ${relativePath}`);
+    if (entry.isSymbolicLink()) {
+      output.push(`symlink ${relativePath}`);
+      continue;
+    }
     output.push(`${entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "other"} ${relativePath}`);
     if (entry.isDirectory() && depth > 0 && output.length < MAX_LIST_ENTRIES) {
       const child: ResolvedWorkspacePath = {
@@ -921,7 +922,7 @@ async function listTree(ctx: RecoveryToolContext, start: ResolvedWorkspacePath, 
 async function assertRegular(path: string, directoryRejection = false): Promise<void> {
   const info = await lstat(path);
   if (directoryRejection && info.isDirectory()) throw new ToolPreconditionRejected('invalid_path', 'Path names a directory. Use ls to list it, then read a regular file.');
-  if (!info.isFile() || info.isSymbolicLink()) throw new Error("Path must name a regular file.");
+  if (!info.isFile() || info.isSymbolicLink()) throw new ToolPreconditionRejected('not_regular_file', "Path must name a regular file. Use ls to choose a regular file.");
 }
 
 async function readEditableFile(path: string): Promise<string> {
@@ -932,17 +933,12 @@ async function readEditableFile(path: string): Promise<string> {
     throw error;
   }
 }
-
 async function assertWritableFile(path: string): Promise<void> {
-  try {
-    const info = await lstat(path);
-    if (!info.isFile() || info.isSymbolicLink()) throw new Error("Path must name a regular file.");
-  } catch (error) {
+  try { await assertRegular(path); }
+  catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 }
-
-
 function viewImageTool(ctx: RecoveryToolContext): AgentToolDefinition {
   return { name: "view_image", description: "Read a local image as native model image content when authorized. Uses the same paths as read.",
     parameters: Type.Object({ path: Type.String({ minLength: 1, maxLength: 512 }) }),
@@ -987,11 +983,14 @@ function applyPatchTool(ctx: RecoveryToolContext): AgentToolDefinition {
           }
         }
       }
-      for (const item of prepared) {
+      try { for (const item of prepared) {
         signal.throwIfAborted();
         await assertNoSymlinkAncestors(writeContainmentRoot(item.path), item.path.absolute);
         if (item.content !== undefined) await writeTool(ctx).execute({ path: item.path.relative, content: item.content }, signal);
         else await journalControlledRecoveryWrite({ tool: "delete_file", relativePath: item.path.relative, absolutePath: item.path.absolute, expectAfter: false, write: async () => { signal.throwIfAborted(); await unlink(item.path.absolute); } }, ctx.options.onControlledWrite);
+      } } catch (error) {
+        if (error instanceof ToolPreconditionRejected) throw new Error('Patch application failed after preflight.', { cause: error });
+        throw error;
       }
       return { content: "Applied patch.", details: { paths: prepared.map(item => item.path.relative) } };
     },

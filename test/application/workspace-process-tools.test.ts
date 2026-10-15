@@ -181,13 +181,13 @@ test('failed diagnostic persistence is fatal before a process can be reported co
   await assert.rejects(process.cancel(), /log persistence failed/);
 });
 
-test('only a missing editable file is a correctable precondition, not directory or protected input', async t => {
+test('missing and directory editable targets are correctable preconditions', async t => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-edit-missing-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const edit = workspaceTools(root).find(tool => tool.name === 'edit')!;
   const signal = new AbortController().signal;
   await assert.rejects(edit.execute({ path: 'absent.txt', oldText: 'x', newText: 'y' }, signal), ToolPreconditionRejected);
-  await assert.rejects(edit.execute({ path: '.', oldText: 'x', newText: 'y' }, signal), error => !(error instanceof ToolPreconditionRejected));
+  await assert.rejects(edit.execute({ path: '.', oldText: 'x', newText: 'y' }, signal), error => error instanceof ToolPreconditionRejected && error.reason === 'not_regular_file');
 });
 
 test('aborting a real process tree drains child writes before the caller proceeds', async t => {

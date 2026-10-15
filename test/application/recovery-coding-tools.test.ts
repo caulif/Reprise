@@ -1,9 +1,10 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, writeFile, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rename, rm, writeFile, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { workspaceTools } from '../../src/infrastructure/recovery-tools.js';
+import { ToolPreconditionRejected } from '../../src/core/tool-precondition-rejected.js';
 import { hostShellSleep } from '../host-shell.js';
 
 const signal = new AbortController().signal;
@@ -31,6 +32,23 @@ test('Recovery patch preflights every path and context before its first write', 
   await assert.rejects(patch.execute({ patch: '*** Begin Patch\n*** Add File: b.txt\n+overwrite\n*** End Patch' }, signal), /already exists/);
   await patch.execute({ patch: '*** Begin Patch\n*** Delete File: b.txt\n*** End Patch' }, signal);
   await assert.rejects(readFile(join(root, 'b.txt')), /ENOENT/);
+});
+
+test('a link appearing after patch preflight is fatal even after the first file was written', async t => {
+  const root = await setup(t), work = join(root, 'work'), outside = join(root, 'outside');
+  await mkdir(join(work, 'nested'), { recursive: true });
+  await mkdir(outside);
+  const tools = workspaceTools(work, { recoveryCodingTools: true, onControlledWrite: async entry => {
+    if (entry.path === 'first.txt' && entry.phase === 'after') {
+      await rename(join(work, 'nested'), join(work, 'old-nested'));
+      await symlink(outside, join(work, 'nested'), process.platform === 'win32' ? 'junction' : 'dir');
+    }
+  } });
+  await assert.rejects(tools.find(tool => tool.name === 'apply_patch')!.execute({
+    patch: '*** Begin Patch\n*** Add File: first.txt\n+first\n*** Add File: nested/second.txt\n+second\n*** End Patch',
+  }, signal), error => error instanceof Error && !(error instanceof ToolPreconditionRejected) && /after preflight/.test(error.message));
+  assert.equal(await readFile(join(work, 'first.txt'), 'utf8'), 'first\n');
+  await assert.rejects(readFile(join(outside, 'second.txt')), { code: 'ENOENT' });
 });
 
 test('patch cancellation, missing files, moves and symlinks never become writes', async t => {

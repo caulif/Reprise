@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Type } from '@sinclair/typebox';
@@ -13,6 +13,79 @@ import { PiProviderAdapter } from '../../src/infrastructure/agent/providers/pi/a
 
 const model: Model<'openai-completions'> = { id: 'fixture', name: 'fixture', api: 'openai-completions', provider: 'fixture', baseUrl: 'https://example.test', reasoning: false, input: ['text'], contextWindow: 128_000, maxTokens: 16_384, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 const config = { schemaVersion: 2 as const, provider: { kind: 'pi-catalog' as const, id: 'fixture' }, providerId: 'fixture', modelId: 'fixture', effort: 'low' as const };
+
+for (const role of ['controller', 'recovery', 'comparison'] as const) test(`${role} corrects a link path while an independent parallel read finishes`, async t => {
+  const f = await fixture(t), contexts: Context[] = [], events: AgentAuditEvent[] = [];
+  await symlink(f.source, join(f.work, 'link'), process.platform === 'win32' ? 'junction' : 'dir');
+  await writeFile(join(f.work, 'valid.txt'), 'independent evidence');
+  let readFinished = false;
+  const tools = workspaceTools(f.work, { filesystem: { readRegularFile: async path => {
+    await new Promise<void>(done => setImmediate(done));
+    const bytes = await readFile(path); readFinished = true; return bytes;
+  } } });
+  const responses = [message([
+    { type: 'toolCall', id: 'bad-path', name: 'read', arguments: { path: 'link/input.txt' } },
+    { type: 'toolCall', id: 'independent', name: 'read', arguments: { path: 'valid.txt' } },
+  ]), turn('read', { path: 'valid.txt' }), message([{ type: 'text', text: '{"status":"done"}' }], 'stop')];
+  const session = await new AgentHost(new PiModelCaller(config, native(responses, contexts))).createSession({
+    role, systemPrompt: 'Correct paths', tools, audit: { append: async event => { events.push(event); } },
+  });
+  const result = role === 'controller'
+    ? await session.request({ promptContent: 'Inspect', schema: Type.Object({ status: Type.Literal('done') }), timeoutMs: 2_000, maxRepairAttempts: 0 })
+    : await session.work({ promptContent: 'Inspect', timeoutMs: 2_000 });
+  await session.close();
+  assert.equal(result.status, 'completed', JSON.stringify(result));
+  assert.equal(readFinished, true);
+  assert.equal(contexts.length, 3);
+  assert.match(JSON.stringify(contexts[1]!.messages), /independent evidence/);
+  assert.match(JSON.stringify(contexts[1]!.messages), /Symbolic links/);
+  if (role === 'controller') assert.match(JSON.stringify(contexts[1]!.messages), /symlink_path/);
+  assert.equal(events.some(event => event.type === 'agent.invocation_failed'), false);
+  assert.equal(events.some(event => event.type === 'agent.tool_failed' && event.payload.tool === 'read' && /abort/i.test(String(event.payload.message))), false);
+});
+
+for (const mode of ['unknown', 'io', 'audit', 'callback', 'journal', 'typed_journal'] as const) test(`controller file correction preserves fatal ${mode} failures`, async t => {
+  const f = await fixture(t), contexts: Context[] = [], events: AgentAuditEvent[] = [];
+  await mkdir(join(f.work, 'directory'));
+  await writeFile(join(f.work, 'valid.txt'), 'original');
+  const fail = () => { throw mode === 'io' ? Object.assign(new Error('Real I/O failure'), { code: 'EIO' }) : new Error(`Actual ${mode} failure`); };
+  const tools = workspaceTools(f.work, {
+    filesystem: { readRegularFile: async path => { if (mode === 'unknown' || mode === 'io') fail(); return readFile(path); } },
+    onControlledWrite: async () => { if (mode === 'journal') fail(); if (mode === 'typed_journal') throw new ToolPreconditionRejected('invalid_path', 'Typed journal failure'); },
+  }).map(tool => ({ ...tool, onCompleted: async () => {
+    if (mode === 'callback') throw new ToolPreconditionRejected('invalid_path', 'Typed callback failure');
+  } }));
+  const responses = [turn('write', { path: 'directory', content: 'bad' }),
+    turn(mode.endsWith('journal') ? 'write' : 'read', mode.endsWith('journal') ? { path: 'valid.txt', content: 'changed' } : { path: 'valid.txt' }),
+    message([{ type: 'text', text: 'Must not reach this turn' }], 'stop')];
+  const session = await new AgentHost(new PiModelCaller(config, native(responses, contexts))).createSession({
+    role: 'controller', systemPrompt: 'Correct file types', tools, audit: { append: async event => {
+      events.push(event);
+      if (mode === 'audit' && event.type === 'agent.tool_completed' && !event.payload.nativeHook)
+        throw new ToolPreconditionRejected('invalid_path', 'Typed audit failure');
+    } },
+  });
+  const result = await session.work({ promptContent: 'Inspect', timeoutMs: 2_000 });
+  assert.equal(result.status, 'failed', JSON.stringify(result));
+  assert.equal(contexts.length, mode === 'audit' || mode === 'callback' ? 1 : 2);
+  assert.equal(await readFile(join(f.work, 'valid.txt'), 'utf8'), 'original');
+  assert.equal(events.some(event => event.type === 'agent.invocation_completed'), false);
+});
+
+for (const name of ['read', 'edit', 'write'] as const) test(`controller corrects ${name} directory target before mutation`, async t => {
+  const f = await fixture(t), contexts: Context[] = [];
+  await mkdir(join(f.work, 'directory'));
+  const responses = [turn(name, { path: 'directory', content: 'bad', oldText: 'old', newText: 'bad' }),
+    turn('write', { path: 'valid.txt', content: 'corrected' }), message([{ type: 'text', text: 'Done' }], 'stop')];
+  const session = await new AgentHost(new PiModelCaller(config, native(responses, contexts))).createSession({
+    role: 'controller', systemPrompt: 'Correct file types', tools: f.tools,
+  });
+  const result = await session.work({ promptContent: 'Write', timeoutMs: 2_000 });
+  assert.equal(result.status, 'completed', JSON.stringify(result));
+  assert.match(JSON.stringify(contexts[1]!.messages), name === 'read' ? /invalid_path/ : /not_regular_file/);
+  assert.equal(await readFile(join(f.work, 'valid.txt'), 'utf8'), 'corrected');
+  assert.equal(f.counts().writes, 2);
+});
 
 for (const oldText of ['absent', 'same']) test(`edit text precondition (${oldText}) rejects before journaling or mutation`, async t => {
   const f = await fixture(t);
@@ -52,12 +125,11 @@ for (const role of ['recovery', 'comparison'] as const) for (const oldText of ['
 for (const mode of ['audit', 'persist', 'read'] as const) test(`edit rejection does not hide actual ${mode} failure`, async t => {
   const f = await fixture(t); const events: AgentAuditEvent[] = []; let failures = 0;
   await writeFile(join(f.work, 'notes.md'), 'current');
-  if (mode === 'read') await mkdir(join(f.work, 'not-a-file.md'));
   const tools = workspaceTools(f.work, { onControlledWrite: async () => {
     if (mode === 'persist') { failures++; throw new Error('Actual edit journal failure'); }
-  } });
+  }, ...(mode === 'read' ? { filesystem: { readRegularFile: async () => { throw Object.assign(new Error('Actual read I/O failure'), { code: 'EIO' }); } } } : {}) });
   const responses = [turn('edit', { path: 'notes.md', oldText: 'absent', newText: 'changed' }),
-    turn('edit', { path: mode === 'read' ? 'not-a-file.md' : 'notes.md', oldText: 'current', newText: 'changed' }),
+    turn(mode === 'read' ? 'read' : 'edit', { path: 'notes.md', oldText: 'current', newText: 'changed' }),
     message([{ type: 'text', text: 'Done' }], 'stop')];
   const session = await new AgentHost(new PiModelCaller(config, native(responses))).createSession({ role: 'recovery',
     systemPrompt: 'Correct edits', tools, audit: { append: async event => {
@@ -70,7 +142,7 @@ for (const mode of ['audit', 'persist', 'read'] as const) test(`edit rejection d
   const result = await session.work({ promptContent: 'Update notes', timeoutMs: 2_000 });
   assert.equal(result.status, 'failed', JSON.stringify(result));
   if (mode !== 'read') assert.ok(failures > 0);
-  else assert.ok(events.some(event => event.type === 'agent.tool_failed' && /regular file/.test(String(event.payload.message))));
+  else assert.ok(events.some(event => event.type === 'agent.tool_failed' && /Actual read I\/O failure/.test(String(event.payload.message))));
   if (mode !== 'audit') assert.equal(await readFile(join(f.work, 'notes.md'), 'utf8'), 'current');
   assert.equal(events.some(event => event.type === 'agent.invocation_completed'), false);
 });

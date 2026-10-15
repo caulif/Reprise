@@ -54,7 +54,7 @@ export function instrumentTools(
             return tool.execute(params, signal, { sessionId, invocationId: cursor.invocationId ?? sessionId });
           })().catch((error: unknown) => {
             if (role === 'controller' && error instanceof ToolPreconditionRejected && !signal.aborted &&
-              ['invalid_path', 'invalid_arguments', 'edit_text_mismatch', 'workspace_busy', 'invalid_process_session'].includes(error.reason)) {
+              ['invalid_path', 'symlink_path', 'not_regular_file', 'invalid_arguments', 'edit_text_mismatch', 'workspace_busy', 'invalid_process_session'].includes(error.reason)) {
               const failure = { status: 'rejected', code: error.reason, message: error.message, retryable: true };
               return { content: JSON.stringify(failure), details: failure };
             }
