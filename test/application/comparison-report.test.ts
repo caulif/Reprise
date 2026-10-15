@@ -1,18 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { assertComparisonResult, COMPARISON_SYSTEM_PROMPT, COMPARISON_TURN_PROMPTS, ComparisonAgent } from '../../src/agents/comparison-agent.js';
+import { assertComparisonResult } from '../../src/agents/comparison-contract.js';
 import { buildComparisonContext, comparePersistedFacts, type RunInspection } from '../../src/application/comparison.js';
 import { fingerprintTree } from '../../src/environment/local-workspace-fs.js';
 import { workspaceTools } from '../../src/infrastructure/recovery-tools.js';
-import { AgentHost } from '../../src/infrastructure/agent/host.js';
-import { startExperiment } from '../../src/application/experiment.js';
-import { input, VerifiedRuntime } from '../codex-experiment-support.js';
-import type { ComparisonAgentPort } from '../../src/agents/comparison-agent.js';
+import type { ComparisonAgentPort } from '../../src/agents/comparison-contract.js';
 import type { RunRecord, TaskCase } from '../../src/core/schema.js';
-import { ToolPreconditionRejected } from '../../src/core/tool-precondition-rejected.js';
+import { runAutonomousPublication } from '../support/autonomous-comparison.js';
 
 const timestamp = '2026-08-15T00:00:00.000Z';
 function taskCase(): TaskCase { return { schemaVersion: 1, caseId: 'case-1', source: { productId: 'codex', sessionId: 'session-1' }, initialInput: { id: 'message-1', role: 'user', text: '修复报告。' }, transcript: [{ id: 'message-1', role: 'user', text: '修复报告。' }], historicalEvents: [], baseline: { status: 'available', finalMessage: 'Done.', artifactRefs: [], evidenceRefs: ['event:baseline-1'] }, sourceRuntimeEvidence: { productId: 'codex', artifactRefs: [] }, provenance: { packVersion: 'fixture', importedAt: timestamp, sourceHash: 'a'.repeat(64) }, privacy: { allowModelText: true, allowBinary: false, redactions: [] }, contentHash: 'b'.repeat(64) }; }
@@ -75,7 +72,7 @@ test('comparison write policy uses the first path segment, not a string prefix',
 test('comparison envelope accepts only report.html', () => {
   const context = buildComparisonContext(taskCase(), [runRecord()]);
   assert.doesNotThrow(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, context));
-  assert.doesNotThrow(() => assertComparisonResult({ status: 'completed', evidenceRefs: [], headline: 'Same files, fewer turns.' }, context));
+  assert.doesNotThrow(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: [], headline: 'Same files, fewer turns.' }, context));
   assert.throws(() => assertComparisonResult({ status: 'completed', reportPath: 'other.html', evidenceRefs: [] }, context), /schema validation failed/);
   assert.throws(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: [], headline: 'x'.repeat(281) }, context), /schema validation failed/);
 });
@@ -183,30 +180,6 @@ test('comparePersistedFacts requires an explicit attemptId', async () => {
   );
 });
 
-test('comparison prompt points workspace tools at the sealed snapshot mount', () => {
-  assert.match(COMPARISON_SYSTEM_PROMPT, /candidate\/ is the sealed read-only/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /finals\//);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /render_artifact/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /register_evidence/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /preview_report/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /View registered PNG media with view_image; derive new screenshots through render_artifact and report page views through preview_report/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /Do not run Chrome, Edge, or Firefox binaries/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /--version/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /--dump-dom/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /user browser profile/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /If a render tool fails, record the limitation/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /do not retry via equivalent browser shell commands/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /reviews in a fresh session without its earlier conversation/);
-  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /最后一轮不能使用工具/);
-  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /read_observation/);
-  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /live isolated replica/);
-  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /comparison-sandbox\/candidate/);
-  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /pair-pages/);
-  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /at most three bullets/);
-  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /msedge\.exe --version/);
-  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /npx playwright/);
-});
-
 test('comparison orientation does not inline the initial task and points at user-inputs', async () => {
   const { comparisonOrientation } = await import('../../src/application/comparison-briefing.js');
   const prompt = comparisonOrientation({
@@ -299,78 +272,13 @@ test('cost card distinguishes missing usage from missing prices', async () => {
   assert.match(html, /价格未配置/);
 });
 
-test('compose and review prompts require Host submission and real preview', () => {
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /headline/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /submit_comparison_draft/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /comparisonHtml/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /detailsHtml/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /data-claim="verified"/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /data-claim="visual"/);
-  assert.match(COMPARISON_TURN_PROMPTS.compose, /Do not claim visual inspection/);
-  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /pair-pages/);
-  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /at most three bullets/);
-  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /leave empty when there are no paired images/);
-  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /If only one side has images, leave this zone empty/);
-  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /before key-differences/);
-  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.compose, /最重要的 2–4 个差异/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /Similar results are a valid finding/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /single frame does not prove motion/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /do not make visual-quality claims/);
-  assert.match(COMPARISON_SYSTEM_PROMPT, /harness limit or missing historical evidence/);
-  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /hidden by CSS and must not be copied onto the card face/);
-  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /Images belong on the card only when both sides have a comparable final/);
-  assert.doesNotMatch(COMPARISON_SYSTEM_PROMPT, /The left side is the historical session/);
-  assert.match(COMPARISON_TURN_PROMPTS.review, /preview_report/);
-  assert.match(COMPARISON_TURN_PROMPTS.review, /If corrected, repeat inspection and matching preview, then stop/);
-  assert.match(COMPARISON_TURN_PROMPTS.review, /Record unavailable rendering\/image inspection without invented observations/);
-  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /visual-evidence still immediately after the headline/);
-  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /reopen report\.html and review/);
-  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.review, /已禁用工具/);
-  assert.match(COMPARISON_TURN_PROMPTS.understand, /work\/comparison-plan\.md/);
-  assert.match(COMPARISON_TURN_PROMPTS.investigate, /registered tools/);
-  assert.match(COMPARISON_TURN_PROMPTS.investigate, /Stop investigating when additional work/);
-  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.investigate, /changedPathsOmitted/);
-  assert.doesNotMatch(COMPARISON_TURN_PROMPTS.investigate, /最多四个候选差异/);
-});
-
-test('direct full-page edits cannot publish through the new Agent path', async (t) => {
-  const root = await mkdtemp(join(tmpdir(), 'reprise-invalid-envelope-'));
-  t.after(async () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
-  await mkdir(join(root, 'source'), { recursive: true });
-  await writeFile(join(root, 'source', 'README.md'), '# source\n');
-  let round = 0;
-  const comparison = new ComparisonAgent({
-    timeoutMs: 0,
-    maxRepairAttempts: 0,
-    host: new AgentHost({
-      createSession: (session) => ({
-        append: async () => {
-          round += 1;
-          if (round === 2) {
-            const write = session.tools?.find((tool) => tool.name === 'write');
-            await assert.rejects(write!.execute({
-              path: 'report.html',
-              content: '<p>kept-page</p>',
-            }, new AbortController().signal), error => error instanceof ToolPreconditionRejected
-              && error.reason === 'host_write_policy' && error.message === 'write_denied: path is outside the Host write policy.');
-          }
-          return '';
-        },
-        cancel() {},
-      }),
-    }),
-  });
-  const result = await startExperiment({ ...input(root, new VerifiedRuntime()), comparison }).result;
-  assert.equal(result.comparison.result.status, 'failed');
-  assert.equal(result.comparison.result.status === 'failed' ? result.comparison.result.failure.code : undefined, 'draft_invalid');
-  const attempts = join(result.experimentRoot, 'comparison-attempts');
-  const dirs = await readdir(attempts);
-  const draft = await readFile(join(attempts, dirs[0] ?? '', 'report.html'), 'utf8');
+test('direct full-page edits cannot publish through the current autonomous factory', async t => {
+  const f = await runAutonomousPublication(t, { steps: [{ name: 'write', arguments: { path: 'report.html', content: '<p>kept-page</p>' }, error: true }] });
+  assert.equal(f.result.comparison.result.status, 'failed');
+  assert.equal(f.renders, 0);
+  const draft = await readFile(join(f.attemptRoot, 'report.html'), 'utf8');
   assert.doesNotMatch(draft, /kept-page/);
-  const events = (await readFile(join(result.experimentRoot, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { type: string; payload: Record<string, unknown> });
-  assert.ok(events.some(event => event.type === 'agent.tool_failed' && event.payload.tool === 'write' && event.payload.message === 'write_denied: path is outside the Host write policy.'));
-  assert.equal(events.some(event => event.type === 'agent.tool_completed' && event.payload.tool === 'write' && !event.payload.nativeHook), false);
+  assert.ok(f.events.some(event => event.type === 'agent.tool_failed' && event.payload.tool === 'write' && event.payload.message === 'write_denied: path is outside the Host write policy.'));
+  assert.equal(f.events.some(event => event.type === 'agent.tool_completed' && event.payload.tool === 'write' && !event.payload.nativeHook), false);
+  await assert.rejects(readFile(join(f.result.experimentRoot, 'report.html')), { code: 'ENOENT' });
 });
-
-
-

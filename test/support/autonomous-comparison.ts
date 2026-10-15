@@ -30,6 +30,8 @@ export function publicationSteps(fragment = comparisonFragment): ComparisonStep[
 
 export function scriptedComparison(steps: readonly ComparisonStep[], options: {
   onGeneration?: (context: Context, index: number) => void;
+  onResponse?: (message: AssistantMessage, index: number) => void;
+  summarize?: () => AssistantMessage;
   budget?: AgentBudget;
 } = {}) {
   const contexts: Context[] = [];
@@ -57,16 +59,17 @@ export function scriptedComparison(steps: readonly ComparisonStep[], options: {
         : [{ type: 'text', text: '' }],
       usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+    options.onResponse?.(message, index);
     const stream = createAssistantMessageEventStream();
     stream.push({ type: 'done', reason: step ? 'toolUse' : 'stop', message });
     return stream;
-  } } as unknown as PiModels;
+  }, ...(options.summarize ? { completeSimple: options.summarize } : {}) } as unknown as PiModels;
   const agents = createHarnessAgents(config, new PiModelCaller(config, models), options.budget ? { budget: options.budget } : {});
   assert.equal(agents.comparison.workflow, 'autonomous');
   return { agents, contexts };
 }
 
-export const comparisonFixtureRenderer: ArtifactRenderer = async request => {
+const comparisonFixtureRenderer: ArtifactRenderer = async request => {
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
   await mkdir(request.outputRoot, { recursive: true });
   const pngPath = join(request.outputRoot, 'preview.png');
@@ -78,17 +81,22 @@ export const comparisonFixtureRenderer: ArtifactRenderer = async request => {
 export async function runAutonomousPublication(t: { after(fn: () => Promise<void>): void }, options: {
   steps?: readonly ComparisonStep[];
   onGeneration?: (context: Context, index: number) => void;
+  onResponse?: (message: AssistantMessage, index: number) => void;
+  summarize?: () => AssistantMessage;
+  beforeStart?: (base: ReturnType<typeof input>) => void | Promise<void>;
   render?: ArtifactRenderer;
   signal?: AbortSignal;
   budget?: AgentBudget;
   allowImages?: boolean;
+  runtime?: VerifiedRuntime;
 } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'reprise-autonomous-migration-'));
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
-  const base = input(root, new VerifiedRuntime());
+  const base = input(root, options.runtime ?? new VerifiedRuntime());
   if (options.allowImages) base.taskCase.privacy = { ...base.taskCase.privacy, allowBinary: true };
   await mkdir(base.sourceRoot);
   await writeFile(join(base.sourceRoot, 'README.md'), '# frozen source\n');
+  await options.beforeStart?.(base);
   const scripted = scriptedComparison(options.steps ?? publicationSteps(), options);
   let renders = 0;
   const result = await startExperiment({ ...base, policy: patientPolicy, comparison: scripted.agents.comparison,

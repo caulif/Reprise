@@ -15,12 +15,15 @@ const context: ComparisonFactsContext = {
 
 test('neutral result validation retains schema, current catalog and compatibility export behavior', () => {
   assert.equal(assertComparisonResult, compatibilityAssertion);
-  assert.doesNotThrow(() => assertComparisonResult({ status: 'completed', evidenceRefs: ['ev-01'] }, context));
+  const incomplete = { status: 'completed', evidenceRefs: ['ev-01'] };
+  assert.throws(() => assertComparisonResult(incomplete, context), /schema validation failed/);
+  assert.equal('reportPath' in incomplete, false, 'A type assertion cannot claim a temporary normalized copy populated the caller object');
+  assert.doesNotThrow(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: ['ev-01'] }, context));
   assert.throws(() => assertComparisonResult({ status: 'completed', reportPath: 'other.html', evidenceRefs: [] }, context), /schema validation failed/);
-  assert.throws(() => assertComparisonResult({ status: 'completed', evidenceRefs: ['ev-99'] }, context), /unknown evidence refs/);
+  assert.throws(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: ['ev-99'] }, context), /unknown evidence refs/);
   const current: NonNullable<ComparisonCompareOptions['getEvidenceCatalog']> = () => ({ links: [{ shortRef: 'ev-02', side: 'baseline', inspectPath: 'history/02.txt' }], media: [] });
   assert.doesNotThrow(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: ['ev-02'] }, context, current));
-  assert.throws(() => assertComparisonResult({ status: 'completed', evidenceRefs: ['ev-01'] }, context, current), /unknown evidence refs/);
+  assert.throws(() => assertComparisonResult({ status: 'completed', reportPath: 'report.html', evidenceRefs: ['ev-01'] }, context, current), /unknown evidence refs/);
 });
 
 test('default harness and application entrypoints load without the legacy executor even when its import is blocked', { timeout: 20_000 }, async () => {

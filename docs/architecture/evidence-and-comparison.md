@@ -34,6 +34,8 @@ Comparison 的共享 Context、Port、Result、Facts 与输出校验由 [`compar
 
 默认由 [`AutonomousComparisonAgent`](../../src/agents/comparison-autonomous.ts) 执行单个自主 Session、一个初始任务 prompt。模型自主调查、验证、编写、预览及修订；read/search、write/edit、shell、受控渲染、图片读取/变换及证据登记工具全程可用，独立只读工具仍按已有声明并行。没有强制 understand/investigate/compose/review 阶段、周期语义保存、独立 reviewer 或 findings/disposition 提交要求；原始交付只读，工作文件写入 scratch/。模型选择证据与判断，Host 不对任务语义增加专用判题规则。
 
+Host 指标固定在已审计的自主 Session system prompt，压缩摘要丢失指标时，后续实际请求与 History 重建仍可取得原值。当前 Port 的 completed 结果必须实际具有 `reportPath=report.html`；assert 不通过临时副本替调用方填充字段，旧历史 envelope schema/reader 继续兼容原记录。见[指标输入与结果断言](../decisions/accepted/2026-10-15-comparison-pinned-input-and-result-validation.md)。
+
 `submit_report` 从 scratch/ 读取 UTF-8 HTML fragment 及可选详情，复用安全 shell 和原有证据、图片声明及来源验证；不是任意可执行整页 HTML。没有旧 decisionShape 的固定字数限制，简洁与重要差异由 prompt 指导。接受后必须 `preview_report` 当前 digest/catalog，且实际预览回执进入同 Session 后续 generation 快照，调用正常完成后才可发布。live 与离线恢复共用此检查；这证明版本和输入完整性，不认证模型判断或审美。新 `comparison.requested` 明确记录 `autonomousContractVersion=1`，不得与独立复审标记并存。详见[单 Session 决策](../decisions/accepted/2026-10-11-comparison-autonomous-session.md)。
 
 下文关于多阶段、独立审阅、findings、inspection、decisionSummary/disposition、周期 source-save 与字符配额的规则只描述旧 `ComparisonAgent` 兼容端口及历史恢复契约，不再是默认生产流程。旧请求仍按原标记验证，不自动降级成自主模式。共享的授权、证据、原生图片、审计、安全 shell 和原子发布规则继续适用。
