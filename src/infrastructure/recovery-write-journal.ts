@@ -1,5 +1,6 @@
 import { lstat } from "node:fs/promises";
 import { Value } from "@sinclair/typebox/value";
+import { ToolPreconditionRejected } from '../core/tool-precondition-rejected.js';
 import { sha256, sha256File } from "../core/identity.js";
 import {
   RecoveryControlledWriteSchema,
@@ -178,7 +179,11 @@ async function emit(
     throw new Error(
       "Recovery controlled write does not match RecoveryControlledWriteSchema.",
     );
-  await onWrite?.(entry);
+  try { await onWrite?.(entry); }
+  catch (error) {
+    if (error instanceof ToolPreconditionRejected) throw new Error('Recovery journal callback failed.', { cause: error });
+    throw error;
+  }
 }
 
 async function recoveryFileSnapshot(

@@ -1,7 +1,7 @@
 [
   {
     "name": "ls",
-    "description": "List a directory; the result is capped. Omit path or use workspace/ for the writable copy; source/ is the read-only user directory when mounted.",
+    "description": "List a directory; the result is capped. Symbolic link entries are listed as symlink and never followed during traversal. Omit path or use workspace/ for the writable copy; source/ is the read-only user directory when mounted.",
     "parameters": {
       "type": "object",
       "properties": {

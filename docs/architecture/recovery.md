@@ -48,6 +48,8 @@ stdout、stderr 各自增量解码 UTF-8，并分别维护输出脱敏状态，�
 
 ## 隔离边界
 
+共享 workspace 目录遍历将符号链接（含 Windows junction）明确列为 symlink 条目，不解析或递归目标，继续其他条目；find 保留其路径，grep 只读普通文件。受控路径经过链接仍被拒绝，非普通文件目标与过大的 edit/write 内容可由模型纠正；Controller 返回结构化拒绝，Recovery/Comparison 沿原生工具错误继续。未知 I/O、审计与写后完整性故障仍致命。目录查询保持既有深度/数量限制，不套用快照依赖排除策略。见[目录与文件前置条件决策](../decisions/accepted/2026-10-15-workspace-link-listing-and-file-preconditions.md)。
+
 Briefing 中的 source Git 事实来自准备时对 source 的既有探测，只提供 repository、HEAD、指定历史 commit 对象是否存在及 status 是否可用；未成功取得的事实保持 unknown。它们不是工作副本当前 Git 状态，也不证明历史任务前起点。事实进入 `recovery.model_input` artifact，并随模型可见文本进入既有请求审计。
 
 共享 Pi Provider 以连续失败而非整轮 `continue()` 次数限制瞬时网络/上游错误：一次成功模型 turn 后重置计数，无成功进展时最多三次请求，退避依次为 2 秒和 4 秒。失败响应中的部分文本不算进展，已完成工具不会重放；context overflow 仍只允许一次缩减恢复，取消、原截止、致命工具与审计失败优先。失败诊断保留脱敏的 HTTP/TLS 原因；这些恢复措施不代表上游网络已经可用。见[可靠性决策](../decisions/accepted/2026-10-12-recovery-progress-aware-retries-and-briefing.md)。
