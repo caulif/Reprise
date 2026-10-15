@@ -8,7 +8,7 @@ for (const mode of ['success', 'cancel', 'hard', 'provider-failure'] as const) {
   test(`default autonomous readonly denial and real scratch correction preserve ${mode}`, async t => {
     const abort = new AbortController();
     const correction = process.platform === 'win32' ? "Set-Content corrected.txt 'Corrected in writable scratch'" : "printf '%s\\n' 'Corrected in writable scratch' > corrected.txt";
-    const forbidden = process.platform === 'win32' ? 'Set-Content finals/policy-denial-sentinel.txt denied' : 'echo denied > finals/policy-denial-sentinel.txt';
+    const forbidden = 'rm finals/policy-denial-sentinel.txt';
     const steps = [{ name: 'shell_exec', arguments: { command: forbidden }, error: true },
       { name: 'shell_exec', arguments: { command: correction } }, ...publicationSteps()];
     const f = await runAutonomousPublication(t, { steps, signal: abort.signal,
