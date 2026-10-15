@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 test('serial CI coverage has enough job time without relaxing coverage or aggregate gates', async () => {
   const workflow = (await readFile('.github/workflows/check.yml', 'utf8')).replaceAll('\r\n', '\n');
   const verify = (text: string) => {
-    const coverage = text.match(/\n  coverage:\n([\s\S]*?)(?=\n  all-checks-passed:)/)?.[1];
+    const coverage = text.match(/\n {2}coverage:\n([\s\S]*?)(?=\n {2}all-checks-passed:)/)?.[1];
     assert.ok(coverage);
     assert.ok(Number(coverage.match(/timeout-minutes: (\d+)/)?.[1]) >= 30);
     assert.match(coverage, /npm run test:coverage -- --concurrency 1/);
