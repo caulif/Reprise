@@ -1,3 +1,4 @@
+import { DEFAULT_AGENT_DEADLINE_MS } from '../core/agent-defaults.js';
 import { AutonomousComparisonAgent } from '../agents/comparison-autonomous.js';
 import { DEFAULT_COMPARISON_RESOURCES } from '../agents/comparison-resources.js';
 import { RecoveryAgent } from '../agents/recovery-agent.js';
@@ -24,7 +25,7 @@ export type HarnessAgents = {
  * Constructs all internal agents from the one persisted, non-sensitive Pi choice.
  * Credentials remain entirely in Pi's provider layer.
  */
-const DEFAULT_BUDGET: AgentBudget = { callTimeoutMs: 24 * 60 * 60_000, maxStructuredRepairAttempts: 1 };
+const DEFAULT_BUDGET: AgentBudget = { callTimeoutMs: DEFAULT_AGENT_DEADLINE_MS, maxStructuredRepairAttempts: 1 };
 
 export function createHarnessAgents(
   config: HarnessModelConfig,
@@ -35,7 +36,7 @@ export function createHarnessAgents(
   const host = new AgentHost(caller);
   const budget: AgentBudget = { ...(limits.budget ?? DEFAULT_BUDGET),
     comparisonResources: limits.budget?.comparisonResources ?? DEFAULT_COMPARISON_RESOURCES };
-  const recoveryBudget = limits.recoveryBudget ?? limits.budget ?? { callTimeoutMs: 24 * 60 * 60_000, maxStructuredRepairAttempts: 1 };
+  const recoveryBudget = limits.recoveryBudget ?? limits.budget ?? DEFAULT_BUDGET;
   const locale = options.locale ?? 'zh';
   return {
     comparison: new AutonomousComparisonAgent({
