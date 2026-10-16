@@ -397,7 +397,7 @@ export function comparisonReportModelFromHtml(
     ...(headline ? { headline } : {}),
   };
   return comparisonReportFormat(html) >= 3
-    ? { ...base, ...(comparisonReportFormat(html) === 4 ? { task: comparisonPlainText(extractInner(html, 'data-agent-slot', 'category')) } : {}), formatVersion: comparisonReportFormat(html) as 3 | 4, headline: headline ?? '', boundary: comparisonPlainText(extractInner(html, 'data-agent-slot', 'boundary')), differences: comparisonDifferenceTexts(html) }
+    ? { ...base, ...(comparisonReportFormat(html) >= 4 ? { task: comparisonPlainText(extractInner(html, 'data-agent-slot', 'category')) } : {}), formatVersion: comparisonReportFormat(html) as 3 | 4 | 5, headline: headline ?? '', boundary: comparisonPlainText(extractInner(html, 'data-agent-slot', 'boundary')), differences: comparisonDifferenceTexts(html) }
     : { ...base, formatVersion: 2 };
 }
 
@@ -614,6 +614,7 @@ function applyShareCardPresentationFixes(html: string, locale: AgentLocale): str
   const current = reportString(locale, "sessionCurrent");
   for (const [attr, name] of [
     ["data-agent-slot", "headline"],
+    ...(comparisonReportFormat(next) === 5 ? [["data-agent-slot", "boundary"], ["data-agent-zone", "differences"]] : []),
     ["data-agent-zone", "comparison"],
   ] as const) {
     const inner = extractInner(next, attr, name);
@@ -623,7 +624,6 @@ function applyShareCardPresentationFixes(html: string, locale: AgentLocale): str
   }
   return next;
 }
-
 function repairShareCardPresentation(html: string, locale: AgentLocale): { html: string; limitations: ComparisonReportStringKey[] } {
   let next = applyShareCardPresentationFixes(html, locale);
   if (!shareCardPresentationError(next, locale)) return { html: next, limitations: [] };

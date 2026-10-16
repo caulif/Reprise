@@ -6,7 +6,7 @@
 
 ### Fixed
 
-- Comparison 新报告采用适合截图分享的格式4：抽象任务标题、单一比较正文、小字号强调结论及简写指标，移除品牌和重复差异列表；原始任务不再进入页头，明显路径、文件名及联系方式会被拒绝。姓名及图片隐私仍需模型核查，不承诺自动完全脱敏。旧格式读取与恢复兼容。见[分享优先报告决策](decisions/accepted/2026-10-15-comparison-shareable-report.md)。
+- Comparison 新报告恢复突出模型、推荐优先、最多三条短差异和完整视口优先的格式5；Token 固定 k。保留抽象任务、脱敏、日期及替代材料说明，旧格式继续读取与恢复。见[恢复推荐优先布局](decisions/accepted/2026-10-16-comparison-restore-compact.md)。
 
 - Comparison 复用受管命令，等待返回不再终止长命令，可继续读取输出或取消并确认收尾；浏览器限制、进程所有权与日志审计沿用原边界。报告和界面统一使用历史/当前，当前模型取实际运行记录；内部数据字段及 Token 计算保持兼容。见[工具与命名决策](decisions/accepted/2026-10-15-comparison-managed-processes-and-session-names.md)。
 

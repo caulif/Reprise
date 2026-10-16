@@ -328,7 +328,7 @@ export class ComparisonDraft {
       this.#lastRejection = "findings_not_ready: Save findings and resolve decision questions or mark evidence unavailable before composing.";
       return `status=rejected\ncode=findings_not_ready\nmessage=${this.#lastRejection}`;
     }
-    if ((draft.formatVersion === 3 || draft.formatVersion === 4)) {
+    if ((draft.formatVersion === 3 || draft.formatVersion === 4 || draft.formatVersion === 5)) {
       const error = draft.boundary === undefined || draft.differences === undefined || draft.detailsHtml !== undefined
         ? 'Format 3 requires boundary and differences and forbids details.'
         : nonWhitespaceCodePoints(draft.headline) > 80 ? 'Recommendation exceeds 80 non-whitespace code points.'
@@ -355,16 +355,16 @@ export class ComparisonDraft {
     };
     const details = `${draft.detailsHtml ?? ''}${decisionSupportDetailsHtml(draft, discovery?.submission, this.#locale)}`;
     const html = renderComparisonReportShell({
-      ...((draft.formatVersion === 3 || draft.formatVersion === 4) ? { formatVersion: draft.formatVersion } : {}),
+      ...((draft.formatVersion === 3 || draft.formatVersion === 4 || draft.formatVersion === 5) ? { formatVersion: draft.formatVersion } : {}),
       task: this.#task,
       facts: this.#facts,
       metrics: metricsFromReportFacts(this.#facts),
       evidence: catalog.links,
       media: catalog.media,
       slots: {
-        ...((draft.formatVersion === 3 || draft.formatVersion === 4) ? { boundary: draft.boundary, differences: draft.differences } : {}),
+        ...((draft.formatVersion === 3 || draft.formatVersion === 4 || draft.formatVersion === 5) ? { boundary: draft.boundary, differences: draft.differences } : {}),
         category: draft.category,
-        headline: (draft.formatVersion === 3 || draft.formatVersion === 4) ? draft.headline.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;") : draft.headline,
+        headline: (draft.formatVersion === 3 || draft.formatVersion === 4 || draft.formatVersion === 5) ? draft.headline.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;") : draft.headline,
         comparison: decisionTextHtml(draft, discovery?.submission, this.#locale),
         ...(details ? { details } : {}),
       },
@@ -380,8 +380,8 @@ export class ComparisonDraft {
       this.#lastRejection = `${verified.code}: ${verified.message}`;
       return `status=rejected\ncode=${verified.code}\nmessage=${verified.message}`;
     }
-    const length = (draft.formatVersion === 3 || draft.formatVersion === 4) ? comparisonCompactTextCharacters(verified.html) : comparisonMainTextCharacters(verified.html);
-    const target = (draft.formatVersion === 3 || draft.formatVersion === 4) ? (draft.formatVersion === 4 ? 500 : 900) : draft.decisionShape === "single_difference" ? 250 : draft.decisionShape === "multiple_differences" ? 600 : undefined;
+    const length = (draft.formatVersion === 3 || draft.formatVersion === 4 || draft.formatVersion === 5) ? comparisonCompactTextCharacters(verified.html) : comparisonMainTextCharacters(verified.html);
+    const target = (draft.formatVersion === 3 || draft.formatVersion === 4 || draft.formatVersion === 5) ? (draft.formatVersion === 4 ? 500 : 900) : draft.decisionShape === "single_difference" ? 250 : draft.decisionShape === "multiple_differences" ? 600 : undefined;
     if (target !== undefined && length > target) {
       this.#lastRejection = `draft_too_long: declared ${draft.decisionShape} has ${length} main characters; maximum=${target}.`;
       return `status=rejected\ncode=draft_too_long\ndecisionShape=${draft.decisionShape}\nmainTextCharacters=${length}\nvisibleMainText=${JSON.stringify(comparisonVisibleMainText(verified.html))}\nmaximum=${target}\nmessage=Shorten this actual visible text (including the headline) in one batch revision; do not write a shell counting script. Preserve decisive evidence, counterevidence and limitations that change the choice, and move routine methods to details. Do not relabel one difference as multiple to bypass the limit; then submit and preview.`;
