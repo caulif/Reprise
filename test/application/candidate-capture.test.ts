@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { LocalWorkspaceProvider } from '../../src/environment/local-workspace-provider.js';
@@ -129,6 +129,26 @@ test('explicit retention overrides nested dependency omission and cancellation n
   assert.equal((await provider.candidateSnapshot('run')).status, 'incomplete');
   const sealed = await provider.sealCandidateSnapshot(environment, undefined, ['packages/app/node_modules/cache.txt']);
   assert.equal(await readFile(join(sealed.root, 'packages/app/node_modules/cache.txt'), 'utf8'), 'rebuildable');
+});
+
+test('junction retention and omission records use snapshot paths instead of resolved source paths', async t => {
+  const { provider, environment } = await fixture(t);
+  await installedWorkspace(environment.root);
+  try {
+    for (const alias of ['a-delivery', 'z-omitted']) await symlink(join(environment.root, 'packages/app'), join(environment.root, alias), 'junction');
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && ['EPERM', 'EACCES'].includes(String(error.code))) {
+      t.skip('directory link creation is unavailable');
+      return;
+    }
+    throw error;
+  }
+  const retained = 'a-delivery/node_modules/cache.txt';
+  const sealed = await provider.sealCandidateSnapshot(environment, undefined, [retained]);
+  assert.equal(sealed.status, 'complete');
+  assert.equal(await readFile(join(sealed.root, retained), 'utf8'), 'rebuildable');
+  assert.deepEqual(sealed.omitted.map(entry => entry.path).sort(), ['node_modules', 'packages/app/node_modules', 'z-omitted/node_modules']);
+  await assert.rejects(readFile(join(sealed.root, 'z-omitted/node_modules/cache.txt')));
 });
 
 test('missing install proof preserves dependency-named deliveries', async t => {

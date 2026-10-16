@@ -329,13 +329,14 @@ async function resolveSafeLink(
 export type SnapshotCopyPolicy = { retainPaths: readonly string[]; omitted: { path: string; lockfile: string; restoreCommand: string }[]; copied?: { files: number; bytes: number } };
 export async function copyTree(source: string, destination: string, signal?: AbortSignal, policy?: SnapshotCopyPolicy): Promise<void> {
   if (policy) policy.copied = { files: 0, bytes: 0 };
-  await copyTreeFrom(source, destination, source, new Set(), signal, policy);
+  await copyTreeFrom(source, destination, source, '', new Set(), signal, policy);
 }
 
 async function copyTreeFrom(
   source: string,
   destination: string,
   sourceRoot: string,
+  logicalPath: string,
   chain: ReadonlySet<string>,
   signal?: AbortSignal,
   policy?: SnapshotCopyPolicy,
@@ -355,7 +356,8 @@ async function copyTreeFrom(
     signal?.throwIfAborted();
     const from = join(source, entry.name);
     const to = join(destination, entry.name);
-    if (policy && entry.isDirectory() && !entry.isSymbolicLink() && await omitRebuildableDirectory(sourceRoot, source, entry.name, policy)) {
+    const path = logicalPath ? `${logicalPath}/${entry.name}` : entry.name;
+    if (policy && entry.isDirectory() && !entry.isSymbolicLink() && await omitRebuildableDirectory(sourceRoot, source, entry.name, policy, path)) {
       if (entry.name === 'node_modules') {
         const receipt = join(from, '.pnpm', 'lock.yaml');
         if (await exists(receipt)) {
@@ -380,7 +382,7 @@ async function copyTreeFrom(
       if (resolved.action === 'skip') { if (policy) throw new Error('Snapshot omitted an unsupported link.'); continue; }
       if (resolved.action === 'directory') {
         await mkdir(to);
-        await copyTreeFrom(resolved.from, to, sourceRoot, nextChain, signal, policy);
+        await copyTreeFrom(resolved.from, to, sourceRoot, path, nextChain, signal, policy);
         continue;
       }
       await copyWorkspaceFile(resolved.from, to, signal, policy);
@@ -388,7 +390,7 @@ async function copyTreeFrom(
     }
     if (info.isDirectory()) {
       await mkdir(to);
-      await copyTreeFrom(from, to, sourceRoot, nextChain, signal, policy);
+      await copyTreeFrom(from, to, sourceRoot, path, nextChain, signal, policy);
     } else if (info.isFile()) {
       try {
         await copyWorkspaceFile(from, to, signal, policy);
@@ -460,7 +462,7 @@ export async function fingerprintTree(
   const hashing = new AbortController();
   const hashSignal = signal ? AbortSignal.any([signal, hashing.signal]) : hashing.signal;
   let next = 0;
-  const results = await Promise.allSettled(Array.from({ length: 8 }, async () => {
+  await Promise.allSettled(Array.from({ length: 8 }, async () => {
     try {
       while (next < resources.length) {
         hashSignal.throwIfAborted();
@@ -473,8 +475,8 @@ export async function fingerprintTree(
       }
     } catch (error) { hashing.abort(error); throw error; }
   }));
-  const failed = results.find(result => result.status === 'rejected');
-  if (failed?.status === 'rejected') throw failed.reason;
+  signal?.throwIfAborted();
+  hashing.signal.throwIfAborted();
   resources.sort(compareFingerprintEntries);
   return { fingerprint: { capturedAt: new Date().toISOString(), resources, digest: sha256(JSON.stringify(resources)) }, budget: scan.budget };
 }
@@ -688,11 +690,10 @@ function compareFingerprintEntries(left: FingerprintEntry, right: FingerprintEnt
   return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
 }
 
-async function omitRebuildableDirectory(root: string, parent: string, name: string, policy: SnapshotCopyPolicy): Promise<boolean> {
-  const path = relativeInside(root, join(parent, name))?.replaceAll('\\', '/');
+async function omitRebuildableDirectory(root: string, parent: string, name: string, policy: SnapshotCopyPolicy, path: string): Promise<boolean> {
   const normalize = (value: string) => value.replaceAll('\\', '/').replace(/^(?:\.\/)+/, '').replace(/\/+$/, '').toLowerCase();
-  const canonical = path ? normalize(path) : '';
-  if (!path || policy.retainPaths.some(value => { const keep = normalize(value); return keep === canonical || keep.startsWith(`${canonical}/`) || canonical.startsWith(`${keep}/`); })) return false;
+  const canonical = normalize(path);
+  if (policy.retainPaths.some(value => { const keep = normalize(value); return keep === canonical || keep.startsWith(`${canonical}/`) || canonical.startsWith(`${keep}/`); })) return false;
   const regular = async (file: string, directory = parent) => {
     try {
       await assertNoSymlinkAncestors(directory, file);
