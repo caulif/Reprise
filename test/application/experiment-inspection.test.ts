@@ -189,8 +189,7 @@ test('captureWorkspaceScope does not snapshot a sibling tree that shares a path 
     store: { commitArtifact: async (input: { bytes: Uint8Array }) => { artifacts.push(Buffer.from(input.bytes)); } } as unknown as ExperimentStore,
     environment: { root, beforeFingerprint: empty } as unknown as PreparedEnvironmentRef,
     workspaceProvider: {
-      fingerprint: async () => after,
-      sealCandidateSnapshot: async () => ({ root: join(parent, 'snapshots', 'run-1'), status: 'complete' as const }),
+      sealCandidateSnapshot: async () => ({ root: join(parent, 'snapshots', 'run-1'), status: 'complete' as const, fingerprint: after, omitted: [] }),
     } as unknown as LocalWorkspaceProvider,
     experimentId: 'experiment-1',
     runId: 'run-1',

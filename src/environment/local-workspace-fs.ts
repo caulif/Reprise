@@ -5,6 +5,8 @@ import { SAFE_ID, sha256, sha256File, writeAtomic } from '../core/identity.js';
 import { RecoveryMarkerSchema } from '../core/schema.js';
 import { dirname, join, resolve } from 'node:path';
 import { relativeInside } from '../core/paths.js';
+import { copySnapshotFile } from './snapshot-file.js';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { isRecoveryPath } from '../infrastructure/recovery-tools.js';
 import { MAX_INLINE_HASH_BYTES, SNAPSHOT_LIMITS, type SnapshotLimits } from './snapshots.js';
 import type {
@@ -89,10 +91,12 @@ export async function publishDirectory(
   staging: string,
   destination: string,
   attemptRename: typeof rename = rename,
+  options: { signal?: AbortSignal | undefined; atomicOnly?: boolean } = {},
 ): Promise<void> {
   let last: unknown;
   for (const delay of PUBLISH_BACKOFF_MS) {
-    if (delay) await sleep(delay);
+    options.signal?.throwIfAborted();
+    if (delay) await sleep(delay, undefined, { signal: options.signal });
     try {
       await attemptRename(staging, destination);
       return;
@@ -101,6 +105,7 @@ export async function publishDirectory(
       if (await exists(destination) || !isBusy(error)) throw error;
     }
   }
+  if (options.atomicOnly) throw last;
   if (await exists(destination)) throw last;
   try {
     await cp(staging, destination, { recursive: true, errorOnExist: true });
@@ -109,10 +114,6 @@ export async function publishDirectory(
     await rm(destination, { recursive: true, force: true }).catch(() => undefined);
     throw new Error('Could not publish the isolated baseline. Windows still had a lock on the copied files. Retry the run.', { cause: error });
   }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isBusy(error: unknown): boolean {
@@ -325,8 +326,9 @@ async function resolveSafeLink(
 }
 
 
-export type SnapshotCopyPolicy = { retainPaths: readonly string[]; omitted: { path: string; lockfile: string; restoreCommand: string }[] };
+export type SnapshotCopyPolicy = { retainPaths: readonly string[]; omitted: { path: string; lockfile: string; restoreCommand: string }[]; copied?: { files: number; bytes: number } };
 export async function copyTree(source: string, destination: string, signal?: AbortSignal, policy?: SnapshotCopyPolicy): Promise<void> {
+  if (policy) policy.copied = { files: 0, bytes: 0 };
   await copyTreeFrom(source, destination, source, new Set(), signal, policy);
 }
 
@@ -353,7 +355,19 @@ async function copyTreeFrom(
     signal?.throwIfAborted();
     const from = join(source, entry.name);
     const to = join(destination, entry.name);
-    if (policy && entry.isDirectory() && !entry.isSymbolicLink() && await omitRebuildableDirectory(sourceRoot, source, entry.name, policy)) continue;
+    if (policy && entry.isDirectory() && !entry.isSymbolicLink() && await omitRebuildableDirectory(sourceRoot, source, entry.name, policy)) {
+      if (entry.name === 'node_modules') {
+        const receipt = join(from, '.pnpm', 'lock.yaml');
+        if (await exists(receipt)) {
+          await assertNoSymlinkAncestors(from, '.pnpm/lock.yaml');
+          const info = await lstat(receipt);
+          if (!info.isFile() || info.isSymbolicLink()) throw new Error('Installed dependency lock is not a regular file.');
+          await mkdir(join(to, '.pnpm'), { recursive: true });
+          await copyWorkspaceFile(receipt, join(to, '.pnpm', 'lock.yaml'), signal, policy);
+        }
+      }
+      continue;
+    }
     let info;
     try {
       info = await lstat(from);
@@ -369,7 +383,7 @@ async function copyTreeFrom(
         await copyTreeFrom(resolved.from, to, sourceRoot, nextChain, signal, policy);
         continue;
       }
-      await writeFile(to, await readFile(resolved.from, { flag: 'r' }), { flag: 'wx' });
+      await copyWorkspaceFile(resolved.from, to, signal, policy);
       continue;
     }
     if (info.isDirectory()) {
@@ -377,13 +391,25 @@ async function copyTreeFrom(
       await copyTreeFrom(from, to, sourceRoot, nextChain, signal, policy);
     } else if (info.isFile()) {
       try {
-        await writeFile(to, await readFile(from, { flag: 'r' }), { flag: 'wx' });
+        await copyWorkspaceFile(from, to, signal, policy);
       } catch (error) {
         if (!policy && (isAccessDenied(error) || isMissing(error))) continue;
         throw error;
       }
-    }
+    } else if (policy) throw new Error('Snapshot encountered an unsupported entry.');
   }
+}
+
+async function copyWorkspaceFile(from: string, to: string, signal?: AbortSignal, policy?: SnapshotCopyPolicy): Promise<void> {
+  if (policy) {
+    const size = (await stat(from)).size;
+    const copied = policy.copied!;
+    copied.files++;
+    copied.bytes += size;
+    if (copied.files > SNAPSHOT_LIMITS.files || copied.bytes > SNAPSHOT_LIMITS.totalBytes || size > SNAPSHOT_LIMITS.fileBytes) throw new Error('Candidate snapshot copy exceeds limits.');
+    return copySnapshotFile(from, to, signal);
+  }
+  await writeFile(to, await readFile(from, { flag: 'r', signal }), { flag: 'wx', signal });
 }
 
 
@@ -422,29 +448,44 @@ type FingerprintScan = {
 export async function fingerprintTree(
   root: string,
   limits: SnapshotLimits = SNAPSHOT_LIMITS,
+  signal?: AbortSignal,
 ): Promise<{ fingerprint: EnvironmentFingerprint; budget: WorkspaceBudget }> {
-  const scan = await scanFingerprintTree(root, limits);
+  signal?.throwIfAborted();
+  const scan = await scanFingerprintTree(root, limits, signal);
   const metadata = [...scan.resources].sort(compareFingerprintEntries);
   if (scan.budget.blockedReasons.length > 0) {
     return { fingerprint: { capturedAt: new Date().toISOString(), resources: metadata, digest: sha256(JSON.stringify(metadata)) }, budget: scan.budget };
   }
-  const resources = await Promise.all(scan.resources.map(async (resource) => {
-    if (resource.kind !== 'file') return resource;
-    const path = join(root, ...resource.path.split('/'));
-    const contentHash = resource.size > MAX_INLINE_HASH_BYTES ? await sha256File(path) : sha256(await readFile(path));
-    return { ...resource, contentHash };
+  const resources = [...scan.resources];
+  const hashing = new AbortController();
+  const hashSignal = signal ? AbortSignal.any([signal, hashing.signal]) : hashing.signal;
+  let next = 0;
+  const results = await Promise.allSettled(Array.from({ length: 8 }, async () => {
+    try {
+      while (next < resources.length) {
+        hashSignal.throwIfAborted();
+        const index = next++;
+        const resource = resources[index]!;
+        if (resource.kind !== 'file') continue;
+        const path = join(root, ...resource.path.split('/'));
+        const contentHash = resource.size > MAX_INLINE_HASH_BYTES ? await sha256File(path, hashSignal) : sha256(await readFile(path, { signal: hashSignal }));
+        resources[index] = { ...resource, contentHash };
+      }
+    } catch (error) { hashing.abort(error); throw error; }
   }));
+  const failed = results.find(result => result.status === 'rejected');
+  if (failed?.status === 'rejected') throw failed.reason;
   resources.sort(compareFingerprintEntries);
   return { fingerprint: { capturedAt: new Date().toISOString(), resources, digest: sha256(JSON.stringify(resources)) }, budget: scan.budget };
 }
 
-async function scanFingerprintTree(root: string, limits: SnapshotLimits): Promise<FingerprintScan> {
+async function scanFingerprintTree(root: string, limits: SnapshotLimits, signal?: AbortSignal): Promise<FingerprintScan> {
   const resources: FingerprintEntry[] = [];
   const totals = { fileCount: 0, totalBytes: 0, largestFileBytes: 0 };
   const sensitiveFileCounts: Record<SensitiveFileCategory, number> = { env: 0, credential: 0, private_key: 0 };
   const excludedEntries: WorkspaceExclusion[] = [];
   try {
-    await collectFingerprintMetadata(root, root, '', resources, totals, sensitiveFileCounts, excludedEntries, new Set(), limits);
+    await collectFingerprintMetadata(root, root, '', resources, totals, sensitiveFileCounts, excludedEntries, new Set(), limits, signal);
   } catch (error) {
     if (!(error instanceof BudgetExceeded)) throw error;
   }
@@ -542,7 +583,9 @@ async function collectFingerprintMetadata(
   excludedEntries: WorkspaceExclusion[],
   chain: ReadonlySet<string>,
   limits: SnapshotLimits,
+  signal?: AbortSignal,
 ): Promise<void> {
+  signal?.throwIfAborted();
   const identity = await realPathOrResolved(currentDir);
   if (chain.has(identity)) {
     if (prefix) excludedEntries.push({ path: prefix, reasonCode: 'workspace.cycle_skipped' });
@@ -560,6 +603,7 @@ async function collectFingerprintMetadata(
     throw error;
   }
   for (const entry of entries) {
+    signal?.throwIfAborted();
     const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
     const path = join(currentDir, entry.name);
     let info;
@@ -580,7 +624,7 @@ async function collectFingerprintMetadata(
       }
       if (resolved.action === 'directory') {
         resources.push({ path: relativePath, kind: 'directory', size: 0 });
-        await collectFingerprintMetadata(sourceRoot, resolved.from, relativePath, resources, totals, sensitiveFileCounts, excludedEntries, nextChain, limits);
+        await collectFingerprintMetadata(sourceRoot, resolved.from, relativePath, resources, totals, sensitiveFileCounts, excludedEntries, nextChain, limits, signal);
         continue;
       }
       await recordFingerprintFile(relativePath, entry.name, resolved.from, resources, totals, sensitiveFileCounts, limits);
@@ -589,7 +633,7 @@ async function collectFingerprintMetadata(
     if (info.isDirectory()) {
       if (entry.name === ".git") continue;
       resources.push({ path: relativePath, kind: 'directory', size: 0 });
-      await collectFingerprintMetadata(sourceRoot, path, relativePath, resources, totals, sensitiveFileCounts, excludedEntries, nextChain, limits);
+      await collectFingerprintMetadata(sourceRoot, path, relativePath, resources, totals, sensitiveFileCounts, excludedEntries, nextChain, limits, signal);
     } else if (info.isFile()) {
       try {
         await recordFingerprintFile(relativePath, entry.name, path, resources, totals, sensitiveFileCounts, limits);
@@ -649,8 +693,12 @@ async function omitRebuildableDirectory(root: string, parent: string, name: stri
   const normalize = (value: string) => value.replaceAll('\\', '/').replace(/^(?:\.\/)+/, '').replace(/\/+$/, '').toLowerCase();
   const canonical = path ? normalize(path) : '';
   if (!path || policy.retainPaths.some(value => { const keep = normalize(value); return keep === canonical || keep.startsWith(`${canonical}/`) || canonical.startsWith(`${keep}/`); })) return false;
-  const regular = async (file: string) => {
-    try { const info = await lstat(join(parent, file)); return info.isFile() && !info.isSymbolicLink(); }
+  const regular = async (file: string, directory = parent) => {
+    try {
+      await assertNoSymlinkAncestors(directory, file);
+      const info = await lstat(join(directory, file));
+      return info.isFile() && !info.isSymbolicLink() && info.size <= MAX_INLINE_HASH_BYTES;
+    }
     catch (error) { if (isMissing(error)) return false; throw error; }
   };
   const recipes = name === 'node_modules' ? [
@@ -659,9 +707,33 @@ async function omitRebuildableDirectory(root: string, parent: string, name: stri
   ] : name === 'target' ? [['Cargo.toml', 'Cargo.lock', 'target/.rustc_info.json', 'cargo build --locked']] : [];
   for (const [manifest, lockfile, marker, restoreCommand] of recipes) {
     if (await regular(manifest!) && await regular(lockfile!) && await regular(marker!)) {
-      policy.omitted.push({ path, lockfile: relativeInside(root, join(parent, lockfile!))!, restoreCommand: restoreCommand! });
+      const installed = 'node_modules/.pnpm/lock.yaml';
+      const replaced = name === 'node_modules' && lockfile === 'pnpm-lock.yaml' && await regular(installed)
+        && await readFile(join(parent, lockfile), 'utf8') !== await readFile(join(parent, installed), 'utf8');
+      policy.omitted.push({ path, lockfile: relativeInside(root, join(parent, replaced ? installed : lockfile!))!, restoreCommand: replaced ? installedLockRestoreCommand : restoreCommand! });
       return true;
+    }
+  }
+  if (name === 'node_modules' && await regular('package.json')) {
+    let ancestor = dirname(parent);
+    while (ancestor === root || isInside(root, ancestor)) {
+      if (await regular('package.json', ancestor) && await regular('pnpm-workspace.yaml', ancestor)
+        && await regular('pnpm-lock.yaml', ancestor) && await regular('node_modules/.modules.yaml', ancestor)) {
+        const importer = relativeInside(ancestor, parent)?.replaceAll('\\', '/');
+        for (const lockfile of ['node_modules/.pnpm/lock.yaml', 'pnpm-lock.yaml']) {
+          if (!await regular(lockfile, ancestor)) continue;
+          const lock = await readFile(join(ancestor, lockfile), 'utf8');
+          const importers = /(?:^|\n)importers:\r?\n((?:[ \t][^\n]*(?:\n|$)|\r?\n)*)/.exec(lock)?.[1];
+          if (importer && importers?.split(/\r?\n/).includes(`  ${importer}:`)) {
+            policy.omitted.push({ path, lockfile: relativeInside(root, join(ancestor, lockfile))!, restoreCommand: lockfile === 'pnpm-lock.yaml' ? 'pnpm install --frozen-lockfile' : installedLockRestoreCommand });
+            return true;
+          }
+        }
+      }
+      ancestor = dirname(ancestor);
     }
   }
   return false;
 }
+
+const installedLockRestoreCommand = 'In an isolated copy, preserve the delivered pnpm-lock.yaml, restore pnpm-lock.yaml from the retained node_modules/.pnpm/lock.yaml, then run pnpm install --frozen-lockfile.';

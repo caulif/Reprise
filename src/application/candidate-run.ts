@@ -6,7 +6,7 @@ import { CandidateProgressCheckpointSchema } from '../core/schema.js';
 import { assertTransition } from '../core/state-machine.js';
 import type { ArtifactRef, CandidateRunState, CandidateSessionHandle, EventEnvelope, RunAttempt, RunManifest, RunOutcome, RunRecord } from '../core/schema.js';
 import { isCandidateRuntimeJournalType, type DeliveryReceipt, type MessageIdentity, type RuntimeStopReason, type TargetRunner, type TurnSettlement, type UserMessage } from '../core/runtime.js';
-import { cleanupCandidateRun, DEFAULT_CLEANUP_TIMEOUT_MS } from './candidate-run-cleanup.js';
+import { cleanupCandidateRun, DEFAULT_CLEANUP_TIMEOUT_MS, DEFAULT_CAPTURE_TIMEOUT_MS } from './candidate-run-cleanup.js';
 import { appendCandidateRuntimeEvent } from './candidate-run-events.js';
 import {
   annotateRuntimeError,
@@ -260,6 +260,7 @@ export class CandidateRun {
       started: this.#startAttempted,
       ...(this.#release ? { release: this.#release } : {}),
       timeoutMs: this.#policy.cleanupTimeoutMs ?? DEFAULT_CLEANUP_TIMEOUT_MS,
+      captureTimeoutMs: this.#policy.cleanupTimeoutMs ?? DEFAULT_CAPTURE_TIMEOUT_MS,
       appendCleanup: async (type, payload, operationId) => {
         const event = await this.#append(type, payload, operationId);
         return event?.eventId;
