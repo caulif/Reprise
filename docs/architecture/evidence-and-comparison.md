@@ -88,7 +88,7 @@ Shell 的只读命令 guard 仅提前阻止已知写命令，不是 OS 文件权
 
 Host 指标固定在已审计的自主 Session system prompt，压缩摘要丢失指标时，后续实际请求与 History 重建仍可取得原值。当前 Port 的 completed 结果必须实际具有 `reportPath=report.html`；assert 不通过临时副本替调用方填充字段，旧历史 envelope schema/reader 继续兼容原记录。见[指标输入与结果断言](../decisions/accepted/2026-10-15-comparison-pinned-input-and-result-validation.md)。
 
-`submit_report` 从 scratch/ 读取 UTF-8 比较片段，另提交抽象任务短标题、推荐与必要边界。默认 format 4 采用单一比较正文，不预设对比表格或重复差异列表；无品牌、大模型卡片及原始任务全文。标题32、结论60、全部作者文字500个非空白码点，指标按 h/m/s、k/M 和美元符号显示，保留未知、计时不可比及估算说明。Agent 在文字、图注与图片中抽象个人信息；Host 拒绝明显的路径、文件名及联系方式，不认证语义或像素脱敏，不能确认安全的图片应省略。原始证据和私有审计保持不变，实验 bundle 不自动适合公开。新 `comparison.requested` 记录 `autonomousContractVersion=3` 并要求 format 4；旧 contract 1/2 和报告1/2/3按原规则恢复。接受后仍须当前 digest/catalog 的预览、实际同 Session 后续 generation 和正常完成；结构通过不认证报告质量。见[分享优先报告决策](../decisions/accepted/2026-10-15-comparison-shareable-report.md)。
+`submit_report` 从 scratch/ 读取 UTF-8 核心证据片段，另提交抽象标题、行动推荐、必要边界和最多三条短差异。默认 format 5 恢复突出双侧模型、完整视觉优先、推荐与短差异、三行指标表的布局；标题32、推荐80、单条差异60、作者正文900个非空白码点。Token 固定 k（1000），一位小数；真实零、极小正数、未知和估算保持区别。原始任务不进入页头；文字、差异、图注与图片继续脱敏。完整视口无法安全展示时才允许说明原因后替代或省略，不为压高度裁掉主体。新请求使用 autonomousContractVersion=4 并绑定 format 5；旧 contract 1/2/3 和报告1/2/3/4按原规则恢复。当前稿件必须经过 digest/catalog 绑定的预览及后续 generation，结构通过不代表视觉或语义验收。见[恢复推荐优先布局](../decisions/accepted/2026-10-16-comparison-restore-compact.md)。
 
 默认 Comparison 仅有整体 24 小时预算，不默认限制请求数、工具数、费用、来源阶段时间、保存累计耗时或续查次数。自主模式的空资源 override 也保留默认整体截止；显式请求/工具/费用限制仍执行，但不引入阶段截止。每次调用使用整体实际剩余时间与单次调用 timeout 的较小值。取消、数据授权、工具大小和并发容量及发布完整性检查继续有效。详见[整体时间预算](../decisions/accepted/2026-10-14-agent-default-budgets.md)。
 
@@ -126,7 +126,7 @@ Attempt 作用域持有可修订的证据 catalog：权威 revision 落在 `fact
 
 Host 预置 HTML 模板并拥有 header、metrics、cost-note、evidence、process 等区域；新报告 `data-report-format="2"` 的 Agent 区为 `comparison`（主创作）与可选 `details`（可见 `<details>`）。Agent 在 `comparison` 内自主选择并排图、表格、短片段或步骤；无图时不强制空视觉段；单侧真实结果可保留但须就近写明缺失方。Host 从草稿中结构化提取唯一、完整的 Agent 区与允许的槽，以本 attempt 的任务、指标、证据、媒体和受控模板重建整页；不明确的槽边界拒绝提取。Agent 区禁止可执行标签、SVG/MathML、事件属性和危险 URL；只允许链接的 `href` 与图片的 `src` 使用相对 URL，图片仍须经过媒体登记和文件可读性检查，其他资源属性直接拒绝。矢量内容须作为已登记媒体进入报告。重建后仍经过 schema、HTML 契约、evidence/media 引用、模型已见图片和外部资源检查，失败则不发布。展示问题由 Host 确定性修复，无法修复时记录 limitations 并仍可发布，不能把所有样式问题提升为失败门禁。Agent 的自然语言判断不能覆盖确定性事实，证据缺失必须明确说明，不得伪造引用。版式与发布取舍见[自主任务比较报告区与安全发布](../decisions/accepted/2026-09-19-comparison-autonomous-report-zones.md)和[Host 重建报告](../decisions/accepted/2026-09-23-host-rebuilt-comparison-report.md)。
 
-兼容 format 2 报告以独立结论区突出判断，随后紧凑展示时间、估算费用与 Token 总量，再呈现关键差异；仅 Token 分项默认折叠。初始结论、比较正文与可选详情槽位留空，组件原型只在不可见的 `<template>` 内提供结构，不预填赢家、差异数量、核验标签或媒体引用；已登记媒体仍在 Host 目录中供 Agent 选择，不自动配入正文。Agent 按任务组织实际差异、用户影响、必要证据及重要未知，省略不用的组件。旧整页草稿的缺失内容修复与限制说明继续兼容。当前 format 4 不设详情区，见上文[Comparison attempt](#comparison-attempt)。历史理由见[空槽位与结论优先的报告骨架](../decisions/accepted/2026-10-14-comparison-empty-report-template.md)。
+兼容 format 2 报告以独立结论区突出判断，随后紧凑展示时间、估算费用与 Token 总量，再呈现关键差异；仅 Token 分项默认折叠。初始结论、比较正文与可选详情槽位留空，组件原型只在不可见的 `<template>` 内提供结构，不预填赢家、差异数量、核验标签或媒体引用；已登记媒体仍在 Host 目录中供 Agent 选择，不自动配入正文。Agent 按任务组织实际差异、用户影响、必要证据及重要未知，省略不用的组件。旧整页草稿的缺失内容修复与限制说明继续兼容。当前 format 5 不设详情区，见上文[Comparison attempt](#comparison-attempt)。历史理由见[空槽位与结论优先的报告骨架](../decisions/accepted/2026-10-14-comparison-empty-report-template.md)。
 
 Host metrics 的 `data-metrics-layout="compact"` 标记与区域顺序不变；旧无标记的正文先于指标布局和四字段指纹仍可读取，不重写旧报告。时间保留分秒，极小正费用显示 `<0.001` 美元，避免舍入为零。费用说明价格快照、非供应商账单和工具费排除，Token 分项可能重叠或缺失，不能直接当作跨工具效率评分。证据链接具有可见样式与键盘焦点，配对图片按自然比例显示；窄屏将双侧证据纵向排列，不强制表格的桌面最小宽度。
 
@@ -242,7 +242,7 @@ Comparison的read结果现在只将实际存在的available/truncated/offset/byt
 
 Comparison 的 `quote_evidence` 只读取当前 catalog 的已登记文本引用，并从实际 UTF-8 字节生成带 ref、完整来源 SHA-256、字节范围及全文/节选标签的固定 HTML。原文展示复用该组件；派生解释不能冒称原文。提交、预览、发布和离线恢复重读安全 mounts 并核验组件，不因先前工具成功而跳过来源变化检查；有组件却无法验证则拒绝，无组件的旧报告保持兼容。工具尊重 allowModelText，拒绝二进制、非法 UTF-8、越界或切断多字节范围以及超出 16KiB 输出的请求，不静默截断。该能力认证引文字节和范围，不认证自由文字中的事实、判断或完整性；这些仍须语义审阅。
 
-历史独立复审协议要求在最后一次接受修订后重新读取实际正文，绑定稿件 digest/catalog/findings/声明；作者阶段读取不跨 Session 生效。预览不代替正文读取。恢复对启用该契约的 attempt 校验其 review Session 的读取记录，未启用的旧报告保持原认证。历史篇幅按其原格式限制，不套用当前 format 4 预算；读取与篇幅门均不认证语义正确。
+历史独立复审协议要求在最后一次接受修订后重新读取实际正文，绑定稿件 digest/catalog/findings/声明；作者阶段读取不跨 Session 生效。预览不代替正文读取。恢复对启用该契约的 attempt 校验其 review Session 的读取记录，未启用的旧报告保持原认证。历史篇幅按其原格式限制，不套用当前 format 5 预算；读取与篇幅门均不认证语义正确。
 
 旧独立复审在同一新 Session 内先审原任务与决定性原件，再核接受稿；其来源/保存截止和工具曝光属于退休策略。历史 review 认证仍要求对应实际输入和有效版本，保存的 findings 不是事实认证。read/shell 未隔离作者文件，该旧顺序也不是完全盲化；正常完成不认证语义。当前自主实现不创建独立 reviewer。
 

@@ -116,8 +116,12 @@ export function comparisonCompactTextBudgetError(html: string): string | undefin
       || differences.length || comparisonCompactTextCharacters(html) > 500) {
       return 'Shareable reports require an abstract title (32 characters), a conclusion (60 characters), one comparison body and at most 500 author characters.';
     }
+  }
+  if (comparisonReportFormat(html) >= 4) {
+    const category = comparisonPlainText(extractInner(html, 'data-agent-slot', 'category'));
+    if (!category.trim() || nonWhitespaceCodePoints(category) > 32) return 'Abstract title exceeds 32 characters.';
     const author = ['category', 'headline', 'boundary'].map(slot => extractInner(html, 'data-agent-slot', slot)).join(' ')
-      + extractInner(html, 'data-agent-zone', 'comparison');
+      + extractInner(html, 'data-agent-zone', 'comparison') + extractInner(html, 'data-agent-zone', 'differences');
     const texts: string[] = [];
     const attributes: string[] = [];
     const visit = (node: Node): void => {
