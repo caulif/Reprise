@@ -204,7 +204,7 @@ test("a cancelled Controller decision terminates the run as cancelled, not as a 
       factRef: "run:run-1:cancelled",
     }),
   };
-  const termination = await terminationOf(t, { controller: cancelling });
+  const termination = await terminationOf(t, { controller: cancelling, policy: patientPolicy });
   assert.equal(termination.kind, "cancelled");
   assert.equal(termination.code, "cancelled.user");
 });
