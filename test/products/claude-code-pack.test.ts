@@ -76,7 +76,13 @@ process.stdin.on('data', (chunk) => {
     } else if (mode === 'unrecognized') {
       send({ type: 'result', subtype: 'somethingNew', is_error: false });
     } else {
-      send({ type: 'result', subtype: 'success', is_error: false, terminal_reason: 'end_turn', usage: { input_tokens: 10, output_tokens: 4 } });
+      const result = { type: 'result', subtype: 'success', uuid: 'result-' + message.uuid, user_message_uuid: message.uuid, user_message_uuids: [message.uuid], duration_ms: 1234, duration_api_ms: 9999, is_error: false, terminal_reason: 'end_turn', usage: { input_tokens: 10, output_tokens: 4 } };
+      if (mode === 'timing_no_id') delete result.user_message_uuid;
+      if (mode === 'timing_multi_id') result.user_message_uuids = [message.uuid, 'other'];
+      if (mode === 'timing_wrong_session') result.session_id = 'another-session';
+      if (mode === 'timing_duplicate') send({ ...result, uuid: 'late-result', user_message_uuid: 'old-message' });
+      send(result);
+      if (mode === 'timing_duplicate') send(result);
     }
   }
 });
@@ -312,8 +318,29 @@ test('a successful Claude turn settles only after result and records native admi
   const settlement = await runner.waitForTurn();
   assert.equal(settlement.status, 'completed');
   assert.equal(settlement.confidence, 'native');
+  assert.equal(settlement.timing?.valueMs, 1234);
+  assert.equal(settlement.timing?.clientMessageId, receipt.messageId);
+  assert.equal(settlement.timing?.turnId, receipt.turnId);
   assert.ok(events.includes('runtime.session_started'));
   assert.ok(events.includes('runtime.usage_reported'));
+});
+
+test('Claude native timing requires an unambiguous native message and session identity', async (t) => {
+  for (const mode of ['timing_no_id', 'timing_multi_id', 'timing_wrong_session']) {
+    const { runner } = await fakeClaudeRunner(t, mode);
+    await runner.start({ id: 'm1', text: 'hello' }, { runId: 'run-1', turnIndex: 0, clientMessageId: 'm1' });
+    const settlement = await runner.waitForTurn();
+    assert.equal(settlement.status, 'completed');
+    assert.equal(settlement.timing, undefined, mode);
+  }
+});
+
+test('Claude duplicate and late results never settle the next submission', async (t) => {
+  const { runner } = await fakeClaudeRunner(t, 'timing_duplicate');
+  await runner.start({ id: 'm1', text: 'one' }, { runId: 'run-1', turnIndex: 0, clientMessageId: 'm1' });
+  assert.equal((await runner.waitForTurn()).timing?.clientMessageId, 'm1');
+  await runner.send({ id: 'm2', text: 'two' }, { runId: 'run-1', turnIndex: 1, clientMessageId: 'm2' });
+  assert.equal((await runner.waitForTurn()).timing?.clientMessageId, 'm2');
 });
 
 test('subtype success plus is_error settles as failed', async (t) => {

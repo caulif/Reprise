@@ -1,5 +1,7 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { Value } from '@sinclair/typebox/value';
+import { RuntimeTurnTimingSchema } from '../../../core/timing-schema.js';
 import { isRecord, record, text } from '../../../core/json.js';
 import {
   runtimeTargetEvent,
@@ -220,6 +222,8 @@ export class ClaudeTargetRunner implements TargetRunner {
   #exitDuringStop: Error | undefined;
   #init: Record<string, unknown> | undefined;
   #turnIndex = 0;
+  #activeMessage: MessageIdentity | undefined;
+  readonly #settledResults = new Set<string>();
 
   constructor(input: { runtime: ResolvedRuntime; environment: PreparedRuntimeEnvironment; sink: TargetEventSink; env?: Readonly<Record<string, string | undefined>>; args?: readonly string[]; safeMode?: boolean }) {
     this.#sink = input.sink;
@@ -267,12 +271,14 @@ export class ClaudeTargetRunner implements TargetRunner {
 
   async send(message: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt> {
     assertRuntimeMessageIdentity(message, identity, 'Claude');
+    this.#activeMessage = identity;
     const replay = this.#client.waitForReplay(identity.clientMessageId);
     await this.#client.sendUser(identity.clientMessageId, message.text);
     const frame = await replay;
     this.#turnIndex += 1;
     return {
       delivery: 'accepted',
+      turnId: identity.clientMessageId,
       evidence: frame ? 'native_event' : 'preflight',
       messageId: identity.clientMessageId,
       acceptedAt: new Date().toISOString(),
@@ -344,6 +350,13 @@ export class ClaudeTargetRunner implements TargetRunner {
   }
 
   #settle(frame: Record<string, unknown>): void {
+    const resultId = text(frame.uuid);
+    if (resultId && this.#settledResults.has(resultId)) return;
+    const identity = this.#activeMessage;
+    const nativeMessageId = text(frame.user_message_uuid);
+    if (nativeMessageId && nativeMessageId !== identity?.clientMessageId) return;
+    if (resultId) this.#settledResults.add(resultId);
+    this.#activeMessage = undefined;
     const subtype = text(frame.subtype);
     const terminal = text(frame.terminal_reason);
     const status = claudeSettlementStatus(frame, NORMAL_TERMINAL);
@@ -359,13 +372,21 @@ export class ClaudeTargetRunner implements TargetRunner {
           retryable: false,
         }
       : undefined;
+    const turnId = identity?.clientMessageId ?? `turn-${this.#turnIndex || 1}`;
+    const timing = { schemaVersion: 1, valueMs: frame.duration_ms, semantics: 'runtime_turn_elapsed',
+      boundary: 'runtime_admission_to_settlement', aggregation: 'per_turn', turnId,
+      clientMessageId: identity?.clientMessageId, ...(resultId ? { resultId } : {}) };
     const settlement: TurnSettlement = {
-      turnId: `turn-${this.#turnIndex || 1}`,
+      turnId,
       status,
       confidence: 'native',
       observedAt: new Date().toISOString(),
       rawRefs: [{ type: 'result', subtype: subtype ?? null, is_error: frame.is_error === true, terminal_reason: terminal ?? null }],
       ...(failure ? { failure } : {}),
+      ...(nativeMessageId === identity?.clientMessageId && nativeMessageId !== undefined &&
+        (!Array.isArray(frame.user_message_uuids) || frame.user_message_uuids.length === 1 && frame.user_message_uuids[0] === nativeMessageId) &&
+        (frame.session_id === undefined || frame.session_id === this.#sessionId) &&
+        Value.Check(RuntimeTurnTimingSchema, timing) ? { timing } : {}),
     };
     this.#turns.deliver(settlement);
   }

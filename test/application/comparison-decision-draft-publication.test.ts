@@ -2,15 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { comparisonFragment, comparisonSubmission, publicationSteps, runAutonomousPublication } from '../support/autonomous-comparison.js';
+import { comparisonSubmission, publicationSteps, runAutonomousPublication } from '../support/autonomous-comparison.js';
 
 for (const mode of ['unchanged', 'revision', 'image', 'provider-failure'] as const) {
   test(`default autonomous publication preserves uncertainty and actual preview delivery: ${mode}`, async t => {
     const steps = publicationSteps();
     if (mode === 'image') steps[2]!.arguments = { includeImages: true };
     if (mode === 'revision') steps.push(
-      { name: 'write', arguments: { path: comparisonSubmission.path, content: `${comparisonFragment}<p>Revised after actual preview.</p>` } },
-      { name: 'submit_report', arguments: { ...comparisonSubmission, headline: 'Final quality remains unknown' } },
+      { name: 'write', arguments: { path: comparisonSubmission.path, content: '' } },
+      { name: 'submit_report', arguments: { ...comparisonSubmission, reason: 'Neither final output is confirmed usable. Revised after actual preview.' } },
       { name: 'preview_report', arguments: {} });
     const f = await runAutonomousPublication(t, { steps, allowImages: mode === 'image', onGeneration: (context, index) => {
       if (index === 3 && mode === 'provider-failure') throw Object.assign(new Error('Provider failed after mechanical preview'), { status: 503 });

@@ -45,6 +45,7 @@ export type ComparisonReportFacts = {
     baseline?: ComparisonMetricSide;
     candidate?: ComparisonMetricSide;
     timingComparable?: boolean;
+    timingComparison?: import("../core/timing-schema.js").TimingComparison;
   };
 };
 

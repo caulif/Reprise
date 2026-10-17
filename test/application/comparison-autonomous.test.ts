@@ -27,7 +27,7 @@ test('autonomous Comparison uses one prompt and leaves all tools available witho
     assert.match(input.systemPrompt, /no mandatory findings snapshots/);
     assert.match(input.systemPrompt, /History and Current/);
     assert.match(input.systemPrompt, /Host resolved model identity/);
-    assert.match(input.systemPrompt, /Preserve original quotations verbatim/);
+    assert.match(input.systemPrompt, /Keep original quotations verbatim during private investigation; publish abstract paired results rather than source quotations/);
     assert.match(input.systemPrompt, /yield_time_ms bound one wait, not the process lifetime/);
     return { append: async ({ content, signal }) => {
       calls++;

@@ -9,8 +9,8 @@ for (const mode of ['empty-final', 'missing-preview', 'stale-preview', 'reprevie
     const steps = publicationSteps();
     if (mode === 'missing-preview') steps.pop();
     if (mode === 'stale-preview' || mode === 'repreviewed') {
-      steps.push({ name: 'write', arguments: { path: comparisonSubmission.path, content: '<p>Revised delivery comparison; quality remains unknown.</p>' } },
-        { name: 'submit_report', arguments: comparisonSubmission });
+      steps.push({ name: 'write', arguments: { path: comparisonSubmission.path, content: '' } },
+        { name: 'submit_report', arguments: { ...comparisonSubmission, reason: 'Revised delivery comparison; quality remains unknown.' } });
       if (mode === 'repreviewed') steps.push({ name: 'preview_report', arguments: {} });
     }
     const f = await runAutonomousPublication(t, { steps, onGeneration: (_context, index) => {

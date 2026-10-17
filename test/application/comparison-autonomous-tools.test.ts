@@ -24,12 +24,12 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
   const draft = new ComparisonDraft({ attemptRoot: root, task: 'Compare text', locale: 'zh', catalog, deliveredImages: new Set(), facts: facts });
   return { root, facts, draft, tool: createAutonomousReportTool(draft, root) };
 }
-const params = { boundary: 'Task quality remains unverified.', differences: [], status: 'completed', category: 'Text comparison', headline: 'Candidate preserves the missing detail', path: 'scratch/report.html' };
+const params = { boundary: 'Task quality remains unverified.', reason: 'Current preserves the missing detail.', pairedDifferences: [], status: 'completed', category: 'Text comparison', headline: '推荐当前', path: 'scratch/report.html' };
 const signal = new AbortController().signal;
 
 test('file report submission shares draft validation, accepts semantic HTML and invalidates old previews on revision', async t => {
   const f = await fixture(t);
-  await writeFile(join(f.root, params.path), '<p>The candidate preserves the final paragraph.</p>');
+  await writeFile(join(f.root, params.path), '');
   await writeFile(join(f.root, 'scratch/details.html'), '<p>Compared the complete documents.</p>');
   await assert.rejects(f.tool.execute({ ...params, detailsPath: 'scratch/details.html' }, signal), /Invalid/);
   const response = await f.tool.execute(params, signal);
@@ -43,8 +43,8 @@ test('file report submission shares draft validation, accepts semantic HTML and 
   const model = comparisonReportModelFromHtml(html, f.facts,{ status: 'completed', reportPath: 'report.html', headline: params.headline, evidenceRefs: [] }, []);
   assert.equal(Value.Check(ComparisonReportModelSchema, model), true);
   assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, boundary: undefined }), false);
-  assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, differences: undefined }), false);
-  assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, differences: ['a', 'b', 'c', 'd'] }), false);
+  assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, pairedDifferences: undefined }), false);
+  assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, pairedDifferences: Array(4).fill({dimension:'a',baseline:'b',candidate:'c',impact:'d'}) }), false);
   assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, formatVersion: 2, boundary: undefined, differences: undefined }), true);
   assert.doesNotMatch(html, /data-host-limitation="hostLimitationShareCardPresentation"/);
   const accepted = f.draft.acceptedReceipt();
@@ -81,25 +81,19 @@ test('report submission rejects traversal, junction escape, malformed UTF8, over
   await rm(join(f.root, 'scratch'));
 });
 
-test('compact reports enforce Unicode recommendation, difference and all-fragment text budgets', async t => {
+test('paired reports enforce short recommendations, complete pairs, private text and media-only fragments', async t => {
   const f = await fixture(t);
-  await writeFile(join(f.root, params.path), '<p>Evidence.</p>');
-  for (const differences of [[], ['A'], ['A', 'B'], ['A', 'B', 'C']]) {
-    assert.match((await f.tool.execute({ ...params, differences }, signal)).content, /"status":"accepted"/);
+  await writeFile(join(f.root, params.path), '');
+  const difference = { dimension: 'What is preserved?', baseline: 'Unknown', candidate: 'Verified paragraph', impact: 'Ready for further review' };
+  for (const pairedDifferences of [[], [difference], [difference, difference], [difference, difference, difference]]) {
+    assert.match((await f.tool.execute({ ...params, pairedDifferences }, signal)).content, /"status":"accepted"/);
   }
-  assert.match((await f.tool.execute({ ...params, headline: 'A < B & C' }, signal)).content, /"status":"accepted"/);
-  assert.match(await readFile(join(f.root, 'report.html'), 'utf8'), /A &lt; B &amp; C/);
-  await assert.rejects(f.tool.execute({ ...params, differences: ['A', 'B', 'C', 'D'] }, signal), /Invalid/);
-  assert.match((await f.tool.execute({ ...params, headline: '😀'.repeat(80), boundary: '', differences: [] }, signal)).content, /"status":"accepted"/);
-  assert.match((await f.tool.execute({ ...params, headline: '😀'.repeat(81) }, signal)).content, /status=rejected/);
-  assert.match((await f.tool.execute({ ...params, differences: ['字'.repeat(61)] }, signal)).content, /status=rejected/);
-
-  await writeFile(join(f.root, params.path), `<table><tr><td>${'字'.repeat(901)}</td></tr></table>`);
-  assert.match((await f.tool.execute(params, signal)).content, /status=rejected/);
-  await writeFile(join(f.root, params.path), `<p data-host-limitation="fake">${'字'.repeat(901)}</p>`);
-  assert.match((await f.tool.execute(params, signal)).content, /status=rejected/);
-  await writeFile(join(f.root, params.path), '<details><summary>Brief</summary><p>Short supporting text.</p></details>');
-  assert.match((await f.tool.execute(params, signal)).content, /status=rejected/);
-  await writeFile(join(f.root, params.path), `<details><summary>Brief</summary><p>${'字'.repeat(901)}</p></details>`);
-  assert.match((await f.tool.execute(params, signal)).content, /status=rejected/);
+  await assert.rejects(f.tool.execute({ ...params, pairedDifferences: Array(4).fill(difference) }, signal), /Invalid/);
+  await assert.rejects(f.tool.execute({ ...params, pairedDifferences: [{ ...difference, impact: '' }] }, signal), /Invalid/);
+  for (const headline of ['推荐当前，先修背景', '😀'.repeat(81)]) assert.match((await f.tool.execute({ ...params, headline }, signal)).content, /status=rejected/);
+  for (const reason of ['字'.repeat(901), 'private.docx']) assert.match((await f.tool.execute({ ...params, reason }, signal)).content, /status=rejected/);
+  for (const content of ['<table><tr><td>Repeated evidence</td></tr></table>', '<p>Repeated difference.</p>', '<details><summary>Hidden</summary></details>']) {
+    await writeFile(join(f.root, params.path), content);
+    assert.match((await f.tool.execute(params, signal)).content, /status=rejected/);
+  }
 });

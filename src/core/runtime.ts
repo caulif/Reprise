@@ -40,6 +40,19 @@ export type TurnSettlement = {
   observedAt: string;
   rawRefs: unknown[];
   failure?: TurnFailure;
+  timing?: RuntimeTurnTiming;
+};
+
+/** One identified turn, including tools and runtime waits; never API-only or session cumulative time. */
+export type RuntimeTurnTiming = {
+  schemaVersion: 1;
+  valueMs: number;
+  semantics: 'runtime_turn_elapsed';
+  boundary: 'runtime_admission_to_settlement';
+  aggregation: 'per_turn';
+  turnId: string;
+  clientMessageId: string;
+  resultId?: string;
 };
 
 export type AvailableRuntime = {

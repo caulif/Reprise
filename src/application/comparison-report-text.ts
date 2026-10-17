@@ -1,3 +1,4 @@
+import { pairedContentError } from './comparison-paired-content.js';
 import { parseFragment, type DefaultTreeAdapterMap } from 'parse5';
 import { comparisonReportFormat, extractInner } from '../core/comparison-html.js';
 import { extractHostLimitations } from './comparison-host-limitations.js';
@@ -77,7 +78,7 @@ export function comparisonDetailsTextCharacters(html: string, options: Compariso
 /** Format 3 counts every author code point, including closed and hidden fragments. */
 export function comparisonCompactTextCharacters(html: string): number {
   html = extractHostLimitations(html).html;
-  const parts = [extractInner(html, 'data-agent-slot', 'category'), extractInner(html, 'data-agent-slot', 'headline'), extractInner(html, 'data-agent-slot', 'boundary'),
+  const parts = [extractInner(html, 'data-agent-slot', 'reason'), extractInner(html, 'data-agent-slot', 'category'), extractInner(html, 'data-agent-slot', 'headline'), extractInner(html, 'data-agent-slot', 'boundary'),
     extractInner(html, 'data-agent-zone', 'comparison'), extractInner(html, 'data-agent-zone', 'differences')];
   const text = (node: Node): string => {
     if (nonExplanatory(node)) return '';
@@ -106,6 +107,7 @@ export function comparisonDifferenceTexts(html: string): string[] {
 }
 
 export function comparisonCompactTextBudgetError(html: string): string | undefined {
+  if (comparisonReportFormat(html) === 6) { const error = pairedContentError(html); if (error) return error; }
   const hasDetails = (node: Node): boolean => node.nodeName === 'details' || ('childNodes' in node && node.childNodes.some(hasDetails));
   if (hasDetails(parseFragment(html))) return 'Format 3 cannot contain expandable details.';
   const headline = comparisonPlainText(extractInner(html, 'data-agent-slot', 'headline'));
@@ -120,7 +122,7 @@ export function comparisonCompactTextBudgetError(html: string): string | undefin
   if (comparisonReportFormat(html) >= 4) {
     const category = comparisonPlainText(extractInner(html, 'data-agent-slot', 'category'));
     if (!category.trim() || nonWhitespaceCodePoints(category) > 32) return 'Abstract title exceeds 32 characters.';
-    const author = ['category', 'headline', 'boundary'].map(slot => extractInner(html, 'data-agent-slot', slot)).join(' ')
+    const author = ['category', 'headline', 'boundary', 'reason'].map(slot => extractInner(html, 'data-agent-slot', slot)).join(' ')
       + extractInner(html, 'data-agent-zone', 'comparison') + extractInner(html, 'data-agent-zone', 'differences');
     const texts: string[] = [];
     const attributes: string[] = [];
