@@ -3,7 +3,7 @@ import type { AgentAuditSink, InvocationCursor, ProviderAdapter } from "./types.
 import { recordedContext, recordedImageRefs } from './artifacts.js';
 import { AgentModelRequestFactsSchema, RecordedModelContextSchema, type AgentTextBody } from '../../core/agent-model-input-schema.js';
 import { Value } from '@sinclair/typebox/value';
-import { AgentUsageFactsSchema } from '../../core/schema.js';
+import { AgentUsageFactsSchema, AgentUsageEstimateSchema } from '../../core/schema.js';
 
 export function callerLoopHooks(
   sessionId: string,
@@ -12,11 +12,16 @@ export function callerLoopHooks(
   audit: AgentAuditSink | undefined,
 ): Pick<
   Parameters<ProviderAdapter["createSession"]>[0],
-  "onContextCompact" | "onAssistantVisible" | "onRetry" | "onBeforeToolCall" | "onToolRejected" | "onAfterToolCall" | "onModelRequest" | "onModelUsage" | "onModelStream"
+  "onContextCompact" | "onAssistantVisible" | "onRetry" | "onBeforeToolCall" | "onToolRejected" | "onAfterToolCall" | "onModelRequest" | "onModelUsage" | "onModelStream" | "onModelUsageEstimated"
 > {
   return {
     onModelStream: async payload => {
       await audit?.append({ type: 'agent.model_stream_completed', sessionId, role,
+        payload: { schemaVersion: 1, invocationId: cursor.invocationId, requestIndex: cursor.requestIndex, ...payload } });
+    },
+    onModelUsageEstimated: async payload => {
+      if (!Value.Check(AgentUsageEstimateSchema, payload)) throw new Error('Model usage estimate failed schema validation.');
+      await audit?.append({ type: 'agent.usage_estimated', sessionId, role,
         payload: { schemaVersion: 1, invocationId: cursor.invocationId, requestIndex: cursor.requestIndex, ...payload } });
     },
     onModelUsage: async (payload) => {

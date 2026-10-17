@@ -43,9 +43,13 @@ export class AutonomousComparisonAgent implements ComparisonAgentPort {
     const resources = new ComparisonResourceTracker(limits);
     const measured: AgentAuditSink = {
       append: async event => {
-        if (event.type === 'agent.usage_reported') {
+        if (event.type === 'agent.usage_reported' || event.type === 'agent.usage_estimated') {
           const cost = options?.estimateUsageCost?.(event.payload);
-          if (cost !== undefined) event = { ...event, payload: { ...event.payload, estimatedCostUsd: cost } };
+          if (typeof cost === 'number') event = { ...event, payload: { ...event.payload, estimatedCostUsd: cost } };
+          else if (cost) {
+            const { costUsd, ...provenance } = cost;
+            event = { ...event, payload: { ...event.payload, ...provenance, ...(costUsd === undefined ? {} : { estimatedCostUsd: costUsd }) } };
+          }
         }
         resources.observe(event);
         await audit?.append(event);

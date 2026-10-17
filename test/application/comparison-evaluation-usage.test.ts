@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { record } from '../../src/core/json.js';
 import type { EventEnvelope } from '../../src/core/schema.js';
 import { summarizeComparisonEvaluationUsage } from '../../src/application/comparison-evaluation-usage.js';
 
@@ -60,4 +61,51 @@ test('operator override is resolved per actual model and malformed usage remains
   assert.throws(() => summarizeComparisonEvaluationUsage(pair(1, 'actual-model', 'generation', 0.5)), /Invalid evaluation usage/);
   assert.throws(() => summarizeComparisonEvaluationUsage([...pair(1, 'actual-model', 'generation', Number.MAX_SAFE_INTEGER),
     ...pair(2, 'actual-model', 'compaction', 1)]), /safe integer/);
+});
+
+test('evaluation separates fallback tokens and cost, matches unique attempts, and replaces estimates with telemetry', () => {
+  const request = (requestId: string) => event('agent.model_request', { requestId, model: 'known' });
+  const fallback = event('agent.usage_estimated', { requestId: 'failed', model: 'known', scope: 'generation',
+    basis: 'pi-character-heuristic-v1', reason: 'failed_request_usage_missing', failureKind: 'transient_upstream', errorMessage: '502',
+    usage: { input: 1_000_000, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 1_000_000 } });
+  const reported = event('agent.usage_reported', { ...record(pair(1, 'known')[1]!.payload), requestId: 'retry' });
+  const events = [request('failed'), fallback, request('retry'), reported];
+  const result = summarizeComparisonEvaluationUsage(events, undefined, { known: rates(2) });
+  assert.equal(result.usageCoverage, 'partial');
+  assert.equal(result.usage?.input, 1_000_000, 'estimated tokens cannot inflate returned usage');
+  assert.equal(result.knownEstimatedCostUsd, 2);
+  assert.equal(result.fallbackEstimatedCostUsd, 2);
+  assert.equal(result.estimatedCostUsd, 4);
+  assert.equal(result.costBasis, 'includes_fallback');
+  const onlyFallback = summarizeComparisonEvaluationUsage(events.slice(0, 2), undefined, { known: rates(2) });
+  assert.equal(onlyFallback.usage, undefined);
+  assert.equal(onlyFallback.usageCoverage, 'missing');
+  assert.equal(onlyFallback.estimatedCostUsd, 2);
+  const reconciled = summarizeComparisonEvaluationUsage([...events,
+    event('agent.usage_reported', { ...record(reported.payload), requestId: 'failed' })], undefined, { known: rates(2) });
+  assert.equal(reconciled.costBasis, 'reported_usage');
+  assert.equal(reconciled.fallbackEstimatedCostUsd, 0);
+  assert.equal(reconciled.knownEstimatedCostUsd, 4);
+  assert.equal(reconciled.estimatedCostUsd, 4);
+  const unknownPrice = summarizeComparisonEvaluationUsage(events, undefined, {});
+  assert.equal(unknownPrice.estimatedCostUsd, undefined);
+  assert.equal(unknownPrice.costBasis, 'incomplete');
+});
+
+test('reconciled pricing ignores missing or invalid prices of superseded fallback records', () => {
+  for (const model of ['missing', 'invalid']) for (const fallbackFirst of [true, false]) {
+    const request = event('agent.model_request', { requestId: 'one', model, scope: 'generation' });
+    const fallback = event('agent.usage_estimated', { requestId: 'one', model, scope: 'generation',
+      basis: 'pi-character-heuristic-v1', reason: 'failed_request_usage_missing', failureKind: 'transient_upstream', errorMessage: '502',
+      usage: { input: 1_000_000, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 1_000_000 } });
+    const reported = event('agent.usage_reported', { ...record(pair(1, 'known')[1]!.payload), requestId: 'one' });
+    const result = summarizeComparisonEvaluationUsage([request, ...(fallbackFirst ? [fallback, reported] : [reported, fallback])],
+      undefined, { known: rates(2), invalid: rates(-1) });
+    assert.equal(result.pricingLookup, 'hit', `${model}, fallbackFirst=${fallbackFirst}`);
+    assert.equal(result.usageCoverage, 'complete');
+    assert.equal(result.costBasis, 'reported_usage');
+    assert.equal(result.fallbackRequests, 0);
+    assert.equal(result.knownEstimatedCostUsd, 2);
+    assert.equal(result.estimatedCostUsd, 2);
+  }
 });

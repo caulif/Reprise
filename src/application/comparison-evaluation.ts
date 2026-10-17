@@ -34,7 +34,7 @@ export function comparisonEvaluationUsageCoverage(events: readonly EventEnvelope
   if (!usage.length) return 'missing';
   const key = (event: EventEnvelope) => {
     const payload = record(event.payload);
-    return JSON.stringify([payload.sessionId, payload.invocationId, payload.requestIndex, payload.scope ?? 'generation']);
+    return typeof payload.requestId === 'string' ? JSON.stringify([payload.requestId]) : JSON.stringify([payload.sessionId, payload.invocationId, payload.requestIndex, payload.scope ?? 'generation']);
   };
   const pending = new Set<string>();
   let invalid = false;
@@ -97,6 +97,7 @@ export function assessComparisonEvaluation(value: unknown, suite: ComparisonEval
     elapsedMs: distributions(ledger.rows.map(row => row.elapsedMs)), modelRequests: distributions(ledger.rows.map(row => row.modelRequests)),
     toolCalls: distributions(ledger.rows.map(row => row.toolCalls)), estimatedCostUsd: distributions(ledger.rows.flatMap(row => row.estimatedCostUsd === undefined ? [] : [row.estimatedCostUsd])),
     mainTextCharacters: distributions(ledger.rows.flatMap(row => row.mainTextCharacters === undefined ? [] : [row.mainTextCharacters])),
+    fallbackCostRows: ledger.rows.filter(row => row.costBasis === 'includes_fallback').length,
     unknownCostRows: ledger.rows.filter(row => row.estimatedCostUsd === undefined).length, stability: instability,
     note: 'Manual observations, not deterministic proof of semantic quality. Preference variations require condition review, not automatic winner equality.' };
 }

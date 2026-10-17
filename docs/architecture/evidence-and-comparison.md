@@ -134,6 +134,8 @@ Host metrics 的 `data-metrics-layout="compact"` 标记与区域顺序不变；�
 
 候选 Token 与单模型估算费用仅聚合 `runtime.` 事件，再按候选 Runtime 模型定价；同 run 的 Controller、Recovery、Comparison Agent 用量不计入候选指标，重复比较不得改变原候选成本。没有 Runtime telemetry 时保持未知，不借 Harness 用量补齐。Comparison 开销仍保存在该 attempt 的独立资源记录；新检查从原 journal 重算，不原地改写旧报告或冻结 facts。见[Runtime 用量归属](../decisions/accepted/2026-10-06-runtime-usage-attribution.md)。
 
+Comparison 失败文本请求的全零占位 usage 可单独记录 `agent.usage_estimated`：复用 SDK 字符估算法，按完整输入的普通费率和已观察输出补估，不假定缓存或隐藏生成。实际请求用独立 `requestId` 关联；上报 usage 优先且不与补估重复相加。资源和评测分列已知费用、补估费用及请求数；含补估的总额标记 `costBasis=includes_fallback`，真实 `usageCoverage` 不变。图片或价格等缺口仍保留未知，金额硬保护仍拒绝将补估当完整计费依据；旧报告不回写。算法、增量兼容及限制见[缺失用量补估](../decisions/accepted/2026-10-17-comparison-fallback-cost.md)。
+
 价格继续手工维护在 [`pricing-catalog.json`](../../src/application/pricing-catalog.json)，运行时不联网更新；修改目录须更新版本并验证实际模型独立命中。2026-10-15 版本保留既有 cc-switch 条目，补充 GPT-6 Sol、Luna 和 GPT-6.1 Sol，来源为当日 [models.dev API](https://models.dev/api.json) 的 `openai` 条目，标记 `models-dev-snapshot`，四项费率采用其基础档。该档是第三方公开参考估算，未获 OpenAI 官方价页独立复核；不涵盖上游 272k 长上下文阶梯、代理加价折扣、分时计价或订阅分摊，不能据此还原历史实际账单。私有渠道可使用操作者覆盖；未知价格保持未知，已有报告不因目录更新而重算。
 
 Agent 区的内联 `style` 属性和原生 `dialog` / popover 浮层一律拒绝，避免遮盖 Host 的任务、模型与指标。

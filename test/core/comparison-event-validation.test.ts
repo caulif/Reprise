@@ -15,6 +15,7 @@ test('findings and usage events reject malformed payloads on append and reopenin
   await assert.rejects(store.append({ type: 'comparison.draft_accepted', payload: { findingsRevision: 0 } }), /payload does not satisfy/);
   await assert.rejects(store.append({ type: 'comparison.resources_completed', payload: { modelRequests: -1 } }), /payload does not satisfy/);
   await assert.rejects(store.append({ type: 'agent.usage_reported', payload: { model: 'test', scope: 'generation', usage: { input: -1 } } }), /payload does not satisfy/);
+  await assert.rejects(store.append({ type: 'agent.usage_estimated', payload: { model: 'test', scope: 'generation', usage: { input: -1 } } }), /payload does not satisfy/);
   await store.append({ type: 'comparison.findings_updated', payload: {
     schemaVersion: 1, attemptId: 'attempt', revision: 1, catalogRevision: 0, digest: 'a'.repeat(64), artifactId: 'findings',
   } });
@@ -29,5 +30,21 @@ test('findings and usage events reject malformed payloads on append and reopenin
   await store.close();
   const reopened = await ExperimentStore.open(root, 'experiment');
   assert.equal(reopened.events().length, 3);
+  await reopened.close();
+});
+
+test('fallback provenance persists independently from provider usage', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-usage-estimate-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = await ExperimentStore.open(root, 'experiment');
+  await store.acquireWriter();
+  const payload = { requestId: 'attempt-one', model: 'fixture', scope: 'generation',
+    basis: 'pi-character-heuristic-v1', reason: 'failed_request_usage_missing', failureKind: 'transient_upstream', errorMessage: '502',
+    usage: { input: 100, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 100 } };
+  await store.append({ type: 'agent.usage_estimated', payload });
+  await assert.rejects(store.append({ type: 'agent.usage_estimated', payload: { ...payload, basis: 'invented' } }), /payload does not satisfy/);
+  await store.close();
+  const reopened = await ExperimentStore.open(root, 'experiment');
+  assert.deepEqual(reopened.events()[0]!.payload, payload);
   await reopened.close();
 });

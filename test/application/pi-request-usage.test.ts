@@ -7,6 +7,7 @@ import { AgentHost } from '../../src/infrastructure/agent/host.js';
 import { piRequestUsage } from '../../src/infrastructure/agent/providers/pi/request-usage.js';
 import { summarizeComparisonEvaluationUsage } from '../../src/application/comparison-evaluation-usage.js';
 import type { EventEnvelope } from '../../src/core/schema.js';
+import type { AgentUsageEstimate } from '../../src/core/schema.js';
 
 const model: Model<'openai-completions'> = { id: 'fixture', name: 'fixture', api: 'openai-completions', provider: 'fixture', baseUrl: 'https://example.test', reasoning: false, input: ['text'], contextWindow: 128_000, maxTokens: 16_384, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 function response(stopReason: AssistantMessage['stopReason'], content: AssistantMessage['content']): AssistantMessage {
@@ -122,6 +123,60 @@ test('an error response with actual nonzero usage still records its observed tok
   await usage.flush();
   await usage.models.completeSimple(model, { messages: [] });
   assert.equal(reported, 40);
+});
+
+test('placeholder failures get separate reproducible estimates with distinct attempt IDs and redacted errors', async () => {
+  const failed = response('error', [{ type: 'text', text: 'Partial output' },
+    { type: 'toolCall', id: 'partial', name: 'read', arguments: { path: 'file.txt' } }]);
+  failed.errorMessage = '502 upstream request failed Authorization: Bearer sk-secret-example-123456789';
+  failed.usage = { ...failed.usage, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 };
+  const { models } = fixture([failed, response('stop', [])]);
+  const estimates: AgentUsageEstimate[] = [];
+  const ids: string[] = [];
+  const reported: string[] = [];
+  const usage = piRequestUsage(models, {
+    onModelRequest: async payload => { ids.push(payload.requestId!); },
+    onModelUsage: async payload => { reported.push(payload.requestId!); },
+    onModelUsageEstimated: async payload => { estimates.push(payload); },
+  });
+  const context = { systemPrompt: 'Use the tool.', messages: [{ role: 'user' as const, content: 'Inspect file.', timestamp: 0 }],
+    tools: [{ name: 'read', description: 'Read file', parameters: { type: 'object' } }] };
+  await usage.stream(model, context);
+  await usage.flush();
+  await usage.stream(model, context);
+  await usage.flush();
+  assert.equal(estimates.length, 1);
+  assert.equal(estimates[0]!.requestId, ids[0]);
+  assert.notEqual(ids[0], ids[1]);
+  assert.deepEqual(reported, [ids[1]]);
+  assert.ok(estimates[0]!.usage.input > 0);
+  assert.ok(estimates[0]!.usage.output > 0);
+  assert.equal(estimates[0]!.usage.cacheRead, 0);
+  assert.equal(estimates[0]!.basis, 'pi-character-heuristic-v1');
+  assert.equal(estimates[0]!.failureKind, 'transient_upstream');
+  assert.doesNotMatch(estimates[0]!.errorMessage, /sk-secret-example/);
+});
+
+test('missing usage in image requests remains unknown instead of pricing base64 as text', async () => {
+  const failed = response('error', []);
+  failed.usage = { ...failed.usage, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 };
+  const { models } = fixture([failed]);
+  let estimates = 0;
+  const usage = piRequestUsage(models, { onModelUsageEstimated: async () => { estimates++; } });
+  await usage.stream(model, { messages: [{ role: 'user', timestamp: 0,
+    content: [{ type: 'image', mimeType: 'image/png', data: 'AA==' }] }] });
+  await usage.flush();
+  assert.equal(estimates, 0);
+});
+
+test('fallback auditing failure stays fatal across stream drain and subsequent calls', async () => {
+  const failed = response('error', []);
+  failed.usage = { ...failed.usage, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 };
+  const { models } = fixture([failed]);
+  const usage = piRequestUsage(models, { onModelUsageEstimated: async () => { throw new Error('Estimate audit failed'); } });
+  await usage.stream(model, { messages: [] });
+  await assert.rejects(usage.flush(), /Estimate audit failed/);
+  await assert.rejects(usage.stream(model, { messages: [] }), /Estimate audit failed/);
 });
 
 test('a successful explicit zero-token response is retained rather than treated as a failed placeholder', async () => {

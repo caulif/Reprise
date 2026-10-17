@@ -88,6 +88,9 @@ test('frozen inputs permit persisted draft audit and Host investigation closure 
   const eventsPath = join(prepared.dataDir, 'experiments', prepared.experimentId, 'events.jsonl');
   let sequence = parseCommittedEventLog(await readFile(eventsPath, 'utf8')).events.length;
   for (const event of [
+    { type: 'agent.usage_estimated', payload: { role: 'comparison', requestId: 'failed-attempt', model: 'fixture', scope: 'generation',
+      basis: 'pi-character-heuristic-v1', reason: 'failed_request_usage_missing', failureKind: 'transient_upstream', errorMessage: '502',
+      usage: { input: 100, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 100 } } },
     { type: 'comparison.draft_audit_started', payload: {
       schemaVersion: 1, attemptId: 'attempt', sessionId: 'review-session', inspectionRequired: true,
     } },
@@ -113,6 +116,7 @@ test('valid checksums cannot authorize new Runtime or Controller process observa
   for (const event of [
     { type: 'comparison.unknown_future_event', payload: {} },
     { type: 'runtime.tool_finished', payload: { item: { type: 'commandExecution', command: 'invented check', aggregated_output: 'New process evidence' } } },
+    { type: 'agent.usage_estimated', payload: { role: 'controller', requestId: 'foreign-attempt' } },
     { type: 'agent.tool_completed', payload: { role: 'controller', tool: 'new-check', result: 'New process evidence' } },
     { type: 'agent.model_stream_completed', payload: { role: 'controller', schemaVersion: 1, requestIndex: 1,
       startedAt: 1000, firstEventAt: 1010, firstTextAt: null, finishedAt: 1030, events: 1 } },
