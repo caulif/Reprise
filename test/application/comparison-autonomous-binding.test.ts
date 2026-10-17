@@ -89,3 +89,11 @@ test('shareable contract cannot downgrade to a report containing the raw task', 
   for (const reportFormat of [2, 3, 4]) assert.match((await autonomousComparisonBinding({ ...f, reportFormat }))!, /format 5/);
   assert.equal(await autonomousComparisonBinding({ ...f, reportFormat: 5 }), undefined);
 });
+
+test('paired difference contract cannot publish an older unpaired report', async () => {
+  const f = fixture();
+  f.events[0] = event(1, 'comparison.requested', { autonomousContractVersion: 5 });
+  assert.equal(autonomousComparisonRequested(f.events, f.attemptId), true);
+  for (const reportFormat of [2, 3, 4, 5]) assert.match((await autonomousComparisonBinding({ ...f, reportFormat }))!, /format 6/);
+  assert.equal(await autonomousComparisonBinding({ ...f, reportFormat: 6 }), undefined);
+});

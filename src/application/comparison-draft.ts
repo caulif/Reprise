@@ -324,6 +324,7 @@ export class ComparisonDraft {
   }
 
   async submit(draft: ComparisonDraftSubmission): Promise<string> {
+    if (draft.formatVersion === 6 && (draft.boundary === undefined || !draft.reason?.trim() || !draft.pairedDifferences || draft.detailsHtml !== undefined || draft.differences !== undefined)) return "status=rejected\ncode=draft_invalid\nmessage=Format 6 requires reason, boundary and pairedDifferences and forbids details and legacy differences.";
     if (this.#discovery && !this.#discovery.readyToCompose()) {
       this.#lastRejection = "findings_not_ready: Save findings and resolve decision questions or mark evidence unavailable before composing.";
       return `status=rejected\ncode=findings_not_ready\nmessage=${this.#lastRejection}`;
@@ -351,20 +352,20 @@ export class ComparisonDraft {
       status: draft.status,
       reportPath: "report.html",
       headline: draft.headline,
-      evidenceRefs: citedEvidence(`${draft.comparisonHtml}${draft.detailsHtml ?? ""}`),
+      evidenceRefs: [...new Set([...citedEvidence(`${draft.comparisonHtml}${draft.detailsHtml ?? ""}`), ...(draft.pairedDifferences ?? []).flatMap(item => item.evidenceRefs ?? [])])],
     };
     const details = `${draft.detailsHtml ?? ''}${decisionSupportDetailsHtml(draft, discovery?.submission, this.#locale)}`;
     const html = renderComparisonReportShell({
-      ...((draft.formatVersion === 3 || draft.formatVersion === 4 || draft.formatVersion === 5) ? { formatVersion: draft.formatVersion } : {}),
+      ...((draft.formatVersion === 3 || draft.formatVersion === 4 || draft.formatVersion === 5 || draft.formatVersion === 6) ? { formatVersion: draft.formatVersion } : {}),
       task: this.#task,
       facts: this.#facts,
       metrics: metricsFromReportFacts(this.#facts),
       evidence: catalog.links,
       media: catalog.media,
       slots: {
-        ...((draft.formatVersion === 3 || draft.formatVersion === 4 || draft.formatVersion === 5) ? { boundary: draft.boundary, differences: draft.differences } : {}),
+        ...((draft.formatVersion === 3 || draft.formatVersion === 4 || draft.formatVersion === 5 || draft.formatVersion === 6) ? { boundary: draft.boundary, differences: draft.differences, reason: draft.reason, pairedDifferences: draft.pairedDifferences } : {}),
         category: draft.category,
-        headline: (draft.formatVersion === 3 || draft.formatVersion === 4 || draft.formatVersion === 5) ? draft.headline.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;") : draft.headline,
+        headline: (draft.formatVersion === 3 || draft.formatVersion === 4 || draft.formatVersion === 5 || draft.formatVersion === 6) ? draft.headline.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;") : draft.headline,
         comparison: decisionTextHtml(draft, discovery?.submission, this.#locale),
         ...(details ? { details } : {}),
       },
@@ -380,8 +381,8 @@ export class ComparisonDraft {
       this.#lastRejection = `${verified.code}: ${verified.message}`;
       return `status=rejected\ncode=${verified.code}\nmessage=${verified.message}`;
     }
-    const length = (draft.formatVersion === 3 || draft.formatVersion === 4 || draft.formatVersion === 5) ? comparisonCompactTextCharacters(verified.html) : comparisonMainTextCharacters(verified.html);
-    const target = (draft.formatVersion === 3 || draft.formatVersion === 4 || draft.formatVersion === 5) ? (draft.formatVersion === 4 ? 500 : 900) : draft.decisionShape === "single_difference" ? 250 : draft.decisionShape === "multiple_differences" ? 600 : undefined;
+    const length = (draft.formatVersion === 3 || draft.formatVersion === 4 || draft.formatVersion === 5 || draft.formatVersion === 6) ? comparisonCompactTextCharacters(verified.html) : comparisonMainTextCharacters(verified.html);
+    const target = (draft.formatVersion === 3 || draft.formatVersion === 4 || draft.formatVersion === 5 || draft.formatVersion === 6) ? (draft.formatVersion === 4 ? 500 : 900) : draft.decisionShape === "single_difference" ? 250 : draft.decisionShape === "multiple_differences" ? 600 : undefined;
     if (target !== undefined && length > target) {
       this.#lastRejection = `draft_too_long: declared ${draft.decisionShape} has ${length} main characters; maximum=${target}.`;
       return `status=rejected\ncode=draft_too_long\ndecisionShape=${draft.decisionShape}\nmainTextCharacters=${length}\nvisibleMainText=${JSON.stringify(comparisonVisibleMainText(verified.html))}\nmaximum=${target}\nmessage=Shorten this actual visible text (including the headline) in one batch revision; do not write a shell counting script. Preserve decisive evidence, counterevidence and limitations that change the choice, and move routine methods to details. Do not relabel one difference as multiple to bypass the limit; then submit and preview.`;

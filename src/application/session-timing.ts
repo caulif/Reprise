@@ -1,8 +1,10 @@
 import { record, text } from '../core/json.js';
 import type { EventEnvelope } from '../core/schema.js';
 import type { TimingFacts } from '../core/timing-schema.js';
+import { RuntimeTurnTimingSchema, type TimingComparison } from '../core/timing-schema.js';
+import { Value } from '@sinclair/typebox/value';
 
-type Row = { body: Record<string, unknown>; at: number | undefined; id: string | undefined; ref: string };
+type Row = { body: Record<string, unknown>; at: number | undefined; id: string | undefined; ref: string; index: number; eventType: unknown };
 type Measurement = { value: number; source: TimingFacts['sources'][number]; interval?: readonly [number, number] };
 
 function time(value: unknown): number | undefined {
@@ -26,7 +28,7 @@ function turnId(body: Record<string, unknown>): string | undefined {
 function row(event: Record<string, unknown>, index: number, historical: boolean): Row {
   const body = { ...event, ...record(event.payload) };
   return {
-    body, id: turnId(body),
+    body, id: turnId(body), index, eventType: event.type,
     at: time(event.timestamp) ?? time(event.occurredAt) ?? time(body.timestamp),
     ref: typeof event.eventId === 'string' ? `event:${event.eventId}` : `${historical ? 'historical' : 'candidate'}:${index}`,
   };
@@ -44,6 +46,10 @@ function facts(completed: number, open: number, measurements: Measurement[], dia
   if (!valid) diagnostics.add('duration_sum_overflow');
   const measured = valid ? measurements.length : 0;
   return {
+    schemaVersion: 2,
+    semantics: measurements.every(item => item.source.kind === 'duration_ms') ? 'legacy_native_turn_elapsed' : 'legacy_observed_turn_elapsed',
+    boundary: measurements.every(item => item.source.kind === 'duration_ms') ? 'unknown_native_boundaries' : 'recorded_event_boundaries',
+    scope: { kind: 'session_record', refs: measurements.flatMap(item => item.source.refs) },
     ...(measured ? { valueMs: total } : {}),
     basis: 'turn_wall_clock_sum',
     coverage: { completedTurns: completed, measuredTurns: measured, openTurns: open,
@@ -91,7 +97,7 @@ function nativeSeconds(value: unknown): number | undefined {
     ? value * 1000 : undefined;
 }
 
-export function historicalTurnTiming(events: readonly Record<string, unknown>[]): TimingFacts {
+export function historicalTurnTiming(events: readonly Record<string, unknown>[], scope?: TimingFacts['scope']): TimingFacts {
   const diagnostics = new Set<string>();
   let starts: Row[] = [];
   const ends: Row[] = [];
@@ -137,12 +143,20 @@ export function historicalTurnTiming(events: readonly Record<string, unknown>[])
   for (const abort of aborted) {
     if (!openRows.some(start => abort.id ? start.id === abort.id : !start.id)) openRows.push(abort);
   }
-  const open = new Set(openRows.map(item => item.id ?? item.ref)).size;
+  const allRows = events.map((event, index) => row(event, index, true));
+  const initialization = openRows.filter(start => start.body.type === 'task_started' && !starts.some(next => next.index > start.index) &&
+    !ends.some(end => end.id && end.id === start.id) &&
+    allRows.filter(item => item.index > start.index).every(item =>
+      ['thread_settings_applied', 'turn_context'].includes(String(item.body.type))));
+  if (initialization.length) diagnostics.add('initialization_only_tail');
+  const open = new Set(openRows.filter(item => !initialization.includes(item)).map(item => item.id ?? item.ref)).size;
   if (open) diagnostics.add('unsettled_turns');
-  return facts(groups.length, open, measurements, diagnostics);
+  return { ...facts(groups.length, open, measurements, diagnostics),
+    ...(scope ? { scope } : {}),
+    sessionCoverage: { initializationOnlyStarts: initialization.length, activeMissingEnds: open } };
 }
 
-export function candidateTurnTiming(events: readonly EventEnvelope[]): TimingFacts {
+export function candidateTurnTiming(events: readonly EventEnvelope[], scope?: TimingFacts['scope']): TimingFacts {
   const diagnostics = new Set<string>();
   const rows = events.map((event, index) => row(event as unknown as Record<string, unknown>, index, false));
   const inputs = rows.filter(item => item.body.type === 'input.submitted');
@@ -153,6 +167,8 @@ export function candidateTurnTiming(events: readonly EventEnvelope[]): TimingFac
   const groups = groupCompletions(ends, diagnostics);
   const measurements: Measurement[] = [];
   const usedInputs = new Set<Row>();
+  const usedNativeReports = new Set<Row>();
+  let normalizedTurns = 0;
   for (const group of groups) {
     // Prefer the Host-normalized settlement over the adapter's raw notification for the same turn.
     const end = group.find(item => typeof item.body.turnId === 'string' && typeof item.body.observedAt === 'string') ?? group[0]!;
@@ -173,16 +189,37 @@ export function candidateTurnTiming(events: readonly EventEnvelope[]): TimingFac
       if (pending.length === 1) input = pending[0];
     }
     const nativeStart = matchingStart(end, starts, diagnostics);
+    if (input && usedInputs.has(input)) { diagnostics.add('ambiguous_submission'); input = undefined; }
     const start = input ?? nativeStart;
     const elapsed = difference(start?.at, end.at);
     if (input) usedInputs.add(input);
     if (end.body.status === 'failed' || end.body.status === 'aborted') diagnostics.add('noncompleted_settlement');
-    const rawDurations = group.flatMap(item => [item.body.duration_ms, record(item.body.turn).duration_ms]).filter(value => value !== undefined);
+    let nativeReports = rows.filter(item => item.eventType === 'runtime.usage_reported' && item.body.type === 'result' && input &&
+      typeof input.body.clientMessageId === 'string' && item.body.user_message_uuid === input.body.clientMessageId &&
+      (!Array.isArray(item.body.user_message_uuids) || item.body.user_message_uuids.length === 1 && item.body.user_message_uuids[0] === input.body.clientMessageId));
+    const sessionId = text(end.body.sessionId) ?? text(end.body.session_id);
+    if (sessionId && nativeReports.some(item => item.body.session_id !== undefined && item.body.session_id !== sessionId)) {
+      diagnostics.add('native_session_mismatch'); nativeReports = [];
+    }
+    for (const report of nativeReports) usedNativeReports.add(report);
+    const conflictingResultId = nativeReports.some(report => typeof report.body.uuid === 'string' && rows.some(other =>
+      other.eventType === 'runtime.usage_reported' && other.body.uuid === report.body.uuid &&
+      (other.body.user_message_uuid !== report.body.user_message_uuid || other.body.session_id !== report.body.session_id)));
+    if (conflictingResultId || new Set(nativeReports.map(item => text(item.body.uuid) ?? item.ref)).size > 1) {
+      diagnostics.add('ambiguous_native_result'); nativeReports = [];
+    }
+    const normalized = group.flatMap(item => Value.Check(RuntimeTurnTimingSchema, item.body.timing) &&
+      item.body.timing.turnId === end.id && (!input || item.body.timing.clientMessageId === input.body.clientMessageId) ? [item.body.timing] : []);
+    if (group.some(item => item.body.timing !== undefined && (!Value.Check(RuntimeTurnTimingSchema, item.body.timing) ||
+      item.body.timing.turnId !== end.id || input && item.body.timing.clientMessageId !== input.body.clientMessageId))) diagnostics.add('invalid_normalized_timing');
+    if (normalized.length) normalizedTurns++;
+    const rawDurations = [...group.flatMap(item => [item.body.duration_ms, record(item.body.turn).duration_ms]),
+      ...nativeReports.map(item => item.body.duration_ms), ...normalized.map(item => item.valueMs)].filter(value => value !== undefined);
     if (rawDurations.some(value => duration(value) === undefined)) diagnostics.add('invalid_duration_ms');
     const durations = rawDurations.map(duration).filter(value => value !== undefined);
     if (new Set(durations).size > 1) { diagnostics.add('conflicting_duration_ms'); continue; }
     if (durations.length) {
-      measurements.push({ value: durations[0]!, source: { kind: 'duration_ms', refs: group.map(item => item.ref) },
+      measurements.push({ value: durations[0]!, source: { kind: 'duration_ms', refs: [...group, ...nativeReports].map(item => item.ref) },
         ...(elapsed === undefined ? {} : { interval: [start!.at!, end.at!] as const }) });
       continue;
     }
@@ -190,18 +227,36 @@ export function candidateTurnTiming(events: readonly EventEnvelope[]): TimingFac
     measurements.push({ value: elapsed, source: { kind: input ? 'submission_settlement' : 'matched_events', refs: [start!.ref, end.ref] }, interval: [start!.at!, end.at!] });
   }
   const unmatchedInputs = inputs.filter(input => !usedInputs.has(input));
+  if (rows.some(item => item.eventType === 'runtime.usage_reported' && item.body.type === 'result' &&
+    item.body.duration_ms !== undefined && !usedNativeReports.has(item))) diagnostics.add('unbound_native_timing');
   const unmatchedStarts = starts.filter(start => !groups.some(group => group.some(end => start.id && start.id === end.id &&
     start.at !== undefined && end.at !== undefined && start.at <= end.at)) &&
     !unmatchedInputs.some(input => input.at !== undefined && start.at !== undefined && input.at <= start.at));
   const open = unmatchedInputs.length + new Set(unmatchedStarts.map(start => start.id ?? start.ref)).size;
   if (open) diagnostics.add('unsettled_submissions');
-  return facts(groups.length, open, measurements, diagnostics);
+  return { ...facts(groups.length, open, measurements, diagnostics), ...(scope ? { scope } : {}),
+    ...(normalizedTurns === groups.length && groups.length > 0 ? { semantics: 'runtime_turn_elapsed', boundary: 'runtime_turn_clock_to_result' } : {}),
+    outcomes: { failed: groups.filter(group => group.some(item => item.body.status === 'failed')).length,
+      aborted: groups.filter(group => group.some(item => item.body.status === 'aborted')).length } };
 }
 
-export function timingComparable(left: TimingFacts | undefined, right: TimingFacts | undefined, products?: { baseline: string; candidate: string }): boolean {
-  if (!left || !right || left.coverage.status !== 'complete' || right.coverage.status !== 'complete' ||
-    !products || products.baseline !== products.candidate || left.basis !== 'turn_wall_clock_sum' || right.basis !== left.basis ||
-    [...left.diagnostics, ...right.diagnostics].some(item => item !== 'duplicate_completion' && item !== 'duplicate_start')) return false;
-  const kinds = new Set([...left.sources, ...right.sources].map(source => source.kind));
-  return kinds.size === 1 && kinds.has('duration_ms');
+export function compareTiming(left: TimingFacts | undefined, right: TimingFacts | undefined): TimingComparison {
+  if (!left || !right || left.valueMs === undefined || right.valueMs === undefined) return { status: 'unavailable', reasons: ['missing_task_timing'] };
+  const allDiagnostics = [...left.diagnostics, ...right.diagnostics];
+  const diagnostics = allDiagnostics.filter(item => !['duplicate_completion', 'duplicate_start', 'initialization_only_tail', 'overlapping_turn_intervals_summed'].includes(item));
+  if (left.coverage.status !== 'complete' || right.coverage.status !== 'complete' || diagnostics.length) {
+    return { status: 'incomplete', reasons: [...new Set(['incomplete_turn_coverage', ...diagnostics])] };
+  }
+  const reasons: string[] = [];
+  if (allDiagnostics.includes('overlapping_turn_intervals_summed')) reasons.push('overlapping_turn_intervals_summed');
+  if (!left.semantics || !right.semantics || !left.boundary || !right.boundary ||
+    left.semantics.startsWith('legacy_') || right.semantics.startsWith('legacy_')) reasons.push('legacy_timing_semantics_unknown');
+  else if (left.semantics !== right.semantics || left.boundary !== right.boundary || left.basis !== 'turn_wall_clock_sum' || right.basis !== left.basis) reasons.push('different_timing_boundaries');
+  if (left.scope?.kind !== 'selected_task' || right.scope?.kind !== 'selected_task' || !left.scope.identity ||
+    left.scope.identity !== right.scope.identity || !left.scope.refs.length || !right.scope.refs.length) reasons.push('task_scope_not_proven_equal');
+  return { status: reasons.length ? 'reference' : 'comparable', reasons };
+}
+
+export function timingComparable(left: TimingFacts | undefined, right: TimingFacts | undefined, _products?: { baseline: string; candidate: string }): boolean {
+  return compareTiming(left, right).status === 'comparable';
 }

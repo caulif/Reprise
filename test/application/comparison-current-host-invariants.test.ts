@@ -23,7 +23,7 @@ function receipt(context: Context): string {
 }
 
 for (const mode of ['published', 'tampered-quote', 'stale-catalog', 'resubmitted'] as const) {
-  test(`current factory binds literal quotes and live catalog through publication: ${mode}`, async t => {
+  test(`current factory inspects literal quotes and binds structured evidence with the live catalog: ${mode}`, async t => {
     let quote = '', sourceRef = '', derivedRef = '';
     const steps: ComparisonStep[] = [
       { name: 'read', arguments: { path: 'facts/comparison-links.json' } },
@@ -52,13 +52,25 @@ for (const mode of ['published', 'tampered-quote', 'stale-catalog', 'resubmitted
         assert.equal(quoted.status, 'ok');
         quote = quoted.html;
         assert.match(quote, /&lt;script&gt;untrusted instruction&lt;\/script&gt;/);
-        steps[2]!.arguments.content = `<p>Source quotation does not prove task quality.</p>${mode === 'tampered-quote' ? quote.replace('Literal source:', 'Invented source:') : quote}`;
+        steps[2]!.arguments.content = mode === 'tampered-quote' ? quote.replace('Literal source:', 'Invented source:') : '';
+        steps[3]!.arguments = { ...comparisonSubmission, pairedDifferences: [{ dimension: 'Is source quality established?', baseline: 'Unknown', candidate: 'Source inspected; usefulness unknown', impact: 'Source text alone does not prove task quality.', evidenceRefs: [sourceRef] }] };
       }
-      if (index === 4) assert.match(receipt(context), mode === 'tampered-quote' ? /rejected/ : /accepted/);
+      if (index === 4) {
+        const submission = receipt(context);
+        if (mode === 'tampered-quote') {
+          assert.match(submission, /status=rejected/);
+          assert.match(submission, /code=evidence_unresolved/);
+          assert.match(submission, /Evidence quote text, scope, caption or structure differs from its source/);
+          assert.doesNotMatch(submission, /code=report_incomplete/);
+        } else assert.match(submission, /accepted/);
+      }
       if (index === 7) {
         derivedRef = /shortRef=(ev-\d+)/.exec(receipt(context))?.[1] ?? '';
         assert.ok(derivedRef && derivedRef !== sourceRef);
-        if (mode === 'resubmitted') steps[7]!.arguments.content = `${quote}<p data-evidence-ref="${derivedRef}">A derived check with explicit uncertainty.</p>`;
+        if (mode === 'resubmitted') {
+          steps[7]!.arguments.content = '';
+          steps[8]!.arguments = { ...comparisonSubmission, pairedDifferences: [{ dimension: 'Is source quality established?', baseline: 'Unknown', candidate: 'Derived check; usefulness unknown', impact: 'Source and derived checks do not establish final task quality.', evidenceRefs: [sourceRef, derivedRef] }] };
+        }
       }
     } });
     const published = mode === 'published' || mode === 'resubmitted';
@@ -69,7 +81,8 @@ for (const mode of ['published', 'tampered-quote', 'stale-catalog', 'resubmitted
     assert.equal(f.renders, mode === 'tampered-quote' ? 0 : mode === 'resubmitted' ? 2 : 1);
     if (published) {
       const html = await readFile(f.result.reportPath, 'utf8');
-      assert.ok(html.includes(quote));
+      assert.ok(html.includes(`data-evidence-ref="${sourceRef}"`));
+      assert.ok(!html.includes(quote), "Source quotations stay in investigation, not the public media fragment");
       assert.doesNotMatch(html, /<script>untrusted instruction/);
       if (mode === 'resubmitted') assert.ok(html.includes(derivedRef));
     } else await assert.rejects(readFile(join(f.result.experimentRoot, 'report.html')), { code: 'ENOENT' });

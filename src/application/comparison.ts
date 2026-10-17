@@ -26,7 +26,7 @@ import type { ComparisonMetricSide } from '../agents/comparison-contract.js';
 import { extractHostZoneSnapshot, metricsFromReportFacts, renderComparisonReportShell } from './comparison-report-shell.js';
 import { readOperatorLocale } from './operator-locale.js';
 import type { TimingFacts } from '../core/timing-schema.js';
-import { historicalTurnTiming, timingComparable } from './session-timing.js';
+import { historicalTurnTiming, timingComparable, compareTiming } from './session-timing.js';
 
 export type RunInspection = {
   runId: string;
@@ -227,6 +227,7 @@ function projectedMetrics(taskCase: TaskCase, inspection: RunInspection | undefi
       ...(inspection?.wallClockMs === undefined ? {} : { spanElapsedMs: inspection.wallClockMs }),
     },
     timingComparable: timingComparable(baselineTiming, inspection?.turnTiming, { baseline: taskCase.source.productId, candidate: run.attempt.candidate.productId }),
+    timingComparison: compareTiming(baselineTiming, inspection?.turnTiming),
   };
 }
 

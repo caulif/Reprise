@@ -40,6 +40,19 @@ export type TurnSettlement = {
   observedAt: string;
   rawRefs: unknown[];
   failure?: TurnFailure;
+  timing?: RuntimeTurnTiming;
+};
+
+/** One identified turn from the runtime turn-clock start to result creation; excludes any earlier admission or queue delay. */
+export type RuntimeTurnTiming = {
+  schemaVersion: 1;
+  valueMs: number;
+  semantics: 'runtime_turn_elapsed';
+  boundary: 'runtime_turn_clock_to_result';
+  aggregation: 'per_turn';
+  turnId: string;
+  clientMessageId: string;
+  resultId?: string;
 };
 
 export type AvailableRuntime = {

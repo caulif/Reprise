@@ -62,11 +62,11 @@ export type HostZoneName = (typeof HOST_ZONES)[number];
 export type AgentZoneName = (typeof AGENT_ZONES)[number] | "differences";
 export type HostZoneSnapshot = Partial<Record<HostZoneName, string>>;
 
-export function comparisonReportFormat(html: string): 2 | 3 | 4 | 5 {
-  return hasMarker(html, "data-report-format", "5") ? 5 : hasMarker(html, "data-report-format", "4") ? 4 : hasMarker(html, "data-report-format", "3") ? 3 : 2;
+export function comparisonReportFormat(html: string): 2 | 3 | 4 | 5 | 6 {
+  return hasMarker(html, "data-report-format", "6") ? 6 : hasMarker(html, "data-report-format", "5") ? 5 : hasMarker(html, "data-report-format", "4") ? 4 : hasMarker(html, "data-report-format", "3") ? 3 : 2;
 }
 export function comparisonAgentZones(html: string): readonly AgentZoneName[] {
-  return comparisonReportFormat(html) === 4 ? ["comparison"] : (comparisonReportFormat(html) === 3 || comparisonReportFormat(html) === 5) ? ["comparison", "differences"] : AGENT_ZONES;
+  return (comparisonReportFormat(html) === 4 || comparisonReportFormat(html) === 6) ? ["comparison"] : (comparisonReportFormat(html) === 3 || comparisonReportFormat(html) === 5) ? ["comparison", "differences"] : AGENT_ZONES;
 }
 function comparisonHostZones(html: string): readonly HostZoneName[] {
   return comparisonReportFormat(html) >= 3 ? ["style", "header", "metrics", "cost-note"] : HOST_ZONES;
@@ -81,9 +81,10 @@ export function missingComparisonSlots(html: string): string | undefined {
   for (const zone of comparisonAgentZones(html)) {
     if (!hasMarker(html, "data-agent-zone", zone)) return `Comparison report is missing data-agent-zone="${zone}".`;
   }
-  for (const slot of comparisonReportFormat(html) === 4 ? ["headline", "category", "boundary"] : (comparisonReportFormat(html) === 3 || comparisonReportFormat(html) === 5) ? [...AGENT_SLOTS, "boundary"] : AGENT_SLOTS) {
+  for (const slot of comparisonReportFormat(html) === 4 ? ["headline", "category", "boundary"] : (comparisonReportFormat(html) === 3 || comparisonReportFormat(html) === 5 || comparisonReportFormat(html) === 6) ? [...AGENT_SLOTS, "boundary"] : AGENT_SLOTS) {
     if (!hasMarker(html, "data-agent-slot", slot)) return `Comparison report is missing data-agent-slot="${slot}".`;
   }
+  if (comparisonReportFormat(html) === 6 && !hasMarker(html, "data-agent-slot", "reason")) return "Comparison report is missing reason.";
   for (const name of comparisonReportFormat(html) >= 3 ? [] : COMPONENT_TEMPLATES) {
     if (!hasMarker(html, "data-component-template", name)) return `Comparison report is missing component template "${name}".`;
   }
