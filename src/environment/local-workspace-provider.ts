@@ -189,6 +189,7 @@ export class LocalWorkspaceProvider {
   readonly #copyTree: TreeCopier;
   readonly #copyLimits: SnapshotLimits;
   readonly #preparedRoots = new Map<string, string>();
+  readonly #snapshotting = new Set<string>();
   readonly #recoveryStaging = new Map<string, RecoveryStaging>();
   readonly #recoveryCheckpoints = new Map<string, RecoveryCheckpoint>();
   readonly #sourceLocks = new Map<string, SourceWriteLock>();
@@ -714,13 +715,13 @@ export class LocalWorkspaceProvider {
 
   async candidateSnapshot(runId: string): Promise<{ root: string; status: 'complete' | 'incomplete' | 'missing' }> {
     const root = this.candidateSnapshotRoot(runId);
-    if (await exists(join(this.#root, 'snapshots', `${runId}.complete`))) return { root, status: 'complete' };
     if (await exists(join(this.#root, 'snapshots', `${runId}.incomplete`))) return { root, status: 'incomplete' };
+    if (await exists(join(this.#root, 'snapshots', `${runId}.complete`))) return { root, status: 'complete' };
     return { root, status: 'missing' };
   }
 
   /** Copies the run workspace to an immutable comparison snapshot before release. */
-  async sealCandidateSnapshot(environment: PreparedEnvironmentRef, signal?: AbortSignal, retainPaths: readonly string[] = []): Promise<{ root: string; status: 'complete' | 'incomplete'; omitted: SnapshotCopyPolicy['omitted'] }> {
+  async sealCandidateSnapshot(environment: PreparedEnvironmentRef, signal?: AbortSignal, retainPaths: readonly string[] = []): Promise<{ root: string; status: 'complete'; omitted: SnapshotCopyPolicy['omitted']; fingerprint: EnvironmentFingerprint }> {
     this.#assertOwnedEnvironment(environment);
     const snapshotRoot = this.candidateSnapshotRoot(environment.runId);
     const snapshotsRoot = dirname(snapshotRoot);
@@ -728,25 +729,38 @@ export class LocalWorkspaceProvider {
     const completeMarker = join(snapshotsRoot, `${environment.runId}.complete`);
     const incompleteMarker = join(snapshotsRoot, `${environment.runId}.incomplete`);
     const policy: SnapshotCopyPolicy = { retainPaths, omitted: [] };
+    if (this.#snapshotting.has(environment.runId)) throw new Error('Candidate snapshot capture is already running.');
+    this.#snapshotting.add(environment.runId);
+    let stage = 'prepare';
     try {
-      signal?.throwIfAborted();
-      await finalizeGitSinkCatalog(gitSinkRoot(this.#root, environment.runId));
+      if (await exists(snapshotRoot) || await exists(completeMarker)) throw new Error('Candidate snapshot already exists; refusing to replace retained evidence.');
       await mkdir(snapshotsRoot, { recursive: true });
-      await mkdir(staging);
-      await this.#copyTree(environment.root, staging, signal, policy);
+      stage = 'git_catalog';
       signal?.throwIfAborted();
-      await publishDirectory(staging, snapshotRoot);
+      await finalizeGitSinkCatalog(gitSinkRoot(this.#root, environment.runId), signal);
+      await mkdir(staging);
+      stage = 'copy';
+      await this.#copyTree(environment.root, staging, signal, policy);
+      stage = 'verify';
+      const { fingerprint, budget } = await fingerprintTree(staging, SNAPSHOT_LIMITS, signal);
+      if (budget.blockedReasons.length || budget.excludedEntries?.length) throw new Error('Candidate snapshot verification exceeded limits or skipped entries.');
+      signal?.throwIfAborted();
+      stage = 'publish';
+      await publishDirectory(staging, snapshotRoot, rename, { signal, atomicOnly: true });
+      signal?.throwIfAborted();
       await rm(incompleteMarker, { force: true });
-      await writeFile(completeMarker, '');
-      return { root: snapshotRoot, status: 'complete', omitted: policy.omitted };
-    } catch {
-      // Staging copy or publish failed; the live run directory must not be treated as a final snapshot.
-      await rm(staging, { recursive: true, force: true }).catch(() => undefined);
-      await mkdir(snapshotRoot, { recursive: true });
-      await writeFile(incompleteMarker, '');
-      await rm(completeMarker, { force: true });
-      return { root: snapshotRoot, status: 'incomplete', omitted: policy.omitted };
-    }
+      await writeFile(completeMarker, '', { signal });
+      signal?.throwIfAborted();
+      return { root: snapshotRoot, status: 'complete', omitted: policy.omitted, fingerprint };
+    } catch (error) {
+      if (stage === 'prepare') throw error;
+      // Preserve private staging and the live workspace for diagnosis; neither is published as complete.
+      const failures: unknown[] = [error];
+      try { await rm(completeMarker, { force: true }); } catch (markerError) { failures.push(markerError); }
+      try { await writeFile(incompleteMarker, `stage=${stage}\nstaging=${basename(staging)}\n`); } catch (markerError) { failures.push(markerError); }
+      if (failures.length > 1) throw new AggregateError(failures, 'Candidate snapshot failed and failure-marker maintenance also failed.', { cause: error });
+      throw error;
+    } finally { this.#snapshotting.delete(environment.runId); }
   }
 
   async #isolateOwned(tree: string, sinkId: string): Promise<GitIsolationRecord> {

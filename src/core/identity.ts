@@ -21,9 +21,9 @@ export function eventEnvelopeChecksum(body: object): string {
 }
 
 /** Streams a file through SHA-256 so an oversized input never lands in memory at once. */
-export async function sha256File(path: string): Promise<string> {
+export async function sha256File(path: string, signal?: AbortSignal): Promise<string> {
   const hash = createHash('sha256');
-  await pipeline(createReadStream(path), hash);
+  await pipeline(createReadStream(path), hash, { signal });
   return hash.digest('hex');
 }
 

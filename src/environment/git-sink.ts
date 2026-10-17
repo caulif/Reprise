@@ -106,7 +106,8 @@ export async function isolateGitTopology(tree: string, sinkRoot: string): Promis
   return toRecord(manifest);
 }
 
-export async function finalizeGitSinkCatalog(sinkRoot: string): Promise<GitSinkManifest> {
+export async function finalizeGitSinkCatalog(sinkRoot: string, signal?: AbortSignal): Promise<GitSinkManifest> {
+  signal?.throwIfAborted();
   const sinks = resolve(sinkRoot);
   const manifest = await readGitSinkManifest(sinks);
   if (!manifest) {
@@ -114,7 +115,12 @@ export async function finalizeGitSinkCatalog(sinkRoot: string): Promise<GitSinkM
   }
   const repos: GitSinkRepoRecord[] = [];
   for (const repo of manifest.repos) {
-    const finalRefs = await listRefs(repo.sinkPath);
+    signal?.throwIfAborted();
+    const { stdout } = await git(['--git-dir', repo.sinkPath, 'show-ref'], signal).catch((error: unknown) => {
+      if (!signal?.aborted && error instanceof Error && 'code' in error && error.code === 1) return { stdout: '' };
+      throw error;
+    });
+    const finalRefs = parseShowRef(stdout);
     repos.push({
       ...repo,
       finalRefs,
@@ -127,7 +133,9 @@ export async function finalizeGitSinkCatalog(sinkRoot: string): Promise<GitSinkM
     repos,
     status: isolationStatus(repos, manifest.skipped),
   };
+  signal?.throwIfAborted();
   await writeManifest(sinks, next);
+  signal?.throwIfAborted();
   await writeRefsListing(sinks, next);
   return next;
 }
@@ -712,10 +720,11 @@ function migrateManifest(parsed: unknown): GitSinkManifest | undefined {
   };
 }
 
-function git(args: readonly string[]) {
+function git(args: readonly string[], signal?: AbortSignal) {
   return execFileAsync("git", ["-c", "core.longpaths=true", ...args], {
     encoding: "utf8",
     windowsHide: true,
+    signal,
     env: { ...process.env, GIT_NO_LAZY_FETCH },
   });
 }

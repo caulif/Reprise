@@ -3,11 +3,13 @@ import type { RuntimeStopReason, TargetRunner } from "../core/runtime.js";
 import { errorFact, remainingResources } from "./candidate-run-facts.js";
 
 export const DEFAULT_CLEANUP_TIMEOUT_MS = 10_000;
+export const DEFAULT_CAPTURE_TIMEOUT_MS = 60_000;
 export type CandidateCleanupPorts = {
   readonly runner: TargetRunner;
   readonly started?: boolean;
   readonly release?: () => Promise<{ status: "released" | "already_released" }>;
   readonly timeoutMs: number;
+  readonly captureTimeoutMs?: number;
   appendCleanup(type: string, payload: unknown, operationId: string): Promise<string | undefined>;
   captureArtifacts(signal: AbortSignal): Promise<void>;
 };
@@ -20,10 +22,10 @@ export async function cleanupCandidateRun(reason: RuntimeStopReason, ports: Cand
     const eventId = await ports.appendCleanup(type, payload, id);
     if (eventId) evidenceRefs.push(`event:${eventId}`);
   };
-  const stage = async (name: string, operation: (signal: AbortSignal) => Promise<unknown>): Promise<boolean> => {
+  const stage = async (name: string, operation: (signal: AbortSignal) => Promise<unknown>, timeoutMs = ports.timeoutMs): Promise<boolean> => {
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    await append(`cleanup.${name}_started`, { reason }, `cleanup-${name}-started`);
+    await append(`cleanup.${name}_started`, { reason, timeoutMs }, `cleanup-${name}-started`);
     try {
       await Promise.race([
         Promise.resolve().then(() => operation(abort.signal)),
@@ -31,7 +33,7 @@ export async function cleanupCandidateRun(reason: RuntimeStopReason, ports: Cand
           const error = new Error('cleanup_timeout');
           abort.abort(error);
           reject(error);
-        }, ports.timeoutMs); }),
+        }, timeoutMs); }),
       ]);
     } catch (error) {
       status = abort.signal.aborted ? 'unknown' : status === 'unknown' ? status : 'incomplete';
@@ -52,7 +54,7 @@ export async function cleanupCandidateRun(reason: RuntimeStopReason, ports: Cand
   } else {
     await append('cleanup.runtime_not_started', {}, 'cleanup-runtime-not-started');
   }
-  const captured = await stage('capture', signal => ports.captureArtifacts(signal));
+  const captured = await stage('capture', signal => ports.captureArtifacts(signal), ports.captureTimeoutMs ?? ports.timeoutMs);
   // Failed captures retain ownership for a later recovery attempt.
   if (!captured) { remaining.add('capture'); return { status, remainingResourceIds: [...remaining], evidenceRefs };
   }

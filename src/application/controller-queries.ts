@@ -1,5 +1,5 @@
-import { ArtifactCaptureError } from './artifact-capture-error.js';
-import { lstat, readFile } from "node:fs/promises";
+import { lstat } from "node:fs/promises";
+import { createReadStream } from 'node:fs';
 import { resolve } from "node:path";
 import { pathContainedBy } from "../core/paths.js";
 import { gitSinkRoot, readGitSinkManifest } from "../environment/git-sink.js";
@@ -333,12 +333,13 @@ export async function captureWorkspaceScope(input: {
   experimentId: string;
   runId: string;
 }): Promise<RunRecord["artifactRefs"]> {
-  const after = await input.workspaceProvider.fingerprint(input.environment);
-  input.signal?.throwIfAborted();
   const snapshot = await input.workspaceProvider.sealCandidateSnapshot(input.environment, input.signal, input.snapshotRetainPaths);
   input.signal?.throwIfAborted();
+  const after = snapshot.fingerprint;
+  const baseline = { ...input.environment.beforeFingerprint, resources: input.environment.beforeFingerprint.resources.filter(entry =>
+    !snapshot.omitted.some(omitted => entry.path === omitted.path || entry.path.startsWith(`${omitted.path}/`))) };
   const allChangedPaths = changedPathsBetween(
-    input.environment.beforeFingerprint,
+    baseline,
     after,
   );
   const classified = classifyChangedPaths(allChangedPaths);
@@ -348,11 +349,13 @@ export async function captureWorkspaceScope(input: {
   const snapshots = await Promise.all(
     changedPaths
       .slice(0, 16)
-      .map((path) => textSnapshot(input.environment.root, path)),
+      .map((path) => textSnapshot(snapshot.root, path, input.signal)),
   );
   const artifactRefs: RunRecord["artifactRefs"] = [];
+  input.signal?.throwIfAborted();
   const catalog = await readGitSinkManifest(gitSinkRoot(resolve(input.environment.root, "..", ".."), input.runId));
   if (catalog) {
+    input.signal?.throwIfAborted();
     const gitSinkArtifactId = "git-sink-manifest.json";
     await input.store.commitArtifact({
       artifactId: gitSinkArtifactId,
@@ -383,9 +386,9 @@ export async function captureWorkspaceScope(input: {
         };
   if (!Value.Check(CandidateWorkspaceScopeSchema, scope)) throw new Error('Malformed candidate workspace scope.');
   const artifactId = "candidate-workspace-scope.json";
+  input.signal?.throwIfAborted();
   await input.store.commitArtifact({ artifactId, runId: input.runId, kind: "candidate_workspace_scope", mediaType: "application/json", bytes: Buffer.from(JSON.stringify(scope, null, 2), 'utf8') });
   artifactRefs.push({ artifactId, experimentId: input.experimentId, runId: input.runId });
-  if (snapshot.status !== 'complete') throw new ArtifactCaptureError('Candidate snapshot is incomplete; workspace retained for recovery.', artifactRefs);
   return artifactRefs;
 }
 
@@ -403,12 +406,15 @@ function fingerprintEntries(
 async function textSnapshot(
   root: string,
   path: string,
+  signal?: AbortSignal,
 ): Promise<{ path: string; content: string; truncated: boolean } | undefined> {
   const fullPath = resolve(root, path);
   if (!pathContainedBy(resolve(root), fullPath)) return undefined;
   try {
     if (!(await lstat(fullPath)).isFile()) return undefined;
-    const bytes = await readFile(fullPath);
+    const chunks: Buffer[] = [];
+    for await (const chunk of createReadStream(fullPath, { end: 32_768, signal })) chunks.push(chunk as Buffer);
+    const bytes = Buffer.concat(chunks);
     if (bytes.includes(0)) return undefined;
     const slice = bytes.subarray(0, 32_768);
     return {
@@ -416,7 +422,9 @@ async function textSnapshot(
       content: slice.toString("utf8"),
       truncated: bytes.byteLength > slice.byteLength,
     };
-  } catch {
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    // Optional text previews may be absent; the verified file remains in the sealed snapshot.
     return undefined;
   }
 }

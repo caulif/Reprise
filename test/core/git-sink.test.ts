@@ -25,6 +25,26 @@ import { isolateCandidateProcessEnv, spawnRuntimeProcess } from "../../src/infra
 
 const execFileAsync = promisify(execFile);
 
+test('capture finalization preserves the catalog on cancellation or a broken refs repository', async t => {
+  const tmp = await mkdtemp(join(tmpdir(), 'reprise-git-finalize-'));
+  t.after(() => rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  const source = join(tmp, 'source');
+  await initRepo(source);
+  const sinks = gitSinkRoot(tmp, 'finalize');
+  await isolateGitTopology(source, sinks);
+  const catalogPath = gitSinkManifestPath(sinks);
+  const before = await readFile(catalogPath, 'utf8');
+  const abort = new AbortController();
+  abort.abort(new Error('capture cancelled'));
+  await assert.rejects(finalizeGitSinkCatalog(sinks, abort.signal), /capture cancelled/);
+  assert.equal(await readFile(catalogPath, 'utf8'), before);
+  const catalog = await readGitSinkManifest(sinks);
+  assert.ok(catalog?.repos[0]);
+  await rename(catalog.repos[0].sinkPath, `${catalog.repos[0].sinkPath}.retained`);
+  await assert.rejects(finalizeGitSinkCatalog(sinks), /show-ref|repository/);
+  assert.equal(await readFile(catalogPath, 'utf8'), before);
+});
+
 async function git(args: string[], cwd?: string, env?: NodeJS.ProcessEnv): Promise<string> {
   const { stdout } = await execFileAsync("git", args, { cwd, encoding: "utf8", windowsHide: true, env: env ?? process.env });
   return stdout.trim();
