@@ -3,7 +3,7 @@ import type { AgentAuditEvent } from '../infrastructure/agent/host.js';
 /** Costs based on provider usage and heuristic fallback remain separately auditable. */
 export class ComparisonCosts {
   readonly #requests = new Set<string>();
-  readonly #costs = new Map<string, { fallback: boolean; cost: number | undefined }>();
+  readonly #costs = new Map<string, { fallback: boolean; cost: number | undefined; lookup: 'hit' | 'miss' | 'invalid' }>();
   #legacyRequests = 0;
   #legacyReports = 0;
 
@@ -24,7 +24,15 @@ export class ComparisonCosts {
     // A later observed usage supersedes its estimate; an estimate never replaces observed usage.
     if (fallback && this.#costs.get(key)?.fallback === false) return;
     const cost = event.payload.estimatedCostUsd;
-    this.#costs.set(key, { fallback, cost: typeof cost === 'number' && Number.isFinite(cost) && cost >= 0 ? cost : undefined });
+    const amount = typeof cost === 'number' && Number.isFinite(cost) && cost >= 0 ? cost : undefined;
+    const lookup = event.payload.lookup === 'invalid' ? 'invalid' : amount === undefined ? 'miss' : 'hit';
+    this.#costs.set(key, { fallback, cost: amount, lookup });
+  }
+
+  pricingLookup(): 'hit' | 'miss' | 'invalid' {
+    const records = [...this.#costs.values()];
+    if (records.some(row => row.lookup === 'invalid')) return 'invalid';
+    return records.some(row => row.lookup === 'miss') ? 'miss' : 'hit';
   }
 
   snapshot() {

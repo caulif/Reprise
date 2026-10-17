@@ -91,3 +91,21 @@ test('evaluation separates fallback tokens and cost, matches unique attempts, an
   assert.equal(unknownPrice.estimatedCostUsd, undefined);
   assert.equal(unknownPrice.costBasis, 'incomplete');
 });
+
+test('reconciled pricing ignores missing or invalid prices of superseded fallback records', () => {
+  for (const model of ['missing', 'invalid']) for (const fallbackFirst of [true, false]) {
+    const request = event('agent.model_request', { requestId: 'one', model, scope: 'generation' });
+    const fallback = event('agent.usage_estimated', { requestId: 'one', model, scope: 'generation',
+      basis: 'pi-character-heuristic-v1', reason: 'failed_request_usage_missing', failureKind: 'transient_upstream', errorMessage: '502',
+      usage: { input: 1_000_000, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 1_000_000 } });
+    const reported = event('agent.usage_reported', { ...record(pair(1, 'known')[1]!.payload), requestId: 'one' });
+    const result = summarizeComparisonEvaluationUsage([request, ...(fallbackFirst ? [fallback, reported] : [reported, fallback])],
+      undefined, { known: rates(2), invalid: rates(-1) });
+    assert.equal(result.pricingLookup, 'hit', `${model}, fallbackFirst=${fallbackFirst}`);
+    assert.equal(result.usageCoverage, 'complete');
+    assert.equal(result.costBasis, 'reported_usage');
+    assert.equal(result.fallbackRequests, 0);
+    assert.equal(result.knownEstimatedCostUsd, 2);
+    assert.equal(result.estimatedCostUsd, 2);
+  }
+});

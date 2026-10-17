@@ -19,7 +19,6 @@ export function summarizeComparisonEvaluationUsage(events: readonly EventEnvelop
   const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 };
   const costs = new ComparisonCosts();
   let knownPrices = 0;
-  let pricingLookup: 'hit' | 'miss' | 'invalid' = 'hit';
   for (const event of events) {
     if (event.type === 'agent.model_request') {
       costs.observe({ type: event.type, payload: record(event.payload), sessionId: 'evaluation', role: 'comparison' });
@@ -41,13 +40,11 @@ export function summarizeComparisonEvaluationUsage(events: readonly EventEnvelop
     const priced = usagePricing({ parts: { input: parts.input, output: parts.output, cacheRead: parts.cacheRead,
       cacheCreation: parts.cacheWrite }, display: parts.totalTokens, inputIncludesCache: false },
     typeof payload.model === 'string' ? payload.model : undefined, pricingTable, options);
-    if (priced.lookup === 'invalid') pricingLookup = 'invalid';
-    else if (priced.lookup === 'miss' && pricingLookup !== 'invalid') pricingLookup = 'miss';
-    costs.observe({ type: event.type, payload: { ...payload, estimatedCostUsd: priced.costUsd }, sessionId: 'evaluation', role: 'comparison' });
+    costs.observe({ type: event.type, payload: { ...payload, lookup: priced.lookup, estimatedCostUsd: priced.costUsd }, sessionId: 'evaluation', role: 'comparison' });
     if (priced.costUsd !== undefined && !fallback) knownPrices++;
   }
   const summary = costs.snapshot();
-  return { ...(summary.usageReports ? { usage } : {}), usageCoverage, pricingLookup,
+  return { ...(summary.usageReports ? { usage } : {}), usageCoverage, pricingLookup: costs.pricingLookup(),
     ...(knownPrices ? { knownEstimatedCostUsd: summary.knownEstimatedCostUsd } : {}),
     fallbackEstimatedCostUsd: summary.fallbackEstimatedCostUsd, fallbackRequests: summary.fallbackRequests, costBasis: summary.costBasis,
     ...(summary.estimatedCostUsd !== null && (usageCoverage === 'complete' || summary.fallbackRequests > 0)
