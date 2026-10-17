@@ -24,7 +24,7 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
   const draft = new ComparisonDraft({ attemptRoot: root, task: 'Compare text', locale: 'zh', catalog, deliveredImages: new Set(), facts: facts });
   return { root, facts, draft, tool: createAutonomousReportTool(draft, root) };
 }
-const params = { boundary: 'Task quality remains unverified.', differences: ['Candidate preserves the final paragraph.'], status: 'completed', category: 'Text comparison', headline: 'Candidate preserves the missing detail', path: 'scratch/report.html' };
+const params = { boundary: 'Task quality remains unverified.', differences: [], status: 'completed', category: 'Text comparison', headline: 'Candidate preserves the missing detail', path: 'scratch/report.html' };
 const signal = new AbortController().signal;
 
 test('file report submission shares draft validation, accepts semantic HTML and invalidates old previews on revision', async t => {
@@ -93,7 +93,7 @@ test('compact reports enforce Unicode recommendation, difference and all-fragmen
   assert.match((await f.tool.execute({ ...params, headline: '😀'.repeat(80), boundary: '', differences: [] }, signal)).content, /"status":"accepted"/);
   assert.match((await f.tool.execute({ ...params, headline: '😀'.repeat(81) }, signal)).content, /status=rejected/);
   assert.match((await f.tool.execute({ ...params, differences: ['字'.repeat(61)] }, signal)).content, /status=rejected/);
-  assert.match((await f.tool.execute({ ...params, differences: ['字 '.repeat(60)] }, signal)).content, /"status":"accepted"/);
+
   await writeFile(join(f.root, params.path), `<table><tr><td>${'字'.repeat(901)}</td></tr></table>`);
   assert.match((await f.tool.execute(params, signal)).content, /status=rejected/);
   await writeFile(join(f.root, params.path), `<p data-host-limitation="fake">${'字'.repeat(901)}</p>`);

@@ -1,5 +1,5 @@
 import { parseFragment, type DefaultTreeAdapterMap } from 'parse5';
-import { extractInner } from '../core/comparison-html.js';
+import { comparisonReportFormat, extractInner } from '../core/comparison-html.js';
 import { extractHostLimitations } from './comparison-host-limitations.js';
 
 export function comparisonVisibleMainText(html: string): string {
@@ -110,6 +110,37 @@ export function comparisonCompactTextBudgetError(html: string): string | undefin
   if (hasDetails(parseFragment(html))) return 'Format 3 cannot contain expandable details.';
   const headline = comparisonPlainText(extractInner(html, 'data-agent-slot', 'headline'));
   const differences = comparisonDifferenceTexts(html);
+  if (comparisonReportFormat(html) === 4) {
+    const category = comparisonPlainText(extractInner(html, 'data-agent-slot', 'category'));
+    if (!category.trim() || nonWhitespaceCodePoints(category) > 32 || nonWhitespaceCodePoints(headline) > 60
+      || differences.length || comparisonCompactTextCharacters(html) > 500) {
+      return 'Shareable reports require an abstract title (32 characters), a conclusion (60 characters), one comparison body and at most 500 author characters.';
+    }
+  }
+  if (comparisonReportFormat(html) >= 4) {
+    const category = comparisonPlainText(extractInner(html, 'data-agent-slot', 'category'));
+    if (!category.trim() || nonWhitespaceCodePoints(category) > 32) return 'Abstract title exceeds 32 characters.';
+    const author = ['category', 'headline', 'boundary'].map(slot => extractInner(html, 'data-agent-slot', slot)).join(' ')
+      + extractInner(html, 'data-agent-zone', 'comparison') + extractInner(html, 'data-agent-zone', 'differences');
+    const texts: string[] = [];
+    const attributes: string[] = [];
+    const visit = (node: Node): void => {
+      if (['p', 'li', 'td', 'th', 'div', 'section', 'figure', 'figcaption', 'br'].includes(node.nodeName)) texts.push(' ');
+      if (node.nodeName === '#text' && 'value' in node) texts.push(node.value);
+      if ('attrs' in node) attributes.push(...node.attrs.filter(attr => ['alt', 'title', 'aria-label'].includes(attr.name)).map(attr => attr.value));
+      if ('childNodes' in node) node.childNodes.forEach(visit);
+      if ('content' in node) visit(node.content);
+      if (['p', 'li', 'td', 'th', 'div', 'section', 'figure', 'figcaption'].includes(node.nodeName)) texts.push(' ');
+    };
+    visit(parseFragment(author));
+    const text = `${texts.join('')} ${attributes.join(' ')}`;
+    if (/[a-z]:[\\/]|\\\\[^\s\\]+|file:\/\/|\/(?:Users|home|mnt|var|tmp)\//i.test(text)
+      || /[\w.+-]+@[\w.-]+\.[a-z]{2,}/i.test(text)
+      || /[\w\u4e00-\u9fff-]+\.(?:docx?|pdf|xlsx?|pptx?|html?|svg|png|jpe?g|tsx?|jsx?|json|md|rs|py)\b/i.test(text)
+      || /(?:\+?\d[\d ()-]{8,}\d)/.test(text)) {
+      return 'Shareable report contains a possible path, filename or contact detail. Abstract or omit it, including captions and image labels; do not quote private source text.';
+    }
+  }
   if (!headline.trim() || nonWhitespaceCodePoints(headline) > 80 || differences.length > 3
     || differences.some(text => !text.trim() || nonWhitespaceCodePoints(text) > 60) || comparisonCompactTextCharacters(html) > 900) {
     return 'Format 3 author text exceeds the recommendation, difference or 900-character budget.';

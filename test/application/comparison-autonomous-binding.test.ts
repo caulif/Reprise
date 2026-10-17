@@ -31,7 +31,7 @@ test('autonomous contract is explicit, versioned and cannot downgrade an indepen
   const f = fixture();
   assert.equal(autonomousComparisonRequested(f.events, 'attempt'), true);
   assert.equal(autonomousComparisonRequested([], 'attempt'), false);
-  assert.throws(() => autonomousComparisonRequested([event(1, 'comparison.requested', { autonomousContractVersion: 3 })], 'attempt'), /Invalid/);
+  assert.throws(() => autonomousComparisonRequested([event(1, 'comparison.requested', { autonomousContractVersion: 99 })], 'attempt'), /Invalid/);
   assert.throws(() => autonomousComparisonRequested([event(1, 'comparison.requested', { autonomousContractVersion: 1, reviewInspectionContractVersion: 2 })], 'attempt'), /Conflicting/);
 });
 
@@ -72,4 +72,20 @@ test('autonomous contract 2 binds compact format while contract 1 remains readab
   assert.match((await autonomousComparisonBinding(f))!, /format 3/);
   assert.match((await autonomousComparisonBinding({ ...f, reportFormat: 2 }))!, /format 3/);
   assert.equal(await autonomousComparisonBinding({ ...f, reportFormat: 3 }), undefined);
+});
+
+test('shareable contract cannot downgrade to a report containing the raw task', async () => {
+  const f = fixture();
+  f.events[0] = event(1, 'comparison.requested', { autonomousContractVersion: 3 });
+  assert.equal(autonomousComparisonRequested(f.events, f.attemptId), true);
+  for (const reportFormat of [2, 3]) assert.match((await autonomousComparisonBinding({ ...f, reportFormat }))!, /format 4/);
+  assert.equal(await autonomousComparisonBinding({ ...f, reportFormat: 4 }), undefined);
+});
+
+ test('restored compact contract rejects every older report format', async () => {
+  const f = fixture();
+  f.events[0] = event(1, 'comparison.requested', { autonomousContractVersion: 4 });
+  assert.equal(autonomousComparisonRequested(f.events, f.attemptId), true);
+  for (const reportFormat of [2, 3, 4]) assert.match((await autonomousComparisonBinding({ ...f, reportFormat }))!, /format 5/);
+  assert.equal(await autonomousComparisonBinding({ ...f, reportFormat: 5 }), undefined);
 });

@@ -7,6 +7,7 @@
 ### Fixed
 
 - 手工价格快照补充 GPT-6 Sol、Luna 和 GPT-6.1 Sol 的独立基础档费率，修复这些实际模型在新报告中的“价格未配置”；保留价格来源、未知费用和旧报告。参考估算及阶梯价限制见[计价说明](architecture/evidence-and-comparison.md)。
+- Comparison 新报告恢复突出模型、推荐优先、最多三条短差异和完整视口优先的格式5；Token 固定 k。保留抽象任务、脱敏、日期及替代材料说明，旧格式继续读取与恢复。见[恢复推荐优先布局](decisions/accepted/2026-10-16-comparison-restore-compact.md)。
 
 - Comparison 复用受管命令，等待返回不再终止长命令，可继续读取输出或取消并确认收尾；浏览器限制、进程所有权与日志审计沿用原边界。报告和界面统一使用历史/当前，当前模型取实际运行记录；内部数据字段及 Token 计算保持兼容。见[工具与命名决策](decisions/accepted/2026-10-15-comparison-managed-processes-and-session-names.md)。
 
