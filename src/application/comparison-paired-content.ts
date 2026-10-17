@@ -12,14 +12,20 @@ export function pairedContentFromHtml(html: string): { reason: string; pairedDif
   const pairedDifferences: ComparisonPairedDifference[] = [];
   const visit = (node: Node): void => {
     if ('attrs' in node && node.attrs.some(attr => attr.name === 'data-paired-difference')) {
-      const field = (name: string) => {
+      const fieldNode = (name: string) => {
         const find = (child: Node): Node | undefined => 'attrs' in child && child.attrs.some(attr => attr.name === 'data-result-field' && attr.value === name) ? child : 'childNodes' in child ? child.childNodes.map(find).find(Boolean) : undefined;
-        const hit = find(node); return hit ? text(hit) : '';
+        return find(node);
       };
+      const field = (name: string) => { const hit = fieldNode(name); return hit ? text(hit) : ''; };
+      const assessments = Object.fromEntries(['baseline', 'candidate'].flatMap(name => {
+        const hit = fieldNode(name);
+        const value = hit && 'attrs' in hit ? hit.attrs.find(attr => attr.name === 'data-result-assessment')?.value : undefined;
+        return value === undefined ? [] : [[`${name}Assessment`, value]];
+      }));
       const refs: string[] = [];
       const citations = (child: Node): void => { if ('attrs' in child) refs.push(...child.attrs.filter(attr => attr.name === 'data-evidence-ref').map(attr => attr.value)); if ('childNodes' in child) child.childNodes.forEach(citations); };
       citations(node);
-      pairedDifferences.push({ dimension: field('dimension'), baseline: field('baseline'), candidate: field('candidate'), impact: field('impact'), ...(refs.length ? { evidenceRefs: refs } : {}) });
+      pairedDifferences.push({ dimension: field('dimension'), baseline: field('baseline'), candidate: field('candidate'), impact: field('impact'), ...assessments, ...(refs.length ? { evidenceRefs: refs } : {}) });
       return;
     }
     if ('childNodes' in node) node.childNodes.forEach(visit);
@@ -28,8 +34,15 @@ export function pairedContentFromHtml(html: string): { reason: string; pairedDif
   return { reason: text(parseFragment(extractInner(html, 'data-agent-slot', 'reason'))), pairedDifferences, comparison: extractInner(html, 'data-report-field', 'media') };
 }
 
+function result(side: 'baseline' | 'candidate', value: string, assessment: ComparisonPairedDifference['baselineAssessment'], zh: boolean): string {
+  const labels: Record<string, [string, string]> = { better: ['更好', 'Better'], worse: ['更差', 'Worse'], similar: ['相近', 'Similar'], unknown: ['未知', 'Unknown'], unverified: ['未验证', 'Unverified'] };
+  const label = assessment ? labels[assessment]?.[zh ? 0 : 1] : undefined;
+  const tone = assessment === 'better' ? 'better' : assessment === 'worse' ? 'worse' : 'neutral';
+  return `<p><span class="side">${zh ? side === 'baseline' ? '历史' : '当前' : side === 'baseline' ? 'History' : 'Current'}</span><span class="result-phrase assessment-${tone}">${label ? `<span class="assessment-label">${label} · </span>` : ''}<strong data-result-field="${side}"${assessment === undefined ? '' : ` data-result-assessment="${pairedEscape(assessment)}"`}>${pairedEscape(value)}</strong></span></p>`;
+}
+
 export function renderPairedContent(differences: readonly ComparisonPairedDifference[], media: string, zh: boolean): string {
-  return `${differences.map((d, i) => `<section class="difference" data-paired-difference><h2><span class="ordinal">${String(i + 1).padStart(2, '0')}</span><span data-result-field="dimension">${pairedEscape(d.dimension)}</span></h2><div class="outcomes"><p><span class="side">${zh ? '历史' : 'History'}</span><strong data-result-field="baseline">${pairedEscape(d.baseline)}</strong></p><p><span class="side">${zh ? '当前' : 'Current'}</span><strong data-result-field="candidate">${pairedEscape(d.candidate)}</strong></p></div><p class="impact"><span>${zh ? '对你的影响' : 'User impact'} · </span><span data-result-field="impact">${pairedEscape(d.impact)}</span>${(d.evidenceRefs ?? []).map(ref => `<span data-evidence-ref="${pairedEscape(ref)}"></span>`).join('')}</p></section>`).join('')}<div class="media" data-report-field="media">${media}</div>`;
+  return `${differences.map((d, i) => `<section class="difference" data-paired-difference><h2><span class="ordinal">${String(i + 1).padStart(2, '0')}</span><span data-result-field="dimension">${pairedEscape(d.dimension)}</span></h2><div class="outcomes">${result('baseline', d.baseline, d.baselineAssessment, zh)}${result('candidate', d.candidate, d.candidateAssessment, zh)}</div><p class="impact"><span>${zh ? '对你的影响' : 'User impact'} · </span><span data-result-field="impact">${pairedEscape(d.impact)}</span>${(d.evidenceRefs ?? []).map(ref => `<span data-evidence-ref="${pairedEscape(ref)}"></span>`).join('')}</p></section>`).join('')}<div class="media" data-report-field="media">${media}</div>`;
 }
 
 export function pairedContentError(html: string): string | undefined {

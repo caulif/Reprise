@@ -109,10 +109,15 @@ export const ComparisonMediaRecordSchema = Type.Object({
   derivation: Type.Optional(ComparisonMediaDerivationSchema),
 });
 export type ComparisonMediaRecord = Static<typeof ComparisonMediaRecordSchema>;
+const ResultAssessmentSchema = Type.Union((['better', 'worse', 'similar', 'unknown', 'unverified'] as const).map(value => Type.Literal(value)), {
+  description: 'Evidence-bound comparison for this result only: better/worse relative to the other delivery; similar only when established. Unknown, self-reported or untested results stay unknown/unverified, never worse merely for missing evidence. Optional for older reports; absence stays unclassified.',
+});
 export const ComparisonPairedDifferenceSchema = Type.Object({
   dimension: Type.String({ minLength: 1, pattern: "\\S" }),
   baseline: Type.String({ minLength: 1, pattern: "\\S" }),
   candidate: Type.String({ minLength: 1, pattern: "\\S" }),
+  baselineAssessment: Type.Optional(ResultAssessmentSchema),
+  candidateAssessment: Type.Optional(ResultAssessmentSchema),
   impact: Type.String({ minLength: 1, pattern: "\\S" }),
   evidenceRefs: Type.Optional(Type.Array(Type.String({ pattern: "^ev-[0-9]{2,6}$" }), { uniqueItems: true })),
 }, { additionalProperties: false });

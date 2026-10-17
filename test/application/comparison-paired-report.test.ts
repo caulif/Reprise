@@ -28,6 +28,32 @@ const facts: ComparisonReportFacts = {
 const slots = { category: '文档修订', headline: '推荐当前', reason: '当前保留了需要继续修订的编号。', boundary: '打开后的排版尚未逐页检查。', pairedDifferences: [{ dimension: '编号保留了吗？', baseline: '替代材料缺少编号', candidate: '当前保留编号', impact: '后续修订不必重新核对编号。' }], comparison: '' };
 const render = (overrides = {}) => renderComparisonReportShell({ formatVersion: 6, task: 'Private original task', facts, metrics: facts.metrics!, slots: { ...slots, ...overrides } });
 
+test('per-result assessments color supported differences independently and survive model restoration', () => {
+  const pairedDifferences = [
+    { ...slots.pairedDifferences[0]!, baselineAssessment: 'better' as const, candidateAssessment: 'worse' as const },
+    { dimension: '连续动作测了吗？', baseline: '没有连续播放记录', candidate: '只有作者自报', impact: '采用前仍需实际播放。', baselineAssessment: 'unknown' as const, candidateAssessment: 'unverified' as const },
+    { dimension: '共有条件确认了吗？', baseline: '已确认相同', candidate: '尚无评判', impact: '缺少评判不推断优劣。', baselineAssessment: 'similar' as const },
+  ];
+  const html = render({ pairedDifferences });
+  assert.equal(comparisonCompactTextBudgetError(html), undefined);
+  assert.match(html, /assessment-better[^<]*"><span class="assessment-label">更好 · <\/span><strong data-result-field="baseline" data-result-assessment="better"/);
+  assert.match(html, /assessment-worse[^<]*"><span class="assessment-label">更差 · <\/span><strong data-result-field="candidate" data-result-assessment="worse"/);
+  assert.match(html, /assessment-neutral[^<]*"><span class="assessment-label">未知 · /);
+  assert.match(html, /assessment-neutral[^<]*"><span class="assessment-label">未验证 · /);
+  assert.match(html, /assessment-neutral[^<]*"><span class="assessment-label">相近 · /);
+  const extracted = agentContentFromDraft(html);
+  assert.ok('slots' in extracted);
+  assert.deepEqual(extracted.slots.pairedDifferences, pairedDifferences);
+  const model = comparisonReportModelFromHtml(html, facts, { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, []);
+  assert.equal(Value.Check(ComparisonReportModelSchema, model), true);
+  assert.equal(renderComparisonReportFromModel({ model, facts }), html);
+  assert.equal(comparisonCompactTextBudgetError(render()), undefined, 'old missing assessments remain valid and unclassified');
+  assert.doesNotMatch(render(), /class="assessment-label"/);
+  const invalid = html.replace('data-result-assessment="better"', 'data-result-assessment="success"');
+  assert.ok(comparisonCompactTextBudgetError(invalid), 'unsupported assessment must not silently become neutral');
+  assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, pairedDifferences: [{ ...pairedDifferences[0], candidateAssessment: 'red' }] }), false);
+});
+
 test('paired report renders aligned differences, local limits and fixed k and roundtrips through the production model', () => {
   const html = render();
   assert.equal(missingComparisonSlots(html), undefined);
@@ -97,7 +123,7 @@ test('structured evidence and media survive draft, actual preview preparation, p
     links: [{ side: 'candidate', inspectPath: 'evidence/result.txt', shortRef: 'ev-01', evidenceRef: 'artifact:source', contentHash: sha256('source'), sourceRefs: ['artifact:source'] }],
     media: ['baseline', 'candidate'].map((side, index) => ({ ref: `media:frame-${index}`, shortRef: `media-0${index + 1}`, side: side as 'baseline' | 'candidate', inspectPath: 'review/full.png', reportHref: 'review/full.png', mediaType: 'image/png', available: true, contentHash: sha256(png) })) });
   const draft = new ComparisonDraft({ attemptRoot: root, task: 'Compare', facts, locale: 'zh', catalog, deliveredImages: new Set([sha256(png)]) });
-  const pairedDifferences = [{ ...slots.pairedDifferences[0]!, evidenceRefs: ['ev-01'] }];
+  const pairedDifferences = [{ ...slots.pairedDifferences[0]!, baselineAssessment: 'worse' as const, candidateAssessment: 'better' as const, evidenceRefs: ['ev-01'] }];
   const comparisonHtml = `<div data-component="page-row">${['历史', '当前'].map((label, index) => `<figure><img data-media-ref="media-0${index + 1}" alt="完整视口"><figcaption>${label} · 完整视口；单帧不证明动作连续性。</figcaption></figure>`).join('')}</div>`;
   assert.match(await draft.submit({ formatVersion: 6, status: 'completed', ...slots, pairedDifferences, comparisonHtml }), /status=accepted/);
   const html = await readFile(join(root, 'report.html'), 'utf8');
@@ -122,5 +148,12 @@ test('structured evidence and media survive draft, actual preview preparation, p
   assert.match(rebuilt, /data-evidence-ref="ev-01"/);
   assert.match(rebuilt, /<a href="media\/[a-f0-9]+\.png"/);
   assert.equal(comparisonCompactTextBudgetError(rebuilt), undefined);
+  await writeFile(join(root, 'report.html'), html.replace('data-result-assessment="better"', 'data-result-assessment="worse"'));
+  assert.equal(await draft.completedResult(), undefined, 'changing only the assessment after preview cannot publish');
+  await writeFile(join(root, 'report.html'), html);
+  const previousDigest = draft.acceptedReceipt().draftDigest;
+  assert.match(await draft.submit({ formatVersion: 6, status: 'completed', ...slots, pairedDifferences: [{ ...pairedDifferences[0]!, candidateAssessment: 'unverified' }], comparisonHtml }), /status=accepted/);
+  assert.notEqual(draft.acceptedReceipt().draftDigest, previousDigest);
+  assert.equal(await draft.completedResult(), undefined, 'assessment-only revisions require a new preview');
   assert.match(await draft.submit({ formatVersion: 6, status: 'completed', ...slots, pairedDifferences: [{ ...pairedDifferences[0]!, evidenceRefs: ['ev-99'] }], comparisonHtml }), /evidence_unresolved/);
 });

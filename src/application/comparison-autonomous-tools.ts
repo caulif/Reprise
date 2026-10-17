@@ -14,7 +14,7 @@ const ReportFileSchema = Type.Object({
   path: Type.String({ minLength: 1, maxLength: 512 }),
   boundary: Type.String({ description: 'Plain text decision-changing condition or uncertainty; empty only when none identified.' }),
   reason: Type.String({ minLength: 1, pattern: '\\S', description: 'One short sentence explaining the recommendation.' }),
-  pairedDifferences: Type.Array(ComparisonPairedDifferenceSchema, { maxItems: 3, description: 'Zero to three aligned differences, each with dimension, baseline, candidate and user impact; preserve verified, self-reported, untested and unknown distinctions.' }),
+  pairedDifferences: Type.Array(ComparisonPairedDifferenceSchema, { maxItems: 3, description: 'Zero to three aligned differences, each with dimension, baseline, candidate, impact and independent baselineAssessment/candidateAssessment (better/worse/similar/unknown/unverified). Use better/worse only for supported relative differences, never infer from recommended side. Missing evidence is unknown/unverified, not worse. Host controls colors and explicit status words; judgments remain unverified author declarations. Older reports may omit assessments and remain neutral.' }),
 }, { additionalProperties: false });
 
 export function createAutonomousReportTool(draft: ComparisonDraft, attemptRoot: string): AgentToolDefinition {
