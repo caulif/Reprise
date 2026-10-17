@@ -14,7 +14,7 @@ const COMPARISON_EVENTS = new Set(['comparison.started', 'comparison.requested',
   'comparison.draft_accepted', 'comparison.review_started', 'comparison.draft_audit_started', 'comparison.investigation_closed',
   'comparison.evidence_registered', 'comparison.phase_completed', 'comparison.resources_completed']);
 const AGENT_EVENTS = new Set(['agent.session_started', 'agent.session_completed', 'agent.invocation_started', 'agent.invocation_completed',
-  'agent.message_appended', 'agent.model_request', 'agent.model_output', 'agent.model_stream_completed', 'agent.usage_reported', 'agent.assistant_visible',
+  'agent.message_appended', 'agent.model_request', 'agent.model_output', 'agent.model_stream_completed', 'agent.usage_reported', 'agent.usage_estimated', 'agent.assistant_visible',
   'agent.tool_called', 'agent.tool_completed', 'agent.context_compacted', 'agent.request_retried', 'agent.tool_failed',
   'agent.session_failed', 'agent.session_cancelled', 'agent.invocation_failed', 'agent.invocation_cancelled', 'agent.invocation_yielded', 'agent.invalid_output']);
 

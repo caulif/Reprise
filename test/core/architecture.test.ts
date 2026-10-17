@@ -412,8 +412,9 @@ test('real-terminal TUI probe is opt-in and outside engineering gates', async ()
   const auditedCompaction = /await notify\(args\[0\], context, 'compaction'\)\.catch\(error => \{ onFailure\?\.\(error\); throw error; \}\);\s*args\[2\]\?\.signal\?\.throwIfAborted\(\);\s*const message = await observePiFailure\(\(\) => source\.completeSimple\(args\[0\], context,/;
   assert.match(requests, auditedCompaction);
   assert.doesNotMatch(requests.replace("notify(args[0], context, 'compaction')", "notify(args[0], args[1], 'compaction')"), auditedCompaction);
-  const auditedGeneration = /const context = redactModelVisibleValue\(args\[1\]\);\s*await notify\(args\[0\], context, 'generation'\)\.catch\(error => \{ onFailure\?\.\(error\); throw error; \}\);\s*args\[2\]\?\.signal\?\.throwIfAborted\(\);\s*let result: ReturnType<PiModels\['streamSimple'\]>;\s*try \{ result = source\.streamSimple\(args\[0\], context,/;
+  const auditedGeneration = /const context = redactModelVisibleValue\(args\[1\]\);\s*const requestId = await notify\(args\[0\], context, 'generation'\)\.catch\(error => \{ onFailure\?\.\(error\); throw error; \}\);\s*args\[2\]\?\.signal\?\.throwIfAborted\(\);\s*let result: ReturnType<PiModels\['streamSimple'\]>;\s*try \{ result = source\.streamSimple\(args\[0\], context,/;
   assert.match(requests, auditedGeneration);
+  assert.doesNotMatch(requests.replace("const requestId = await notify(args[0], context, 'generation')", "const requestId = notify(args[0], context, 'generation')"), auditedGeneration);
   assert.doesNotMatch(requests.replace("notify(args[0], context, 'generation')", "notify(args[0], args[1], 'generation')"), auditedGeneration);
 });
 

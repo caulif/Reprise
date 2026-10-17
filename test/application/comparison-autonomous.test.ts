@@ -4,6 +4,9 @@ import { Type } from '@sinclair/typebox';
 import { AutonomousComparisonAgent } from '../../src/agents/comparison-autonomous.js';
 import { AgentHost, type AgentAuditEvent } from '../../src/infrastructure/agent/host.js';
 import type { ComparisonContext, ComparisonResult } from '../../src/agents/comparison-contract.js';
+import { createAssistantMessageEventStream, type AssistantMessage, type Model } from '@earendil-works/pi-ai';
+import { PiProviderAdapter, type PiModels } from '../../src/infrastructure/agent/providers/pi/adapter.js';
+import { usagePricing } from '../../src/application/session-usage.js';
 
 const context: ComparisonContext = {
   attemptId: 'attempt', task: { caseId: 'case', summary: 'Compare text deliveries.' },
@@ -15,6 +18,48 @@ const context: ComparisonContext = {
     replay: { conditions: [], baselineEvidence: 'available', candidateEvidence: 'available' } },
 };
 const report: ComparisonResult = { status: 'completed', reportPath: 'report.html', evidenceRefs: [] };
+
+test('actual Pi retry wiring publishes a separately priced fallback and preserves returned usage totals', async () => {
+  const model: Model<'openai-completions'> = { id: 'deepseek-v4.1-flash', name: 'fixture', api: 'openai-completions', provider: 'fixture', baseUrl: 'https://example.test',
+    reasoning: false, input: ['text'], contextWindow: 128_000, maxTokens: 16_384, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
+  const events: AgentAuditEvent[] = [];
+  let calls = 0;
+  const models = { streamSimple: () => {
+    const failed = calls++ === 0;
+    const message: AssistantMessage = { role: 'assistant', api: model.api, provider: model.provider, model: model.id,
+      content: failed ? [] : [{ type: 'text', text: 'Report submitted.' }], stopReason: failed ? 'error' : 'stop',
+      ...(failed ? { errorMessage: '502 Bad Gateway' } : {}), timestamp: Date.now(),
+      usage: { input: failed ? 0 : 100, output: failed ? 0 : 10, cacheRead: 0, cacheWrite: 0, totalTokens: failed ? 0 : 110,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+    const stream = createAssistantMessageEventStream();
+    if (failed) stream.push({ type: 'error', reason: 'error', error: message });
+    else stream.push({ type: 'done', reason: 'stop', message });
+    return stream;
+  }, getProviders: () => [], getModels: () => [], getModel: () => model, getAuth: () => undefined } as unknown as PiModels;
+  const agent = new AutonomousComparisonAgent({ timeoutMs: 0, host: new AgentHost(new PiProviderAdapter({ models, model,
+    config: { schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' }, providerId: 'fixture', modelId: model.id, effort: 'low' } })) });
+  const result = await agent.compare(context, [], { append: async event => { events.push(event); } }, undefined, {
+    getSubmittedResult: async () => report,
+    estimateUsageCost: payload => {
+      const usage = payload.usage as { input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens: number };
+      return usagePricing({ parts: { input: usage.input, output: usage.output, cacheRead: usage.cacheRead, cacheCreation: usage.cacheWrite },
+        display: usage.totalTokens, inputIncludesCache: false }, String(payload.model));
+    },
+  });
+  assert.equal(result.status, 'completed');
+  const requests = events.filter(event => event.type === 'agent.model_request');
+  assert.equal(requests.length, 2);
+  assert.notEqual(requests[0]!.payload.requestId, requests[1]!.payload.requestId);
+  const estimate = events.find(event => event.type === 'agent.usage_estimated')!.payload;
+  assert.equal(estimate.pricingModelId, model.id);
+  assert.equal(estimate.pricingVersion, '2026-10-15-static-pricing');
+  assert.deepEqual(estimate.rates, { input: 0.3, output: 1.2, cacheRead: 0.006, cacheCreation: 0 });
+  const summary = events.find(event => event.type === 'comparison.resources_completed')!.payload;
+  assert.equal(summary.usageReports, 1);
+  assert.equal(summary.fallbackRequests, 1);
+  assert.equal(summary.costBasis, 'includes_fallback');
+  assert.equal(summary.estimatedCostUsd, Number(summary.knownEstimatedCostUsd) + Number(summary.fallbackEstimatedCostUsd));
+});
 
 test('autonomous Comparison uses one prompt and leaves all tools available without findings or stage callbacks', async () => {
   let sessions = 0;

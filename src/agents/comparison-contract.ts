@@ -106,7 +106,10 @@ export type ComparisonCompareOptions = {
   hasCurrentReviewInspection?: () => boolean;
   onDraftAuditStarted?: (sessionId: string) => void | Promise<void>;
   isRepairRead?: (params: unknown) => Promise<boolean>;
-  estimateUsageCost?: (payload: Record<string, unknown>) => number | undefined;
+  estimateUsageCost?: (payload: Record<string, unknown>) => number | {
+    costUsd?: number; pricingModelId?: string; pricingVersion?: string; pricingSource?: string;
+    rates?: { input: number; output: number; cacheRead: number; cacheCreation: number };
+  } | undefined;
 };
 
 function comparisonEvidenceAllowlist(context: ComparisonFactsContext): Set<string> {
