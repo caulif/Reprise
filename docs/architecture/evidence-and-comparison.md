@@ -132,6 +132,8 @@ Host metrics 的 `data-metrics-layout="compact"` 标记与区域顺序不变；�
 
 候选 Token 与单模型估算费用仅聚合 `runtime.` 事件，再按候选 Runtime 模型定价；同 run 的 Controller、Recovery、Comparison Agent 用量不计入候选指标，重复比较不得改变原候选成本。没有 Runtime telemetry 时保持未知，不借 Harness 用量补齐。Comparison 开销仍保存在该 attempt 的独立资源记录；新检查从原 journal 重算，不原地改写旧报告或冻结 facts。见[Runtime 用量归属](../decisions/accepted/2026-10-06-runtime-usage-attribution.md)。
 
+价格继续手工维护在 [`pricing-catalog.json`](../../src/application/pricing-catalog.json)，运行时不联网更新；修改目录须更新版本并验证实际模型独立命中。2026-10-15 版本保留既有 cc-switch 条目，补充 GPT-6 Sol、Luna 和 GPT-6.1 Sol，来源为当日 [models.dev API](https://models.dev/api.json) 的 `openai` 条目，标记 `models-dev-snapshot`，四项费率采用其基础档。该档是第三方公开参考估算，未获 OpenAI 官方价页独立复核；不涵盖上游 272k 长上下文阶梯、代理加价折扣、分时计价或订阅分摊，不能据此还原历史实际账单。私有渠道可使用操作者覆盖；未知价格保持未知，已有报告不因目录更新而重算。
+
 Agent 区的内联 `style` 属性和原生 `dialog` / popover 浮层一律拒绝，避免遮盖 Host 的任务、模型与指标。
 
 Host 双侧会话标签同时显示日期（UTC）：格式3置于模型名下方，以次要文字显示；格式2置于会话标签内，共用日期格式化逻辑。历史侧取 `taskContext.historyStartedAt` 与历史事件顶层 `timestamp` 中最早的合法时间，当前侧取 manifest 开始时间，缺失或非法时退回 attempt 创建时间；不使用导入时间、文件修改时间或报告生成时间。日期冻结在可选 `reportFacts.sessionDates` 中，沿现有 `comparison.requested` 输入 artifact 和 briefing 审计链保存、恢复。旧 facts 缺字段时显示“日期未知”，旧已发布报告不原地重写；日期仍由 Host 所有，不能由 Agent 推断或改写。日期不代表模型版本或能力变化。取舍见[双侧会话日期](../decisions/accepted/2026-10-14-comparison-session-dates.md)。

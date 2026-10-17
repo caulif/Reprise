@@ -204,8 +204,8 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
     <section class="slot" data-host-zone="evidence" data-id="host-evidence"><details class="evidence-expand" data-host="run-diagnostics"><summary>Run diagnostics</summary><ul class="kv-list">
     <li><span class="who">gpt-5</span> verifiable</li>
     <li><span class="who">unrecorded</span> incomplete · limit.turns · harness</li>
-    <li><span class="who">gpt-5 price</span> unresolved · not_collected · 2026-09-19-cc-switch-seed</li>
-    <li><span class="who">unrecorded price</span> unresolved · not_collected · 2026-09-19-cc-switch-seed</li>
+    <li><span class="who">gpt-5 price</span> unresolved · not_collected · 2026-10-15-static-pricing</li>
+    <li><span class="who">unrecorded price</span> unresolved · not_collected · 2026-10-15-static-pricing</li>
   </ul></details></section>
     <section class="slot" data-host-zone="process" data-id="host-process"></section>
   </details>
