@@ -235,7 +235,7 @@ export function candidateTurnTiming(events: readonly EventEnvelope[], scope?: Ti
   const open = unmatchedInputs.length + new Set(unmatchedStarts.map(start => start.id ?? start.ref)).size;
   if (open) diagnostics.add('unsettled_submissions');
   return { ...facts(groups.length, open, measurements, diagnostics), ...(scope ? { scope } : {}),
-    ...(normalizedTurns === groups.length && groups.length > 0 ? { semantics: 'runtime_turn_elapsed', boundary: 'runtime_admission_to_settlement' } : {}),
+    ...(normalizedTurns === groups.length && groups.length > 0 ? { semantics: 'runtime_turn_elapsed', boundary: 'runtime_turn_clock_to_result' } : {}),
     outcomes: { failed: groups.filter(group => group.some(item => item.body.status === 'failed')).length,
       aborted: groups.filter(group => group.some(item => item.body.status === 'aborted')).length } };
 }

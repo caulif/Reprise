@@ -2,7 +2,7 @@ import { Type, type Static } from '@sinclair/typebox';
 
 export const RuntimeTurnTimingSchema = Type.Object({
   schemaVersion: Type.Literal(1), valueMs: Type.Number({ minimum: 0 }),
-  semantics: Type.Literal('runtime_turn_elapsed'), boundary: Type.Literal('runtime_admission_to_settlement'),
+  semantics: Type.Literal('runtime_turn_elapsed'), boundary: Type.Literal('runtime_turn_clock_to_result'),
   aggregation: Type.Literal('per_turn'), turnId: Type.String(), clientMessageId: Type.String(), resultId: Type.Optional(Type.String()),
 });
 

@@ -175,8 +175,8 @@ test('candidate unsettled/rejected submissions and unmatched settlements stay pa
 
 test('timing comparability requires complete coverage and identical proven boundary sources', () => {
   const scope = { kind: 'selected_task' as const, identity: 'task:1', refs: ['selection:1'] };
-  const historicalFacts = { ...historicalTurnTiming([historical('task_complete', 20, { turn_id: 'a', duration_ms: 10000 })], scope), semantics: 'runtime_turn_elapsed', boundary: 'runtime_admission_to_settlement' };
-  const nativeCandidate = { ...candidateTurnTiming([candidate('runtime.turn_started', 10, { turnId: 'b' }), candidate('runtime.turn_settled', 20, { turnId: 'b', duration_ms: 10000 })], scope), semantics: 'runtime_turn_elapsed', boundary: 'runtime_admission_to_settlement' };
+  const historicalFacts = { ...historicalTurnTiming([historical('task_complete', 20, { turn_id: 'a', duration_ms: 10000 })], scope), semantics: 'runtime_turn_elapsed', boundary: 'runtime_turn_clock_to_result' };
+  const nativeCandidate = { ...candidateTurnTiming([candidate('runtime.turn_started', 10, { turnId: 'b' }), candidate('runtime.turn_settled', 20, { turnId: 'b', duration_ms: 10000 })], scope), semantics: 'runtime_turn_elapsed', boundary: 'runtime_turn_clock_to_result' };
   const submittedCandidate = candidateTurnTiming([candidate('input.submitted', 10), candidate('runtime.turn_settled', 20, { turnId: 'b' })]);
   const sameProduct = { baseline: 'codex', candidate: 'codex' };
   assert.equal(timingComparable(historicalFacts, nativeCandidate, sameProduct), true);
@@ -258,7 +258,7 @@ test('initialization-only tail retains session evidence while real activity rema
 
 test('semantic and auditable task scope equality replaces product identity', () => {
   const scope = { kind: 'selected_task' as const, identity: 'selection:task', refs: ['selection:boundary'] };
-  const native = { ...historicalTurnTiming([historical('task_complete', 10, { turn_id: 'a', duration_ms: 1000 })], scope), semantics: 'runtime_turn_elapsed', boundary: 'runtime_admission_to_settlement' };
+  const native = { ...historicalTurnTiming([historical('task_complete', 10, { turn_id: 'a', duration_ms: 1000 })], scope), semantics: 'runtime_turn_elapsed', boundary: 'runtime_turn_clock_to_result' };
   assert.equal(compareTiming(native, native).status, 'comparable');
   assert.equal(compareTiming(native, { ...native, diagnostics: ['overlapping_turn_intervals_summed'] }).status, 'reference');
   assert.equal(compareTiming(native, { ...native, boundary: 'api_requests_only' }).status, 'reference');
@@ -273,9 +273,10 @@ test('semantic and auditable task scope equality replaces product identity', () 
 });
 
 test('versioned Runtime timing accepts only identified per-turn values, not cumulative counters', () => {
-  const native = { schemaVersion: 1, valueMs: 1234, semantics: 'runtime_turn_elapsed', boundary: 'runtime_admission_to_settlement',
+  const native = { schemaVersion: 1, valueMs: 1234, semantics: 'runtime_turn_elapsed', boundary: 'runtime_turn_clock_to_result',
     aggregation: 'per_turn', turnId: 't1', clientMessageId: 'm1', resultId: 'r1' };
   assert.equal(Value.Check(RuntimeTurnTimingSchema, native), true);
+  assert.equal(Value.Check(RuntimeTurnTimingSchema, { ...native, boundary: 'runtime_admission_to_settlement' }), false);
   assert.equal(Value.Check(RuntimeTurnTimingSchema, { ...native, aggregation: 'session_cumulative' }), false);
   const projected = candidateTurnTiming([
     candidate('input.submitted', 1, { clientMessageId: 'm1' }),

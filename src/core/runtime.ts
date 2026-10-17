@@ -43,12 +43,12 @@ export type TurnSettlement = {
   timing?: RuntimeTurnTiming;
 };
 
-/** One identified turn, including tools and runtime waits; never API-only or session cumulative time. */
+/** One identified turn from the runtime turn-clock start to result creation; excludes any earlier admission or queue delay. */
 export type RuntimeTurnTiming = {
   schemaVersion: 1;
   valueMs: number;
   semantics: 'runtime_turn_elapsed';
-  boundary: 'runtime_admission_to_settlement';
+  boundary: 'runtime_turn_clock_to_result';
   aggregation: 'per_turn';
   turnId: string;
   clientMessageId: string;

@@ -374,7 +374,7 @@ export class ClaudeTargetRunner implements TargetRunner {
       : undefined;
     const turnId = identity?.clientMessageId ?? `turn-${this.#turnIndex || 1}`;
     const timing = { schemaVersion: 1, valueMs: frame.duration_ms, semantics: 'runtime_turn_elapsed',
-      boundary: 'runtime_admission_to_settlement', aggregation: 'per_turn', turnId,
+      boundary: 'runtime_turn_clock_to_result', aggregation: 'per_turn', turnId,
       clientMessageId: identity?.clientMessageId, ...(resultId ? { resultId } : {}) };
     const settlement: TurnSettlement = {
       turnId,
