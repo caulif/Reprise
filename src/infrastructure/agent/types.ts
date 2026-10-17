@@ -1,7 +1,7 @@
 import type { TSchema } from "@sinclair/typebox";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { AgentFailureKind } from "./failure.js";
-import type { AgentUsageFacts } from '../../core/schema.js';
+import type { AgentUsageFacts, AgentUsageEstimate } from '../../core/schema.js';
 
 export type { AgentFailureKind };
 
@@ -66,6 +66,7 @@ export type AgentAuditEventType =
   | "comparison.phase_completed"
   | "comparison.resources_completed"
   | "agent.usage_reported"
+  | "agent.usage_estimated"
   | "agent.session_started"
   | "agent.session_completed"
   | "agent.session_failed"
@@ -235,9 +236,10 @@ export interface ProviderAdapter {
       byteLength: number;
       contentDigest: string;
     }) => Promise<void>;
-    onModelRequest?: (payload: { model: string; digest: string; messageCount: number; images?: readonly ImageContent[]; scope?: 'generation' | 'compaction'; compactionContext?: { systemPrompt?: string; messages: readonly unknown[]; tools?: readonly unknown[] }; generationContext?: { systemPrompt?: string; messages: readonly unknown[]; tools?: readonly unknown[] } }) => Promise<void>;
-    onModelStream?: (payload: { startedAt: number; firstEventAt: number | null; firstTextAt: number | null; finishedAt: number; events: number }) => Promise<void>;
+    onModelRequest?: (payload: { requestId?: string; model: string; digest: string; messageCount: number; images?: readonly ImageContent[]; scope?: 'generation' | 'compaction'; compactionContext?: { systemPrompt?: string; messages: readonly unknown[]; tools?: readonly unknown[] }; generationContext?: { systemPrompt?: string; messages: readonly unknown[]; tools?: readonly unknown[] } }) => Promise<void>;
+    onModelStream?: (payload: { requestId?: string; startedAt: number; firstEventAt: number | null; firstTextAt: number | null; finishedAt: number; events: number }) => Promise<void>;
     onModelUsage?: (payload: AgentUsageFacts) => Promise<void>;
+    onModelUsageEstimated?: (payload: AgentUsageEstimate) => Promise<void>;
   }): Promise<ProviderSession> | ProviderSession;
 }
 

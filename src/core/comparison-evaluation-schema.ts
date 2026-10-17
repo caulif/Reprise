@@ -1,3 +1,4 @@
+import { CostBasisSchema } from './comparison-resources-schema.js';
 import { Type, type Static } from '@sinclair/typebox';
 
 const Id = Type.String({ minLength: 1, pattern: '^[a-z0-9-]+$' });
@@ -55,6 +56,9 @@ export const ComparisonEvaluationLedgerSchema = Type.Object({
     usage: Type.Optional(Type.Object({ input: Count, output: Count, cacheRead: Count, cacheWrite: Count, totalTokens: Count })),
     estimatedCostUsd: Type.Optional(Type.Number({ minimum: 0 })),
     knownEstimatedCostUsd: Type.Optional(Type.Number({ minimum: 0 })),
+    fallbackEstimatedCostUsd: Type.Optional(Type.Number({ minimum: 0 })),
+    fallbackRequests: Type.Optional(Count),
+    costBasis: Type.Optional(CostBasisSchema),
     pricingLookup: Type.Union([Type.Literal('hit'), Type.Literal('miss'), Type.Literal('invalid')]),
     review: Type.Optional(Type.Object({
       reviewer: Type.String({ minLength: 1 }),

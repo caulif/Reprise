@@ -45,5 +45,7 @@ test('stream observation separates first SDK event from visible text and never r
   t.mock.timers.tick(20);
   for await (const _event of stream) t.mock.timers.tick(10);
   await usage.flush();
-  assert.deepEqual(facts, { startedAt: 1000, firstEventAt: 1020, firstTextAt: 1030, finishedAt: 1050, events: 3 });
+  assert.equal(typeof facts?.requestId, 'string');
+  const { requestId: _requestId, ...timing } = facts!;
+  assert.deepEqual(timing, { startedAt: 1000, firstEventAt: 1020, firstTextAt: 1030, finishedAt: 1050, events: 3 });
 });

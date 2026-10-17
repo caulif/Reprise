@@ -612,12 +612,12 @@ async function invokeCompare(
   } });
   const requireFindings = input.input.comparison.requireFindings === true;
   const override = loadOperatorPricingOverride(input.input.dataDir);
-  const estimateUsageCost = (payload: Record<string, unknown>): number | undefined => {
+  const estimateUsageCost = (payload: Record<string, unknown>) => {
     if (!Value.Check(AgentUsageFactsSchema, payload)) throw new Error('Invalid Comparison usage facts.');
     const usage = payload.usage;
     return usagePricing({ parts: { input: usage.input, output: usage.output, cacheRead: usage.cacheRead, cacheCreation: usage.cacheWrite },
       display: usage.totalTokens, inputIncludesCache: false }, payload.model, undefined,
-      { ...(override ? { override } : {}) }).costUsd;
+      { ...(override ? { override } : {}) });
   };
   const renderChecks: ComparisonRenderedCheck[] = [];
   const quoteSources = quoteSourcesForAttempt(input, attemptRoot, catalog, context.allowModelText);

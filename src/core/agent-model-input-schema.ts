@@ -29,6 +29,7 @@ export const AgentImageRefSchema = Type.Object({
 export type AgentImageRef = Static<typeof AgentImageRefSchema>;
 
 export const AgentModelRequestFactsSchema = Type.Object({
+  requestId: Type.Optional(Type.String({ minLength: 1 })),
   scope: Type.Optional(Type.Union([Type.Literal('generation'), Type.Literal('compaction')])),
   compactionInput: Type.Optional(AgentTextBodySchema),
   generationInput: Type.Optional(AgentTextBodySchema),

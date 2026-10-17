@@ -10,7 +10,7 @@ export { ComparisonAttemptReferenceSchema, ComparisonReportOwnerSchema, Comparis
 export { RecoveryGitStartSchema, type RecoveryGitStart } from './recovery-git-start.js';
 export { ComparisonAutonomousContractSchema } from './comparison-review-schema.js';
 import { EvidenceRefSchema, Hash, Id } from "./schemas/ids.js";
-export { AgentUsageFactsSchema, type ComparisonResources, type AgentUsageFacts } from './comparison-resources-schema.js';
+export { AgentUsageFactsSchema, AgentUsageEstimateSchema, type ComparisonResources, type AgentUsageFacts, type AgentUsageEstimate } from './comparison-resources-schema.js';
 export { ComparisonFindingsSubmissionSchema, ComparisonFindingsToolSubmissionSchema, ComparisonDiscoveryRecordSchema, type ComparisonSupportBoundary, type ComparisonFindingsSubmission, type ComparisonDiscoveryRecord } from './comparison-discovery-schema.js';
 export { ComparisonFindingsCompleteToolSubmissionSchema, ComparisonFindingsDeltaSchema, ComparisonFindingsDedicatedDeltaSchema, ComparisonFindingCheckpointSchema, type ComparisonFindingsDelta } from './comparison-discovery-schema.js';
 export { ComparisonInvestigationClosedSchema, type ComparisonInvestigationClosure } from './comparison-discovery-schema.js';
