@@ -126,7 +126,7 @@ Attempt 作用域持有可修订的证据 catalog：权威 revision 落在 `fact
 
 Host 预置 HTML 模板并拥有 header、metrics、cost-note、evidence、process 等区域；新报告 `data-report-format="2"` 的 Agent 区为 `comparison`（主创作）与可选 `details`（可见 `<details>`）。Agent 在 `comparison` 内自主选择并排图、表格、短片段或步骤；无图时不强制空视觉段；单侧真实结果可保留但须就近写明缺失方。Host 从草稿中结构化提取唯一、完整的 Agent 区与允许的槽，以本 attempt 的任务、指标、证据、媒体和受控模板重建整页；不明确的槽边界拒绝提取。Agent 区禁止可执行标签、SVG/MathML、事件属性和危险 URL；只允许链接的 `href` 与图片的 `src` 使用相对 URL，图片仍须经过媒体登记和文件可读性检查，其他资源属性直接拒绝。矢量内容须作为已登记媒体进入报告。重建后仍经过 schema、HTML 契约、evidence/media 引用、模型已见图片和外部资源检查，失败则不发布。展示问题由 Host 确定性修复，无法修复时记录 limitations 并仍可发布，不能把所有样式问题提升为失败门禁。Agent 的自然语言判断不能覆盖确定性事实，证据缺失必须明确说明，不得伪造引用。版式与发布取舍见[自主任务比较报告区与安全发布](../decisions/accepted/2026-09-19-comparison-autonomous-report-zones.md)和[Host 重建报告](../decisions/accepted/2026-09-23-host-rebuilt-comparison-report.md)。
 
-配对差异的可选 baselineAssessment / candidateAssessment 分别表达 better、worse、similar、unknown 或 unverified；新请求提示显式提交双侧评判，Host 将更好结果短语标深绿、更差标暗橙，其余标中性灰，并给出状态文字。未提供字段的旧模型保持未分级中性，不从推荐侧或旧句子推断。未知、自报和未测试不能仅因证据缺失标成更差。状态是作者判断，不是 Host 的语义认证；字段随 schema、草稿、预览绑定及持久化模型往返，不影响只显示名称和数值的三行指标表。
+配对差异的可选 baselineAssessment / candidateAssessment 分别表达 better、worse、similar、unknown 或 unverified；新请求提示显式提交双侧评判，Host 将更好结果短语标深绿、更差标暗橙，其余标中性灰；页面仅显示结果短语，不追加“更好／更差”等状态词，朗读状态由无障碍标签提供。未提供字段的旧模型保持未分级中性，不从推荐侧或旧句子推断。未知、自报和未测试不能仅因证据缺失标成更差。状态是作者判断，不是 Host 的语义认证；字段随 schema、草稿、预览绑定及持久化模型往返，不影响只显示名称和数值的三行指标表。
 
 兼容 format 2 报告以独立结论区突出判断，随后紧凑展示时间、估算费用与 Token 总量，再呈现关键差异；仅 Token 分项默认折叠。初始结论、比较正文与可选详情槽位留空，组件原型只在不可见的 `<template>` 内提供结构，不预填赢家、差异数量、核验标签或媒体引用；已登记媒体仍在 Host 目录中供 Agent 选择，不自动配入正文。Agent 按任务组织实际差异、用户影响、必要证据及重要未知，省略不用的组件。旧整页草稿的缺失内容修复与限制说明继续兼容。当前 format 6 不设详情区，见上文[Comparison attempt](#comparison-attempt)。历史理由见[空槽位与结论优先的报告骨架](../decisions/accepted/2026-10-14-comparison-empty-report-template.md)。
 

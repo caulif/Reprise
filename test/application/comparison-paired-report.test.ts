@@ -36,11 +36,12 @@ test('per-result assessments color supported differences independently and survi
   ];
   const html = render({ pairedDifferences });
   assert.equal(comparisonCompactTextBudgetError(html), undefined);
-  assert.match(html, /assessment-better[^<]*"><span class="assessment-label">更好 · <\/span><strong data-result-field="baseline" data-result-assessment="better"/);
-  assert.match(html, /assessment-worse[^<]*"><span class="assessment-label">更差 · <\/span><strong data-result-field="candidate" data-result-assessment="worse"/);
-  assert.match(html, /assessment-neutral[^<]*"><span class="assessment-label">未知 · /);
-  assert.match(html, /assessment-neutral[^<]*"><span class="assessment-label">未验证 · /);
-  assert.match(html, /assessment-neutral[^<]*"><span class="assessment-label">相近 · /);
+  assert.match(html, /assessment-better" role="group" aria-label="更好"><strong data-result-field="baseline" data-result-assessment="better"/);
+  assert.match(html, /assessment-worse" role="group" aria-label="更差"><strong data-result-field="candidate" data-result-assessment="worse"/);
+  assert.match(html, /assessment-neutral" role="group" aria-label="未知"/);
+  assert.match(html, /assessment-neutral" role="group" aria-label="未验证"/);
+  assert.match(html, /assessment-neutral" role="group" aria-label="相近"/);
+  assert.doesNotMatch(html, /assessment-label|>(?:更好|更差|未验证|未知|相近) · /);
   const extracted = agentContentFromDraft(html);
   assert.ok('slots' in extracted);
   assert.deepEqual(extracted.slots.pairedDifferences, pairedDifferences);

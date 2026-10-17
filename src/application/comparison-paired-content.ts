@@ -38,7 +38,7 @@ function result(side: 'baseline' | 'candidate', value: string, assessment: Compa
   const labels: Record<string, [string, string]> = { better: ['更好', 'Better'], worse: ['更差', 'Worse'], similar: ['相近', 'Similar'], unknown: ['未知', 'Unknown'], unverified: ['未验证', 'Unverified'] };
   const label = assessment ? labels[assessment]?.[zh ? 0 : 1] : undefined;
   const tone = assessment === 'better' ? 'better' : assessment === 'worse' ? 'worse' : 'neutral';
-  return `<p><span class="side">${zh ? side === 'baseline' ? '历史' : '当前' : side === 'baseline' ? 'History' : 'Current'}</span><span class="result-phrase assessment-${tone}">${label ? `<span class="assessment-label">${label} · </span>` : ''}<strong data-result-field="${side}"${assessment === undefined ? '' : ` data-result-assessment="${pairedEscape(assessment)}"`}>${pairedEscape(value)}</strong></span></p>`;
+  return `<p><span class="side">${zh ? side === 'baseline' ? '历史' : '当前' : side === 'baseline' ? 'History' : 'Current'}</span><span class="result-phrase assessment-${tone}"${label ? ` role="group" aria-label="${pairedEscape(label)}"` : ''}><strong data-result-field="${side}"${assessment === undefined ? '' : ` data-result-assessment="${pairedEscape(assessment)}"`}>${pairedEscape(value)}</strong></span></p>`;
 }
 
 export function renderPairedContent(differences: readonly ComparisonPairedDifference[], media: string, zh: boolean): string {
