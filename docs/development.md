@@ -32,6 +32,8 @@ retained/replacement delta 的完整协议测试保留真实浏览器预览，�
 
 测试读取 dist，源码或测试变化后必须先构建；不能直接用 `node --test` 跑 TypeScript。lint 与类型检查分别检查不同问题，不能互相替代。按风险选择检查，不为一项文档修改重复执行全套测试。
 
+覆盖率 CI 的作业墙钟预算独立于产品超时与覆盖率阈值；预算不足时应先区分作业取消和测试失败，不跳过断言或放宽阈值。调整依据见[覆盖率作业预算](decisions/accepted/2026-10-18-coverage-job-budget.md)。
+
 测试维护原则与 Comparison 场景入口见[测试覆盖索引](../test/README.md)；文件存在不代表能力通过。历史 cwd 使用临时项目，恢复样本按不同内容与扰动执行，权限不足仅跳过对应子用例；退避协议使用虚拟时间，真实系统边界仍保留集成回归。取舍见[行为测试维护决策](decisions/accepted/2026-10-14-behavior-focused-test-maintenance.md)。
 
 ## 工程门禁

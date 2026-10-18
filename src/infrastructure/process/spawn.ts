@@ -65,7 +65,8 @@ export function spawnRuntimeProcess(
   const child = spawn(invocation.command, [...invocation.args], {
     ...spawnOptions,
     cwd,
-    env: completeEnv ?? isolateCandidateProcessEnv(env, typeof cwd === 'string' ? cwd : undefined),
+    // Node 22 mutates env to propagate coverage; an own undefined key blocks that inheritance.
+    env: completeEnv ? { ...completeEnv, NODE_V8_COVERAGE: completeEnv.NODE_V8_COVERAGE } : isolateCandidateProcessEnv(env, typeof cwd === 'string' ? cwd : undefined),
     shell: false,
     ...(invocation.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
     ...(host !== 'win32' && spawnOptions.detached === undefined ? { detached: true } : {}),

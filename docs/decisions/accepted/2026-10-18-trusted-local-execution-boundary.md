@@ -8,7 +8,7 @@ Candidate 的环境覆盖曾被 Runner 再合并宿主环境；共用 spawn 还�
 
 ## 决定
 
-Candidate 使用角色允许列表，不能把 Harness 进程的所有环境交给 Runtime。通用 spawn 同时承载浏览器和 managed shell，因此不全局替换历史行为；新增 completeEnv 表示完整环境，不再补宿主变量。旧 env 仍表示受信任本地调用方覆盖项；Codex/Claude client 先选基础环境与产品配置，再应用覆盖项。未知宿主变量、运行时注入与无关认证默认不继承；显式覆盖禁止 Git 防线绕过和已知运行时注入。Host shell 的覆盖仅允许现有 Host 挂载位置。
+Candidate 使用角色允许列表，不能把 Harness 进程的所有环境交给 Runtime。通用 spawn 同时承载浏览器和 managed shell，因此不全局替换历史行为；新增 completeEnv 表示完整环境，不再补宿主变量。spawn 向 Node 传递环境副本；未选择的 NODE_V8_COVERAGE 显式设为 undefined，阻止 Node 22 自动传播覆盖率配置时修改冻结对象或绕过选择规则。显式选择该变量时保留原值，旧 env 路径维持原有覆盖率传播。旧 env 仍表示受信任本地调用方覆盖项；Codex/Claude client 先选基础环境与产品配置，再应用覆盖项。未知宿主变量、运行时注入与无关认证默认不继承；显式覆盖禁止 Git 防线绕过和已知运行时注入。Host shell 的覆盖仅允许现有 Host 挂载位置。
 
 基础环境保留 Windows 工具链、用户配置定位和 locale。Codex 额外选择 CODEX_HOME、OPENAI_BASE_URL，沿用原生文件登录，不读取或复制 Codex 凭据。Claude 选择 CLAUDE_CONFIG_DIR、CLAUDE_CODE_OAUTH_TOKEN、ANTHROPIC_API_KEY、ANTHROPIC_AUTH_TOKEN、ANTHROPIC_BASE_URL。两者选择标准代理、CA 变量，仅在内存消费值。受信任本地覆盖可明确选用其他变量，不能由模型或工具参数设置。目录查询和文本调用保留各自协议参数，也使用产品环境选择；Codex 的非 Candidate 服务入口保留原有 OPENAI_API_KEY 认证来源，不能将此规则用于 Candidate。浏览器保留原入口语义。
 

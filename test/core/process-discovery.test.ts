@@ -47,6 +47,33 @@ test("non-cmd executables keep an argv array", () => {
   );
 });
 
+test('complete environments remain frozen and do not inherit Node coverage', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-spawn-coverage-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const previous = process.env.NODE_V8_COVERAGE;
+  process.env.NODE_V8_COVERAGE = join(root, 'host-coverage');
+  try {
+    for (const explicit of [false, true]) {
+      const coverage = explicit ? join(root, 'selected-coverage') : undefined;
+      const completeEnv = Object.freeze({ REPRISE_SELECTED: 'fixed', ...(coverage ? { NODE_V8_COVERAGE: coverage } : {}) });
+      const keys = Object.keys(completeEnv);
+      const child = spawnRuntimeProcess(process.execPath, ['-e', 'process.stdout.write(JSON.stringify({selected:process.env.REPRISE_SELECTED,coverage:process.env.NODE_V8_COVERAGE??null}))'], { completeEnv, stdio: 'pipe' });
+      let output = '';
+      child.stdout.on('data', chunk => { output += String(chunk); });
+      const code = await new Promise<number | null>((resolve, reject) => {
+        child.once('error', reject);
+        child.once('close', resolve);
+      });
+      assert.equal(code, 0);
+      assert.deepEqual(JSON.parse(output), { selected: 'fixed', coverage: coverage ?? null });
+      assert.deepEqual(Object.keys(completeEnv), keys);
+    }
+  } finally {
+    if (previous === undefined) delete process.env.NODE_V8_COVERAGE;
+    else process.env.NODE_V8_COVERAGE = previous;
+  }
+});
+
 test("Windows .cmd with extra args and spaces in the path starts", async (t) => {
   if (process.platform !== "win32") return;
   const root = await mkdtemp(join(tmpdir(), "reprise cmd "));
