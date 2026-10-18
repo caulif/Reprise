@@ -15,6 +15,7 @@ import { FAKE_APP_SERVER } from '../codex-pack-support.js';
 import { workspaceTools } from '../../src/infrastructure/recovery-workspace-tools.js';
 import { ExperimentStore } from '../../src/infrastructure/store/experiment-store.js';
 import { projectTimelineEvent } from '../../src/tui/timeline.js';
+import { codexExecutionObservation } from '../../src/products/packs/codex/protocol.js';
 
 async function persistAndCheckRedaction(root: string, boundary: ExecutionBoundary, events: unknown[]): Promise<void> {
   const directory = join(root, 'experiment');
@@ -164,7 +165,7 @@ test('actual Host shell excludes fake Harness credentials and rejects credential
   assert.throws(() => workspaceTools(root, { allowShell: true, shellEnv: { ANTHROPIC_API_KEY: 'fake' } }), /Unsupported Host/);
 });
 
-async function nativeFake(root: string, product: 'codex' | 'claude-code'): Promise<string> {
+async function nativeFake(root: string, product: 'codex' | 'claude-code', policy: unknown = { type: 'readOnly', networkAccess: false }): Promise<string> {
   const script = join(root, 'native fake.mjs');
   const marker = join(root, 'native.json');
   await writeFile(script, `
@@ -175,7 +176,9 @@ process.stdin.on('data', chunk=>{buffer+=chunk;for(let end=buffer.indexOf('\\n')
 const m=JSON.parse(buffer.slice(0,end));buffer=buffer.slice(end+1);
 methods.push(m.method??m.type);writeFileSync(${JSON.stringify(marker)}, JSON.stringify({methods,args:process.argv.slice(2)}));
 if(m.method==='initialize')send({id:m.id,result:{}});
-else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'thread-1'},model:'fake',sandbox:'read-only'}});
+else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'thread-1'},model:'fake',sandbox:${JSON.stringify(policy)}}});
+else if(m.method==='turn/start')send({id:m.id,result:{turn:{id:'turn-1'}}});
+else if(m.method==='turn/interrupt')send({id:m.id,result:{}});
 else if(m.type==='user') {send({type:'user',isReplay:true,uuid:m.uuid});send({type:'system',subtype:'init',permissionMode:'default'});}
 }});
 `);
@@ -218,6 +221,41 @@ for (const product of ['codex', 'claude-code'] as const) test(`${product}: nativ
   if (product === 'claude-code') assert.equal(observed.args[observed.args.indexOf('--permission-mode') + 1], 'bypassPermissions');
   assert.equal(plan.record.native.confirmation, 'unknown');
   await runner.stop('shutdown');
+});
+
+const nativePolicyCases = [
+  { configured: 'read-only', policy: { type: 'readOnly', networkAccess: false }, observed: 'read-only', matches: true },
+  { configured: 'workspace-write', policy: { type: 'workspaceWrite', writableRoots: ['C:/example/extra'], networkAccess: false, excludeTmpdirEnvVar: true, excludeSlashTmp: false }, observed: 'workspace-write', matches: true },
+  { configured: 'danger-full-access', policy: { type: 'dangerFullAccess' }, observed: 'danger-full-access', matches: true },
+  { configured: 'read-only', policy: { type: 'dangerFullAccess' }, observed: 'danger-full-access', matches: false },
+  { configured: 'read-only', policy: { type: 'externalSandbox', networkAccess: 'restricted' }, observed: 'external-sandbox', matches: false },
+] as const;
+
+for (const scenario of nativePolicyCases) test(`Codex native policy object: ${scenario.observed} against ${scenario.configured}`, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-native-policy-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const executable = await nativeFake(root, 'codex', scenario.policy);
+  const runtime = new CodexProductRuntime({ sandbox: scenario.configured });
+  const resolved = { productId: 'codex', executable, requestedModel: 'fake', resolvedModel: 'unknown' };
+  const environment = { environmentId: 'environment-run-1', runId: 'run-1', root };
+  const events: { type: string; payload: unknown }[] = [];
+  const runner = await runtime.createRunner(resolved, environment, { append: async event => { events.push(event); } }, candidateLaunchFor(resolved, environment));
+  t.after(() => runner.close());
+  const started = runner.start({ id: 'first', text: 'fake' }, { runId: 'run-1', turnIndex: 0, clientMessageId: 'first' });
+  if (scenario.matches) assert.equal((await started).delivery, 'accepted');
+  else await assert.rejects(started, /conflicts/);
+  assert.deepEqual(nativeExecutionObservations(events), [{ source: 'runtime-native', permissionMode: scenario.observed, matchesConfigured: scenario.matches }]);
+  const calls = JSON.parse(await readFile(join(root, 'native.json'), 'utf8')) as { methods: string[] };
+  assert.equal(calls.methods.includes('turn/start'), scenario.matches);
+  assert.doesNotMatch(JSON.stringify(events), /writableRoots|C:\/example\/extra/);
+  await runner.stop('shutdown');
+});
+
+test('Codex malformed and future policy objects remain unconfirmed', () => {
+  for (const policy of [{ type: 'readOnly' }, { type: 'readOnly', networkAccess: 'false' }, { type: 'workspaceWrite', writableRoots: [] }, { type: 'futurePolicy' }]) {
+    assert.equal(codexExecutionObservation(policy, 'read-only'), undefined);
+  }
+  assert.equal(codexExecutionObservation('read-only', 'read-only')?.matchesConfigured, true);
 });
 
 test('new manifest field is optional for historical readers', () => {

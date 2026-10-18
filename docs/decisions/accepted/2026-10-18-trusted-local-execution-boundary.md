@@ -12,9 +12,9 @@ Candidate 使用角色允许列表，不能把 Harness 进程的所有环境交�
 
 基础环境保留 Windows 工具链、用户配置定位和 locale。Codex 额外选择 CODEX_HOME、OPENAI_BASE_URL，沿用原生文件登录，不读取或复制 Codex 凭据。Claude 选择 CLAUDE_CONFIG_DIR、CLAUDE_CODE_OAUTH_TOKEN、ANTHROPIC_API_KEY、ANTHROPIC_AUTH_TOKEN、ANTHROPIC_BASE_URL。两者选择标准代理、CA 变量，仅在内存消费值。受信任本地覆盖可明确选用其他变量，不能由模型或工具参数设置。目录查询和文本调用保留各自协议参数，也使用产品环境选择；Codex 的非 Candidate 服务入口保留原有 OPENAI_API_KEY 认证来源，不能将此规则用于 Candidate。浏览器保留原入口语义。
 
-可选 ProductRuntime.prepareExecution 返回脱敏记录与捕获同一配置的 Runner 工厂。内置 Pack 冻结环境、argv 与权限参数；工厂不再读取宿主环境。环境值和原始 argv 不进入 manifest。Candidate 临时目录实际启动时创建，client close 时清理；清理失败不吞掉，未创建的目录不当作自己拥有。Host shell 在工具装配时冻结选用环境和挂载覆盖，复用原 invocation home 作为临时目录。
+可选 ProductRuntime.prepareExecution 返回脱敏记录与捕获同一配置的 Runner 工厂。内置 Pack 冻结环境、argv 与权限参数；工厂不再读取宿主环境。环境值和原始 argv 不进入 manifest。Candidate 临时目录实际启动时创建，client close 时清理；清理失败不吞掉，未创建的目录不当作自己拥有。关闭请求先封闭启动入口，等待进行中的目录准备确定所有权再清理；准备结束后重新检查关闭状态，禁止关闭完成后产生晚到进程。Host shell 在工具装配时冻结选用环境和挂载覆盖，复用原 invocation home 作为临时目录。
 
-RunManifest 的可选 executionBoundary 保存启动时 Host 配置与 Pack 声明。原生确认仅来自结构化产品输出，位于 runtime.session_started 的可选 executionObservation，不回写 manifest。Codex 仅在 thread/start 返回明确 sandbox 字符串时记录；缺失或其他形态保持未知。Claude 在 init 报告已知 permissionMode 时记录；init 可能晚于首次消息，冲突时停止后续执行，不能称为启动前阻断。显式 argv 覆盖不能认证 Claude 默认参数已配置，其原生模式保持未知。
+RunManifest 的可选 executionBoundary 保存启动时 Host 配置与 Pack 声明。原生确认仅来自结构化产品输出，位于 runtime.session_started 的可选 executionObservation，不回写 manifest。Codex 在 Pack 内校验 thread/start 返回的 SandboxPolicy 对象，归一化 readOnly、workspaceWrite、dangerFullAccess 和 externalSandbox，再经公共原生观察 schema 校验后记录；兼容已有字符串形式。缺失、畸形或未知 policy 保持未确认。确认仅表示原生报告的模式，不认证其文件或网络隔离效果。Claude 在 init 报告已知 permissionMode 时记录；init 可能晚于首次消息，冲突时停止后续执行，不能称为启动前阻断。显式 argv 覆盖不能认证 Claude 默认参数已配置，其原生模式保持未知。
 
 明确要求文件隔离、禁止全部扩展或不匹配的原生权限时，规划失败且不创建子进程。缺少规划能力的旧 Pack 不得认证显式要求。普通 EPERM、exit 1、超时仍为执行故障；原生 permission_denials 沿既有事件与产品投影保存。不新增宽权限重试或通用拒绝恢复。
 
@@ -34,6 +34,6 @@ RunManifest 的可选 executionBoundary 保存启动时 Host 配置与 Pack 声�
 
 ## 验证
 
-离线验证使用 fake Runtime、本机子进程、假认证和代理值，覆盖 Runner 不回灌、持久化脱敏、Host shell 冻结、原生模式冲突后停止、临时目录清理及旧记录兼容。执行源码 build、相关测试与 npm run check。真实 Codex/Claude 登录、网络、版本兼容与原生隔离须另行显式 opt-in；离线测试不认证这些能力。
+离线验证使用 fake Runtime、本机子进程、假认证和代理值，覆盖 Runner 不回灌、持久化脱敏、Host shell 冻结、原生模式冲突后停止、临时目录清理及旧记录兼容。回归覆盖目录创建期间关闭、创建失败时保留非所属目录、清理错误传播，以及 Codex 真实对象型 policy 的匹配、冲突和无效输入。执行源码 build、相关测试与 npm run check。真实 Codex/Claude 登录、网络、版本兼容与原生隔离须另行显式 opt-in；离线测试不认证这些能力。
 
 当前规则见[执行](../../architecture/execution.md)、[架构](../../architecture/overview.md)和[运行说明](../../usage.md)。

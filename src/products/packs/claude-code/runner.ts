@@ -56,6 +56,9 @@ class ClaudeProcessCloseError extends Error {
  */
 export class ClaudeStreamClient {
   #temporaryOwned = false;
+  #preparing: Promise<void> | undefined;
+  #starting: Promise<void> | undefined;
+  #closing: Promise<void> | undefined;
   readonly #temporaryDirectory: string | undefined;
   readonly #executable: string;
   readonly #cwd: string;
@@ -96,10 +99,16 @@ export class ClaudeStreamClient {
   }
 
   async start(): Promise<void> {
-    if (this.#process) return;
+    if (this.#closed) throw new ClaudeRuntimeUnavailableError('Claude Code client is closed.');
+    this.#starting ??= this.#startOnce();
+    return this.#starting;
+  }
+
+  async #startOnce(): Promise<void> {
     if (this.#temporaryDirectory) {
-      await mkdir(this.#temporaryDirectory);
-      this.#temporaryOwned = true;
+      this.#preparing = mkdir(this.#temporaryDirectory).then(() => { this.#temporaryOwned = true; });
+      await this.#preparing;
+      if (this.#closed) throw new ClaudeRuntimeUnavailableError('Claude Code client is closed.');
     }
     const child = spawnRuntimeProcess(this.#executable, this.#args, {
       cwd: this.#cwd,
@@ -159,16 +168,18 @@ export class ClaudeStreamClient {
   }
 
   async close(): Promise<void> {
+    this.#closed = true;
+    this.#closing ??= this.#closeOnce();
+    return this.#closing;
+  }
+
+  async #closeOnce(): Promise<void> {
+    if (this.#preparing) await this.#preparing;
     const child = this.#process;
-    if (!child) {
-      if (this.#temporaryOwned && this.#temporaryDirectory) {
-        await rm(this.#temporaryDirectory, { recursive: true, force: true });
-        this.#temporaryOwned = false;
-      }
-      return;
+    if (child) {
+      try { child.stdin.end(); } catch { /* already closed */ }
+      await forceCloseRuntimeProcess(child, this.#exit$, () => new ClaudeProcessCloseError(this.#executable));
     }
-    try { child.stdin.end(); } catch { /* already closed */ }
-    await forceCloseRuntimeProcess(child, this.#exit$, () => new ClaudeProcessCloseError(this.#executable));
     if (this.#temporaryOwned && this.#temporaryDirectory) {
       await rm(this.#temporaryDirectory, { recursive: true, force: true });
       this.#temporaryOwned = false;

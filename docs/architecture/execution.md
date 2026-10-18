@@ -32,9 +32,9 @@ RunOutcome 分别保存任务判断、运行终止和清理结果；调用 Runne
 
 内置 Pack 通过可选 ProductRuntime.prepareExecution 冻结本次环境、argv 和原生权限参数。RunManifest.environment.executionBoundary 只保存变量名、规则版本、Host 配置、Pack 声明和限制，不保存认证值或原始命令行。CandidateRun 在启动进程前提交 manifest；配置不支持或持久化失败不启动。旧 Pack/旧记录缺字段保持 unknown。
 
-Candidate client 的完整环境不再合并 process.env，保留 Git sink 与 token 禁用；Host shell 仅接受 Host 挂载变量覆盖，工具装配时冻结允许列表环境，临时目录沿用受控 home。候选临时目录在启动时创建、close 时清理。目录查询、文本调用和浏览器保留各自角色参数。代理与 CA 可传给 Runtime，但值不进入记录；Codex 登录文件不被读取或复制。
+Candidate client 的完整环境不再合并 process.env，保留 Git sink 与 token 禁用；Host shell 仅接受 Host 挂载变量覆盖，工具装配时冻结允许列表环境，临时目录沿用受控 home。候选临时目录在启动时创建、close 时清理；close 等待进行中的目录准备确定所有权，关闭后的启动续体不得创建进程。目录查询、文本调用和浏览器保留各自角色参数。代理与 CA 可传给 Runtime，但值不进入记录；Codex 登录文件不被读取或复制。
 
-runtime.session_started.executionObservation 仅在原生输出明确报告权限模式时追加。缺失保持未知；与配置冲突则停止后续投递和执行，保留实际时序。Claude init 可能晚于首条输入，不能称为启动前阻止。权限拒绝不触发放宽配置重试；普通 EPERM/exit 1 不标为策略拒绝。见[可信本地启动决策](../decisions/accepted/2026-10-18-trusted-local-execution-boundary.md)。
+runtime.session_started.executionObservation 仅在原生输出明确报告权限模式时追加。Codex 对象型 SandboxPolicy 在 Pack 内校验并归一化模式；缺失或畸形输入保持未知。与配置冲突则停止后续投递和执行，保留实际时序。Claude init 可能晚于首条输入，不能称为启动前阻止。权限拒绝不触发放宽配置重试；普通 EPERM/exit 1 不标为策略拒绝。见[可信本地启动决策](../decisions/accepted/2026-10-18-trusted-local-execution-boundary.md)。
 
 候选启动上下文写入 experiment/run 目录，至少绑定 experimentId、runId、产品、请求模型、解析模型、隔离工作区和权限。新 ExperimentSpec v2 只固定 TaskCase 身份；候选、policy 与有效 Harness 配置逐 run 记录，允许后续轮次变化，执行使用本次冻结快照。旧 spec 保留原字节，不能将其中的首次配置当作后续执行事实；旧 v1 case 仅核对当前保留内容，不补历史或 v2 认证。Comparison 使用独立的操作所属配置，不混入候选条件。持久化重比通过中立的已结束运行上下文进入报告层，不构造 Runtime、Controller、CandidateRun 或假 Session；未重建 Controller 决定明确为 not_reconstructed，未记录的起点类别保持未知。契约见[固定实验身份与重比上下文](../decisions/accepted/2026-10-15-fixed-experiment-identity-and-persisted-comparison-context.md)。
 

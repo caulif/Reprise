@@ -18,7 +18,7 @@ export const ExecutionBoundarySchema = Type.Object({
 export type ExecutionBoundary = Static<typeof ExecutionBoundarySchema>;
 export const NativeExecutionObservationSchema = Type.Object({
   source: Type.Literal('runtime-native'),
-  permissionMode: Type.Union(['read-only', 'workspace-write', 'danger-full-access', 'default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'].map(value => Type.Literal(value))),
+  permissionMode: Type.Union(['read-only', 'workspace-write', 'danger-full-access', 'external-sandbox', 'default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'].map(value => Type.Literal(value))),
   matchesConfigured: Type.Optional(Type.Boolean()),
 }, { additionalProperties: false });
 
@@ -32,7 +32,7 @@ export function nativeExecutionObservations(events: readonly { type: string; pay
 }
 
 export function nativeExecutionObservation(value: unknown, configured: string) {
-  if (typeof value !== 'string' || !['read-only', 'workspace-write', 'danger-full-access', 'default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'].includes(value)) return undefined;
+  if (typeof value !== 'string' || !['read-only', 'workspace-write', 'danger-full-access', 'external-sandbox', 'default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'].includes(value)) return undefined;
   return { source: 'runtime-native' as const, permissionMode: value, ...(configured === 'unknown' ? {} : { matchesConfigured: value === configured }) };
 }
 

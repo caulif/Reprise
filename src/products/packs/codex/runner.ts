@@ -1,4 +1,3 @@
-import { nativeExecutionObservation } from '../../../core/execution-boundary.js';
 import { isolateCandidateProcessEnv } from '../../../infrastructure/process/spawn.js';
 import { mkdir, rm } from 'node:fs/promises';
 import { selectedProcessEnvironment } from '../../../infrastructure/process/environment.js';
@@ -29,7 +28,7 @@ import {
   diagnosticMessage,
   parseReconnectAttempt,
 } from './turn-settlement.js';
-import { codexNotificationEvent } from './protocol.js';
+import { codexNotificationEvent, codexExecutionObservation } from './protocol.js';
 import type { CodexReasoningEffort, CodexSandboxMode } from './runtime.js';
 
 type JsonRpcId = number | string;
@@ -68,6 +67,8 @@ class CodexProcessCloseError extends Error {
  */
 export class CodexAppServerClient {
   #temporaryOwned = false;
+  #preparing: Promise<void> | undefined;
+  #starting: Promise<void> | undefined;
   readonly #temporaryDirectory: string | undefined;
   readonly #executable: string;
   readonly #cwd: string;
@@ -82,7 +83,6 @@ export class CodexAppServerClient {
   #nextId = 1;
   #pending = new Map<JsonRpcId, PendingRequest>();
   #requestTimeoutMs: number;
-  #started = false;
   #closed = false;
   #closedNotified = false;
   #closing: Promise<void> | undefined;
@@ -105,11 +105,16 @@ export class CodexAppServerClient {
   }
 
   async start(): Promise<void> {
-    if (this.#started) return;
     if (this.#closed) throw new CodexRuntimeUnavailableError('Codex app-server client is closed.');
+    this.#starting ??= this.#startOnce();
+    return this.#starting;
+  }
+
+  async #startOnce(): Promise<void> {
     if (this.#temporaryDirectory) {
-      await mkdir(this.#temporaryDirectory);
-      this.#temporaryOwned = true;
+      this.#preparing = mkdir(this.#temporaryDirectory).then(() => { this.#temporaryOwned = true; });
+      await this.#preparing;
+      if (this.#closed) throw new CodexRuntimeUnavailableError('Codex app-server client is closed.');
     }
     const child = spawnRuntimeProcess(this.#executable, this.#arguments, {
       cwd: this.#cwd,
@@ -142,7 +147,6 @@ export class CodexAppServerClient {
       clientInfo: { name: 'reprise', title: 'Reprise', version: '0.1.0' },
       capabilities: { experimentalApi: false, requestAttestation: false, optOutNotificationMethods: [] },
     });
-    this.#started = true;
   }
 
   async request(method: string, params?: unknown): Promise<unknown> {
@@ -172,9 +176,10 @@ export class CodexAppServerClient {
   }
 
   async #closeOnce(): Promise<void> {
+    this.#closed = true;
+    if (this.#preparing) await this.#preparing;
     const child = this.#process;
     const processClosed = this.#processClosed;
-    this.#closed = true;
     this.#process = undefined;
     for (const reader of this.#readers.splice(0)) reader.close();
     this.#failAll(new CodexRuntimeUnavailableError('Codex app-server client closed.'), false);
@@ -317,7 +322,7 @@ export class CodexTargetRunner implements TargetRunner {
       threadSource: 'reprise',
     });
     this.#thread = readStartedThread(result);
-    const observation = nativeExecutionObservation(record(result).sandbox, this.#sandbox);
+    const observation = codexExecutionObservation(record(result).sandbox, this.#sandbox);
     await this.#sink.append(runtimeTargetEvent('session_started', {
       threadId: this.#thread.id,
       model: this.#thread.model,
