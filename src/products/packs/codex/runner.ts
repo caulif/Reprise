@@ -397,6 +397,7 @@ export class CodexTargetRunner implements TargetRunner {
 
   async close(): Promise<void> {
     if (this.#status !== 'stopped') await this.stop('shutdown');
+    await this.#client.close();
     await this.#sink.append(runtimeTargetEvent('session_closed', { sessionId: this.#thread?.id ?? this.session().sessionId }));
   }
 

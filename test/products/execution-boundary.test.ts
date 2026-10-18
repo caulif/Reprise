@@ -130,6 +130,29 @@ if(message.type==='control_request') process.stdout.write(JSON.stringify({type:'
   await assert.rejects(invalid.prepareExecution(resolved, environment, launch), error => String(error).includes('Invalid Runtime argv') && !String(error).includes('secret'));
 });
 
+test('Codex runner close removes its temporary directory after unexpected process exit', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-boundary-exit-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const script = join(root, 'fake-exit.mjs');
+  const marker = join(root, 'temporary-directory.txt');
+  await writeFile(script, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, process.env.TEMP);\n${FAKE_APP_SERVER}`);
+  const runtime = new CodexProductRuntime({ args: [script, 'exit'] });
+  const resolved = { productId: 'codex', executable: process.execPath, requestedModel: 'fake', resolvedModel: 'unknown' };
+  const environment = { environmentId: 'environment-run-1', runId: 'run-1', root };
+  const events: string[] = [];
+  const runner = await runtime.createRunner(resolved, environment, { append: async event => { events.push(event.type); } }, candidateLaunchFor(resolved, environment));
+  t.after(() => runner.stop('shutdown'));
+  await runner.start({ id: 'first', text: 'fake' }, { runId: 'run-1', turnIndex: 0, clientMessageId: 'first' });
+  const temporaryDirectory = await readFile(marker, 'utf8');
+  await access(temporaryDirectory);
+  await assert.rejects(runner.waitForTurn(), /Codex app-server exited/);
+  assert.equal(await runner.inspect(), 'stopped');
+  await runner.close();
+  await assert.rejects(access(temporaryDirectory), { code: 'ENOENT' });
+  assert.ok(events.includes('runtime.session_closed'));
+  await runner.close();
+});
+
 test('Codex catalog/text client retains its native service authentication without Candidate inheritance', async t => {
   const root = await mkdtemp(join(tmpdir(), 'reprise-service-environment-'));
   t.after(() => rm(root, { recursive: true, force: true }));
