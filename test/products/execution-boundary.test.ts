@@ -207,7 +207,7 @@ else if(m.type==='user') {send({type:'user',isReplay:true,uuid:m.uuid});send({ty
 `);
   const executable = join(root, `${product} fake.${process.platform === 'win32' ? 'cmd' : 'sh'}`);
   await writeFile(executable, process.platform === 'win32'
-    ? `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`
+    ? `@echo off\r\n"${process.execPath}" "%~dp0native fake.mjs" %*\r\n`
     : `#!/bin/sh\nexec '${process.execPath}' '${script}' "$@"\n`);
   await chmod(executable, 0o755);
   return executable;
