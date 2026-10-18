@@ -1,3 +1,4 @@
+import { candidateExecutionPlan } from '../../shared/execution-plan.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -148,7 +149,20 @@ export class ClaudeCodeProductRuntime implements ProductRuntime {
     return LOCAL_SESSION_RECOVERY_CAPABILITIES;
   }
 
+  async prepareExecution(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, launch: CandidateLaunchContext) {
+    if (this.#options.args?.some(arg => arg.includes('\0'))) throw new Error('Invalid Runtime argv.');
+    const plan = candidateExecutionPlan('claude', environment.root, 'bypassPermissions', this.#options.env, launch.executionRequirements, Boolean(this.#options.args), this.#options.safeMode);
+    const options = { ...this.#options, ...(this.#options.args ? { args: [...this.#options.args] } : {}) };
+    const frozen = new ClaudeCodeProductRuntime(options);
+    const snapshot = { runtime: { ...runtime }, environment: { ...environment }, launch: structuredClone(launch) };
+    return { record: plan.record, createRunner: (sink: TargetEventSink) => frozen.#createRunner(snapshot.runtime, snapshot.environment, sink, snapshot.launch, plan) };
+  }
+
   async createRunner(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, sink: TargetEventSink, launch: CandidateLaunchContext): Promise<TargetRunner> {
+    return (await this.prepareExecution(runtime, environment, launch)).createRunner(sink);
+  }
+
+  async #createRunner(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, sink: TargetEventSink, launch: CandidateLaunchContext, plan: ReturnType<typeof candidateExecutionPlan>): Promise<TargetRunner> {
     assertIsolatedLaunchWorkspace({
       runtime,
       environment,
@@ -160,10 +174,11 @@ export class ClaudeCodeProductRuntime implements ProductRuntime {
       fail: (message) => new ClaudeRuntimeUnavailableError(message),
     });
     return new ClaudeTargetRunner({
+      completeEnv: plan.environment, temporaryDirectory: plan.temporaryDirectory, expectedPermissionMode: plan.record.native.permissionMode,
       runtime,
       environment,
       sink,
-      ...(this.#options.env ? { env: this.#options.env } : {}),
+      env: plan.environment,
       ...(this.#options.args ? { args: this.#options.args } : {}),
       ...(this.#options.safeMode ? { safeMode: true } : {}),
     });

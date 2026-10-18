@@ -4,6 +4,7 @@ Reprise                                       not recorded  ⚠ Cleanup incomple
   Task         Reprise model judged the task complete
   Cleanup      Incomplete
   Comparison   comparison not run
+  Execution boundary not recorded / not declared (unknown).
   Execution tool Codex
   Execution time 49s
  

@@ -1,3 +1,6 @@
+import { Value } from '@sinclair/typebox/value';
+import { ExecutionBoundarySchema, NativeExecutionObservationSchema } from '../core/schema.js';
+import { executionBoundaryText } from '../core/execution-boundary.js';
 import { record, text, type JsonRecord } from '../core/json.js';
 import { publicLiveOf } from '../core/public-live.js';
 import type { EventEnvelope } from '../core/schema.js';
@@ -287,6 +290,15 @@ export function projectTimelineEvent(event: EventEnvelope): readonly TimelineEnt
   const entry = timelineEntryFactory(event);
 
   switch (event.type) {
+    case 'run.manifest_created': {
+      const boundary = record(payload.environment).executionBoundary;
+      return [entry('HARNESS', executionBoundaryText(Value.Check(ExecutionBoundarySchema, boundary) ? boundary : undefined), JSON.stringify(boundary ?? { status: 'unknown' }, null, 2))];
+    }
+    case 'runtime.session_started': {
+      const observation = record(payload.executionObservation);
+      return Value.Check(NativeExecutionObservationSchema, observation)
+        ? [entry('HARNESS', 'Runtime native configuration', JSON.stringify(observation))] : [];
+    }
     case 'agent.session_started': {
       if (text(payload.role) !== 'comparison') return [];
       const capabilities = Array.isArray(payload.inputCapabilities)

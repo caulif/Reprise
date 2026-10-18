@@ -57,15 +57,15 @@ export function windowsProcessInvocation(
 export function spawnRuntimeProcess(
   executable: string,
   args: readonly string[],
-  options: SpawnOptions & { platform?: NodeJS.Platform } = {},
+  options: SpawnOptions & { platform?: NodeJS.Platform; completeEnv?: NodeJS.ProcessEnv } = {},
 ): ChildProcessWithoutNullStreams {
-  const { platform, env, cwd, ...spawnOptions } = options;
-  const invocation = windowsProcessInvocation(executable, args, platform ?? process.platform);
+  const { platform, env, completeEnv, cwd, ...spawnOptions } = options;
+  const invocation = windowsProcessInvocation(executable, args, platform ?? process.platform, completeEnv ? completeEnv.COMSPEC ?? completeEnv.ComSpec ?? 'cmd.exe' : undefined);
   const host = platform ?? process.platform;
   const child = spawn(invocation.command, [...invocation.args], {
     ...spawnOptions,
     cwd,
-    env: isolateCandidateProcessEnv(env, typeof cwd === 'string' ? cwd : undefined),
+    env: completeEnv ?? isolateCandidateProcessEnv(env, typeof cwd === 'string' ? cwd : undefined),
     shell: false,
     ...(invocation.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
     ...(host !== 'win32' && spawnOptions.detached === undefined ? { detached: true } : {}),

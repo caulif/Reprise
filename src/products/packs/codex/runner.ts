@@ -1,3 +1,7 @@
+import { nativeExecutionObservation } from '../../../core/execution-boundary.js';
+import { isolateCandidateProcessEnv } from '../../../infrastructure/process/spawn.js';
+import { mkdir, rm } from 'node:fs/promises';
+import { selectedProcessEnvironment } from '../../../infrastructure/process/environment.js';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface, type Interface } from 'node:readline';
 import { isRecord, record, text } from '../../../core/json.js';
@@ -63,9 +67,11 @@ class CodexProcessCloseError extends Error {
  * rejects every server-initiated request, so a smoke run cannot auto-approve tools.
  */
 export class CodexAppServerClient {
+  #temporaryOwned = false;
+  readonly #temporaryDirectory: string | undefined;
   readonly #executable: string;
   readonly #cwd: string;
-  readonly #env: Readonly<Record<string, string | undefined>> | undefined;
+  readonly #env: NodeJS.ProcessEnv;
   readonly #notification: ((method: string, params: unknown) => Promise<void>) | undefined;
   readonly #closed$: ((error: Error) => void) | undefined;
   readonly #arguments: readonly string[];
@@ -82,10 +88,11 @@ export class CodexAppServerClient {
   #closing: Promise<void> | undefined;
   #stderrCompact = '';
 
-  constructor(input: { executable: string; cwd: string; env?: Readonly<Record<string, string | undefined>>; onNotification?: (method: string, params: unknown) => Promise<void>; onClosed?: (error: Error) => void; args?: readonly string[]; requestTimeoutMs?: number; platform?: NodeJS.Platform }) {
+  constructor(input: { executable: string; cwd: string; env?: Readonly<Record<string, string | undefined>>; completeEnv?: NodeJS.ProcessEnv; temporaryDirectory?: string; onNotification?: (method: string, params: unknown) => Promise<void>; onClosed?: (error: Error) => void; args?: readonly string[]; requestTimeoutMs?: number; platform?: NodeJS.Platform }) {
     this.#executable = input.executable;
     this.#cwd = input.cwd;
-    this.#env = input.env;
+    this.#env = input.completeEnv ?? isolateCandidateProcessEnv(selectedProcessEnvironment('codex-service', input.env), input.cwd);
+    this.#temporaryDirectory = input.temporaryDirectory;
     this.#notification = input.onNotification;
     this.#closed$ = input.onClosed;
     this.#arguments = input.args ?? ['app-server', '--listen', 'stdio://'];
@@ -100,9 +107,13 @@ export class CodexAppServerClient {
   async start(): Promise<void> {
     if (this.#started) return;
     if (this.#closed) throw new CodexRuntimeUnavailableError('Codex app-server client is closed.');
+    if (this.#temporaryDirectory) {
+      await mkdir(this.#temporaryDirectory);
+      this.#temporaryOwned = true;
+    }
     const child = spawnRuntimeProcess(this.#executable, this.#arguments, {
       cwd: this.#cwd,
-      env: this.#env ? { ...process.env, ...this.#env } : process.env,
+      completeEnv: this.#env,
       stdio: 'pipe',
       windowsHide: true,
       platform: this.#platform,
@@ -167,10 +178,14 @@ export class CodexAppServerClient {
     this.#process = undefined;
     for (const reader of this.#readers.splice(0)) reader.close();
     this.#failAll(new CodexRuntimeUnavailableError('Codex app-server client closed.'), false);
-    if (!child || !processClosed || child.exitCode !== null || child.killed) return;
-    child.stdin.destroy();
-    child.kill();
-    await forceCloseRuntimeProcess(child, processClosed, () => new CodexProcessCloseError(String(child.pid ?? 'unknown')));
+    if (child && processClosed && child.exitCode === null) {
+      child.stdin.end();
+      await forceCloseRuntimeProcess(child, processClosed, () => new CodexProcessCloseError(String(child.pid ?? 'unknown')));
+    }
+    if (this.#temporaryOwned && this.#temporaryDirectory) {
+      await rm(this.#temporaryDirectory, { recursive: true, force: true });
+      this.#temporaryOwned = false;
+    }
   }
 
   async #handleLine(line: string): Promise<void> {
@@ -236,6 +251,7 @@ export class CodexAppServerClient {
 }
 
 export class CodexTargetRunner implements TargetRunner {
+  #configurationConflict = false;
   readonly #runtime: ResolvedRuntime;
   readonly #environment: PreparedRuntimeEnvironment;
   readonly #sink: TargetEventSink;
@@ -251,7 +267,7 @@ export class CodexTargetRunner implements TargetRunner {
   #reconnectCount = 0;
   #endpointKind: 'custom_base_url' | 'default';
 
-  constructor(input: { runtime: ResolvedRuntime; environment: PreparedRuntimeEnvironment; sink: TargetEventSink; effort: CodexReasoningEffort; sandbox: CodexSandboxMode; env?: Readonly<Record<string, string | undefined>>; args?: readonly string[]; platform?: NodeJS.Platform }) {
+  constructor(input: { runtime: ResolvedRuntime; environment: PreparedRuntimeEnvironment; sink: TargetEventSink; effort: CodexReasoningEffort; sandbox: CodexSandboxMode; env?: Readonly<Record<string, string | undefined>>; completeEnv?: NodeJS.ProcessEnv; temporaryDirectory?: string; args?: readonly string[]; platform?: NodeJS.Platform }) {
     this.#runtime = input.runtime;
     this.#environment = input.environment;
     this.#sink = input.sink;
@@ -262,6 +278,8 @@ export class CodexTargetRunner implements TargetRunner {
       executable: input.runtime.executable,
       cwd: input.environment.root,
       ...(input.env ? { env: input.env } : {}),
+      completeEnv: input.completeEnv ?? isolateCandidateProcessEnv(selectedProcessEnvironment('codex', input.env), input.environment.root),
+      ...(input.temporaryDirectory ? { temporaryDirectory: input.temporaryDirectory } : {}),
       ...(input.args ? { args: input.args } : {}),
       ...(input.platform ? { platform: input.platform } : {}),
       onNotification: async (method, params) => this.#onNotification(method, params),
@@ -299,6 +317,7 @@ export class CodexTargetRunner implements TargetRunner {
       threadSource: 'reprise',
     });
     this.#thread = readStartedThread(result);
+    const observation = nativeExecutionObservation(record(result).sandbox, this.#sandbox);
     await this.#sink.append(runtimeTargetEvent('session_started', {
       threadId: this.#thread.id,
       model: this.#thread.model,
@@ -309,13 +328,21 @@ export class CodexTargetRunner implements TargetRunner {
       endpointKind: this.#endpointKind,
       effort: this.#effort,
       sandbox: this.#sandbox,
+      ...(observation ? { executionObservation: observation } : {}),
     }));
+    if (observation?.matchesConfigured === false) {
+      this.#configurationConflict = true;
+      this.#status = 'stopped';
+      await this.#client.close();
+      throw new CodexRuntimeUnavailableError('Native execution configuration conflicts with the frozen launch plan.');
+    }
     if (this.#status === 'stopped') throw new CodexRuntimeUnavailableError('Codex app-server exited before the target started.');
     this.#status = 'running';
     return this.#send(initial, identity);
   }
 
   async send(message: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt> {
+    if (this.#configurationConflict) throw new CodexRuntimeUnavailableError('Native execution configuration conflicts with the frozen launch plan.');
     if (!this.#thread) throw new Error('Codex target has not started.');
     return this.#send(message, identity);
   }

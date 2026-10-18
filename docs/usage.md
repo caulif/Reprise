@@ -4,6 +4,8 @@ Reprise 是本地优先的任务比较工具：它从已安装 AI 工具的历�
 
 ## 开始
 
+内置 Candidate 现在按角色减少环境继承，Host shell 不继承 Harness 认证，启动 timeline、结果与报告详情显示本次冻结的执行边界。旧运行缺少记录时显示“未记录 / 未声明”。环境值、代理 URL 和原始命令行不作为启动摘要保存。可信本地模式没有 Reprise 系统级文件/网络隔离，也不保证禁止所有共享配置和扩展加载；不能据此认定盲测成立。原生权限默认值不因环境收敛改变。
+
 ### 内部模型图片能力
 
 openai-compatible 模型可通过 `reprise config set --image-input` 声明图片输入（其他必需配置参数沿用 config set）；声明只控制发送原生块，不创造网关能力。Case `privacy.allowBinary` 仍须授权，已有 text-only Case 不因模型开关自动获得二进制发送权限。Comparison 的受控渲染/预览可请求 `includeImages=true`，拒绝交付时继续文本证据并说明限制。

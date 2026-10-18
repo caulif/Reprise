@@ -1,3 +1,7 @@
+import { nativeExecutionObservation } from '../../../core/execution-boundary.js';
+import { isolateCandidateProcessEnv } from '../../../infrastructure/process/spawn.js';
+import { mkdir, rm } from 'node:fs/promises';
+import { selectedProcessEnvironment } from '../../../infrastructure/process/environment.js';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { Value } from '@sinclair/typebox/value';
@@ -51,6 +55,8 @@ class ClaudeProcessCloseError extends Error {
  * that flag is the master switch for blocking can_use_tool control requests.
  */
 export class ClaudeStreamClient {
+  #temporaryOwned = false;
+  readonly #temporaryDirectory: string | undefined;
   readonly #executable: string;
   readonly #cwd: string;
   readonly #env: NodeJS.ProcessEnv;
@@ -69,7 +75,7 @@ export class ClaudeStreamClient {
   constructor(input: {
     executable: string;
     cwd: string;
-    env?: Readonly<Record<string, string | undefined>>;
+    env?: Readonly<Record<string, string | undefined>>; completeEnv?: NodeJS.ProcessEnv; temporaryDirectory?: string;
     args?: readonly string[];
     requestTimeoutMs?: number;
     onFrame?: (frame: Record<string, unknown>) => Promise<void>;
@@ -77,7 +83,8 @@ export class ClaudeStreamClient {
   }) {
     this.#executable = input.executable;
     this.#cwd = input.cwd;
-    this.#env = { ...process.env, ...input.env };
+    this.#env = input.completeEnv ?? isolateCandidateProcessEnv(selectedProcessEnvironment('claude', input.env), input.cwd);
+    this.#temporaryDirectory = input.temporaryDirectory;
     this.#args = input.args ?? [...CLAUDE_REQUIRED_ARGS];
     this.#requestTimeoutMs = positiveTimeout(input.requestTimeoutMs, DEFAULT_RPC_TIMEOUT_MS);
     this.#onFrame = input.onFrame;
@@ -90,9 +97,13 @@ export class ClaudeStreamClient {
 
   async start(): Promise<void> {
     if (this.#process) return;
+    if (this.#temporaryDirectory) {
+      await mkdir(this.#temporaryDirectory);
+      this.#temporaryOwned = true;
+    }
     const child = spawnRuntimeProcess(this.#executable, this.#args, {
       cwd: this.#cwd,
-      env: this.#env,
+      completeEnv: this.#env,
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
@@ -100,7 +111,7 @@ export class ClaudeStreamClient {
     child.stdin.on('error', () => { /* Windows EPIPE must not crash the host. */ });
     child.stdout.on('error', (error) => this.#failAll(new ClaudeRuntimeUnavailableError(error.message)));
     child.stderr.on('error', () => { /* stderr pipe failures are consumed; process close reports availability. */ });
-    child.stdout.on('data', (chunk: Buffer | string) => { void this.#onChunk(String(chunk)); });
+    child.stdout.on('data', (chunk: Buffer | string) => { void this.#onChunk(String(chunk)).catch(error => this.#failAll(error instanceof Error ? error : new ClaudeRuntimeUnavailableError('Frame processing failed.'))); });
     child.stderr.on('data', () => { /* stderr is diagnostic-only; persist via runner if needed. */ });
     child.on('error', (error) => this.#failAll(new ClaudeRuntimeUnavailableError(error.message)));
     this.#exit$ = new Promise<void>((resolveExit) => {
@@ -149,9 +160,19 @@ export class ClaudeStreamClient {
 
   async close(): Promise<void> {
     const child = this.#process;
-    if (!child) return;
+    if (!child) {
+      if (this.#temporaryOwned && this.#temporaryDirectory) {
+        await rm(this.#temporaryDirectory, { recursive: true, force: true });
+        this.#temporaryOwned = false;
+      }
+      return;
+    }
     try { child.stdin.end(); } catch { /* already closed */ }
     await forceCloseRuntimeProcess(child, this.#exit$, () => new ClaudeProcessCloseError(this.#executable));
+    if (this.#temporaryOwned && this.#temporaryDirectory) {
+      await rm(this.#temporaryDirectory, { recursive: true, force: true });
+      this.#temporaryOwned = false;
+    }
   }
 
   async #onChunk(chunk: string): Promise<void> {
@@ -218,6 +239,8 @@ export class ClaudeTargetRunner implements TargetRunner {
   #status: TargetStatus = 'starting';
   readonly #turns = new TurnWaiter();
   #processExitRecorded = false;
+  readonly #expectedPermissionMode: string;
+  #configurationConflict = false;
   #stopRequested = false;
   #exitDuringStop: Error | undefined;
   #init: Record<string, unknown> | undefined;
@@ -225,7 +248,8 @@ export class ClaudeTargetRunner implements TargetRunner {
   #activeMessage: MessageIdentity | undefined;
   readonly #settledResults = new Set<string>();
 
-  constructor(input: { runtime: ResolvedRuntime; environment: PreparedRuntimeEnvironment; sink: TargetEventSink; env?: Readonly<Record<string, string | undefined>>; args?: readonly string[]; safeMode?: boolean }) {
+  constructor(input: { runtime: ResolvedRuntime; environment: PreparedRuntimeEnvironment; sink: TargetEventSink; env?: Readonly<Record<string, string | undefined>>; completeEnv?: NodeJS.ProcessEnv; temporaryDirectory?: string; args?: readonly string[]; safeMode?: boolean; expectedPermissionMode?: string }) {
+    this.#expectedPermissionMode = input.expectedPermissionMode ?? (input.args ? 'unknown' : 'bypassPermissions');
     this.#sink = input.sink;
     this.#runtime = input.runtime;
     this.#workspaceRoot = input.environment.root;
@@ -240,6 +264,8 @@ export class ClaudeTargetRunner implements TargetRunner {
       executable: input.runtime.executable,
       cwd: input.environment.root,
       ...(input.env ? { env: input.env } : {}),
+      ...(input.completeEnv ? { completeEnv: input.completeEnv } : {}),
+      ...(input.temporaryDirectory ? { temporaryDirectory: input.temporaryDirectory } : {}),
       args,
       onFrame: (frame) => this.#onFrame(frame),
       onClosed: (error) => this.#onClosed(error),
@@ -270,11 +296,13 @@ export class ClaudeTargetRunner implements TargetRunner {
   }
 
   async send(message: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt> {
+    if (this.#status === 'stopped') throw new ClaudeRuntimeUnavailableError('Claude Code is stopped; no further input will be sent.');
     assertRuntimeMessageIdentity(message, identity, 'Claude');
     this.#activeMessage = identity;
     const replay = this.#client.waitForReplay(identity.clientMessageId);
     await this.#client.sendUser(identity.clientMessageId, message.text);
     const frame = await replay;
+    if (this.#configurationConflict) throw new ClaudeRuntimeUnavailableError('Native execution configuration conflicts with the frozen launch plan.');
     this.#turnIndex += 1;
     return {
       delivery: 'accepted',
@@ -327,6 +355,7 @@ export class ClaudeTargetRunner implements TargetRunner {
 
   async close(): Promise<void> {
     if (this.#status !== 'stopped') await this.stop('shutdown');
+    await this.#client.close();
     await this.#sink.append(runtimeTargetEvent('session_closed', { sessionId: this.#sessionId ?? this.session().sessionId }));
   }
 
@@ -344,8 +373,18 @@ export class ClaudeTargetRunner implements TargetRunner {
 
   async #onFrame(frame: Record<string, unknown>): Promise<void> {
     if (text(frame.type) === 'system' && text(frame.subtype) === 'init') this.#init = frame;
+    if (this.#status === 'stopped') return;
+    const observation = text(frame.type) === 'system' && text(frame.subtype) === 'init'
+      ? nativeExecutionObservation(frame.permissionMode, this.#expectedPermissionMode) : undefined;
     const events = claudeFrameEvents(frame);
-    for (const event of events) await this.#sink.append(event);
+    for (const event of events) await this.#sink.append(observation ? { ...event, payload: { ...record(event.payload), executionObservation: observation } } : event);
+    if (observation?.matchesConfigured === false) {
+      this.#configurationConflict = true;
+      this.#status = 'stopped';
+      this.#turns.fail(new ClaudeRuntimeUnavailableError('Native execution configuration conflicts with the frozen launch plan.'));
+      await this.#client.close();
+      return;
+    }
     if (text(frame.type) === 'result') this.#settle(frame);
   }
 

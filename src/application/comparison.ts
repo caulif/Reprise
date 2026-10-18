@@ -29,6 +29,7 @@ import type { TimingFacts } from '../core/timing-schema.js';
 import { historicalTurnTiming, timingComparable, compareTiming } from './session-timing.js';
 
 export type RunInspection = {
+  nativeExecution?: readonly import('../core/schema.js').NativeExecutionObservation[];
   runId: string;
   finalMessage?: string;
   changedPaths: readonly string[];
@@ -156,6 +157,8 @@ function buildReportFacts(
     activity: { ...(inspection ? { candidateTurns: inspection.turns } : {}) },
     limits: { ...(run.attempt.policy.wallClockMs === undefined ? {} : { wallClockMs: run.attempt.policy.wallClockMs }), maxTargetTurns: run.attempt.policy.maxTargetTurns, maxModelCalls: run.attempt.policy.maxModelCalls, triggered },
     runtime: { productId: run.attempt.candidate.productId },
+    ...(inspection?.nativeExecution?.length ? { nativeExecution: inspection.nativeExecution } : {}),
+    ...(run.manifest?.environment.executionBoundary ? { executionBoundary: run.manifest.environment.executionBoundary } : {}),
     delivery: {
       changedPaths: inspection?.changedPaths ?? [],
       targetArtifactStatus: run.artifactRefs.length ? 'artifacts_recorded' : 'not_collected',

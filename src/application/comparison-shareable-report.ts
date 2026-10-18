@@ -1,3 +1,4 @@
+import { executionBoundaryText, nativeExecutionText } from '../core/execution-boundary.js';
 import type { AgentLocale } from '../agents/language.js';
 import type { ComparisonReportFacts } from '../agents/comparison-contract.js';
 import type { MetricSideProjection } from './comparison-report-shell.js';
@@ -42,7 +43,7 @@ export function renderShareableReport(input: {
 <section class="verdict"><p class="field-label">${escape(reportString(locale, 'shareConclusion'))}</p><h2 data-agent-slot="headline">${input.headline}</h2><p class="boundary" data-agent-slot="boundary">${escape(input.boundary)}</p></section>
 <section class="comparison" data-agent-zone="comparison" data-id="agent-comparison">${input.comparisonBody}</section>
 <section class="metrics" data-host-zone="metrics" data-id="host-metrics" data-host="metrics" data-metrics-layout="shareable" data-fingerprint="${escape(fingerprint)}"><table><thead><tr><th scope="col">${escape(reportString(locale, 'runtimeMetrics'))}</th><th scope="col">${escape(reportString(locale, 'sessionHistorical'))}</th><th scope="col">${escape(reportString(locale, 'sessionCurrent'))}</th></tr></thead><tbody>${rows}</tbody></table></section>
-<footer data-host-zone="cost-note" data-id="host-cost-note"><p>${timing}${partial}${t('Tokens include cache; costs estimated, tools excluded.', 'Token 含缓存；费用为估算，不含工具费用。')}</p><p>${escape(reportString(locale, 'analysisModel'))} · ${escape(actualModelName(facts.models.comparison) ?? reportString(locale, 'missing'))}</p></footer>
+<footer data-host-zone="cost-note" data-id="host-cost-note"><p>${timing}${partial}${t('Tokens include cache; costs estimated, tools excluded.', 'Token 含缓存；费用为估算，不含工具费用。')}</p><p>${escape(reportString(locale, 'analysisModel'))} · ${escape(actualModelName(facts.models.comparison) ?? reportString(locale, 'missing'))}</p><p data-host="execution-boundary">${escape(executionBoundaryText(facts.executionBoundary, locale))} ${escape(nativeExecutionText(facts.nativeExecution, locale))}</p></footer>
 </article></main></body></html>`;
 }
 

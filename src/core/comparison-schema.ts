@@ -1,3 +1,4 @@
+import { ExecutionBoundarySchema, NativeExecutionObservationSchema } from './execution-boundary.js';
 import { TimingFactsSchema, TimingComparisonSchema } from "./timing-schema.js";
 import { Type, type Static } from "@sinclair/typebox";
 const EvidenceRefSchema = Type.String({ pattern: "^(event|artifact):[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" });
@@ -42,6 +43,8 @@ const MetricSideSchema = Type.Object({
 });
 
 const ComparisonReportFactsSchema = Type.Object({
+  nativeExecution: Type.Optional(Type.Array(NativeExecutionObservationSchema)),
+  executionBoundary: Type.Optional(ExecutionBoundarySchema),
   sessionDates: Type.Optional(Type.Object({
     baseline: Type.Optional(Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' })),
     candidate: Type.Optional(Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' })),

@@ -1,3 +1,4 @@
+import { executionBoundaryText, nativeExecutionText } from '../core/execution-boundary.js';
 import type { AgentLocale } from '../agents/language.js';
 import type { ComparisonReportFacts } from '../agents/comparison-contract.js';
 import type { MetricSideProjection, ReportSlots } from './comparison-report-shell.js';
@@ -30,7 +31,7 @@ export function renderPairedReport(input: { category: string; headline: string; 
 <section class="verdict"><h1 data-agent-slot="headline">${input.headline}</h1><p class="reason" data-agent-slot="reason">${escape(slots.reason ?? "")}</p><p class="boundary"><strong>${escape(t('Before adopting', '采用前注意'))} · </strong><span data-agent-slot="boundary">${escape(slots.boundary ?? '')}</span></p></section>
 <section data-agent-zone="comparison" data-id="agent-comparison">${renderPairedContent(slots.pairedDifferences ?? [], slots.comparison ?? '', zh)}</section>
 <section class="metrics" data-host-zone="metrics" data-id="host-metrics" data-host="metrics" data-metrics-layout="paired" data-fingerprint="${escape(JSON.stringify({ b: sideFingerprint(input.metrics.baseline), c: sideFingerprint(input.metrics.candidate) }))}"><table><thead><tr><th scope="col">${escape(t('Task execution', '任务执行'))}</th><th scope="col">${escape(t('History', '历史'))}</th><th scope="col">${escape(t('Current', '当前'))}</th></tr></thead><tbody>${rows}</tbody></table></section>
-<footer data-host-zone="cost-note" data-id="host-cost-note">${escape(t('Analysis model', '分析模型'))} · ${escape(actualModelName(facts.models.comparison) ?? t('Unknown', '未知'))}</footer></article></main></body></html>`;
+<footer data-host-zone="cost-note" data-id="host-cost-note">${escape(t('Analysis model', '分析模型'))} · ${escape(actualModelName(facts.models.comparison) ?? t('Unknown', '未知'))}<p data-host="execution-boundary">${escape(executionBoundaryText(facts.executionBoundary, locale))} ${escape(nativeExecutionText(facts.nativeExecution, locale))}</p></footer></article></main></body></html>`;
 }
 
 const ASSESSMENT_CSS = `.result-phrase{display:block}.outcomes .result-phrase strong{display:inline}.assessment-better{color:#246044}.assessment-worse{color:#88501f}.assessment-neutral{color:#59675f}`;
