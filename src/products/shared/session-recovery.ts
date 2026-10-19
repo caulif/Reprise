@@ -42,7 +42,7 @@ export type SessionRecoveryAttempt = {
 
 const CATALOG_MARKER = '/.catalog/';
 const HISTORY_LOCATOR = '#reprise-history=';
-const HARD_DISCOVERY = new Set<DiscoveryDiagnosticCode>(['unreadable-file', 'unreadable-directory', 'unsupported-entry']);
+const HARD_DISCOVERY = new Set<DiscoveryDiagnosticCode>(['unreadable-file', 'unreadable-directory', 'unsupported-entry', 'unsupported-encoding', 'decompression-failed']);
 
 export function isSyntheticCatalogSource(sourcePath: string): boolean {
   return sourcePath.replaceAll('\\', '/').includes(CATALOG_MARKER);
@@ -120,7 +120,7 @@ export function discoveryFailureSummary(
   const peeked = peekJsonlSessionId(entry.path, extractId);
   const sessionId = peeked && SAFE_ID.test(peeked) ? peeked : `unreadable-${digest}`;
   const hard = HARD_DISCOVERY.has(code);
-  const diagnostic: RecoveryDiagnostic = { code, message: hard ? 'Source file could not be read.' : `Discovery summary was incomplete (${code}).` };
+  const diagnostic: RecoveryDiagnostic = { code, message: code === 'decompression-failed' ? 'Compressed session could not be decoded completely.' : code === 'unsupported-encoding' ? 'This Node.js runtime does not support Zstandard session files.' : hard ? 'Source file could not be read.' : `Discovery summary was incomplete (${code}).` };
   return {
     productId,
     sessionId,

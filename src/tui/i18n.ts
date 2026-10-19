@@ -632,6 +632,8 @@ const M = {
   noTaskSummary: { en: 'No task summary', zh: '没有题目摘要' },
   partialSession: { en: '[partial summary]', zh: '[摘要不完整]' },
   catalogOnlySession: { en: '[catalog-only]', zh: '[仅索引]' },
+  compressedSessionCorrupt: { en: '[compressed source corrupt]', zh: '[压缩正文损坏]' },
+  compressedSessionUnsupported: { en: '[Zstandard unavailable]', zh: '[当前环境不支持压缩正文]' },
   historyOnlySession: { en: '[history-only]', zh: '[仅历史]' },
   unindexedSession: { en: '[unindexed]', zh: '[未编入索引]' },
   unreadableSession: { en: '[unreadable]', zh: '[正文不可读]' },

@@ -21,6 +21,7 @@ import type {
 import { firstReplayUserMessage } from './replay-user-input.js';
 import { frozenFilesFromExtraction } from './historical-artifact-files.js';
 import { publishFrozenDirectory, type FrozenDirectoryPublishDependencies } from './freeze-publish.js';
+import { snapshotSessionSource } from './session-source.js';
 
 /** Pack-bound extract callback; sync per ProductHistoryReader port. */
 export type HistoricalArtifactExtractFn = (
@@ -241,6 +242,19 @@ async function materializeRawFile(
   imported: ImportedSession,
   redactions: readonly string[],
 ): Promise<{ hash: string; file: FrozenFile; cleanup?: string }> {
+  if (imported.raw.sourcePath && (imported.raw.encoding || imported.raw.receipt)) {
+    const snapshot = join(tmpdir(), `reprise-decoded-${process.pid}-${randomUUID()}.jsonl`);
+    try {
+      await snapshotSessionSource(imported.raw.sourcePath, snapshot, imported.raw.encoding, imported.raw.receipt);
+      const result = await materializeRawFile({ ...imported, raw: { relativePath: imported.raw.relativePath, text: '', sourcePath: snapshot } }, redactions);
+      await rm(snapshot, { force: true });
+      return result;
+    } catch (error) {
+      try { await rm(snapshot, { force: true }); }
+      catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Decoded source cleanup failed; the prior failure is retained.', { cause: cleanupError }); }
+      throw error;
+    }
+  }
   const relativePath = imported.raw.relativePath;
   if (imported.raw.sourcePath && !redactions.length) {
     const path = join(tmpdir(), `reprise-raw-${process.pid}-${randomUUID()}.jsonl`);

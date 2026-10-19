@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
 import { opendir, stat } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { isRecord, type JsonRecord } from '../../core/json.js';
 import { compareSessionSummaries } from '../history/normalize.js';
 import type { DiscoveryDiagnostic, DiscoveryDiagnosticCode, SessionDiscoveryPage, SessionSummary } from '../contract.js';
+import { sessionReadStream, SessionSourceError, type SessionEncoding } from './session-source.js';
 
 const DIRECTORY_CONCURRENCY = 8;
 const SUMMARY_INDEX_CACHE_LIMIT = 4;
@@ -20,7 +20,7 @@ function errorMessage(error: unknown): string {
 
 export type SessionFileEntry = { path: string; mtime: number; size: number };
 export type SessionFileListing = { readonly entries: readonly SessionFileEntry[]; readonly diagnostics: readonly DiscoveryDiagnostic[] };
-export type JsonlSummaryReadOptions = { readonly maxBytes: number; readonly maxLines: number; readonly signal?: AbortSignal };
+export type JsonlSummaryReadOptions = { readonly maxBytes: number; readonly maxLines: number; readonly signal?: AbortSignal; readonly encoding?: SessionEncoding };
 
 /** Product-neutral ordering for discovered session files. */
 export function rankSessionFiles(entries: readonly SessionFileEntry[]): SessionFileEntry[] {
@@ -162,7 +162,8 @@ async function listDirectory(directory: string, root: string, accept: (name: str
 
 export async function forEachJsonlHeadSummaryLine(path: string, product: string, options: JsonlSummaryReadOptions, onRow: (row: JsonRecord, line: number) => void): Promise<void> {
   throwIfAborted(options.signal);
-  const stream = createReadStream(path, { encoding: 'utf8', start: 0, end: Math.max(0, options.maxBytes - 1) });
+  let bytesRead = 0;
+  const stream = sessionReadStream(path, { ...options, prefix: true, onBytes: (chunk) => { bytesRead += chunk.length; } });
   const lines = createInterface({ input: stream, crlfDelay: Infinity });
   let lineNumber = 0;
   try {
@@ -173,14 +174,14 @@ export async function forEachJsonlHeadSummaryLine(path: string, product: string,
       if (lineNumber > options.maxLines) throw new SessionDiscoveryError('too-large', `${product} session head exceeds the line limit: ${path}`);
       let parsed: unknown;
       try { parsed = JSON.parse(line); } catch (error) {
-        if (stream.bytesRead >= options.maxBytes) break;
+        if (bytesRead >= options.maxBytes) break;
         throw new SessionDiscoveryError('invalid-jsonl', `${product} session ${path} has invalid JSONL at line ${lineNumber}: ${errorMessage(error)}`, { cause: error });
       }
       if (!isRecord(parsed)) throw new SessionDiscoveryError('invalid-jsonl', `${product} session ${path} has a non-object row at line ${lineNumber}`);
       onRow(parsed, lineNumber - 1);
     }
   } catch (error) {
-    if (error instanceof SessionDiscoveryError || isAbortError(error)) throw error;
+    if (error instanceof SessionDiscoveryError || error instanceof SessionSourceError || isAbortError(error)) throw error;
     throw new SessionDiscoveryError('unreadable-file', `${product} session cannot be read: ${path}`, { cause: error });
   } finally { lines.close(); stream.destroy(); }
   if (!lineNumber) throw new SessionDiscoveryError('invalid-jsonl', `${product} session ${path} is empty.`);
@@ -191,8 +192,8 @@ export async function forEachJsonlSummaryLine(path: string, product: string, opt
   let info;
   try { info = await stat(path); } catch (error) { throw new SessionDiscoveryError('unreadable-file', `${product} session cannot be read: ${path}`, { cause: error }); }
   if (!info.isFile()) throw new SessionDiscoveryError('unsupported-entry', `${product} session is not a file: ${path}`);
-  if (info.size > options.maxBytes) throw new SessionDiscoveryError('too-large', `${product} session exceeds the discovery limit: ${path}`);
-  const stream = createReadStream(path, { encoding: 'utf8' });
+  if (options.encoding !== 'zstd' && info.size > options.maxBytes) throw new SessionDiscoveryError('too-large', `${product} session exceeds the discovery limit: ${path}`);
+  const stream = sessionReadStream(path, options);
   const lines = createInterface({ input: stream, crlfDelay: Infinity });
   let lineNumber = 0;
   let any = false;
@@ -211,7 +212,7 @@ export async function forEachJsonlSummaryLine(path: string, product: string, opt
       onRow(parsed, lineNumber - 1);
     }
   } catch (error) {
-    if (error instanceof SessionDiscoveryError || isAbortError(error)) throw error;
+    if (error instanceof SessionDiscoveryError || error instanceof SessionSourceError || isAbortError(error)) throw error;
     throw new SessionDiscoveryError('unreadable-file', `${product} session cannot be read: ${path}`, { cause: error });
   } finally {
     lines.close();
@@ -320,7 +321,7 @@ async function indexSessionSummary(
     return { entry, session: await inspect(entry) };
   } catch (error) {
     if (isAbortError(error)) throw error;
-    if (inspectPartial && error instanceof SessionDiscoveryError && error.code === 'too-large') {
+    if (inspectPartial && ((error instanceof SessionDiscoveryError && error.code === 'too-large') || (error instanceof SessionSourceError && error.code === 'read-limit'))) {
       try { return { entry, session: await inspectPartial(entry, signal) }; }
       catch (partialError) {
         if (isAbortError(partialError)) throw partialError;
@@ -349,6 +350,7 @@ function cacheSummaryIndex(cacheKey: string, indexed: Map<string, IndexedSession
 }
 
 function discoveryErrorCode(error: unknown): DiscoveryDiagnosticCode {
+  if (error instanceof SessionSourceError) return error.code === 'read-limit' ? 'too-large' : error.code;
   if (error instanceof SessionDiscoveryError) return error.code;
   const message = errorMessage(error).toLowerCase();
   if (message.includes('inspection limit') || message.includes('exceeds the')) return 'too-large';

@@ -161,6 +161,7 @@ Recovery、Controller、Comparison 会将完成任务所需的历史内容、工
 |---|---|
 | 裸 `reprise` 找不到命令 | 使用 `node dist/src/cli/main.js`；若命令不存在，先 `npm run build` 确认 `dist/` 已生成。未全局安装时裸 `reprise` 不可用是预期行为。 |
 | 来源产品或会话列表为空 | 确认目标产品已安装且本机确有历史记录。`products` 只列出可识别产品；`sessions` 需要 `--product <id>`。发现（discovery）与导入（import）不是同一操作，见 `reprise sessions --help` 与 `reprise import --help`。 |
+| Codex 正文已压缩或仅剩索引 | `.jsonl.zst` 可直接读取，无需在 Codex 原目录解压。正文损坏或当前环境缺解码能力会显示诊断；`u?` 表示数量未核实。提示来源变化时刷新并重新检查；真正缺失的正文不能用索引标题代替。读取兼容不代表任务起点已经恢复。 |
 | 模型连接失败 | 在 `/config` 核对 endpoint、API 协议类型（`openai-completions` / `openai-responses`）、模型 ID 和凭据来源。不要把配置全文粘贴到 Issue；用 `Ctrl+T` 连接测试并查看错误摘要。 |
 | 恢复显示「无法恢复」或 blocked | 查看 TUI 或事件日志中的缺失条件；缺关键输入时不会启动当前运行，没有「强行继续」开关。 |
 | 报告或图片入口不可用 | 区分未生成对照、未采集媒体、快照缺失和发布失败。空入口可能是数据尚未产生，不代表零差异。 |
