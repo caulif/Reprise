@@ -81,6 +81,27 @@ test('managed history survives native cleanup, deduplicates and remains read-onl
   assert.equal(damaged.items[0]?.availability, 'unreadable');
 });
 
+test('archived previews remain readable when native discovery retains only an index or an unreadable source', async t => {
+  const f = await fixture(t);
+  const native = await claudeSessionAdapter.inspect({ productId: 'claude-code', sessionId: SESSION_ID, sourcePath: f.sourcePath });
+  const archived = await archiveManagedSession({ ...f, history: claudeSessionAdapter, redactions: [], signal: new AbortController().signal });
+  assert.equal(archived.status, 'archived');
+  await rm(f.nativeRoot, { recursive: true });
+  for (const availability of ['catalog-only', 'unreadable'] as const) {
+    const stale = { ...native, availability, recoveryReadiness: 'corrupt' as const,
+      signals: { userMessages: 0, assistantMessages: 0, toolCalls: 0, completedTurns: 0 } };
+    const page = await mergeManagedSessions(f.dataDir, 'claude-code', claudeSessionAdapter, { ...emptyPage, items: [stale] });
+    assert.equal(page.items.length, 1);
+    const summary = page.items[0]!;
+    assert.equal(summary.availability, 'indexed');
+    assert.equal(summary.recoveryReadiness, 'pending');
+    assert.deepEqual(summary.signals, archived.preview!.signals);
+    assert.equal(summary.signals.userMessages, 1);
+    const inspected = await inspectManagedSession(f.dataDir, claudeSessionAdapter, summary);
+    assert.equal(inspected?.transcript[0]?.text, 'Fix SECRET.');
+  }
+});
+
 test('managed history preserves the model recorded by the native transcript instead of the requested alias', async t => {
   const f = await fixture(t);
   await writeFile(f.sourcePath, f.content.replace('"role":"assistant"', '"role":"assistant","model":"actual-native-model"'));

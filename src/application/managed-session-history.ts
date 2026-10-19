@@ -208,7 +208,7 @@ export async function mergeManagedSessions(dataDir: string, productId: string, _
   const items = new Map(page.items.map(item => [item.sessionId, item]));
   for (const receipt of receipts) {
     const path = join(archiveRoot(dataDir), `${archiveKey(productId, receipt.sessionId)}.jsonl`);
-    let summary = managedSummary(receipt, path, items.get(receipt.sessionId));
+    let summary = managedSummary(receipt, path, receipt.status === 'archived' ? undefined : items.get(receipt.sessionId));
     if (receipt.status === 'archived') {
       try {
         if (!pathContainedBy(await realpath(archiveRoot(dataDir)), await realpath(path))) throw new Error('Invalid archive path.');
