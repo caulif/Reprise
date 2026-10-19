@@ -7,6 +7,7 @@ import {
   errorFingerprint,
   excerptId,
   isTurnBoundary,
+  toolCaption,
 } from '../../src/tui/agent-activity.js';
 import { foldProcessEntries, paneOf } from '../../src/tui/fold-process.js';
 import { activityDetailModel, renderActivityDetail } from '../../src/tui/overlays.js';
@@ -16,6 +17,7 @@ import {
   appendTimelineEntries,
   flushFoldTitle,
   projectTimelineEvent,
+  projectPersistedTimeline,
   type TimelineEntry,
 } from '../../src/tui/timeline.js';
 import { wrapBodyLine } from '../../src/tui/widgets.js';
@@ -254,4 +256,57 @@ test('T05 working caption waits for visible activity', () => {
   const lines = layoutScrollback(theme, 80, [live], 0, 'zh', 'Claude Code', 6, 0, 0, '00:12', true, -1).lines.join('\n');
   assert.match(lines, /等待新的可见活动/);
   assert.match(lines, /Claude Code/);
+});
+
+
+test('Host tool activity follows the canvas locale after persisted event projection', () => {
+  const cases = [
+    { tool: 'read', params: { path: 'report-facts.json' }, en: 'Reading', zh: '阅读', object: 'report-facts.json' },
+    { tool: 'edit', params: { path: '阅读.md' }, en: 'Writing', zh: '写入', object: '阅读.md' },
+    { tool: 'write', params: { path: 'draft.html' }, en: 'Writing', zh: '写入', object: 'draft.html' },
+    { tool: 'shell_exec', params: { command: 'Get-Content "阅读.md"' }, en: 'Checking', zh: '检查', object: 'Get-Content "阅读.md"' },
+    { tool: 'custom_tool', params: {}, en: 'Checking', zh: '检查', object: 'custom_tool' },
+  ];
+  for (const item of cases) {
+    const timeline = projectPersistedTimeline([event('agent.tool_called', {
+      role: 'comparison', tool: item.tool, toolCallId: 'call-1', params: item.params,
+    })]);
+    assert.equal(timeline.find((row) => row.placeholder)?.verb !== undefined, true);
+    for (const locale of ['en', 'zh'] as const) {
+      resetScrollbackLayoutCache();
+      const lines = layoutScrollback(createTheme(160, false), 160, timeline, 0, locale, 'Codex').lines.join('\n');
+      const role = locale === 'en' ? 'Comparing results' : '正在比较结果';
+      const status = locale === 'en' ? 'running' : '进行中';
+      assert.ok(lines.includes(`${role} · ${item[locale]} · ${item.object} · ${status}`), lines);
+    }
+  }
+});
+
+test('locale switching preserves model and user text on the projected canvas', () => {
+  const original = '阅读 引文 "检查" · Get-Content · report-facts.json · custom_tool';
+  const timeline = projectPersistedTimeline([
+    event('agent.assistant_visible', { role: 'comparison', text: original }),
+    event('input.submitted', { text: original, turnIndex: 0, clientMessageId: 'input-1' }, { sequence: 2 }),
+  ]);
+  for (const locale of ['en', 'zh'] as const) {
+    resetScrollbackLayoutCache();
+    const lines = layoutScrollback(createTheme(160, false), 160, timeline, 0, locale, 'Codex').lines.join('\n');
+    assert.equal(lines.split(original).length - 1, 2, lines);
+  }
+});
+
+test('structured activity verbs localize without translating unrecognized titles or objects', () => {
+  const verbs = [
+    ['read', 'Reading', '阅读'], ['inspect', 'Checking', '检查'],
+    ['write', 'Writing', '写入'], ['edit', 'Writing', '写入'],
+    ['run', 'Running', '运行'], ['send', 'Sending', '投递'],
+    ['wait', 'Waiting', '等待'], ['decide', 'Deciding', '判断'],
+    ['publish', 'Publishing', '发布'], ['error', 'Failed', '失败'],
+  ] as const;
+  const row: TimelineEntry = { sequence: 1, occurredAt: timestamp, source: 'HARNESS', title: 'custom_tool', object: '阅读.md' };
+  for (const [verb, en, zh] of verbs) {
+    assert.equal(toolCaption({ ...row, verb }, 'en'), `${en} · 阅读.md`);
+    assert.equal(toolCaption({ ...row, verb }, 'zh'), `${zh} · 阅读.md`);
+  }
+  assert.equal(toolCaption(row, 'en'), 'custom_tool · 阅读.md');
 });
