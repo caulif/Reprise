@@ -10,7 +10,7 @@
 
 Windows 11 是唯一经过真实使用验证的平台。CI 的平台矩阵由 [check.yml](../.github/workflows/check.yml) 定义，模拟测试通过不等于真实 Runtime、文件权限或终端输入体验已验证；剩余验证见[路线图](./roadmap.md)。
 
-测试 lane 结束后另跑独立浏览器诊断：记录实际启动路径、可执行文件与 CDP 的版本一致性，并创建真实页面 target。该步骤不阻断，也不替代原来的真实预览与发布绑定测试；用来区分并行测试时的启动故障和独立启动故障。Linux 已安装 Chrome 时优先其原生二进制，保留其他浏览器候选；生产 DevTools 启动等待仍为 15 秒。
+Linux 覆盖率分片失败后另跑独立浏览器诊断：记录实际启动路径、可执行文件与 CDP 的版本一致性，并创建真实页面 target。该步骤不阻断，也不替代原来的真实预览与发布绑定测试；用来区分并行测试时的启动故障和独立启动故障。Linux 已安装 Chrome 时优先其原生二进制，保留其他浏览器候选；生产 DevTools 启动等待仍为 15 秒。
 
 retained/replacement delta 的完整协议测试保留真实浏览器预览，仅在已清理的渲染 timeout 后最多重试一次并输出首次诊断；持续超时、其他错误或取消仍失败。生产边界、覆盖率及真实预览断言不变，见[协议预览超时重试](decisions/accepted/2026-10-14-protocol-preview-timeout-retry.md)。
 
@@ -28,11 +28,13 @@ retained/replacement delta 的完整协议测试保留真实浏览器预览，�
 | 修改 schema 或生成模板 | `npm run build`、`npm run gen:docs`、`npm run verify:generated` |
 | TUI 渲染 | `npm run audit:tui:check`，代码收尾仍跑 check |
 
-测试 runner 可显式传 `--concurrency N`（安全正整数），例如 `node scripts/run-gates.mjs test --concurrency 2` 或 `npm run test:coverage -- --concurrency 1`；省略时保持 Node 默认。Linux CI 的测试采用 2、覆盖率采用 1，Windows/macOS 默认不变；这是 CI 资源调度，不改变真实浏览器的产品超时与断言。`node scripts/run-tests-temp-guard.mjs --self-test` 验证非法并发参数被拒绝。取舍见[Linux CI 测试并发](decisions/accepted/2026-10-06-linux-ci-test-concurrency.md)。
+测试 runner 可显式传 `--concurrency N`（安全正整数），例如 `node scripts/run-gates.mjs test --concurrency 2` 或 `npm run test:coverage -- --concurrency 1`；省略时保持 Node 默认。Linux CI 由 4 个独立 runner 的覆盖率测试同时承担断言检查，每片并发 1，不再重复运行 Linux 普通测试；Windows/macOS 默认不变；这是 CI 资源调度，不改变真实浏览器的产品超时与断言。`node scripts/run-tests-temp-guard.mjs --self-test` 验证非法并发参数被拒绝。取舍见[Linux CI 测试并发](decisions/accepted/2026-10-06-linux-ci-test-concurrency.md)。
 
 测试读取 dist，源码或测试变化后必须先构建；不能直接用 `node --test` 跑 TypeScript。lint 与类型检查分别检查不同问题，不能互相替代。按风险选择检查，不为一项文档修改重复执行全套测试。
 
-覆盖率 CI 的作业墙钟预算独立于产品超时与覆盖率阈值；预算不足时应先区分作业取消和测试失败，不跳过断言或放宽阈值。调整依据见[覆盖率作业预算](decisions/accepted/2026-10-18-coverage-job-budget.md)。
+覆盖率 CI 用 `node scripts/coverage-shards.mjs run INDEX/4 OUTPUT` 按历史耗时权重均衡分片，每片仍串行运行。分片只上传测试和临时目录守卫均成功后的原始 V8 报告；`coverage` 作业下载全部分片，用 `node scripts/coverage-shards.mjs merge INPUT` 校验测试分配、提交、构建摘要、Node 版本、工作区路径和报告摘要，再由 Node 原生引擎统一合并并检查原有阈值。缺片、重复、过期或损坏报告均失败，`all-checks-passed` 仍要求覆盖率成功。分片按 [coverage-timings.json](../scripts/coverage-timings.json) 的历史权重优先安排慢文件，新文件使用默认权重；各片 artifact 的 `timings.jsonl` 提供新的逐文件观测，供后续核对后更新权重，不改变用例选择或超时。本地 `npm run test:coverage` 保留完整单机执行。分片预算 30 分钟、汇总预算 15 分钟独立于产品超时；不能据预算推断真实耗时。理由及反向验证见[覆盖率分片决策](decisions/accepted/2026-10-19-coverage-shards.md)。
+
+纯文档 PR（仅根 README 或 docs 下非隐藏路径的 Markdown，排除 AGENTS 指令）保留完整 static lane，包括文档、生成区、秘密、构建与其他静态门禁，跳过平台测试、TUI 审计和覆盖率。范围检测按整个 PR 相对 merge-base 的改动计算，删除和重命名旧路径也参与判断；空差异、未知路径、运行时 SKILL、配置及 main push 均走完整流程。最终聚合仅在范围检测与 static 成功、且适用作业全部成功时通过；文档路径只接受预期的 skipped，取消或失败仍阻断。规则见 [ci-scope.mjs](../scripts/ci-scope.mjs)。
 
 测试维护原则与 Comparison 场景入口见[测试覆盖索引](../test/README.md)；文件存在不代表能力通过。历史 cwd 使用临时项目，恢复样本按不同内容与扰动执行，权限不足仅跳过对应子用例；退避协议使用虚拟时间，真实系统边界仍保留集成回归。取舍见[行为测试维护决策](decisions/accepted/2026-10-14-behavior-focused-test-maintenance.md)。
 
