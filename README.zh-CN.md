@@ -1,129 +1,154 @@
-# Reprise
+<h1 align="center">Reprise</h1>
 
-[English](./README.md) | [简体中文](./README.zh-CN.md)
+<p align="center"><strong>用自己的真实任务，检验模型的实际表现。</strong></p>
 
-[![check](https://github.com/caulif/Reprise/actions/workflows/check.yml/badge.svg)](https://github.com/caulif/Reprise/actions/workflows/check.yml)
+<p align="center">
+  <a href="./README.md">English</a> · 简体中文 ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="./docs/usage.md">使用指南</a>
+</p>
 
-**同一个真实任务，换一个 Coding Agent 重做，结果会有什么不同？**
+新模型不断刷新榜单，到了你的任务上，还是要反复解释需求、纠错、检查有没有真正做完。你的代码、工作流程和验收要求，也值得成为选择模型的依据。
 
-Reprise 从本机保存的会话中准备任务，恢复工作起点，让你选择候选 Agent 重新执行，再查看交付物、过程证据和结果差异。恢复中的已知缺口会保留供你判断。
+Reprise 从已有的 Coding Agent 会话中整理任务、恢复可用起点，让你选择另一个 Agent 或模型重新执行，再对照两次交付，检查哪些问题解决了、哪些地方仍有遗漏。
 
-> **实验性项目。** 面向个人、本机实验。目前只有 Windows 11 有真实终端与 Runtime 使用验证；恢复起点不保证完整复现历史环境。
+<p align="center">
+  <a href="https://www.npmjs.com/package/@caulif/reprise">npm 安装</a> ·
+  <a href="https://github.com/caulif/Reprise/releases">版本更新</a>
+</p>
 
-## 真实结果
+## 结果示例
 
 ### 鹈鹕骑自行车
 
-Reprise 生成的报告推荐当前成果：车轮绕各自轮心旋转，同时指出它缺少历史版本的暂停控件。
+同一个 SVG 动画任务，两次交付在车轮运动、踩踏动作和暂停控制上有不同取舍。下面是 Reprise 实际生成的对照报告。
 
-[![Reprise 真实报告连续节选：模型、推荐、车轮证据与限制](./docs/assets/reports/pelican-report-excerpt.png)](./docs/assets/reports/pelican-report.png)
+<p align="center">
+  <img src="./docs/assets/reports/pelican-report.png" alt="鹈鹕动画完整对照报告，包含双方模型、交付差异、渲染截图和用量记录" width="960">
+</p>
 
-*直接截取真实报告中的连续区域，未改写或重排内容；点击查看完整截图。推荐是模型对这些具体任务的判断，不是模型排名。*
+### Edit 自移动保护
 
-同一份报告中的交付物截图（左：历史，右：当前）：
+同一个代码修复任务，比较修复范围、回归测试和交付证据。这次报告更认可历史交付的覆盖程度，也指出了其验证证据的缺口。
 
-[![同一份 Reprise 报告中嵌入的历史与当前交付物实拍](./docs/assets/reports/pelican-report-deliveries.png)](./docs/assets/reports/pelican-report.png)
+<p align="center">
+  <img src="./docs/assets/reports/edit-report.png" alt="Edit 自移动保护完整对照报告，包含路径别名回归覆盖、错误规范和验证证据" width="960">
+</p>
 
-| 真实任务 | 报告推荐 | 具体发现 | 生成对照报告耗时 |
-|---|---|---|---|
-| [鹈鹕动画](./docs/examples/real-results.md#pelican) | 当前成果 | 车轮围绕轮心旋转，但缺少暂停控件。 | 5分33秒 |
-| [批注申请书](./docs/examples/real-results.md#word) | 当前成果 | 保留可编辑示意图；最终 Word 版式仍未验证。 | 13分16秒 |
-| [完整路径识别](./docs/examples/real-results.md#paths) | 历史成果 | 对含空格的相对路径覆盖更好。 | 17分54秒 |
-| [Edit 自移动保护](./docs/examples/real-results.md#edit) | 历史成果 | 回归覆盖和错误规范记录更完整。 | 12分16秒 |
+以上为真实生成的报告，保留模型的原始判断与证据限制。报告中的任务耗时统计范围可能不同，费用为估算，不宜据此直接判断模型的速度或性价比。
 
-耗时来自用户记录，指 **Comparison 生成报告阶段**，不代表任务执行耗时或双方速度比较。[查看报告原图与证据边界](./docs/examples/real-results.md)；另有[鹈鹕交付物解读](./docs/examples/pelican-zh-cn.md)，单独检查 HTML 与动画实现。
+## 你会得到什么
 
-### 看看操作过程
+- **封存的任务案例**：从本机 Agent 历史会话中提取任务，并记录恢复结论和已知缺口。
+- **独立的候选工作副本**：保留事件日志、trace、候选终稿及运行后的工作副本。
+- **可选的对照报告**：将历史和候选证据并列呈现，而不是压缩成单一分数。
 
-[![真实 Reprise 终端中的候选运行](./docs/assets/workflow/run.png)](./docs/assets/workflow/comparison.mp4)
+从历史会话到重新交付，按三个步骤完成：**恢复任务起点 → 选择工具与模型重新执行 → 对照交付结果**。
 
-[观看 Comparison 操作短片（MP4）](./docs/assets/workflow/comparison.mp4) · [录屏来源与剪辑说明](./docs/assets/workflow/README.md)
+### 运行过程
 
-片段来自真实终端录屏，剪掉了等待时间。它展示的是较早的一次运行，与上面四份报告不是同一批，不是这些报告生成过程的连续录像。GitHub 可能以下载方式提供 MP4。
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>1. 选择历史任务</strong><br>
+      从首页进入重做任务，选择工具、项目与会话。
+      <a href="./docs/assets/workflow/01-home.png"><img src="./docs/assets/workflow/01-home.png" alt="Reprise 首页：重做任务、运行记录与模型设置" width="480"></a>
+    </td>
+    <td width="50%" valign="top">
+      <strong>2. 恢复任务起点</strong><br>
+      整理原始需求，检查工作区与证据，记录恢复结论。
+      <a href="./docs/assets/workflow/02-stage-recovery.png"><img src="./docs/assets/workflow/02-stage-recovery.png" alt="任务恢复：检查历史需求、时间线与工作副本" width="480"></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>3. 让候选重新执行</strong><br>
+      选择工具与模型，查看执行进展和交付内容。
+      <a href="./docs/assets/workflow/03-stage-run.png"><img src="./docs/assets/workflow/03-stage-run.png" alt="候选执行：控制 Agent 整理任务，由 Claude Code 执行" width="480"></a>
+    </td>
+    <td width="50%" valign="top">
+      <strong>4. 查看比较结果</strong><br>
+      查看任务判断与运行记录，打开报告核对交付差异。
+      <a href="./docs/assets/workflow/04-stage-compare.png"><img src="./docs/assets/workflow/04-stage-compare.png" alt="比较完成：任务判断、执行工具、耗时与报告入口" width="480"></a>
+    </td>
+  </tr>
+</table>
 
-## 什么时候使用
-
-- 换一个 Agent 或模型，重新检验一次重要的编程任务。
-- 检查交付差异，包括遗漏和各自取舍。
-- 保存个人任务案例与证据，供之后重新尝试。
+点击截图可查看原图。这组截图展示同一次真实运行的操作流程，与上方报告案例分别保留各自的运行记录。
 
 ## 快速开始
 
-当前从源码运行，需要 Git、npm 和 Node.js **22.19 或更高版本**：
+需要 npm 和 Node.js **22.19 或更高版本**。
 
-```powershell
+```bash
+npm install -g @caulif/reprise
+reprise
+```
+
+从首页选择「重做任务」（`/intake`），依次选择来源工具、项目和历史会话。首次运行请先在 `/config` 配置 Reprise 模型并保存；执行任务的工具需单独安装、登录。确认任务起点后，选择候选工具与模型开始运行。
+
+仅查看命令帮助可运行 `reprise --help`，不会调用模型。恢复任务、候选执行和生成报告需要相应配置，可能产生模型服务费用。
+
+<details>
+<summary>从源码运行</summary>
+
+还需要 Git：
+
+```bash
 git clone https://github.com/caulif/Reprise.git
 cd Reprise
 npm ci
 npm run build
-node dist/src/cli/main.js --help
+node dist/src/cli/main.js
 ```
 
-以上命令只构建并显示帮助，不调用模型，不需要模型密钥或产品登录。Reprise 尚未发布到 npm，请不要安装无关的裸名 `reprise` 包。
+</details>
 
-打开终端界面：
-
-```powershell
-node dist/src/cli/main.js --locale zh
-```
-
-1. 打开 `/config`，配置 **Reprise 模型**，按 `Ctrl+S` 保存。它负责准备任务、引导执行和比较结果；可选的 `Ctrl+T` 连接测试会调用模型，可能计费。
-2. 单独安装并登录**执行工具**。执行工具的模型和账号与 Reprise 模型是两条链路。
-3. 打开 `/intake`，选择来源工具、项目和历史会话，核对任务。确认核对页会开始准备任务，可能产生模型费用。
-4. 准备成功后选择执行工具和模型，检查恢复后的副本与已知限制，再确认执行。
-5. 查看结果并打开执行路径。需要比较时再选择“与原结果比较”，这会再次调用模型；结束后结果页提供报告或失败诊断入口。
-
-配置、取消、费用与排障的完整路径见[使用指南](./docs/usage.md)。
+完整操作步骤、模型配置和无头 CLI 用法见[使用指南](./docs/usage.md)。
 
 ## 前置条件与支持范围
 
-| 内置工具 | 导入本机会话历史 | 候选执行 |
-|---|---|---|
-| Codex（`codex`） | 支持 | 支持，通过本机安装的 Codex Runtime |
-| Claude Code（`claude-code`） | 支持 | 支持，通过本机安装的 Claude Code Runtime |
+目前仅支持 **Claude Code** 和 **Codex**，可导入它们的本机会话，并选择其中一个工具重新执行任务。
 
-表中描述已实现的角色，不保证兼容工具的所有版本。模型由所选工具的可用目录提供；Reprise 不安装工具，也不复现其历史版本。来源会话必须已在本机保存，执行工具需要安装并登录。
+| 你想做什么 | 需要什么 |
+|---|---|
+| 安装并查看命令帮助 | Node.js 22.19+ 与 npm |
+| 恢复会话并运行候选 | 本机已安装受支持的产品，且保留了本机会话历史 |
+| 调用 Recovery、Controller 或 Comparison 模型 | 在 `/config` 配置 Harness 模型；这些操作可能产生服务费用 |
 
-Windows 11 已有真实使用证据，但部分终端与 Runtime 场景仍待验证；macOS、Linux 的 CI 通过不等于真实 Runtime 已验证。具体范围见[路线图](./docs/roadmap.md)。
+Windows 11 和 Linux 已由维护者实际测试。macOS 尚未测试，欢迎尝试并反馈使用情况。
 
-## 你会得到什么
-
-```text
-历史会话 -> 恢复后的任务案例 -> 候选运行 -> 本机证据与可选对照报告
-```
-
-- 封存的任务案例，附恢复结论与已知缺口。
-- 候选工作副本、事件日志、trace 与终稿。
-- 可选的对照报告，呈现历史和当前交付的证据与限制，不压缩为统一分数。
+默认数据目录是当前目录中的 `.reprise`。可使用 `--data-dir` 或 `REPRISE_DATA_DIR` 指定其他位置。
 
 ## 隐私、费用与安全
 
-- 本机保存不代表离线执行：任务材料会发送给你配置的 Reprise 模型服务，执行工具使用自己的账号与数据政策，两侧都可能计费。
-- 运行前检查输入与权限。秘密过滤不保证清除全部敏感材料；工作副本不是操作系统文件或网络沙箱，外部副作用不会自动回滚。
-- 运行中按 `Ctrl+C` 请求停止当前阶段，随后检查最终状态和清理诊断；发出取消请求不等于已立即停止。
-- 普通 CLI/TUI 尚无独立预算设置入口。真实运行前阅读[费用与取消](./docs/usage.md#费用与取消)；报告估算不是供应商实账。
+- 实验记录和工作副本保存在本机；但 Recovery、Controller 与 Comparison 会将完成任务所需的材料发送给你配置的 Harness 模型服务。
+- 候选 Runtime 使用各自产品的登录态和数据处理规则。Reprise 不提供通用网络沙箱，也不会回滚外部副作用。
+- 在真实运行前检查任务输入、权限、隐私和预算。秘密过滤不保证能够移除全部个人信息或业务内容。
 
-数据默认保存在当前目录的 `.reprise`，请保留为私有。可通过 `--data-dir` 或 `REPRISE_DATA_DIR` 更改位置。更多说明见[数据去向](./docs/usage.md#数据去向)。
+使用真实工作内容前，请阅读[数据去向与凭据边界](./docs/usage.md#数据去向)，对于有外部副作用的任务应使用测试账号、mock 或只读观察。
 
 ## 项目状态
 
-Reprise 仍处于实验阶段，预期包名为 `@caulif/reprise`，目前采用源码安装。它不是公共排行榜、标准 benchmark 或某模型普遍更强的证明。当前实现限制和缺失验证见[路线图](./docs/roadmap.md)。
+Reprise 已发布到 [npm](https://www.npmjs.com/package/@caulif/reprise)，包名为 `@caulif/reprise`，命令名为 `reprise`。版本记录与安装包见 [GitHub Releases](https://github.com/caulif/Reprise/releases)。
+
+当前实现限制和仍待验证的真实 Runtime 行为见[路线图](./docs/roadmap.md)。
 
 ## 文档
 
 | 目标 | 阅读入口 |
 |---|---|
-| 配置并完成首次运行 | [使用指南](./docs/usage.md)；[English getting started](./docs/getting-started.md) |
-| 不安装先查看真实案例 | [鹈鹕案例](./docs/examples/pelican-zh-cn.md) |
-| 理解模块与执行流程 | [架构总览](./docs/architecture/overview.md) |
-| 开发与验证 | [开发指南](./docs/development.md) |
-| 浏览完整文档 | [文档首页](./docs/README.md) |
+| 通过 TUI 或 CLI 运行 Reprise | [使用指南](./docs/usage.md) |
+| 理解模块和执行流程 | [架构总览](./docs/architecture/overview.md) |
+| 配置开发环境并运行检查 | [开发与验证](./docs/development.md) |
+| 查看限制与验证证据 | [路线图](./docs/roadmap.md) |
+| 浏览完整文档导航 | [文档首页](./docs/README.md) |
 
 ## 支持与贡献
 
-提问、缺陷和功能建议请使用 [GitHub Issues](https://github.com/caulif/Reprise/issues/new/choose)，可使用中文或英文。贡献前请阅读[贡献指南](./docs/CONTRIBUTING.md)、[行为准则](./docs/CODE_OF_CONDUCT.md)与[开发指南](./docs/development.md)。
+提问、想法和可复现的缺陷请提交到 [GitHub Issues](https://github.com/caulif/Reprise/issues/new/choose)。准备贡献前，请阅读[贡献指南](./docs/CONTRIBUTING.md)、[行为准则](./docs/CODE_OF_CONDUCT.md)和[开发与验证](./docs/development.md)。
 
-请不要公开凭据、私有会话正文或未经脱敏的实验产物。
+请不要在公开内容中贴出凭据、真实会话正文或未经脱敏的实验产物。
 
 ## 致谢
 

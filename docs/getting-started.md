@@ -2,23 +2,20 @@
 
 [English README](../README.md) · [中文使用指南](./usage.md) · [See a real case first](./examples/pelican.md)
 
-This guide takes you from a source checkout to a local result. Reprise is experimental; Windows 11 is the only platform with real terminal and Runtime validation so far. The [roadmap](./roadmap.md) tracks remaining validation. Most technical reference documents are currently in Chinese.
+This guide takes you from installation to a result. The maintainer has tested Windows 11 and Linux; macOS has not been tested yet. The [roadmap](./roadmap.md) tracks remaining validation. Most technical reference documents are currently in Chinese.
 
 ## Install and inspect help
 
-Install Git, npm, and Node.js **22.19 or later**, then run:
+Install npm and Node.js **22.19 or later**, then run:
 
-```powershell
-git clone https://github.com/caulif/Reprise.git
-cd Reprise
-npm ci
-npm run build
-node dist/src/cli/main.js --help
+```bash
+npm install -g @caulif/reprise
+reprise --help
 ```
 
-Success here means the CLI prints its help. No model or product login is required for these commands. Reprise is not yet published to npm; the unscoped `reprise` package is unrelated.
+The help command does not call a model or require a model key or product login. To run from source instead, follow the [README](../README.md#quick-start).
 
-Run commands from this checkout. Records default to `.reprise` in the current directory. Use `--data-dir <directory>` or `REPRISE_DATA_DIR` consistently if you need another location; switching directories can make existing records appear absent.
+Records default to `.reprise` in the current directory. Use `--data-dir <directory>` or `REPRISE_DATA_DIR` consistently if you need another location; switching directories can make existing records appear absent.
 
 ## Configure the two model paths
 
@@ -32,7 +29,7 @@ Configuring one path does not configure the other. Both can incur costs. Reprise
 Open Reprise:
 
 ```powershell
-node dist/src/cli/main.js --locale en
+reprise --locale en
 ```
 
 In `/config`, choose **openai-compatible**, then enter your service's base URL, actual model ID, and API key. Choose the API protocol the service supports: `openai-completions` or `openai-responses`. An OpenAI-compatible label does not guarantee support for both protocols. Set reasoning and image input only if your model and service support them. Image input is undeclared/text-only by default; declaring it does not verify visual understanding.
