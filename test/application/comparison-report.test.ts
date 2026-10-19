@@ -40,20 +40,23 @@ test('session dates use earliest valid history and run time in UTC and survive f
   assert.equal(legacy.match(/Date unknown/g)?.length, 2);
 });
 
-test('session Agent names follow each product Pack independently of model names and remain in frozen facts', () => {
+test('session Agent names use injected product labels independently of model names and remain in frozen facts', () => {
   const historical = taskCase();
   historical.sourceRuntimeEvidence.model = 'shared-model';
   const run = runRecord();
   run.attempt.candidate.productId = 'claude-code';
   run.attempt.candidate.requestedModel = 'shared-model';
-  const context = buildComparisonContext(historical, [run]);
-  assert.deepEqual(context.reportFacts.sessionAgents, { baseline: 'Codex', candidate: 'Claude Code' });
+  const names = new Map([['codex', 'Scoped Codex'], ['claude-code', 'Scoped Claude']]);
+  const options = { resolveProductName: (productId: string) => names.get(productId) ?? productId };
+  const context = buildComparisonContext(historical, [run], [], options);
+  assert.deepEqual(context.reportFacts.sessionAgents, { baseline: 'Scoped Codex', candidate: 'Scoped Claude' });
   const frozen: unknown = JSON.parse(JSON.stringify(context));
   assert.ok(Value.Check(ComparisonBriefingContextSchema, frozen));
   assert.deepEqual(frozen.reportFacts.sessionAgents, context.reportFacts.sessionAgents);
   run.attempt.candidate.productId = 'future-agent';
-  assert.deepEqual(buildComparisonContext(historical, [run]).reportFacts.sessionAgents, { baseline: 'Codex', candidate: 'future-agent' });
-  assert.deepEqual(buildComparisonContext(historical, []).reportFacts.sessionAgents, { baseline: 'Codex' });
+  assert.deepEqual(buildComparisonContext(historical, [run], [], options).reportFacts.sessionAgents, { baseline: 'Scoped Codex', candidate: 'future-agent' });
+  assert.deepEqual(buildComparisonContext(historical, [], [], options).reportFacts.sessionAgents, { baseline: 'Scoped Codex' });
+  assert.deepEqual(buildComparisonContext(historical, [run]).reportFacts.sessionAgents, { baseline: 'codex', candidate: 'future-agent' });
 });
 
 test('session dates retain history-only metadata without substituting import time', () => {

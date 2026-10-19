@@ -73,7 +73,7 @@ const MAX_COMPARISON_INPUT_BYTES = 262_144;
 
 export type CompletedRunContext = {
   signal?: AbortSignal;
-  input: Pick<ExperimentInput, 'dataDir' | 'experimentId' | 'runId' | 'candidate' | 'pack' | 'agentConfig' | 'comparisonAgentConfig' | 'comparison' | 'comparisonPreviewRenderer' | 'extractHistoricalArtifacts'>;
+  input: Pick<ExperimentInput, 'dataDir' | 'experimentId' | 'runId' | 'candidate' | 'pack' | 'agentConfig' | 'comparisonAgentConfig' | 'comparison' | 'comparisonPreviewRenderer' | 'extractHistoricalArtifacts' | 'resolveProductName'>;
   taskCase: TaskCase;
   preflight: ExperimentPreflight;
   store: ExperimentStore;
@@ -275,12 +275,8 @@ async function compareExperimentOutcome(
   const events = input.store.events(input.input.runId).filter(event =>
     event.sequence >= record.trace.firstSequence && event.sequence <= record.trace.lastSequence);
   const locale = await readOperatorLocale(input.input.dataDir);
-  const comparisonModel = (input.input.comparisonAgentConfig ?? input.input.agentConfig).requestedModel;
   const context: ComparisonContext = {
-    ...buildComparisonContext(input.taskCase, [record], [inspection], {
-      dataDir: input.input.dataDir,
-      comparisonModel,
-    }),
+    ...comparisonFactsForRun(input, record, inspection),
     attemptId,
     ownedEvidenceRefs: comparisonOwnedObservationRefs(input.taskCase, events),
   };
@@ -341,13 +337,20 @@ async function compareExperimentOutcome(
   });
 }
 
+function comparisonFactsForRun(input: CompletedRunContext, record: RunRecord, inspection: Awaited<ReturnType<typeof inspectRun>>) {
+  return buildComparisonContext(input.taskCase, [record], [inspection], {
+    dataDir: input.input.dataDir,
+    comparisonModel: (input.input.comparisonAgentConfig ?? input.input.agentConfig).requestedModel,
+    ...(input.input.resolveProductName ? { resolveProductName: input.input.resolveProductName } : {}),
+  });
+}
+
 async function prepareComparisonHistory(input: CompletedRunContext, record: RunRecord, inspection: Awaited<ReturnType<typeof inspectRun>>, attemptId: string, attemptRoot: string) {
   try {
     return await prepareHistoricalArtifacts({ taskCase: input.taskCase, caseDir: join(input.input.dataDir, 'cases', input.taskCase.caseId),
       attemptRoot, ...(input.input.extractHistoricalArtifacts ? { extract: input.input.extractHistoricalArtifacts } : {}) });
   } catch (error) {
-    const context = buildComparisonContext(input.taskCase, [record], [inspection], { dataDir: input.input.dataDir,
-      comparisonModel: (input.input.comparisonAgentConfig ?? input.input.agentConfig).requestedModel });
+    const context = comparisonFactsForRun(input, record, inspection);
     return persistComparisonInvocation({ store: input.store, runId: input.input.runId, experimentRoot: input.experimentRoot,
       attemptId, attemptRoot, comparisonResult: mapBriefingErrorToComparisonResult(error), facts: context.reportFacts,
       task: context.task.summary, locale: await readOperatorLocale(input.input.dataDir) });

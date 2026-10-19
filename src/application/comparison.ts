@@ -1,4 +1,3 @@
-import { productPacks } from '../products/index.js';
 import { validateTaskCase } from '../core/task-case-identity.js';
 import { Value } from '@sinclair/typebox/value';
 import {
@@ -55,11 +54,13 @@ export type RunInspection = {
   workspaceEvidenceStatus?: 'available' | 'not_collected' | 'unavailable';
 };
 
+export type ComparisonFactOptions = { dataDir?: string; comparisonModel?: string; resolveProductName?: (productId: string) => string };
+
 export function buildComparisonContext(
   taskCase: TaskCase,
   runs: readonly RunRecord[],
   inspections: readonly RunInspection[] = [],
-  pricing?: { dataDir?: string; comparisonModel?: string },
+  options?: ComparisonFactOptions,
 ): ComparisonFactsContext {
   assertFacts(taskCase, runs);
   const byRunId = new Map(inspections.map((inspection) => [inspection.runId, inspection]));
@@ -83,7 +84,7 @@ export function buildComparisonContext(
       evidenceRefs: runEvidence(run),
     })),
     telemetry: runs.map((run) => ({ runId: run.attempt.runId })),
-    reportFacts: buildReportFacts(primary, inspection, taskCase, hostReplay, pricing),
+    reportFacts: buildReportFacts(primary, inspection, taskCase, hostReplay, options),
     artifactRefs: unique(runs.flatMap((run) => run.artifactRefs.map((ref) => `artifact:${ref.artifactId}`))),
     allowModelText: true,
     replayScope: {
@@ -104,11 +105,13 @@ export async function comparePersistedFacts(input: {
   attemptId: string;
   dataDir?: string;
   comparisonModel?: string;
+  resolveProductName?: (productId: string) => string;
 }): Promise<{ context: ComparisonContext; result: StructuredAgentResult<ComparisonResult> }> {
   if (!input.attemptId) throw new Error("Comparison attemptId is required.");
   const facts = buildComparisonContext(input.taskCase, input.runs, input.inspections, {
     ...(input.dataDir ? { dataDir: input.dataDir } : {}),
     ...(input.comparisonModel ? { comparisonModel: input.comparisonModel } : {}),
+    ...(input.resolveProductName ? { resolveProductName: input.resolveProductName } : {}),
   });
   const locale = input.dataDir ? await readOperatorLocale(input.dataDir) : "zh";
   const reportShellHtml = renderComparisonReportShell({
@@ -133,11 +136,11 @@ function buildReportFacts(
   inspection: RunInspection | undefined,
   taskCase: TaskCase,
   hostReplay: ComparisonContext['hostReplay'],
-  pricing?: { dataDir?: string; comparisonModel?: string },
+  options?: ComparisonFactOptions,
 ): ComparisonReportFacts {
   const historicalTimes = [taskCase.taskContext?.historyStartedAt, ...taskCase.historicalEvents.map((event) => event.timestamp)]
     .map(validSessionTimestamp).filter((value): value is string => value !== undefined).sort();
-  const agentName = (productId: string) => productPacks.find(pack => pack.manifest.productId === productId)?.manifest.displayName.trim() || productId;
+  const agentName = (productId: string) => options?.resolveProductName?.(productId).trim() || productId;
   const sessionAgents = { baseline: agentName(taskCase.source.productId), ...(run ? { candidate: agentName(run.attempt.candidate.productId) } : {}) };
   const currentTime = validSessionTimestamp(run?.manifest?.startedAt) ?? validSessionTimestamp(run?.attempt.createdAt);
   const sessionDates = {
@@ -147,16 +150,16 @@ function buildReportFacts(
   if (!run) return {
     sessionDates, sessionAgents,
     run: { runId: 'unavailable', outcome: 'unavailable', terminationCode: 'unavailable', initiatedBy: 'unavailable' },
-    models: comparisonModels(taskCase, undefined, pricing?.comparisonModel), activity: {}, limits: { triggered: [] }, runtime: { productId: 'unavailable' },
+    models: comparisonModels(taskCase, undefined, options?.comparisonModel), activity: {}, limits: { triggered: [] }, runtime: { productId: 'unavailable' },
     delivery: { changedPaths: [], targetArtifactStatus: 'unavailable', verificationStatus: 'unavailable' },
     replay: { conditions: [], baselineEvidence: evidenceLevel(taskCase.baseline.evidenceRefs), candidateEvidence: 'unavailable' },
   };
   const triggered = run.outcome.termination.kind === 'limit_reached' ? [run.outcome.termination.code] : [];
-  const metrics = projectedMetrics(taskCase, inspection, run, pricing?.dataDir);
+  const metrics = projectedMetrics(taskCase, inspection, run, options?.dataDir);
   return {
     sessionDates, sessionAgents,
     run: { runId: run.attempt.runId, outcome: run.outcome.task.status, terminationCode: run.outcome.termination.code, initiatedBy: run.outcome.termination.initiatedBy, ...(inspection?.wallClockMs === undefined ? {} : { candidateElapsedMs: inspection.wallClockMs }) },
-    models: comparisonModels(taskCase, run, pricing?.comparisonModel),
+    models: comparisonModels(taskCase, run, options?.comparisonModel),
     activity: { ...(inspection ? { candidateTurns: inspection.turns } : {}) },
     limits: { ...(run.attempt.policy.wallClockMs === undefined ? {} : { wallClockMs: run.attempt.policy.wallClockMs }), maxTargetTurns: run.attempt.policy.maxTargetTurns, maxModelCalls: run.attempt.policy.maxModelCalls, triggered },
     runtime: { productId: run.attempt.candidate.productId },
