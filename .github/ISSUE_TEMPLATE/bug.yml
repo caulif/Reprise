@@ -1,32 +1,35 @@
-name: Bug
-description: 报告可复现的缺陷
+name: Bug / 缺陷
+description: Report a reproducible defect / 报告可复现的缺陷
 labels: ["bug"]
 body:
+  - type: markdown
+    attributes:
+      value: "For vulnerabilities, use [private reporting](https://github.com/caulif/Reprise/security/advisories/new). Do not post secrets or private sessions. 漏洞请私下报告，不要公开凭据或私有会话。"
   - type: textarea
     id: reproduce
     attributes:
-      label: 复现
-      description: 最少步骤。能用确定性测试或脚本复现时不要依赖真实 Runtime。
+      label: Steps to reproduce / 复现
+      description: Minimal steps, expected and actual behavior. Prefer offline fixtures where possible. 最少步骤、预期与实际结果；可离线复现时不要依赖真实 Runtime。
     validations:
       required: true
   - type: textarea
     id: impact
     attributes:
-      label: 影响
-      description: 谁受影响、数据是否损坏、是否涉及凭据或费用。
+      label: Impact / 影响
+      description: Who is affected? Mention data loss or unexpected charges without sensitive details. 谁受影响；说明数据损失或意外费用，不贴敏感细节。
     validations:
       required: true
   - type: textarea
     id: evidence
     attributes:
-      label: 证据
-      description: 退出码、脱敏日志、测试名。不要粘贴 API key、完整 prompt 或本机秘密路径内容。
+      label: Evidence / 证据
+      description: Sanitized errors, exit codes or test names; say if unavailable. No API keys, full prompts or private paths. 脱敏错误、退出码或测试名；没有时注明。勿贴密钥、完整 prompt 或私人路径。
     validations:
       required: true
   - type: textarea
     id: environment
     attributes:
-      label: 环境
-      description: OS、Node 版本、Reprise 版本或 git SHA。已验证平台是 Windows 11。
+      label: Environment / 环境
+      description: OS, Node version, Reprise version or git SHA, and relevant CLI versions. Windows 11 is the verified platform. 操作系统、Node、Reprise 版本或提交及相关 CLI 版本；已验证平台为 Windows 11。
     validations:
       required: true

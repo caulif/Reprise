@@ -4,3 +4,6 @@
 # 尾部空格是定宽证据的一部分，因此关闭空白检查。
 docs/tui-audit/frames/** text eol=lf -whitespace
 test/snapshots/** text eol=lf -whitespace
+
+# Preserve the published HTML copies' source hashes on Windows checkouts.
+docs/assets/pelican/*.html text eol=lf
