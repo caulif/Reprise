@@ -37,8 +37,13 @@ export function workspaceProcessTools(options: Options): { tools: readonly Agent
   };
   const lifecycle = { async finishInvocation(owner: AgentToolOwner, requireCompleted = true) {
     const entries = [...sessions.entries()].filter(([, session]) => session.owner === ownerKey(owner));
-    const unfinished = entries.some(([, session]) => session.process.running);
-    const results = await Promise.allSettled(entries.map(async ([, session]) => { await session.process.cancel(); await persistLog(session); }));
+    const unfinished = entries.some(([, session]) => session.process.state === 'running');
+    const results = await Promise.allSettled(entries.map(async ([, session]) => {
+      await session.process.cancel();
+      const snapshot = await session.process.poll(60_000, 0);
+      if (snapshot.state === 'flushing') throw new Error('Process output log flush timed out; workspace cannot be sealed.');
+      await persistLog(session);
+    }));
     const failures = results.filter(result => result.status === 'rejected');
     if (failures.length) throw new AggregateError(failures.map(result => result.reason as unknown), 'Process cleanup or log persistence failed.');
     for (const [id] of entries) sessions.delete(id);
@@ -46,14 +51,14 @@ export function workspaceProcessTools(options: Options): { tools: readonly Agent
   } };
   const result = async (id: string, session: Session, params: { yield_time_ms?: number; max_output_tokens?: number; chars?: string }) => {
     const snapshot = await session.process.poll(params.yield_time_ms ?? 10_000, (params.max_output_tokens ?? 4_096) * 4, params.chars);
-    const logArtifact = snapshot.state === 'running' ? undefined : await persistLog(session);
+    const logArtifact = snapshot.state === 'running' || snapshot.state === 'flushing' ? undefined : await persistLog(session);
     const receipt = { session_id: id, ...snapshot, command: session.command, cwd: session.cwd,
       ...(session.outputLog ? { outputLog: session.outputLog, logMaxBytes: 16_777_216, logTruncated: session.process.logTruncated ?? false } : {}),
       ...(logArtifact ? { logArtifact } : {}) };
     return { content: JSON.stringify(receipt), details: receipt };
   };
   const tools: AgentToolDefinition[] = [
-    { name: 'exec_command', description: `${options.description} Waits up to 10000ms by default; yield_time_ms returns control without killing the command. Pipe input remains open. Use write_stdin to collect incremental output, and finish or cancel every session before this invocation ends.`, lifecycle,
+    { name: 'exec_command', description: `${options.description} Waits up to 10000ms by default; yield_time_ms returns control without killing the command. Pipe input remains open. Use write_stdin to collect incremental output, and finish or cancel every session before this invocation ends. A flushing session has exited but still owns the workspace until logs are saved; use write_stdin to wait.`, lifecycle,
       parameters: Type.Object({ cmd: Type.String({ minLength: 1, maxLength: 32_768 }), workdir: Type.Optional(Type.String({ maxLength: 4096 })), yield_time_ms: wait, max_output_tokens: budget }),
       async execute(params, signal, owner) {
         const value = params as { cmd: string; workdir?: string; yield_time_ms?: number; max_output_tokens?: number };
@@ -75,7 +80,7 @@ export function workspaceProcessTools(options: Options): { tools: readonly Agent
         if (value.chars) options.validateInput?.(value.chars);
         return result(value.session_id, session, value);
       } },
-    { name: 'cancel_process', description: 'Terminate an owned command tree and wait for pipe/process cleanup. Unconfirmed termination is fatal; cancellation itself is an ordinary command result.', lifecycle,
+    { name: 'cancel_process', description: 'Terminate an owned command tree and wait for pipe/process cleanup. A flushing result means the process has exited and logs are still saving; use write_stdin to wait. Unconfirmed termination is fatal; cancellation itself is an ordinary command result.', lifecycle,
       parameters: Type.Object({ session_id: Type.String(), max_output_tokens: budget }),
       async execute(params, _signal, owner) {
         const value = params as { session_id: string; max_output_tokens?: number };

@@ -9,7 +9,7 @@ import { processOutputRedactor } from './process-output-redactor.js';
 
 export type ProcessSessionInput = {
   command: string; args: readonly string[]; cwd: string; env: NodeJS.ProcessEnv;
-  signal: AbortSignal; spawnProcess?: ProcessSpawner; outputLogPath?: string;
+  signal: AbortSignal; spawnProcess?: ProcessSpawner; outputLogPath?: string; createOutputLog?: typeof processOutputLog;
 };
 
 export function startProcessSession(input: ProcessSessionInput): ManagedProcessSession {
@@ -17,26 +17,30 @@ export function startProcessSession(input: ProcessSessionInput): ManagedProcessS
   const spawn = input.spawnProcess ?? spawnRuntimeProcess;
   return new PipeProcessSession(spawn(input.command, input.args, {
     ...spawnCancelOptions(true), cwd: input.cwd, env: input.env, stdio: ['pipe', 'pipe', 'pipe'],
-  }), input.signal, input.outputLogPath);
+  }), input.signal, input.outputLogPath, input.createOutputLog);
 }
 
 class PipeProcessSession implements ManagedProcessSession {
   #state: ManagedProcessSnapshot['state'] = 'running';
-  #output = Buffer.alloc(0);
+  #output: Buffer = Buffer.alloc(0);
+  #pendingOutput: Buffer[] = [];
+  #pendingBytes = 0;
   #truncated = false;
   #redactionTruncated = false;
   #exitCode: number | undefined;
   #failure: Error | undefined;
   #chain: Promise<unknown> = Promise.resolve();
   #closed: Promise<void>;
+  #processClosed: Promise<void>;
+  #cancelRequested = false;
   readonly #child: ChildProcess;
   #cancel: Promise<void> | undefined;
   #rootClosed = false;
   #log: ReturnType<typeof processOutputLog> | undefined;
 
-  constructor(child: ChildProcess, signal: AbortSignal, outputLogPath?: string) {
+  constructor(child: ChildProcess, signal: AbortSignal, outputLogPath?: string, createOutputLog = processOutputLog) {
     this.#child = child;
-    const log = outputLogPath ? processOutputLog(outputLogPath, error => {
+    const log = outputLogPath ? createOutputLog(outputLogPath, error => {
       this.#failure ??= new Error('Process output log persistence failed.', { cause: error });
       void this.cancel().catch(() => { /* poll/drain surfaces persistence and termination failure. */ });
     }) : undefined;
@@ -46,8 +50,12 @@ class PipeProcessSession implements ManagedProcessSession {
     }));
     const decoders = [new StringDecoder('utf8'), new StringDecoder('utf8')];
     const abort = () => { void this.cancel().catch(() => { /* poll/drain surfaces termination uncertainty. */ }); };
+    let processClosed!: () => void;
+    this.#processClosed = new Promise(resolve => { processClosed = resolve; });
     this.#closed = new Promise(resolve => child.once('close', code => {
       this.#rootClosed = true;
+      this.#state = 'flushing';
+      processClosed();
       this.#exitCode = typeof code === 'number' ? code : undefined;
       signal.removeEventListener('abort', abort);
       for (const [index, output] of outputs.entries()) {
@@ -58,7 +66,7 @@ class PipeProcessSession implements ManagedProcessSession {
       void (async () => {
         try { await log?.finish(); }
         catch (error) { this.#failure ??= new Error('Process output log persistence failed.', { cause: error }); }
-        if (this.#state === 'running') this.#state = this.#failure ? 'failed' : 'completed';
+        this.#state = this.#failure ? 'failed' : this.#cancelRequested ? 'cancelled' : 'completed';
         resolve();
       })();
     }));
@@ -80,22 +88,30 @@ class PipeProcessSession implements ManagedProcessSession {
     if (signal.aborted) abort();
   }
 
-  get running(): boolean { return this.#state === 'running'; }
+  get state(): ManagedProcessSnapshot['state'] { return this.#state; }
+  get running(): boolean { return this.#state === 'running' || this.#state === 'flushing'; }
   get logTruncated(): boolean { return this.#redactionTruncated || (this.#log?.truncated ?? false); }
 
   #collect(chunk: Buffer): void {
-    const remaining = 1_048_576 - this.#output.length;
+    const remaining = 1_048_576 - this.#output.length - this.#pendingBytes;
     if (chunk.length > remaining) this.#truncated = true;
     let end = Math.min(chunk.length, Math.max(0, remaining));
     while (end > 0 && end < chunk.length && (chunk[end]! & 0xc0) === 0x80) end--;
-    this.#output = Buffer.concat([this.#output, chunk.subarray(0, end)]);
+    if (end > 0) {
+      this.#pendingOutput.push(chunk.subarray(0, end));
+      this.#pendingBytes += end;
+    }
   }
 
   poll(waitMs: number, maxBytes: number, chars = ''): Promise<ManagedProcessSnapshot> {
     const next = this.#chain.then(async () => {
-      if (chars && this.running) this.#child.stdin?.write(chars);
+      if (chars && !this.#rootClosed && this.running) this.#child.stdin?.write(chars);
       if (this.running && waitMs > 0) await settlesWithin(this.#closed, waitMs);
       if (this.#failure) throw this.#failure;
+      if (this.#pendingBytes > 0) {
+        this.#output = Buffer.concat([this.#output].concat(this.#pendingOutput), this.#output.length + this.#pendingBytes);
+        this.#pendingOutput = []; this.#pendingBytes = 0;
+      }
       // Decode at a UTF-8 boundary so paging cannot split a multi-byte character.
       let end = Math.min(maxBytes, this.#output.length);
       while (end > 0 && end < this.#output.length && (this.#output[end]! & 0xc0) === 0x80) end--;
@@ -109,22 +125,24 @@ class PipeProcessSession implements ManagedProcessSession {
   }
 
   cancel(): Promise<void> {
-    this.#cancel ??= this.#terminate();
+    if (!this.#cancel) {
+      this.#cancel = this.#terminate().then(() => { this.#cancel = undefined; });
+    }
     return this.#cancel;
   }
 
   async #terminate(): Promise<void> {
     if (!this.running) { if (this.#failure) throw this.#failure; return; }
-    const treeTerminated = this.#rootClosed || terminateProcessTree(this.#child, true);
-    if (!await settlesWithin(this.#closed, 5_000)) {
-      this.#failure ??= new Error('Process tree termination was not confirmed; workspace cannot be sealed.');
-      throw this.#failure;
+    if (!this.#rootClosed) {
+      this.#cancelRequested = true;
+      const treeTerminated = terminateProcessTree(this.#child, true);
+      if (!await settlesWithin(this.#processClosed, 5_000) || !treeTerminated) {
+        this.#failure ??= new Error('Process tree termination was not confirmed; workspace cannot be sealed.');
+        throw this.#failure;
+      }
     }
-    if (!treeTerminated) {
-      this.#failure ??= new Error('Process tree termination was not confirmed; workspace cannot be sealed.');
-      throw this.#failure;
-    }
-    if (this.#failure) { this.#state = 'failed'; throw this.#failure; }
-    this.#state = 'cancelled';
+    // A wait window expiring while logs drain is not a process termination failure.
+    await settlesWithin(this.#closed, 5_000);
+    if (this.#failure) throw this.#failure;
   }
 }

@@ -40,6 +40,8 @@ Recovery 默认使用 `exec_command`、`write_stdin` 和 `cancel_process`。命�
 
 文件读取、列表与搜索声明并行；独立 observations 读取可与项目后台命令重叠。后台命令可能写入，项目文件操作仍需等待或取消该命令，两个任意 shell 命令不自动并发。Session 在发布 invocation 完成/让出前排空受管进程；若模型未完成命令就结束，终止并收尾后返回失败，不把后台工作算作成功。不能确认终止时拒绝封存；这些措施仍不构成任意 shell 外部副作用的容器隔离。
 
+受管命令退出后，日志尚未保存时返回 `flushing`，仍占有工作区；使用 `write_stdin` 继续等待。`cancel_process` 分别等待进程关闭和日志收尾，各等待窗口为 5 秒；进程已退出而日志仍在排空时返回 `flushing`，不误报进程终止失败，也不发布部分日志。invocation 收尾再等待最多 60 秒保存日志，超时明确报日志排空失败并拒绝封存；真实写入失败仍致命。日志在既有脱敏及 16 MiB 上限内合并写入。见[日志收尾决策](../decisions/accepted/2026-10-19-managed-process-log-drain.md)。
+
 输出按增量分页返回，待消费缓冲最多 1 MiB；脱敏日志最多 16 MiB，超长行省略。两者的 truncated 与 logTruncated 分别报告，属于诊断资源保护，不是请求次数额度。Recovery 将终态日志提交为 `recovery_process_output` artifact，并记录 `recovery.process_log_committed`，避免 staging 清理后日志引用失效。新增参数、输出和日志引用继续通过工具与 artifact 事件复原。
 
 Recovery 按 opt-in 注册 apply_patch 和 view_image，不改变 Comparison 的共享工具默认面。apply_patch 复用静态补丁解码与受控写入 journal，支持普通文件 Add/Update/Delete，所有目标与上下文在写入前预检，保留 CRLF；Move、无已有上下文的纯插入暂不支持。格式/上下文错误可纠正，真实 I/O 或部分写入失败仍终止。view_image 复用 read(format=image) 的 native image blocks、尺寸限制和 allowBinary 权限，图片路径文字不等于模型看图。
