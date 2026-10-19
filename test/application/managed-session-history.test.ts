@@ -61,11 +61,13 @@ test('managed history survives native cleanup, deduplicates and remains read-onl
   const summary = first.items[0]!;
   assert.equal(sessionGroupingKey(summary), managedProjectKey('claude-code'));
   assert.equal(summary.cwd, f.workspace);
+  assert.equal(summary.model, undefined);
   assert.equal(Object.hasOwn(summary, 'transcript'), false);
   assert.equal(Object.hasOwn(summary, 'finalMessage'), false);
   assert.equal(isEligibleSession(summary), false);
   assert.equal(summary.managed?.runId, 'run-a');
   const inspection = await inspectManagedSession(f.dataDir, claudeSessionAdapter, summary);
+  assert.equal(inspection?.model, undefined);
   assert.equal(inspection?.transcript[0]?.text, 'Fix [REDACTED].');
   assert.ok(!(await readFile(summary.sourcePath, 'utf8')).includes('SECRET'));
   const { projectKey: _project, managed: _managed, ...nativeSummary } = summary;
@@ -77,6 +79,22 @@ test('managed history survives native cleanup, deduplicates and remains read-onl
   await assert.rejects(inspectManagedSession(f.dataDir, claudeSessionAdapter, summary), /integrity mismatch/);
   const damaged = await mergeManagedSessions(f.dataDir, 'claude-code', claudeSessionAdapter, emptyPage);
   assert.equal(damaged.items[0]?.availability, 'unreadable');
+});
+
+test('managed history preserves the model recorded by the native transcript instead of the requested alias', async t => {
+  const f = await fixture(t);
+  await writeFile(f.sourcePath, f.content.replace('"role":"assistant"', '"role":"assistant","model":"actual-native-model"'));
+  const native = await claudeSessionAdapter.inspect({ productId: 'claude-code', sessionId: SESSION_ID, sourcePath: f.sourcePath });
+  const recording = await mergeManagedSessions(f.dataDir, 'claude-code', claudeSessionAdapter, { ...emptyPage, items: [native] });
+  assert.equal(recording.items[0]?.model, 'actual-native-model');
+  const archived = await archiveManagedSession({ ...f, history: claudeSessionAdapter, redactions: [], signal: new AbortController().signal });
+  assert.equal(archived.status, 'archived');
+  assert.equal(archived.requestedModel, 'model-a');
+  assert.equal(archived.preview?.model, 'actual-native-model');
+  await rm(f.nativeRoot, { recursive: true });
+  const page = await mergeManagedSessions(f.dataDir, 'claude-code', claudeSessionAdapter, emptyPage);
+  assert.equal(page.items[0]?.model, 'actual-native-model');
+  assert.equal((await inspectManagedSession(f.dataDir, claudeSessionAdapter, page.items[0]))?.model, 'actual-native-model');
 });
 
 test('recording receipts survive restart and allow verified native reads after a crash', async t => {
@@ -191,4 +209,16 @@ test('CLI project and project-scoped session cursors are applied after native an
   assert.equal(sessions.items.length, 1);
   assert.equal(sessions.items[0]?.sessionId, SESSION_ID);
   assert.equal(sessions.nextCursor, undefined);
+});
+
+test('managed archive redactions cover JSON-escaped secret characters in native messages', async t => {
+  const f = await fixture(t);
+  const secret = 'SECRET\n"quoted"\\value';
+  await writeFile(f.sourcePath, f.content.replaceAll('SECRET', JSON.stringify(secret).slice(1, -1)));
+  const archived = await archiveManagedSession({ ...f, history: claudeSessionAdapter, redactions: [secret], signal: new AbortController().signal });
+  assert.equal(archived.status, 'archived');
+  const page = await mergeManagedSessions(f.dataDir, 'claude-code', claudeSessionAdapter, emptyPage);
+  const inspection = await inspectManagedSession(f.dataDir, claudeSessionAdapter, page.items[0]!);
+  assert.equal(inspection?.transcript[0]?.text, 'Fix [REDACTED].');
+  assert.equal(inspection?.transcript[1]?.text, 'Fixed [REDACTED].');
 });

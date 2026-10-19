@@ -84,7 +84,11 @@ export async function archiveManagedSession(input: {
     const raw = await readFile(path, { signal });
     const after = await stat(path);
     if (after.size !== before.size || after.mtimeMs !== before.mtimeMs || raw.length !== before.size) throw new Error('Native transcript changed during archive.');
-    const bytes = input.redactions.length ? Buffer.from(input.redactions.reduce((text, secret) => text.split(secret).join('[REDACTED]'), raw.toString('utf8'))) : raw;
+    const bytes = input.redactions.length ? Buffer.from(input.redactions.reduce((text, secret) => {
+      const encoded = JSON.stringify(secret).slice(1, -1);
+      const redacted = text.split(encoded).join('[REDACTED]');
+      return encoded === secret ? redacted : redacted.split(secret).join('[REDACTED]');
+    }, raw.toString('utf8'))) : raw;
     const root = await ownedRoot(input.dataDir);
     const destination = join(root, `${archiveKey(receipt.productId, receipt.sessionId)}.jsonl`);
     signal.throwIfAborted();
@@ -94,7 +98,7 @@ export async function archiveManagedSession(input: {
       await writeAtomic(pending, bytes, signal);
       const verified = await history.inspect({ productId: receipt.productId, sessionId: receipt.sessionId, sourcePath: pending });
       if (verified.productId !== receipt.productId || verified.sessionId !== receipt.sessionId || !verified.cwd || !sameFsPath(verified.cwd, receipt.workspaceRoot)) throw new Error('Archived transcript workspace mismatch.');
-      preview = { signals: verified.signals, ...(verified.summary ? { summary: verified.summary.slice(0, 512) } : {}), ...(verified.startedAt ? { startedAt: verified.startedAt } : {}), ...(verified.updatedAt ? { updatedAt: verified.updatedAt } : {}) };
+      preview = { signals: verified.signals, ...(verified.model ? { model: verified.model } : {}), ...(verified.summary ? { summary: verified.summary.slice(0, 512) } : {}), ...(verified.startedAt ? { startedAt: verified.startedAt } : {}), ...(verified.updatedAt ? { updatedAt: verified.updatedAt } : {}) };
       signal.throwIfAborted();
       await writeAtomic(destination, bytes, signal);
     } finally { await unlink(pending).catch((error: unknown) => { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error; }); }
@@ -152,15 +156,17 @@ async function readReceipts(dataDir: string, productId: string): Promise<{ recei
 
 function managedSummary(receipt: ManagedSessionReceipt, sourcePath: string, inspection?: SessionSummary): SessionSummary {
   const updatedAt = inspection?.updatedAt ?? receipt.preview?.updatedAt;
+  const model = inspection?.model ?? receipt.preview?.model;
   return {
     productId: receipt.productId, sessionId: receipt.sessionId,
     signals: inspection?.signals ?? receipt.preview?.signals ?? { userMessages: 0, assistantMessages: 0, toolCalls: 0, completedTurns: 0 },
-    sourcePath, cwd: receipt.workspaceRoot, model: receipt.requestedModel,
+    sourcePath, cwd: receipt.workspaceRoot, ...(model ? { model } : {}),
     projectKey: managedProjectKey(receipt.productId),
     managed: { experimentId: receipt.experimentId, runId: receipt.runId, role: receipt.role, origin: receipt.origin, status: receipt.status },
     summary: inspection?.summary ?? receipt.preview?.summary ?? `${receipt.experimentId} / ${receipt.runId}`,
     availability: inspection?.availability ?? (receipt.status === 'archived' ? 'indexed' : 'unindexed'),
     recoveryReadiness: inspection?.recoveryReadiness ?? 'pending',
+    ...(!inspection && !receipt.preview ? { partial: true } : {}),
     startedAt: inspection?.startedAt ?? receipt.preview?.startedAt ?? receipt.createdAt,
     ...(updatedAt ? { updatedAt } : {}),
   };

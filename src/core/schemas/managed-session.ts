@@ -11,6 +11,7 @@ export const ManagedSessionReceiptSchema = Type.Object({
   digest: Type.Optional(Hash), byteLength: Type.Optional(Type.Integer({ minimum: 0 })),
   archivedAt: Type.Optional(Timestamp), diagnostic: Type.Optional(Type.String()),
   preview: Type.Optional(Type.Object({
+    model: Type.Optional(Type.String({ minLength: 1 })),
     summary: Type.Optional(Type.String({ maxLength: 512 })),
     startedAt: Type.Optional(Timestamp), updatedAt: Type.Optional(Timestamp),
     signals: Type.Object({ userMessages: Type.Integer({ minimum: 0 }), assistantMessages: Type.Integer({ minimum: 0 }), toolCalls: Type.Integer({ minimum: 0 }), completedTurns: Type.Integer({ minimum: 0 }) }),
