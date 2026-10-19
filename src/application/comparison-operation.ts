@@ -1,14 +1,57 @@
 import { join } from 'node:path';
+import type { AgentLocale } from '../agents/language.js';
 import { Value } from '@sinclair/typebox/value';
-import { ComparisonOperationFailureSchema, ComparisonInvocationSchema, type ComparisonOperationFailure } from '../core/schema.js';
+import { ComparisonOperationFailureSchema, ComparisonInvocationSchema, HarnessConfigurationBoundSchema,
+  type ComparisonOperationFailure, type HarnessConfigurationReference } from '../core/schema.js';
+import { canonicalJson } from '../core/task-case-identity.js';
 import { safeAgentFailureText } from '../infrastructure/agent/failure.js';
 import { writeImmutableJson, type ExperimentStore } from '../infrastructure/store/experiment-store.js';
 import { newComparisonAttempt } from './comparison-briefing.js';
+import { harnessConfigurationScope, type HarnessConfigurationScope } from './harness-configuration.js';
+import { cleanupOperation, throwFailures, type CleanupFailure } from './experiment-startup.js';
 
-export async function reserveComparisonOperation(store: ExperimentStore, experimentRoot: string, runId: string): Promise<ReturnType<typeof newComparisonAttempt>> {
-  const attempt = newComparisonAttempt(experimentRoot);
+export async function prepareComparisonConfiguration(input: {
+  store: ExperimentStore; runId: string; attemptId: string; attemptRoot: string; locale: AgentLocale;
+  reference: HarnessConfigurationReference | undefined; signal: AbortSignal | undefined;
+}): Promise<void> {
+  try {
+    await bindComparisonAttemptConfiguration(input.store, input.runId, input.attemptId, input.locale, input.reference);
+  } catch (error) {
+    const failures: CleanupFailure[] = [];
+    await cleanupOperation(failures, 'comparison_failure_audit', () => failComparisonOperation(input.store, input.attemptRoot, {
+      experimentId: input.store.experimentId, runId: input.runId, attemptId: input.attemptId, stage: 'agents',
+      status: input.signal?.aborted ? 'cancelled' : 'failed',
+    }, error));
+    throwFailures([error, ...failures.map(failure => failure.error)], 'Comparison configuration and failure audit failed.');
+  }
+}
+
+export function comparisonConfigurationScope(store: ExperimentStore, runId: string, attemptId: string, locale: AgentLocale,
+  onBound?: (reference: HarnessConfigurationReference) => void): HarnessConfigurationScope {
+  const scope = harnessConfigurationScope(store, { experimentId: store.experimentId, runId,
+    operation: 'comparison', comparisonAttemptId: attemptId }, onBound);
+  return { bind: configuration => scope.bind({ ...configuration, locale }) };
+}
+
+export async function bindComparisonAttemptConfiguration(store: ExperimentStore, runId: string, attemptId: string,
+  locale: AgentLocale, reference: HarnessConfigurationReference | undefined): Promise<void> {
+  if (!reference) return;
+  if (reference.operation === 'recovery' || (reference.operation === 'comparison' && reference.comparisonAttemptId !== attemptId)) {
+    throw new Error('Comparison configuration belongs to a different operation.');
+  }
+  const bound = store.events(runId).find(event => event.type === 'harness.configuration_bound'
+    && Value.Check(HarnessConfigurationBoundSchema, event.payload)
+    && canonicalJson(event.payload.reference) === canonicalJson(reference));
+  if (!bound || !Value.Check(HarnessConfigurationBoundSchema, bound.payload)) throw new Error('Comparison requires its committed Harness configuration.');
+  const { configuration } = bound.payload;
+  if (reference.operation === 'comparison' && reference.comparisonAttemptId === attemptId && configuration.locale === locale) return;
+  await comparisonConfigurationScope(store, runId, attemptId, locale).bind(configuration);
+}
+
+export async function reserveComparisonOperation(store: ExperimentStore, experimentRoot: string, runId: string, locale?: AgentLocale): Promise<ReturnType<typeof newComparisonAttempt>> {
+  const attempt = newComparisonAttempt(experimentRoot, locale);
   await store.append({ type: 'comparison.started', runId, operationId: `comparison-started-${attempt.attemptId}`,
-    payload: { attemptId: attempt.attemptId, phase: 'preparation' } });
+    payload: { attemptId: attempt.attemptId, phase: 'preparation', ...(locale ? { locale } : {}) } });
   return attempt;
 }
 

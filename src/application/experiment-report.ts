@@ -66,6 +66,7 @@ import { createComparisonQuoteSourcePort, type ComparisonQuoteSourcePort } from 
 import { ComparisonReviewRequestSchema, ComparisonReviewStartedSchema } from "../core/comparison-review-schema.js";
 import { createQuoteEvidenceTool, validateComparisonEvidenceQuotes } from "./comparison-evidence-quotes.js";
 import { sealComparisonReport } from "./comparison-report-ownership.js";
+import { prepareComparisonConfiguration } from './comparison-operation.js';
 
 export { comparisonCandidateMount };
 
@@ -246,6 +247,7 @@ async function compareExperimentOutcome(
   inspection: Awaited<ReturnType<typeof inspectRun>>,
 ) {
   const { attemptId, attemptRoot } = input.comparisonAttempt ?? newComparisonAttempt(input.experimentRoot);
+  const locale = input.comparisonAttempt?.locale ?? await readOperatorLocale(input.input.dataDir);
   input.onComparisonAttempt?.(attemptId);
   if (!input.comparisonAttempt) await input.store.append({
     type: "comparison.started",
@@ -253,12 +255,13 @@ async function compareExperimentOutcome(
     operationId: `comparison-started-${attemptId}`,
     payload: {
       attemptId,
+      locale,
       model: (input.input.comparisonAgentConfig ?? input.input.agentConfig)
         .requestedModel,
-      ...((input.input.comparisonAgentConfig ?? input.input.agentConfig).effectiveReference
-        ? { effectiveReference: (input.input.comparisonAgentConfig ?? input.input.agentConfig).effectiveReference } : {}),
     },
   });
+  await prepareComparisonConfiguration({ store: input.store, runId: input.input.runId, attemptId, attemptRoot, locale,
+    reference: (input.input.comparisonAgentConfig ?? input.input.agentConfig).effectiveReference, signal: input.signal });
   await materializeComparisonSandbox(input.store, record.artifactRefs, attemptRoot);
   if (input.candidateSnapshotStatus !== "complete") {
     await mkdir(comparisonCandidateMount({
@@ -267,17 +270,17 @@ async function compareExperimentOutcome(
       attemptRoot,
     }), { recursive: true });
   }
-  const prepared = await prepareComparisonHistory(input, record, inspection, attemptId, attemptRoot);
+  const prepared = await prepareComparisonHistory(input, record, inspection, attemptId, attemptRoot, locale);
   if ('comparisonResult' in prepared) return prepared;
   const preparedHistory = prepared;
   await mkdir(preparedHistory.finalsRoot, { recursive: true });
   await auditHistoricalDelivery(input.store, input.input.runId, attemptId, preparedHistory.manifest);
   const events = input.store.events(input.input.runId).filter(event =>
     event.sequence >= record.trace.firstSequence && event.sequence <= record.trace.lastSequence);
-  const locale = await readOperatorLocale(input.input.dataDir);
   const context: ComparisonContext = {
     ...comparisonFactsForRun(input, record, inspection),
     attemptId,
+    locale,
     ownedEvidenceRefs: comparisonOwnedObservationRefs(input.taskCase, events),
   };
   if (preparedHistory.manifest?.schemaVersion === 2 && preparedHistory.manifest.capture.kind === 'user_selected_substitute') {
@@ -345,7 +348,7 @@ function comparisonFactsForRun(input: CompletedRunContext, record: RunRecord, in
   });
 }
 
-async function prepareComparisonHistory(input: CompletedRunContext, record: RunRecord, inspection: Awaited<ReturnType<typeof inspectRun>>, attemptId: string, attemptRoot: string) {
+async function prepareComparisonHistory(input: CompletedRunContext, record: RunRecord, inspection: Awaited<ReturnType<typeof inspectRun>>, attemptId: string, attemptRoot: string, locale: AgentLocale) {
   try {
     return await prepareHistoricalArtifacts({ taskCase: input.taskCase, caseDir: join(input.input.dataDir, 'cases', input.taskCase.caseId),
       attemptRoot, ...(input.input.extractHistoricalArtifacts ? { extract: input.input.extractHistoricalArtifacts } : {}) });
@@ -353,7 +356,7 @@ async function prepareComparisonHistory(input: CompletedRunContext, record: RunR
     const context = comparisonFactsForRun(input, record, inspection);
     return persistComparisonInvocation({ store: input.store, runId: input.input.runId, experimentRoot: input.experimentRoot,
       attemptId, attemptRoot, comparisonResult: mapBriefingErrorToComparisonResult(error), facts: context.reportFacts,
-      task: context.task.summary, locale: await readOperatorLocale(input.input.dataDir) });
+      task: context.task.summary, locale });
   }
 }
 
@@ -634,7 +637,7 @@ async function invokeCompare(
   };
   const draft = new ComparisonDraft({
     attemptRoot, task: context.task.summary, facts: context.reportFacts,
-    locale: await readOperatorLocale(input.input.dataDir), catalog,
+    locale: context.locale ?? 'zh', catalog,
     deliveredImages: deliveredImageContentHashes,
     renderCheckHistory: () => ({ records: renderChecks, omitted: omittedRenderChecks }),
     quoteSources,

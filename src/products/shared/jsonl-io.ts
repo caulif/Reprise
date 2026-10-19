@@ -1,9 +1,11 @@
-import { closeSync, createReadStream, openSync, readSync } from 'node:fs';
+import { closeSync, openSync, readSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { isRecord, type JsonRecord } from '../../core/json.js';
 import { SAFE_ID } from '../../core/identity.js';
 import type { RecoveryDiagnostic } from '../../core/schema.js';
+import { sessionReadStream, SessionSourceError, type SessionReadOptions, type SessionReceipt } from './session-source.js';
 
 export const SESSION_HEAD_BYTES = 256 * 1024;
 
@@ -14,6 +16,7 @@ export type JsonlWalkResult = {
   readonly changed: boolean;
   readonly retried: boolean;
   readonly diagnostics: readonly RecoveryDiagnostic[];
+  readonly receipt?: SessionReceipt;
 };
 
 /** Reads at most `maxBytes` from the start of a file. Never loads the remainder into memory. */
@@ -45,6 +48,21 @@ export function peekJsonlSessionId(path: string, extractId: (row: JsonRecord) =>
   return undefined;
 }
 
+export async function peekSessionId(path: string, extractId: (row: JsonRecord) => string | undefined, options: SessionReadOptions): Promise<string | undefined> {
+  const stream = sessionReadStream(path, { ...options, maxBytes: SESSION_HEAD_BYTES, prefix: true });
+  const lines = createInterface({ input: stream, crlfDelay: Infinity });
+  try {
+    for await (const line of lines) {
+      let row: unknown;
+      try { row = JSON.parse(line); } catch { continue; }
+      if (!isRecord(row)) continue;
+      const id = extractId(row);
+      if (id && SAFE_ID.test(id)) return id;
+    }
+    return undefined;
+  } finally { lines.close(); stream.destroy(); }
+}
+
 export async function forEachJsonlRecord(
   path: string,
   product: string,
@@ -61,8 +79,9 @@ export async function forEachJsonlRecordLenient(
   product: string,
   onRow: (row: JsonRecord, index: number, physicalLine: number) => void,
   signal?: AbortSignal,
+  options: SessionReadOptions = {},
 ): Promise<JsonlWalkResult> {
-  return walkJsonlRecords(path, product, onRow, signal, true);
+  return walkJsonlRecords(path, product, onRow, signal, true, options);
 }
 
 export async function withStableJsonlRead<T>(
@@ -85,9 +104,13 @@ async function walkJsonlRecords(
   onRow: (row: JsonRecord, index: number, physicalLine: number) => void,
   signal: AbortSignal | undefined,
   lenient: boolean,
+  options: SessionReadOptions = {},
 ): Promise<JsonlWalkResult> {
   throwIfAborted(signal);
-  const stream = createReadStream(path, { encoding: 'utf8' });
+  const hash = createHash('sha256');
+  let bytes = 0;
+  const stream = sessionReadStream(path, { ...options, ...(signal ? { signal } : {}), onBytes: (chunk) => { hash.update(chunk); bytes += chunk.length; } });
+  const receipt = () => ({ hash: hash.digest('hex'), bytes });
   const lines = createInterface({ input: stream, crlfDelay: Infinity });
   let physicalLine = 0;
   let recordIndex = 0;
@@ -110,7 +133,7 @@ async function walkJsonlRecords(
         const message = `${product} session ${path} has invalid JSONL at line ${physicalLine}: ${errorMessage(error)}`;
         if (!lenient) {
           diagnostics.push({ code: 'invalid-jsonl', message, physicalLine });
-          return finish(recordIndex, physicalLine, truncated, diagnostics);
+          return { ...finish(recordIndex, physicalLine, truncated, diagnostics), receipt: receipt() };
         }
         diagnostics.push({ code: trailing ? 'truncated-tail' : 'invalid-jsonl', message, physicalLine });
         if (!trailing) {
@@ -120,24 +143,24 @@ async function walkJsonlRecords(
             physicalLine,
           });
         }
-        return finish(recordIndex, physicalLine, truncated, diagnostics);
+        return { ...finish(recordIndex, physicalLine, truncated, diagnostics), receipt: receipt() };
       }
       if (!isRecord(parsed)) {
         const message = `${product} session ${path} has invalid JSONL at line ${physicalLine}: row is not an object`;
         if (!lenient) {
           diagnostics.push({ code: 'invalid-jsonl', message, physicalLine });
-          return finish(recordIndex, physicalLine, false, diagnostics);
+          return { ...finish(recordIndex, physicalLine, false, diagnostics), receipt: receipt() };
         }
         const rest = await remainingNonEmpty(lines, signal);
         truncated = rest === 0;
         diagnostics.push({ code: rest === 0 ? 'truncated-tail' : 'invalid-jsonl', message, physicalLine });
-        return finish(recordIndex, physicalLine, truncated, diagnostics);
+        return { ...finish(recordIndex, physicalLine, truncated, diagnostics), receipt: receipt() };
       }
       onRow(parsed, recordIndex, physicalLine);
       recordIndex += 1;
     }
   } catch (error) {
-    if (isAbortError(error)) throw error;
+    if (isAbortError(error) || error instanceof SessionSourceError) throw error;
     if (error instanceof Error && error.message.includes(`${product} session ${path} has invalid JSONL`)) throw error;
     throw new Error(`${product} session cannot be read: ${path}`, { cause: error });
   } finally {
@@ -147,7 +170,7 @@ async function walkJsonlRecords(
   if (!any) {
     diagnostics.push({ code: 'empty', message: `${product} session ${path} is empty.` });
   }
-  return finish(recordIndex, physicalLine, truncated, diagnostics);
+  return { ...finish(recordIndex, physicalLine, truncated, diagnostics), receipt: receipt() };
 }
 
 async function remainingNonEmpty(lines: AsyncIterable<string>, signal: AbortSignal | undefined): Promise<number> {

@@ -75,6 +75,7 @@ function isProjectless(key: string): boolean { return key === PROJECTLESS_PROJEC
 /** Discovery list omits a/t when the summary window did not count them. Inspect uses full signals. */
 export function formatDiscoverySignals(session: Pick<SessionSummary, 'signals' | 'partial' | 'availability'>): string {
   const user = `u${session.signals.userMessages}`;
+  if ((session.partial || session.availability === 'catalog-only' || session.availability === 'unreadable') && session.signals.userMessages === 0) return 'u?';
   if (session.partial || session.availability === 'catalog-only') return user;
   return `${user} a${session.signals.assistantMessages} t${session.signals.toolCalls}`;
 }
@@ -91,7 +92,11 @@ function sessionStatus(session: SessionSummary, locale: Locale): string {
   if (session.evidenceLevel === 'history') return t(locale, 'historyOnlySession');
   if (session.availability === 'catalog-only') return t(locale, 'catalogOnlySession');
   if (session.availability === 'unindexed') return t(locale, 'unindexedSession');
-  if (session.availability === 'unreadable') return t(locale, 'unreadableSession');
+  if (session.availability === 'unreadable') {
+    if (session.recoveryDiagnostics?.some((item) => item.code === 'decompression-failed')) return t(locale, 'compressedSessionCorrupt');
+    if (session.recoveryDiagnostics?.some((item) => item.code === 'unsupported-encoding')) return t(locale, 'compressedSessionUnsupported');
+    return t(locale, 'unreadableSession');
+  }
   return '';
 }
 

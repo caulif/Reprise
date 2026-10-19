@@ -24,7 +24,7 @@ const BLOCKS: Record<AgentLanguageRole, (language: string) => string> = {
   comparison: (language) =>
     [
       "# Language",
-      `Instructions and file navigation are in English. Report prose, headline, category, the task sentence, and process sentences are in ${language}.`,
+      `Instructions and file navigation are in English. Report prose, headline, category, the task sentence, reason, paired differences, impacts, image captions and process sentences are in ${language}, regardless of the historical task's language. Keep this language for every revision and retry in this attempt.`,
       "Quoted source material stays in its original language. Code, paths, model IDs, and identifiers are never translated.",
     ].join("\n"),
 };

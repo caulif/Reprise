@@ -268,7 +268,7 @@ export function renderComparisonReportFromModel(input: {
       ...((input.model.formatVersion === 3 || input.model.formatVersion === 4 || input.model.formatVersion === 5 || input.model.formatVersion === 6 || input.model.formatVersion === 7) ? { boundary: input.model.boundary ?? "", differences: input.model.differences ?? [], reason: input.model.reason, pairedDifferences: input.model.pairedDifferences } : {}),
     },
     ...(input.diagnostic ? { diagnostic: input.diagnostic } : {}),
-    ...(input.locale ? { locale: input.locale } : {}),
+    locale: input.model.locale ?? input.locale ?? 'zh',
   });
 }
 
