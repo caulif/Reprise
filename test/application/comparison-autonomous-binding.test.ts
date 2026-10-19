@@ -97,3 +97,16 @@ test('paired difference contract cannot publish an older unpaired report', async
   for (const reportFormat of [2, 3, 4, 5]) assert.match((await autonomousComparisonBinding({ ...f, reportFormat }))!, /format 6/);
   assert.equal(await autonomousComparisonBinding({ ...f, reportFormat: 6 }), undefined);
 });
+
+
+test('decision-only contract binds format 7 and cannot discard an accepted legacy boundary', async () => {
+  const f = fixture();
+  f.events[0] = event(1, 'comparison.requested', { autonomousContractVersion: 6 });
+  assert.equal(autonomousComparisonRequested(f.events, f.attemptId), true);
+  for (const reportFormat of [undefined, 2, 3, 4, 5, 6]) {
+    assert.match((await autonomousComparisonBinding({ ...f, ...(reportFormat === undefined ? {} : { reportFormat }) }))!, /format 7/);
+  }
+  assert.equal(await autonomousComparisonBinding({ ...f, reportFormat: 7 }), undefined);
+  f.events[0] = event(1, 'comparison.requested', { autonomousContractVersion: 5 });
+  assert.match((await autonomousComparisonBinding({ ...f, reportFormat: 7 }))!, /format 6/);
+});

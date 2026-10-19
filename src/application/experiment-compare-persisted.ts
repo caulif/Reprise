@@ -40,6 +40,7 @@ interface PersistedComparisonInput {
   readonly extractHistoricalArtifacts?: HistoricalArtifactExtractFn;
   readonly resolveExtractHistoricalArtifacts?: (productId: string) => HistoricalArtifactExtractFn | undefined;
   readonly resolveCandidatePack?: (productId: string) => ProductPack;
+  readonly resolveProductName?: (productId: string) => string;
 }
 
 export async function comparePersistedExperiment(input: PersistedComparisonInput): Promise<ExperimentResult> {
@@ -99,6 +100,7 @@ export async function comparePersistedExperiment(input: PersistedComparisonInput
         comparison: agents.comparison,
         agentConfig: agents.agentConfig,
         ...(pack ? { pack } : {}),
+        ...(input.resolveProductName ? { resolveProductName: input.resolveProductName } : {}),
         ...(extractHistoricalArtifacts ? { extractHistoricalArtifacts } : {}),
       }, loaded),
       taskCase: loaded.taskCase,
@@ -212,12 +214,13 @@ async function selectFinishedRecord(root: string, experimentId: string, caseId: 
 }
 
 function comparisonRunInput(
-  input: Pick<CompletedRunContext['input'], 'dataDir' | 'comparison' | 'agentConfig' | 'pack' | 'extractHistoricalArtifacts'>,
+  input: Pick<CompletedRunContext['input'], 'dataDir' | 'comparison' | 'agentConfig' | 'pack' | 'extractHistoricalArtifacts' | 'resolveProductName'>,
   loaded: { record: RunRecord },
 ): CompletedRunContext['input'] {
   return { dataDir: resolve(input.dataDir), experimentId: loaded.record.attempt.experimentId,
     runId: loaded.record.attempt.runId, candidate: loaded.record.attempt.candidate,
     agentConfig: input.agentConfig, comparison: input.comparison,
     ...(input.pack ? { pack: input.pack } : {}),
+    ...(input.resolveProductName ? { resolveProductName: input.resolveProductName } : {}),
     ...(input.extractHistoricalArtifacts ? { extractHistoricalArtifacts: input.extractHistoricalArtifacts } : {}) };
 }

@@ -147,6 +147,7 @@ export function createExperimentWorkflow(input: {
       const handle = await beginWorkflowStart(input, request, {
         dataDir: input.dataDir, caseId: request.taskCase.caseId, experimentId, runId, sourceRoot: request.sourceRoot,
         taskCase: request.taskCase, candidate: selected.candidate, runtime: selected.runtime, pack: selected.pack,
+        resolveProductName: productId => packFor(productId).manifest.displayName,
         policy, now: input.now(), onEvent: request.onEvent,
         ...(request.expectedSourceFingerprint ? { expectedSourceFingerprint: request.expectedSourceFingerprint } : {}),
         ...(request.preResolvedBaseline ? { preResolvedBaseline: request.preResolvedBaseline } : {}),
@@ -171,6 +172,7 @@ export function createExperimentWorkflow(input: {
         },
         resolveExtractHistoricalArtifacts: sourceExtractor,
         resolveCandidatePack: packFor,
+        resolveProductName: productId => packFor(productId).manifest.displayName,
         ...(runId ? { runId } : {}), ...(signal ? { signal } : {}), ...(onEvent ? { onEvent } : {}), ...(onActivity ? { onActivity } : {}),
       });
     },

@@ -62,11 +62,11 @@ export type HostZoneName = (typeof HOST_ZONES)[number];
 export type AgentZoneName = (typeof AGENT_ZONES)[number] | "differences";
 export type HostZoneSnapshot = Partial<Record<HostZoneName, string>>;
 
-export function comparisonReportFormat(html: string): 2 | 3 | 4 | 5 | 6 {
-  return hasMarker(html, "data-report-format", "6") ? 6 : hasMarker(html, "data-report-format", "5") ? 5 : hasMarker(html, "data-report-format", "4") ? 4 : hasMarker(html, "data-report-format", "3") ? 3 : 2;
+export function comparisonReportFormat(html: string): 2 | 3 | 4 | 5 | 6 | 7 {
+  return hasMarker(html, "data-report-format", "7") ? 7 : hasMarker(html, "data-report-format", "6") ? 6 : hasMarker(html, "data-report-format", "5") ? 5 : hasMarker(html, "data-report-format", "4") ? 4 : hasMarker(html, "data-report-format", "3") ? 3 : 2;
 }
 export function comparisonAgentZones(html: string): readonly AgentZoneName[] {
-  return (comparisonReportFormat(html) === 4 || comparisonReportFormat(html) === 6) ? ["comparison"] : (comparisonReportFormat(html) === 3 || comparisonReportFormat(html) === 5) ? ["comparison", "differences"] : AGENT_ZONES;
+  return (comparisonReportFormat(html) === 4 || comparisonReportFormat(html) >= 6) ? ["comparison"] : (comparisonReportFormat(html) === 3 || comparisonReportFormat(html) === 5) ? ["comparison", "differences"] : AGENT_ZONES;
 }
 function comparisonHostZones(html: string): readonly HostZoneName[] {
   return comparisonReportFormat(html) >= 3 ? ["style", "header", "metrics", "cost-note"] : HOST_ZONES;
@@ -75,16 +75,17 @@ function comparisonHostZones(html: string): readonly HostZoneName[] {
 const ZONE_TAG = "header|section|style|p|span|h[1-6]|div|footer";
 
 export function missingComparisonSlots(html: string): string | undefined {
+  if (comparisonReportFormat(html) === 7 && hasMarker(html, "data-agent-slot", "boundary")) return "Format 7 cannot contain a boundary slot.";
   for (const zone of comparisonHostZones(html)) {
     if (!hasMarker(html, "data-host-zone", zone)) return `Comparison report is missing data-host-zone="${zone}".`;
   }
   for (const zone of comparisonAgentZones(html)) {
     if (!hasMarker(html, "data-agent-zone", zone)) return `Comparison report is missing data-agent-zone="${zone}".`;
   }
-  for (const slot of comparisonReportFormat(html) === 4 ? ["headline", "category", "boundary"] : (comparisonReportFormat(html) === 3 || comparisonReportFormat(html) === 5 || comparisonReportFormat(html) === 6) ? [...AGENT_SLOTS, "boundary"] : AGENT_SLOTS) {
+  for (const slot of comparisonReportFormat(html) === 7 ? AGENT_SLOTS : comparisonReportFormat(html) === 4 ? ["headline", "category", "boundary"] : (comparisonReportFormat(html) === 3 || comparisonReportFormat(html) === 5 || comparisonReportFormat(html) === 6) ? [...AGENT_SLOTS, "boundary"] : AGENT_SLOTS) {
     if (!hasMarker(html, "data-agent-slot", slot)) return `Comparison report is missing data-agent-slot="${slot}".`;
   }
-  if (comparisonReportFormat(html) === 6 && !hasMarker(html, "data-agent-slot", "reason")) return "Comparison report is missing reason.";
+  if (comparisonReportFormat(html) >= 6 && !hasMarker(html, "data-agent-slot", "reason")) return "Comparison report is missing reason.";
   for (const name of comparisonReportFormat(html) >= 3 ? [] : COMPONENT_TEMPLATES) {
     if (!hasMarker(html, "data-component-template", name)) return `Comparison report is missing component template "${name}".`;
   }
@@ -93,8 +94,8 @@ export function missingComparisonSlots(html: string): string | undefined {
 
 function shareCardLayoutError(html: string): string | undefined {
   if (comparisonReportFormat(html) >= 3) {
-    const order = [["data-host-zone", "header"], ["data-agent-slot", "headline"], ["data-agent-slot", "boundary"], ["data-agent-zone", "comparison"], ...((comparisonReportFormat(html) === 3 || comparisonReportFormat(html) === 5) ? [["data-agent-zone", "differences"]] : []), ["data-host-zone", "metrics"]].map(([attr, value]) => tagMarkerIndex(html, attr!, value!));
-    if (order.some((pos, i) => pos < 0 || (i > 0 && pos <= order[i - 1]!))) return "Share card order must be header, headline, boundary, comparison, differences, then metrics.";
+    const order = [["data-host-zone", "header"], ["data-agent-slot", "headline"], ["data-agent-slot", comparisonReportFormat(html) === 7 ? "reason" : "boundary"], ["data-agent-zone", "comparison"], ...((comparisonReportFormat(html) === 3 || comparisonReportFormat(html) === 5) ? [["data-agent-zone", "differences"]] : []), ["data-host-zone", "metrics"]].map(([attr, value]) => tagMarkerIndex(html, attr!, value!));
+    if (order.some((pos, i) => pos < 0 || (i > 0 && pos <= order[i - 1]!))) return "Share card order must be header, headline, decision text, comparison, differences, then metrics.";
     if (hasMarker(html, "data-agent-zone", "details") || hasMarker(html, "data-host-zone", "evidence") || hasMarker(html, "data-host-zone", "process")) return "Format 3 cannot contain details or reader source catalogs.";
     return undefined;
   }

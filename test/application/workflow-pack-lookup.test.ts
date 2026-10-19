@@ -69,7 +69,8 @@ for (const productId of ['local-only', 'codex']) test(`injected ${productId} pro
   for (const marker of ['first-local-projection', 'second-local-projection']) {
     const runtime = new LocalRuntime(productId, marker);
     let inspections = 0, steering = 0, comparisons = 0;
-    const pack: ProductPack = { ...localPack(runtime), projection: {
+    const local = localPack(runtime);
+    const pack: ProductPack = { ...local, manifest: { ...local.manifest, displayName: `Agent ${marker}` }, projection: {
       inspectRunFacts(events) {
         inspections++;
         return { ...codexProductPack.projection.inspectRunFacts(events), assistantTexts: [marker], finalMessage: marker };
@@ -89,7 +90,8 @@ for (const productId of ['local-only', 'codex']) test(`injected ${productId} pro
         }
         return base.controller.decide(context, ...args);
       });
-      t.mock.method(agents.comparison, 'compare', async () => {
+      t.mock.method(agents.comparison, 'compare', async (context: Parameters<HarnessAgents['comparison']['compare']>[0]) => {
+        assert.deepEqual(context.reportFacts.sessionAgents, { baseline: pack.manifest.displayName, candidate: pack.manifest.displayName });
         comparisons++;
         return { status: 'cancelled' as const, sessionId: 'fixture-comparison' };
       });
@@ -97,8 +99,10 @@ for (const productId of ['local-only', 'codex']) test(`injected ${productId} pro
     });
     const candidate = { ...f.base.candidate, productId, requestedModel: marker };
     const handle = await f.workflow.start({ taskCase: f.taskCase, sourceRoot: f.base.sourceRoot, candidate,
-      experimentId: f.base.experimentId, runId: f.base.runId, onEvent: () => {} });
+      experimentId: f.base.experimentId, runId: f.base.runId, compare: true, onEvent: () => {} });
     const result = await handle.result;
+    assert.equal(comparisons, 1, JSON.stringify(result.comparison));
+    assert.equal(result.comparison.result.status, 'cancelled');
     assert.equal(steering, 1);
     assert.equal(result.record.attempt.candidate.productId, productId);
     assert.equal(result.record.manifest?.resolvedModel.resolved, marker);
@@ -109,7 +113,7 @@ for (const productId of ['local-only', 'codex']) test(`injected ${productId} pro
     const beforeReopen = inspections;
     const compared = await f.workflow.comparePersisted(f.base.experimentId, undefined, undefined, f.base.runId);
     assert.ok(inspections > beforeReopen, 'persisted comparison must use this workflow projection');
-    assert.equal(comparisons, 1);
+    assert.equal(comparisons, 2);
     assert.deepEqual(compared.record, result.record);
     assert.equal(compared.comparison.result.status, 'cancelled');
   }

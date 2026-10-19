@@ -197,7 +197,7 @@ export async function verifyAndRenderComparisonReport(input: VerificationInput):
   }
   html = markUnresolvedInHostEvidence(html, [...rewritten.unresolvedEvidence, ...rewritten.unresolvedMedia], locale);
   html = appendHostLimitations(html, locale, limitations);
-  if (comparisonReportFormat(html) !== 6 && agentZoneBlank(html, "comparison")) {
+  if (comparisonReportFormat(html) < 6 && agentZoneBlank(html, "comparison")) {
     return {
       failureClass: "publication",
       code: "report_incomplete",
@@ -450,7 +450,7 @@ async function rewritePublishableHtml(input: {
   });
   html = await stripBrokenMedia(html, input.attemptRoot, input.media, unresolvedMedia);
   html = stripExternalAttributes(html);
-  if (comparisonReportFormat(html) === 6) html = linkPairedImages(html);
+  if (comparisonReportFormat(html) >= 6) html = linkPairedImages(html);
   return { html, unresolvedEvidence: unique(unresolvedEvidence), unresolvedMedia: unique(unresolvedMedia) };
 }
 
@@ -490,7 +490,7 @@ function repairEmptyComparisonZone(
   media: readonly ComparisonMediaRecord[],
   locale: AgentLocale,
 ): { html: string; limitations: ComparisonReportStringKey[] } {
-  if (comparisonReportFormat(html) === 6 || !agentZoneBlank(html, "comparison")) return { html, limitations: [] };
+  if (comparisonReportFormat(html) >= 6 || !agentZoneBlank(html, "comparison")) return { html, limitations: [] };
   const seeded = renderVisualEvidenceSeed(media, locale);
   if (!seeded) return { html, limitations: [] };
   return {
@@ -511,7 +511,7 @@ function repairIncompleteAboveTheFold(
     if (fromEnvelope) next = replaceZoneInner(next, "data-agent-slot", "headline", escapeText(fromEnvelope));
     else limitations.push("hostLimitationHeadlineMissing");
   }
-  if (comparisonReportFormat(next) !== 6 && agentZoneBlank(next, "comparison")) {
+  if (comparisonReportFormat(next) < 6 && agentZoneBlank(next, "comparison")) {
     next = replaceZoneInner(
       next,
       "data-agent-zone",
@@ -570,7 +570,8 @@ function applyShareCardPresentationFixes(html: string, locale: AgentLocale): str
   for (const [attr, name] of [
     ["data-agent-slot", "headline"],
     ...(comparisonReportFormat(next) === 5 ? [["data-agent-slot", "boundary"], ["data-agent-zone", "differences"]] : []),
-    ...(comparisonReportFormat(next) === 6 ? [["data-agent-slot", "boundary"], ["data-agent-slot", "reason"]] : []),
+    ...(comparisonReportFormat(next) === 6 ? [["data-agent-slot", "boundary"]] : []),
+    ...(comparisonReportFormat(next) >= 6 ? [["data-agent-slot", "reason"]] : []),
     ["data-agent-zone", "comparison"],
   ] as const) {
     const inner = extractInner(next, attr, name);
@@ -608,7 +609,7 @@ function shareCardPresentationError(html: string, locale: AgentLocale): string |
   const visible = share.replace(/<!--[\s\S]*?-->/g, " ");
   if (/历史侧|候选侧/.test(visible)) return "Share card must not use 历史侧 or 候选侧.";
   const labels = comparisonReportFormat(html) >= 3
-    ? [...(comparisonReportFormat(html) === 6 ? [] : [reportString(locale, comparisonReportFormat(html) === 4 ? 'shareConclusion' : 'recommendation')]), reportString(locale, 'sessionHistorical'), reportString(locale, 'sessionCurrent')]
+    ? [...(comparisonReportFormat(html) >= 6 ? [] : [reportString(locale, comparisonReportFormat(html) === 4 ? 'shareConclusion' : 'recommendation')]), reportString(locale, 'sessionHistorical'), reportString(locale, 'sessionCurrent')]
     : locale === "en"
     ? ["Task", "Main conclusion", "Historical session", "Current session"] as const
     : ["任务描述", "主要结论", "历史会话", "当前会话"] as const;

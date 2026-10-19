@@ -41,10 +41,18 @@ test("live and persisted comparison extract Codex history when the candidate is 
   const base = input(root, runtime);
   await mkdir(base.sourceRoot, { recursive: true });
   await writeFile(join(base.sourceRoot, "README.md"), "fixture\n");
+  const compare = base.comparison.compare.bind(base.comparison);
+  t.mock.method(base.comparison, 'compare', async (...args: Parameters<typeof base.comparison.compare>) => {
+    assert.deepEqual(args[0].reportFacts.sessionAgents, { baseline: 'Historical Agent', candidate: 'Current Agent' });
+    return compare(...args);
+  });
   const workflow = createExperimentWorkflow({
     dataDir: base.dataDir,
     runtime,
-    lookup: createProductLookup([codexProductPack, claudeCodeProductPack]),
+    lookup: createProductLookup([
+      { ...codexProductPack, manifest: { ...codexProductPack.manifest, displayName: 'Historical Agent' } },
+      { ...claudeCodeProductPack, manifest: { ...claudeCodeProductPack.manifest, displayName: 'Current Agent' } },
+    ]),
     agents: async () => ({
       controller: base.controller, comparison: base.comparison, recovery: {},
       config: { ...base.agentConfig, recoveryBudget: base.agentConfig.budget },

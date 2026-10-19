@@ -73,7 +73,7 @@ const MAX_COMPARISON_INPUT_BYTES = 262_144;
 
 export type CompletedRunContext = {
   signal?: AbortSignal;
-  input: Pick<ExperimentInput, 'dataDir' | 'experimentId' | 'runId' | 'candidate' | 'pack' | 'agentConfig' | 'comparisonAgentConfig' | 'comparison' | 'comparisonPreviewRenderer' | 'extractHistoricalArtifacts'>;
+  input: Pick<ExperimentInput, 'dataDir' | 'experimentId' | 'runId' | 'candidate' | 'pack' | 'agentConfig' | 'comparisonAgentConfig' | 'comparison' | 'comparisonPreviewRenderer' | 'extractHistoricalArtifacts' | 'resolveProductName'>;
   taskCase: TaskCase;
   preflight: ExperimentPreflight;
   store: ExperimentStore;
@@ -275,12 +275,8 @@ async function compareExperimentOutcome(
   const events = input.store.events(input.input.runId).filter(event =>
     event.sequence >= record.trace.firstSequence && event.sequence <= record.trace.lastSequence);
   const locale = await readOperatorLocale(input.input.dataDir);
-  const comparisonModel = (input.input.comparisonAgentConfig ?? input.input.agentConfig).requestedModel;
   const context: ComparisonContext = {
-    ...buildComparisonContext(input.taskCase, [record], [inspection], {
-      dataDir: input.input.dataDir,
-      comparisonModel,
-    }),
+    ...comparisonFactsForRun(input, record, inspection),
     attemptId,
     ownedEvidenceRefs: comparisonOwnedObservationRefs(input.taskCase, events),
   };
@@ -304,7 +300,7 @@ async function compareExperimentOutcome(
       ...(input.signal ? { signal: input.signal } : {}),
     });
     const reportShellHtml = renderComparisonReportShell({
-      ...(input.input.comparison.workflow === 'autonomous' ? { formatVersion: 6 as const } : {}),
+      ...(input.input.comparison.workflow === 'autonomous' ? { formatVersion: 7 as const } : {}),
       task: context.task.summary,
       facts: context.reportFacts,
       metrics: metricsFromReportFacts(context.reportFacts),
@@ -341,13 +337,20 @@ async function compareExperimentOutcome(
   });
 }
 
+function comparisonFactsForRun(input: CompletedRunContext, record: RunRecord, inspection: Awaited<ReturnType<typeof inspectRun>>) {
+  return buildComparisonContext(input.taskCase, [record], [inspection], {
+    dataDir: input.input.dataDir,
+    comparisonModel: (input.input.comparisonAgentConfig ?? input.input.agentConfig).requestedModel,
+    ...(input.input.resolveProductName ? { resolveProductName: input.input.resolveProductName } : {}),
+  });
+}
+
 async function prepareComparisonHistory(input: CompletedRunContext, record: RunRecord, inspection: Awaited<ReturnType<typeof inspectRun>>, attemptId: string, attemptRoot: string) {
   try {
     return await prepareHistoricalArtifacts({ taskCase: input.taskCase, caseDir: join(input.input.dataDir, 'cases', input.taskCase.caseId),
       attemptRoot, ...(input.input.extractHistoricalArtifacts ? { extract: input.input.extractHistoricalArtifacts } : {}) });
   } catch (error) {
-    const context = buildComparisonContext(input.taskCase, [record], [inspection], { dataDir: input.input.dataDir,
-      comparisonModel: (input.input.comparisonAgentConfig ?? input.input.agentConfig).requestedModel });
+    const context = comparisonFactsForRun(input, record, inspection);
     return persistComparisonInvocation({ store: input.store, runId: input.input.runId, experimentRoot: input.experimentRoot,
       attemptId, attemptRoot, comparisonResult: mapBriefingErrorToComparisonResult(error), facts: context.reportFacts,
       task: context.task.summary, locale: await readOperatorLocale(input.input.dataDir) });
@@ -856,7 +859,7 @@ function comparisonAudit(
 
 async function persistComparisonRequest(store: ExperimentStore, runId: string, attemptId: string, context: unknown, reviewInspectionRequired = false, workflow?: 'autonomous'): Promise<void> {
   const reviewContract = reviewInspectionRequired ? { attemptId, reviewInspectionContractVersion: 2 as const } : undefined;
-  const autonomousContract = workflow === 'autonomous' ? { attemptId, autonomousContractVersion: 5 as const } : undefined;
+  const autonomousContract = workflow === 'autonomous' ? { attemptId, autonomousContractVersion: 6 as const } : undefined;
   if (autonomousContract && (!Value.Check(ComparisonAutonomousContractSchema, autonomousContract) || reviewContract)) throw new Error('Invalid autonomous Comparison request contract.');
   if (reviewContract && !Value.Check(ComparisonReviewRequestSchema, reviewContract)) throw new Error('Invalid Comparison review request contract.');
   const bytes = Buffer.from(JSON.stringify(context), "utf8");

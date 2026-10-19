@@ -21,7 +21,7 @@ export const comparisonFixtureModel: Model<'openai-completions'> = {
 const config: HarnessModelConfig = { schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' },
   providerId: 'fixture', modelId: 'fixture', effort: 'low' };
 export type ComparisonStep = { name: string; arguments: Record<string, unknown>; error?: boolean; outputLimit?: true };
-export const comparisonSubmission = { boundary: 'Final quality could reverse the choice.', reason: 'Neither final output is confirmed usable.', pairedDifferences: [], status: 'completed', category: 'Delivery', headline: 'Cannot recommend yet', path: 'scratch/report.html' };
+export const comparisonSubmission = { reason: 'Neither final output is confirmed usable.', pairedDifferences: [], status: 'completed', category: 'Delivery', headline: 'Cannot recommend yet', path: 'scratch/report.html' };
 const comparisonFragment = '';
 export function publicationSteps(fragment = comparisonFragment): ComparisonStep[] {
   return [{ name: 'write', arguments: { path: comparisonSubmission.path, content: fragment } },

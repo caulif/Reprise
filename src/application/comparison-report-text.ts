@@ -107,7 +107,7 @@ export function comparisonDifferenceTexts(html: string): string[] {
 }
 
 export function comparisonCompactTextBudgetError(html: string): string | undefined {
-  if (comparisonReportFormat(html) === 6) { const error = pairedContentError(html); if (error) return error; }
+  if (comparisonReportFormat(html) >= 6) { const error = pairedContentError(html); if (error) return error; }
   const hasDetails = (node: Node): boolean => node.nodeName === 'details' || ('childNodes' in node && node.childNodes.some(hasDetails));
   if (hasDetails(parseFragment(html))) return 'Format 3 cannot contain expandable details.';
   const headline = comparisonPlainText(extractInner(html, 'data-agent-slot', 'headline'));
