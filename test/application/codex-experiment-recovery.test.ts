@@ -230,7 +230,7 @@ test("Recovery classifies a structured model request failure separately from too
   );
 });
 
-test("Recovery source tripwire falls back to current state and records a warning event", async (t) => {
+test("Recovery source tripwire records failure without creating a current-state baseline", async (t) => {
   const root = await mkdtemp(
     join(tmpdir(), "reprise-codex-recovery-tripwire-"),
   );
@@ -267,7 +267,8 @@ test("Recovery source tripwire falls back to current state and records a warning
   });
 
   assert.equal(attempt.baseline.recovery?.status, "failed");
-  assert.match(attempt.baseline.warnings.join("\n"), /current source state/i);
+  assert.match(attempt.baseline.warnings.join("\n"), /no runnable baseline/i);
+  assert.equal(attempt.baseline.root, undefined);
   const events = (
     await readFile(join(attempt.experimentRoot, "events.jsonl"), "utf8")
   )
@@ -282,7 +283,7 @@ test("Recovery source tripwire falls back to current state and records a warning
     {
       failureStage: "source_tripwire_failed",
       summary: "Recovery source tripwire detected a source change.",
-      fallback: "current_state",
+      fallback: "none",
     },
   );
 });

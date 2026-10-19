@@ -6,6 +6,34 @@ import { join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { CandidateLaunchContextSchema } from "../../src/core/schema.js";
 import { commitCandidateLaunchContext } from "../../src/application/recovery/launch-context.js";
+import { compactRecoveryProviderRoot } from '../../src/application/recovery-provider-layout.js';
+
+test('compact Candidate launch accepts only an experiment-owned candidate path and still requires observations', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'r-launch-'));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  const experimentRoot = join(root, 'experiments', 'exp-1');
+  const providerRoot = compactRecoveryProviderRoot(experimentRoot, 'recovery-run');
+  const workspaceRoot = join(providerRoot, 'runs', 'candidate-run');
+  await mkdir(workspaceRoot, { recursive: true });
+  const request = { experimentRoot, experimentId: 'exp-1', runId: 'candidate-run', workspaceRoot,
+    productId: 'fake', requestedModel: 'fake-model', resolvedModel: 'fake-model', requireObservations: true };
+  await assert.rejects(commitCandidateLaunchContext(request), /observations are missing/);
+  const observations = join(experimentRoot, 'runs', 'recovery-run', 'observations');
+  await mkdir(observations, { recursive: true });
+  await writeFile(join(observations, 'INDEX.md'), '# Frozen observations\n');
+  const context = await commitCandidateLaunchContext(request);
+  assert.equal(context.workspaceRoot, workspaceRoot);
+  for (const rejected of [
+    join(providerRoot, 'runs', 'another-run'),
+    join(compactRecoveryProviderRoot(join(root, 'experiments', 'exp-2'), 'recovery-run'), 'runs', 'candidate-run'),
+    providerRoot,
+    join(providerRoot, 'rs', 'candidate-run'),
+    join(workspaceRoot, 'nested'),
+    join(root, 'r', 'arbitrary', 'runs', 'candidate-run'),
+  ]) {
+    await assert.rejects(commitCandidateLaunchContext({ ...request, workspaceRoot: rejected }), /isolation root/);
+  }
+});
 
 test("CandidateLaunchContext is schema-checked and refuses a workspace outside the experiment", async (t) => {
   const experimentRoot = await mkdtemp(join(tmpdir(), "reprise-launch-"));

@@ -23,6 +23,7 @@ export type RecoveryPreflightDiagnostic = {
     | "source_budget_blocked"
     | "filesystem_error"
     | "git_remote_unprotected"
+    | "git_path_too_long"
     | "unknown";
   operation: string;
   exitCategory: "hard_failure";
@@ -35,7 +36,9 @@ export function recoveryPreflightDiagnostic(
 ): RecoveryPreflightDiagnostic {
   const facts = errorFacts(error);
   const message = facts.messages.join(" ");
-  const reasonCode = message.includes("cannot be recovered")
+  const reasonCode = facts.codes.includes("git_path_too_long") || facts.codes.includes('ENAMETOOLONG') || /\$GIT_DIR.*too big|filename too long/i.test(message)
+    ? "git_path_too_long"
+    : message.includes("cannot be recovered")
     ? "source_budget_blocked"
     : message.includes("must be a directory")
     ? "source_not_directory"

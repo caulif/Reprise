@@ -114,8 +114,7 @@ export async function createRecoveryRunSession(
     new LocalWorkspaceProvider(
       input.checkpointRoot
         ? dirname(dirname(resolve(input.checkpointRoot)))
-        : input.gitStart ? compactRecoveryProviderRoot(experimentRoot, input.runId)
-        : join(experimentRoot, "environment", "recovery", input.runId),
+        : compactRecoveryProviderRoot(experimentRoot, input.runId),
     );
   await mkdir(experimentRoot, { recursive: true });
   const store = await ExperimentStore.open(experimentRoot, input.experimentId);
