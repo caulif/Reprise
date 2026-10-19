@@ -1,0 +1,18 @@
+name: Question / 使用问题
+description: Ask about setup or usage / 询问安装、配置或使用问题
+body:
+  - type: markdown
+    attributes:
+      value: "This is a public issue. Do not share keys, login files, private sessions or vulnerability details. For a conduct contact request, write only that you need to contact the maintainer; omit identities and evidence. 本 Issue 完全公开。勿贴凭据、登录文件、私有会话或漏洞细节；行为问题仅请求联系维护者，不写身份与证据。"
+  - type: textarea
+    id: question
+    attributes:
+      label: Question / 问题
+      description: What would you like to understand? English or Chinese is welcome. 想了解什么？中英文均可。
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Optional context / 可选背景
+      description: For usage questions only, add your OS, versions and sanitized error if relevant. 仅使用问题可按需补充操作系统、版本及脱敏错误；请求私下联系时留空。
