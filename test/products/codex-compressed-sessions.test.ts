@@ -289,7 +289,7 @@ test('a damaged duplicate cannot replace another verified transcript regardless 
       const found = await codexSessionAdapter.discover({ root: sessions, refresh: true });
       assert.equal(found.items.length, 1);
       const selected = found.items[0]!;
-      assert.equal(selected.sourcePath, await realpath(good));
+      assert.equal(await realpath(selected.sourcePath), await realpath(good));
       assert.equal(selected.availability, 'indexed');
       assert.equal(selected.recoveryReadiness, 'verified');
       assert.equal(selected.signals.userMessages, 1);
