@@ -447,7 +447,7 @@ function hintsFor(view: WorkbenchView, theme: Theme): readonly (readonly [string
     )];
   }
   if (view.page === 'sessions') return sessionsHints(view.sessions, locale);
-  if (view.page === 'inspection') return inspectionHints(locale);
+  if (view.page === 'inspection') return inspectionHints(locale, Boolean(view.inspection?.inspection.managed));
   if (view.page === 'source') return sourceHints(locale);
   if (view.page === 'candidate-product') return candidateProductHints(locale, view.candidateProduct?.products.length ?? 0);
   if (view.page === 'recovery-review') return [['Enter', t(locale, 'recoveryReviewContinue')], ['Esc', t(locale, 'hintBack')]];

@@ -30,6 +30,8 @@ Core 定义 [schema](../../src/core/schema.ts)、[状态转换](../../src/core/s
 
 Codex 历史读取兼容 `.jsonl` 与 `.jsonl.zst`，索引逻辑路径与物理表示分离，同胞并存优先明文并核对内部会话 ID。共享字节读取器负责有界解码，Pack 负责事件解释；不启动额外 app-server，也不修改 Codex 来源。见[压缩会话导入决策](../decisions/accepted/2026-10-19-codex-compressed-session-intake.md)。
 
+候选原生会话保存和受管历史通过 Runtime 能力与 Pack 历史读端协作；应用层归档并合并目录，不按产品名判断原生格式。受管会话在各产品的 Reprise 逻辑项目下展示，实际工作副本及登录配置保持独立。见[受管候选历史](../decisions/accepted/2026-10-19-managed-candidate-session-history.md)。
+
 内置 Pack 的可选启动规划端口冻结实际配置，返回脱敏记录和 Runner 工厂。Host 负责持久化后启动与清理；Pack 负责原生配置语义；进程基础设施区分完整环境和受信任覆盖项，完整环境不得回灌宿主变量。这仅为可信本地环境收敛，不是 OS 沙箱。旧 Pack 未声明时保持 unknown，见[执行与证据](./execution.md#配置与证据)。
 
 `ProductRuntime` 提供当前可用产品、模型目录、候选校验、Runner 创建和 Recovery 能力声明。Runner 负责 start/send、turn 等待、取消等待、inspect、stop、close，并返回 delivery receipt。Pack 不恢复历史 Runtime，不下载依赖，不决定隔离策略或报告内容。

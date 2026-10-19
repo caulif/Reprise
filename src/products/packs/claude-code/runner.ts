@@ -1,6 +1,8 @@
 import { nativeExecutionObservation } from '../../../core/execution-boundary.js';
 import { isolateCandidateProcessEnv } from '../../../infrastructure/process/spawn.js';
 import { mkdir, rm } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { selectedProcessEnvironment } from '../../../infrastructure/process/environment.js';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -242,6 +244,8 @@ export class ClaudeStreamClient {
 }
 
 export class ClaudeTargetRunner implements TargetRunner {
+  readonly #historyRoot: string;
+  readonly #persists: boolean;
   readonly #sink: TargetEventSink;
   readonly #client: ClaudeStreamClient;
   readonly #sessionId: string;
@@ -260,13 +264,15 @@ export class ClaudeTargetRunner implements TargetRunner {
   readonly #settledResults = new Set<string>();
 
   constructor(input: { runtime: ResolvedRuntime; environment: PreparedRuntimeEnvironment; sink: TargetEventSink; env?: Readonly<Record<string, string | undefined>>; completeEnv?: NodeJS.ProcessEnv; temporaryDirectory?: string; args?: readonly string[]; safeMode?: boolean; expectedPermissionMode?: string }) {
+    this.#historyRoot = resolve(input.environment.root, (input.completeEnv ?? selectedProcessEnvironment('claude', input.env)).CLAUDE_CONFIG_DIR?.trim() || join(homedir(), '.claude'), 'projects');
+    this.#persists = !input.args;
     this.#expectedPermissionMode = input.expectedPermissionMode ?? (input.args ? 'unknown' : 'bypassPermissions');
     this.#sink = input.sink;
     this.#runtime = input.runtime;
     this.#workspaceRoot = input.environment.root;
     this.#sessionId = randomUUID();
     const args = input.args ?? [
-      ...CLAUDE_REQUIRED_ARGS,
+      ...CLAUDE_REQUIRED_ARGS.filter(arg => arg !== '--no-session-persistence'),
       '--model', input.runtime.requestedModel,
       '--session-id', this.#sessionId,
       ...(input.safeMode ? ['--safe-mode'] : []),
@@ -334,6 +340,8 @@ export class ClaudeTargetRunner implements TargetRunner {
 
   async inspect(): Promise<TargetStatus> { return this.#status; }
 
+  historySource() { return this.#persists ? { root: this.#historyRoot } : undefined; }
+
   session(): CandidateSessionHandle {
     return {
       sessionId: this.#sessionId,
@@ -378,7 +386,7 @@ export class ClaudeTargetRunner implements TargetRunner {
       claude_code_version: text(init.claude_code_version) ?? 'unknown',
       apiKeySource: text(init.apiKeySource) ?? 'unknown',
       disallowedTools: CLAUDE_DISALLOWED_TOOLS.join(','),
-      sessionPersistence: 'off',
+      sessionPersistence: this.#persists ? 'on' : 'unknown',
     };
   }
 

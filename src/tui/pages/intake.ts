@@ -288,9 +288,10 @@ export function inspectionMaxScroll(theme: Theme, width: number, model: Inspecti
 
 function inspectionFrame(theme: Theme, width: number, model: InspectionModel, height?: number): { lines: string[]; maxScroll: number } {
   const locale = model.locale ?? 'en';
-  const { inspection, privacy, showOutcome } = model;
+  const { inspection, privacy } = model;
+  const showOutcome = Boolean(inspection.managed) || model.showOutcome;
   const inputs = inspection.transcript.filter((message) => message.role === 'user');
-  if (!inputs.length) {
+  if (!inputs.length && !inspection.managed) {
     return { lines: panel(theme, `${t(locale, 'chooseTaskStart')} ${theme.glyphs.sep} ${projectLabel(inspection.cwd, locale)}`, [
       ` ${t(locale, 'notReplayableNoUserInput')}`,
     ], width), maxScroll: 0 };
@@ -314,7 +315,19 @@ function inspectionFrame(theme: Theme, width: number, model: InspectionModel, he
   });
   const ruleWidth = Math.max(1, width - (theme.framed ? 2 : 3));
   const rule = theme.glyphs.h.repeat(ruleWidth);
-  const body = [
+  const body = inspection.managed ? [
+    ` ${t(locale, 'managedHistoryReadOnly')}`,
+    ` ${sourceLine}`,
+    ` ${inspection.managed.experimentId} / ${inspection.managed.runId}`,
+    kv(theme, t(locale, 'fieldStatus'), t(locale, inspection.managed.status === 'archived' ? 'managedHistoryArchived' : inspection.managed.status === 'recording' ? 'managedHistoryRecording' : 'managedHistoryUnarchived'), width - 2),
+    ...(inspection.recoveryDiagnostics?.length ? [` ${t(locale, 'recoveryDiagnostics')} ${inspection.recoveryDiagnostics.map((item) => item.code).join(' / ')}`] : []),
+    rule,
+    ...inspection.transcript.flatMap((message) => [
+      ` [${message.role}]`,
+      ...wrapBodyLine(message.text, Math.max(20, width - 4)).map((line) => ` ${line}`),
+      '',
+    ]),
+  ] : [
     ` ${t(locale, 'freezeIntro')}`,
     ` ${t(locale, 'freezeThis')}`,
     ...freezePreview.map((line) => ` ${line}`),
@@ -340,7 +353,7 @@ function inspectionFrame(theme: Theme, width: number, model: InspectionModel, he
   const clipped = showOutcome
     ? body.slice(offset, offset + inner)
     : body.length <= inner ? body : [...body.slice(0, inner - 1), ` ${theme.glyphs.ellipsis}`];
-  return { lines: panel(theme, `${t(locale, 'chooseTaskStart')} ${theme.glyphs.sep} ${project}`, clipped, width), maxScroll };
+  return { lines: panel(theme, `${t(locale, inspection.managed ? 'managedHistoryTitle' : 'chooseTaskStart')} ${theme.glyphs.sep} ${project}`, clipped, width), maxScroll };
 }
 
 export function sessionsHints(model?: SessionsModel, locale: Locale = 'en'): readonly (readonly [string, string])[] {
@@ -356,7 +369,8 @@ export function sessionsHints(model?: SessionsModel, locale: Locale = 'en'): rea
   return [...selectHint, ['Enter', t(locale, 'hintInspect')], ['type', t(locale, 'hintSearch')], ['Ctrl+N', t(locale, 'moreAvailable')], ['Ctrl+R', t(locale, 'refreshSessions')], ['Backspace', t(locale, 'hintProjects')], ['Esc', t(locale, 'hintBack')]];
 }
 
-export function inspectionHints(locale: Locale = 'en'): readonly (readonly [string, string])[] {
+export function inspectionHints(locale: Locale = 'en', managed = false): readonly (readonly [string, string])[] {
+  if (managed) return [['↑↓ / PgUp PgDn', t(locale, 'hintScrollPage')], ['Esc', t(locale, 'hintBack')]];
   return [['Enter', t(locale, 'hintFreeze')], ['d', t(locale, 'hintExpandOutcome')], ['Esc', t(locale, 'hintBack')]];
 }
 
@@ -398,21 +412,23 @@ function emptyCatalogCopy(model: SessionsModel, kind: 'projects' | 'sessions'): 
   return t(locale, kind === 'projects' ? 'noSessionsFound' : 'noEligibleSessions');
 }
 
-function catalogStats(projects: readonly SessionProject[]): { projects: number; sessions: number; projectless: number; unreadable: number } {
+function catalogStats(projects: readonly SessionProject[]): { projects: number; sessions: number; projectless: number; unreadable: number; catalogOnly: number } {
   const sessions = projects.flatMap((project) => project.sessions);
   return {
     projects: projects.length,
     sessions: sessions.length,
     projectless: projects.find((project) => isProjectless(project.key))?.sessions.length ?? 0,
-    unreadable: sessions.filter((session) => session.availability === 'catalog-only' || session.availability === 'unreadable').length,
+    unreadable: sessions.filter((session) => session.availability === 'unreadable').length,
+    catalogOnly: sessions.filter((session) => session.availability === 'catalog-only').length,
   };
 }
 
-function catalogNotices(theme: Theme, model: SessionsModel, stats: { unreadable: number }): string[] {
+function catalogNotices(theme: Theme, model: SessionsModel, stats: { unreadable: number; catalogOnly: number }): string[] {
   const locale = model.locale ?? 'en';
   const lines: string[] = [];
   if (model.refreshFailed) lines.push(theme.style.warn(` ${t(locale, 'refreshFailedStale')}`));
   if (stats.unreadable > 0) lines.push(theme.style.muted(` ${t(locale, 'catalogNoticeUnreadable', { n: stats.unreadable })}`));
+  if (stats.catalogOnly > 0) lines.push(theme.style.muted(` ${t(locale, 'catalogNoticeIndexOnly', { n: stats.catalogOnly })}`));
   if (model.discoveryNotice) lines.push(theme.style.muted(` ${t(locale, 'catalogNoticeDetails', { diagnostics: model.discoveryNotice })}`));
   return lines;
 }

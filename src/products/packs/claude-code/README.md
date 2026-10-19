@@ -25,7 +25,7 @@ Runtime, history, and projection adapters for Claude Code. Recovery playbook tex
 
 - `--strict-mcp-config` isolates MCP only. Skills, agents, slash commands, and memory still load unless `--safe-mode` is used.
 - `bypassPermissions` still allows `CronCreate`, `CronDelete`, `ScheduleWakeup`, and `SendMessage` to create durable out-of-workspace effects. Those tools must stay disallowed.
-- Candidate runs write `~/.claude/projects` unless `--no-session-persistence` is set. Discovery must also exclude Reprise workspaces and data roots.
+- Candidate runs retain native transcripts in the configured Claude history root; catalog probes still use `--no-session-persistence`. Reprise registers candidate provenance, archives the validated primary JSONL, and groups managed sessions under a read-only Reprise project without changing the candidate workspace or login home. Managed run evidence is not offered as a new replay baseline. The archive does not certify subagent transcripts or external tool-result attachments as complete.
 
 ## Catalog vs availability
 

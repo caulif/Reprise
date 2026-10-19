@@ -22,9 +22,10 @@ export function catalogProjectKey(productId: string, rootPath: string | undefine
 }
 
 export function sessionGroupingKey(
-  session: Pick<SessionSummary, 'productId' | 'sessionId' | 'cwd' | 'sourceKind' | 'availability'>,
+  session: Pick<SessionSummary, 'productId' | 'sessionId' | 'cwd' | 'sourceKind' | 'availability' | 'projectKey'>,
   catalogKeysByRoot: ReadonlyMap<string, string> = new Map(),
 ): string {
+  if (session.projectKey) return session.projectKey;
   if (session.sourceKind === 'projectless') return PROJECTLESS_PROJECT_KEY;
   if (session.sourceKind === 'unknown') return unknownSessionProjectKey(session.productId, session.sessionId);
   const canonical = canonicalRecordedRoot(session.cwd);
