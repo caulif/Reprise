@@ -88,6 +88,14 @@ For questions and ideas, use [GitHub Discussions](https://github.com/caulif/Repr
 
 Please do not include credentials, real session content, or unredacted experiment artifacts in public posts.
 
+## Acknowledgements
+
+Thanks to MiniMax for providing one month of the Ultra plan.
+
+## Friends
+
+[LINUX DO](https://linux.do/) — A new ideal community
+
 ## Security And License
 
 Report vulnerabilities privately through the [security policy](./docs/SECURITY.md). Reprise is released under the [MIT License](./LICENSE).
