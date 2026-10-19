@@ -179,6 +179,11 @@ test('decision-only report omits fixed caveats in both languages without discard
     assert.equal(Object.hasOwn(model, 'boundary'), false);
     assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, boundary: '' }), false);
     assert.equal(renderComparisonReportFromModel({ model, facts, locale }), html);
+    assert.equal(model.locale, locale);
+    assert.equal(renderComparisonReportFromModel({ model, facts, locale: locale === 'en' ? 'zh' : 'en' }), html);
+    const { locale: _locale, ...oldModel } = model;
+    assert.equal(Value.Check(ComparisonReportModelSchema, oldModel), true);
+    assert.equal(renderComparisonReportFromModel({ model: oldModel, facts, locale }), html);
     const legacy = renderComparisonReportShell({ formatVersion: 6, task: 'ignored', facts, metrics: facts.metrics!, slots, locale });
     const legacyModel = comparisonReportModelFromHtml(legacy, facts, { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, [], [], locale);
     assert.equal(legacyModel.boundary, slots.boundary);

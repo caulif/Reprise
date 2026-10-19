@@ -5,6 +5,9 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
+import { saveTuiPreferences } from '../../src/tui/preferences.js';
+import { runAutonomousPublication } from '../support/autonomous-comparison.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createAssistantMessageEventStream, type AssistantMessage, type Context, type Model } from '@earendil-works/pi-ai';
@@ -29,6 +32,34 @@ const submission = { reason: 'The candidate produced a focused change.', pairedD
 const original = '';
 const revised = '<a href="#revised">Revised presentation</a>';
 type Step = { name: string; arguments: Record<string, unknown> };
+
+test('English TUI preference controls the complete publication despite a mid-attempt language switch', async t => {
+  let preferencesPath = '';
+  const f = await runAutonomousPublication(t, {
+    beforeStart: async base => {
+      await mkdir(base.dataDir, { recursive: true });
+      await saveTuiPreferences(base.dataDir, { locale: 'en' });
+      preferencesPath = join(base.dataDir, 'tui-preferences.json');
+    },
+    onGeneration: (context, index) => {
+      assert.match(context.systemPrompt!, /image captions and process sentences are in English/);
+      if (index === 0) writeFileSync(preferencesPath, JSON.stringify({ locale: 'zh' }));
+    },
+  });
+  assert.equal(f.result.comparison.result.status, 'completed', JSON.stringify(f.result.comparison));
+  assert.equal(f.events.find(event => event.type === 'comparison.started')?.payload.locale, 'en');
+  const html = await readFile(f.result.reportPath, 'utf8');
+  assert.match(html, /<html lang="en"/);
+  assert.match(html, /History|Historical/);
+  assert.match(html, /Cannot recommend yet/);
+  assert.doesNotMatch(html, /历史会话|当前会话|对你的影响|推荐当前|暂不能推荐/);
+  const model: unknown = JSON.parse(await readFile(join(f.result.experimentRoot, 'report-model.json'), 'utf8'));
+  assert.ok(Value.Check(ComparisonReportModelSchema, model));
+  assert.equal(model.locale, 'en');
+  const recovered = await inspectComparisonRecovery({ dataDir: f.base.dataDir, experimentId: f.base.experimentId, attemptId: f.attemptRoot.split(/[\\/]/).at(-1)! });
+  assert.equal(recovered.ready, true, recovered.reason);
+  assert.match(recovered.html, /<html lang="en"/);
+});
 
 for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewed', 'cancelled', 'selected-delivery', 'git-delivery'] as const) {
   test(`default autonomous factory traverses production publication: ${mode}`, async t => {

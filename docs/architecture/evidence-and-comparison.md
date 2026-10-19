@@ -54,6 +54,8 @@ History 的默认运行按已提交 `run.attempt_created` 顺序选择，日志�
 
 默认 Pi Harness 为每次 Candidate、Recovery 与持久化重比提交版本 1 的有效配置 DTO：先提交 run-owned 配置 artifact，再写 `harness.configuration_bound`，其中保留同一配置正文、hash 和 owner 引用。该事件先于本操作的连接 probe；artifact 残留不能认证配置。RunManifest 的角色配置、Recovery initialize 记录和 Comparison 操作绑定准确引用；重用 Agent 或连接检查缓存时仍提交本次 owner，引用不写回共享 Agent 实例。自定义 Port 与旧记录缺有效引用时保持未记录，不从 requested budget 推断已经生效。
 
+Comparison 的有效语言以本次 attempt 快照为准。即时对比从已提交的运行绑定派生 attempt 专属配置，保留原运行记录；持久化重比在配置绑定及连接 probe 前应用该语言。复用已绑定且语言一致的本次配置，不重复提交；开始事件不再以原运行引用冒充本次配置，使用包含 comparisonAttemptId 的配置绑定定位本次有效值。
+
 快照区分 Controller 单次无限、Recovery 的实际单次上限与操作总限，以及自主 Comparison 配置单次上限、整体截止和逐请求 `min(剩余整体时间, 单次上限)` 规则。内置 Recovery 的两项预算使用本次 recoveryBudget.callTimeoutMs；整体计时、配置绑定前后及显式冲突边界见[Recovery 预算](./recovery.md#recovery-agent-单任务会话)。空 Comparison resources override 保留默认整体截止；未在自主模式执行的旧阶段限额只放 requestedResources，不冒充 enforcedResources。快照与 Agent 构造共用预算解析，Candidate/policy 以及 Pi 私有配置、首次解析模型使用冻结副本，后续调用方对象或模型注册表变化不能改写本次执行条件。
 
 模型 DTO 显式挑选 provider/model、API、上下文和输出窗口、输入能力、reasoning/effort、已知无敏感标量 compat override 与已安装 SDK 版本。嵌套 schema 拒绝未知字段；不展开本机配置，不保存 apiKey、keyRef、headers 或 endpoint。SDK 按 URL 推导的默认 compat、复杂未记录参数和网络路由明确不完整；fingerprint 仅供比对，不能重建这些内容或凭据。此 DTO 记录 Harness 可控制条件，不宣称完整重建 Provider wire 请求；普通 generation 的实际输入仍以 Host 快照为准。
@@ -73,6 +75,8 @@ TUI 读取这些事实并投影状态。它不持有 CandidateRun 状态机，�
 History 从已校验的提交日志前缀构造只读附件读取器，每个 Session 按起始事件的 runId 绑定正文和图片读取范围；复用 Store 的 manifest、owner、提交事件及字节/hash 校验。完整图片记录不标成内容缺失，缺失或损坏附件保留诊断并标记输入不完整。此路径不创建目录、取得 writer lock 或改写未提交尾部。
 
 ## Comparison attempt
+
+Comparison 在 attempt 开始时从操作者语言偏好取一次快照，并记录在开始事件及冻结 Context；内置 Agent、草稿工具、报告校验和失败页面共用此值，不受较早创建的 Agent 默认语言或中途设置变化影响。报告模型保留生成语言，重建优先使用该值；离线恢复使用冻结 Context，旧 Context 缺语言时沿用原 HTML 的 lang（缺失时保持旧中文默认），不读取当前 TUI 设置。旧模型缺语言时仍兼容原调用方指定值。此字段只增量保存，不迁移或覆写已发布报告，见[语言快照决策](../decisions/accepted/2026-10-19-comparison-attempt-language.md)。
 
 Comparison 正式工具与 coding 试验复用受管 `exec_command` / `write_stdin` / `cancel_process`：默认等待 10 秒后返回状态，等待结束不终止进程；进程绑定当前 Session/invocation，成功结束前必须完成或取消并确认收尾。命令非零结果与可纠正前置拒绝不等于 Agent 致命失败，审计、日志持久化及终止不确定仍阻止成功发布。命令包装保留 owner、生命周期与浏览器限制，日志归属当前运行。工具及命名兼容决定见[受管进程与会话名称](../decisions/accepted/2026-10-15-comparison-managed-processes-and-session-names.md)。
 
