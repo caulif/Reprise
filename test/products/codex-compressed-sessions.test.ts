@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { zstdCompressSync, constants } from 'node:zlib';
@@ -91,7 +91,7 @@ test('plain representation wins without silently falling back from corrupt or mi
   const found = await discoverCodexSessions(root);
   assert.equal(found.length, 1);
   assert.equal(found[0]?.sessionId, 'compressed-session');
-  assert.equal(resolveCodexSource(`${plain}.zst`), plain);
+  assert.equal(resolveCodexSource(`${plain}.zst`), await realpath(plain));
   await writeFile(plain, 'broken json\n');
   await assert.rejects(inspectCodexSession(`${plain}.zst`));
   await writeFile(plain, body('different-id'));
@@ -159,7 +159,7 @@ test('representation races retry only missing files and support cancellation', a
     }
     return resolved;
   });
-  assert.equal(result, `${source}.zst`);
+  assert.equal(result, await realpath(`${source}.zst`));
   assert.equal(calls, 2);
   await assert.rejects(withCodexSource(source, () => Promise.reject(Object.assign(new Error('denied'), { code: 'EPERM' }))), { code: 'EPERM' });
   await assert.rejects(withCodexSource(join(root, 'missing.jsonl'), () => Promise.resolve('unexpected')), { code: 'ENOENT' });
@@ -264,4 +264,40 @@ test('catalog identity recovered from a compressed prefix cannot conceal a faile
   assert.equal(found[0]?.availability, 'unreadable');
   assert.equal(found[0]?.summary, 'Keep the real title');
   assert.equal(found[0]?.recoveryDiagnostics?.[0]?.code, 'decompression-failed');
+});
+
+test('a damaged duplicate cannot replace another verified transcript regardless of discovery order', async (t) => {
+  for (const damagedDate of ['2026-10-18T00:00:00.000Z', '2026-10-20T00:00:00.000Z']) {
+    await t.test(damagedDate, async (t) => {
+      const root = await mkdtemp(join(tmpdir(), 'reprise-compressed-duplicate-'));
+      t.after(() => rm(root, { recursive: true, force: true }));
+      const sessions = join(root, 'sessions');
+      await mkdir(sessions);
+      const good = join(sessions, 'rollout-good.jsonl');
+      const damaged = join(sessions, 'rollout-damaged.jsonl.zst');
+      const bytes = Buffer.concat([body(), Buffer.from(JSON.stringify({
+        timestamp: '2026-10-19T00:00:00.000Z', type: 'event_msg',
+        payload: { type: 'agent_message', message: 'Verified continuation.' },
+      }) + '\n')]);
+      await writeFile(good, bytes);
+      await writeFile(damaged, Buffer.concat([zstdCompressSync(body()), Buffer.from('bad trailing frame')]));
+      await utimes(damaged, new Date(damagedDate), new Date(damagedDate));
+      const db = new DatabaseSync(join(root, 'state_5.sqlite'));
+      db.exec('CREATE TABLE threads (id TEXT NOT NULL, rollout_path TEXT)');
+      db.prepare('INSERT INTO threads VALUES (?, ?)').run('compressed-session', damaged);
+      db.close();
+      const found = await codexSessionAdapter.discover({ root: sessions, refresh: true });
+      assert.equal(found.items.length, 1);
+      const selected = found.items[0]!;
+      assert.equal(selected.sourcePath, await realpath(good));
+      assert.equal(selected.availability, 'indexed');
+      assert.equal(selected.recoveryReadiness, 'verified');
+      assert.equal(selected.signals.userMessages, 1);
+      assert.equal(found.diagnostics.some((item) => item.code === 'decompression-failed'), true);
+      const imported = await codexSessionAdapter.import(selected);
+      assert.equal(imported.baseline.finalMessage, 'Verified continuation.');
+      const frozen = await freezeCase(imported, join(root, 'cases'), { allowModelText: true, allowBinary: false, redactions: [] }, '2026-10-21T00:00:00.000Z');
+      assert.equal((await readFile(join(root, 'cases', frozen.taskCase.caseId, 'raw/session.jsonl'))).equals(bytes), true);
+    });
+  }
 });

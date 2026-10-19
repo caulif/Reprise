@@ -127,7 +127,9 @@ function mergeCodexSources(
 
 function preferCodexEvidence(indexed: CodexSessionSummary | undefined, session: CodexSessionSummary): CodexSessionSummary {
   if (!indexed) return withCodexSourceKind(session, undefined);
-  if (session.availability === 'unreadable') return combineCodexEvidence(session, indexed);
+  if (session.availability === 'unreadable' && catalogPathKey(session.sourcePath) === catalogPathKey(indexed.sourcePath)) {
+    return combineCodexEvidence(session, indexed);
+  }
   const winner = evidenceRank(session) > evidenceRank(indexed) ? session
     : evidenceRank(session) < evidenceRank(indexed) ? indexed
       : sessionRecency(session) >= sessionRecency(indexed) ? session : indexed;
