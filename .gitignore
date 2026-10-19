@@ -108,3 +108,7 @@ pnpm-debug.log*
 /scripts/split-class-in-place.mjs
 /src/tui/controller-state.ts
 /scripts/alias-controller-imports.mjs
+
+# Local coverage shard artifacts
+/.coverage-shard/
+/.coverage-input/
