@@ -4,29 +4,31 @@
 
 [![check](https://github.com/caulif/Reprise/actions/workflows/check.yml/badge.svg)](https://github.com/caulif/Reprise/actions/workflows/check.yml)
 
-> **Experimental.** Reprise is a local-first tool for replaying real coding-agent tasks, running a candidate agent from the same starting point, and inspecting how the results differ.
+**Revisit a real coding task with another agent.**
 
-Use it when one agent session matters enough to revisit: preserve the task context, reconstruct an isolated workspace, try a different candidate runtime, then review the resulting work with its evidence. Reprise is for personal, local experiments. It is not a public leaderboard or a benchmark that proves model quality.
+What changes when another coding agent tackles a task you have already tried? Reprise prepares a task from your saved local session, recovers a working starting point, runs a candidate, and helps you inspect the resulting work and its evidence. Recovery gaps remain visible.
+
+> **Experimental.** Built for personal, local experiments. Windows 11 is the only platform with real terminal and Runtime validation so far; recovery is not a guarantee of an identical historical environment.
 
 ## Demo
 
-<!-- Add a TUI walkthrough or comparison-report screenshot here. -->
+### A pelican riding a bicycle
 
-_A short TUI walkthrough and a comparison-report screenshot will be added here. The flow is: select a saved session, recover its task starting point, run a candidate, and inspect the result locally._
+![Historical and candidate pelican cycling deliverables, shown side by side](./docs/assets/pelican/comparison.png)
 
-## What You Get
+[Explore the case and its tradeoffs](./docs/examples/pelican.md) · [Watch the deliverables animate](./docs/assets/pelican/comparison.gif)
 
-- **A preserved task case** from a local agent-history session, with recovery findings and known gaps recorded.
-- **An isolated candidate run** with an event log, trace, final response, and retained workspace copy.
-- **An optional comparison report** that puts historical and candidate evidence side by side instead of reducing them to a single score.
+This is a real saved task, not a model leaderboard. The case explains the request, both deliverables, and what can and cannot be concluded. Its comparison was generated on October 19, 2026 using an older Reprise revision and retained candidate work; it is not a fresh end-to-end replay or a preview of the latest report template. Recorded times are not directly comparable.
 
-```text
-Saved agent session -> recovered task case -> candidate run -> local evidence and comparison report
-```
+## When To Use It
+
+- Revisit an important coding task with another agent or model.
+- Inspect differences in delivered work, including omissions and tradeoffs.
+- Keep personal task cases and evidence for later experiments.
 
 ## Quick Start
 
-Reprise currently runs from source. It requires Git, npm, and Node.js **22.19 or later**.
+Run from source with Git, npm, and Node.js **22.19 or later**:
 
 ```powershell
 git clone https://github.com/caulif/Reprise.git
@@ -36,57 +38,74 @@ npm run build
 node dist/src/cli/main.js --help
 ```
 
-The commands above build Reprise and display help only. They do not need a model key or product login, and they do not call a model.
+These commands build Reprise and display help; they do not call a model or require a model key or product login. Reprise is not published to npm yet. Do not install the unrelated unscoped `reprise` package.
 
-To open the terminal interface, run:
+Start the terminal interface:
 
 ```powershell
-node dist/src/cli/main.js
+node dist/src/cli/main.js --locale en
 ```
 
-Start with `/intake` to select a source product, project, and saved session. Once recovery is complete, select a candidate product and model, review the confirmation screen, and start the run. The [usage guide](./docs/usage.md) covers the full TUI and headless CLI flows.
+1. Open `/config`, configure the **Reprise model**, and save with `Ctrl+S`. It prepares tasks, guides execution, and compares results. An optional `Ctrl+T` connection test calls the model and may cost money.
+2. Install and sign in to the **candidate tool** separately. Its model and account are distinct from the Reprise model.
+3. Open `/intake`, select a source tool, project, and saved session, then review the task. Confirming this review starts preparation and may incur model costs.
+4. When preparation succeeds, choose the candidate tool and model. Review the recovered workspace and limitations, then confirm execution.
+5. Inspect the result and open the execution folder. Choose comparison only when you want another model call; the result page then links to the report or failure diagnostics.
+
+Follow the [English first-run guide](./docs/getting-started.md) for configuration, stopping a run, costs, and troubleshooting.
 
 ## Requirements And Support
 
-| What you want to do | What you need |
-|---|---|
-| Build, inspect help, or run offline checks | The Quick Start prerequisites only |
-| Recover a session and run a candidate | A supported product installed locally, with local session history |
-| Run recovery, controller, or comparison models | A Harness model configured in `/config`; these operations may incur provider costs |
+| Built-in tool | Import local session history | Candidate execution |
+|---|---|---|
+| Codex (`codex`) | Yes | Yes, through the locally installed Codex runtime |
+| Claude Code (`claude-code`) | Yes | Yes, through the locally installed Claude Code runtime |
 
-Windows 11 is the only platform verified with real terminal and Runtime use so far. CI checks do not imply equivalent real-Runtime validation on every operating system. See the [roadmap](./docs/roadmap.md) for validation coverage and remaining work.
+These are implemented roles, not a promise of compatibility with every tool version. Models come from the selected tool's available catalog. Reprise does not install the tools or reproduce their historical versions. A source session must already exist locally; the candidate tool must be installed and authenticated.
 
-The default data directory is `.reprise` in the current directory. Use `--data-dir` or `REPRISE_DATA_DIR` to choose another location.
+Windows 11 has real-use evidence, but some terminal and Runtime scenarios remain unverified. macOS and Linux CI checks do not establish real-Runtime support. See the [validation roadmap](./docs/roadmap.md) (Chinese).
+
+## What You Get
+
+```text
+Saved session -> recovered task case -> candidate run -> local evidence and optional comparison
+```
+
+- A preserved task case with recovery findings and known gaps.
+- A candidate workspace copy, event log, trace, and final response.
+- An optional report comparing the historical and candidate work, with evidence and limitations rather than a universal score.
 
 ## Privacy, Cost, And Safety
 
-- Reprise keeps experiments and workspace copies on your machine, but recovery, controller, and comparison requests send task-relevant material to the Harness model service you configure.
-- Candidate runtimes use their own product login and data-handling rules. Reprise does not provide a universal network sandbox or roll back external effects.
-- Review task input, permissions, privacy, and budget before a real run. Secret filtering is not a guarantee that all personal or business data is removed.
+- Local records do not mean offline execution: task material is sent to your configured Reprise model service; candidate tools use their own accounts and data policies. Both may incur costs.
+- Review input and permissions before running. Secret filtering does not guarantee removal of all sensitive material. Workspace copies are not an operating-system filesystem or network sandbox, and external side effects are not rolled back.
+- During a running stage, `Ctrl+C` requests cancellation. Wait for the resulting status and cleanup diagnostics; a cancellation request is not immediate completion.
+- The normal CLI/TUI has no independent budget-setting screen. Review the [cost and cancellation guidance](./docs/getting-started.md#cost-and-cancellation) before a real run; reported cost estimates are not provider invoices.
 
-Read [data handling and credentials](./docs/usage.md#数据去向) before using real work, and use test accounts, mocks, or read-only observation for tasks with external side effects.
+Records default to `.reprise` in your current directory. Keep that directory private; use `--data-dir` or `REPRISE_DATA_DIR` to choose another location.
 
 ## Project Status
 
-Reprise is experimental and has not been published to npm yet. The future package name is `@caulif/reprise`; do not install the unrelated unscoped `reprise` package from npm.
-
-Current implementation limits and remaining real Runtime validation are tracked in the [roadmap](./docs/roadmap.md).
+Reprise is experimental. The intended package name is `@caulif/reprise`, but installation currently uses source. It is not a public leaderboard, a standardized benchmark, or proof that one model is generally better. See the [roadmap](./docs/roadmap.md) for implementation limits and missing validation.
 
 ## Documentation
 
 | Goal | Read |
 |---|---|
-| Run Reprise through the TUI or CLI | [Usage guide](./docs/usage.md) |
-| Understand modules and execution flow | [Architecture overview](./docs/architecture/overview.md) |
-| Set up development and run checks | [Development guide](./docs/development.md) |
-| See limitations and validation evidence | [Roadmap](./docs/roadmap.md) |
-| Browse the complete documentation map | [Documentation index](./docs/README.md) |
+| Complete a first run in English | [Getting started](./docs/getting-started.md) |
+| Inspect a real example without installing | [Pelican case](./docs/examples/pelican.md) |
+| Use the full TUI and CLI | [Usage guide](./docs/usage.md) (Chinese) |
+| Understand the system | [Architecture](./docs/architecture/overview.md) (Chinese) |
+| Develop and validate changes | [Development guide](./docs/development.md) (Chinese) |
+| Find all documentation | [Documentation index](./docs/README.md) |
+
+The English guide covers the first-run path; most detailed technical documentation is currently in Chinese.
 
 ## Support And Contributing / 支持与贡献
 
-For questions and ideas, use [GitHub Discussions](https://github.com/caulif/Reprise/discussions). Report reproducible bugs through [GitHub Issues](https://github.com/caulif/Reprise/issues). Before contributing, read the [contribution guide](./docs/CONTRIBUTING.md), [code of conduct](./docs/CODE_OF_CONDUCT.md), and [development guide](./docs/development.md).
+Use [GitHub Issues](https://github.com/caulif/Reprise/issues/new/choose) for questions, bugs, and feature requests in English or Chinese. Before contributing, read the [contribution guide](./docs/CONTRIBUTING.md), [code of conduct](./docs/CODE_OF_CONDUCT.md), and [development guide](./docs/development.md).
 
-Please do not include credentials, real session content, or unredacted experiment artifacts in public posts.
+Do not post credentials, private session content, or unredacted experiment artifacts.
 
 ## Security And License
 

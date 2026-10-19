@@ -6,6 +6,8 @@
 
 ```text
 docs/
+├── assets/pelican/         # 公开案例的脱敏图像与动画
+├── examples/               # 真实案例摘要、证据与限制
 ├── architecture/           # 当前架构，四个按任务划分的专题
 ├── .locl/                  # 用户指定的规划稿目录，当前未被 Git 忽略
 ├── decisions/              # 选择理由和历史，不是日常必读
@@ -13,11 +15,11 @@ docs/
 └── tui-audit/frames/        # Windows 门禁快照，非阅读材料
 ```
 
-顶层以 README 导航到 usage、development、roadmap，以及必要社区政策。目录模型不列每一份文件，新增或删除目录时同步本文与 .gitignore。
+顶层以 README 导航到 usage、英文 getting-started、development、roadmap，以及必要社区政策。目录模型不列每一份文件，新增或删除目录时同步本文与 .gitignore。
 
 ## 受控边界
 
-当前说明、社区政策、决策记录、plan/archive 历史计划和 TUI frames 受版本控制。本机讨论、实验、截图与第三方缓存留在 Git 忽略的 docs/.local 等产物目录；公开文档不能链接或依赖这些文件。docs/local 是旧误拼目录，新增本地材料只用 .local。
+当前说明、公开案例及其脱敏素材、社区政策、决策记录、plan/archive 历史计划和 TUI frames 受版本控制。公开案例不得依赖私有报告或本机路径；素材来源、版本与观察限制在案例页说明。本机讨论、实验、截图与第三方缓存留在 Git 忽略的 docs/.local 等产物目录；公开文档不能链接或依赖这些文件。docs/local 是旧误拼目录，新增本地材料只用 .local。
 
 ## 权威与冲突
 

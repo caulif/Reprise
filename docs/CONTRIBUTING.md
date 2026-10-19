@@ -2,11 +2,19 @@
 
 先从[文档导航](./README.md)找到任务相关说明；coding agent 还应读取适用的 AGENTS。开发环境、验证命令和真实调用边界统一见[开发指南](./development.md)。
 
+## English quick start
+
+1. Fork the repository or branch from current `main`. Follow the [README](../README.md) for prerequisites, then run `npm ci` and `npm run build`.
+2. For documentation changes, run `npm run verify:docs`; for code changes, run `npm run check`. Tests read built output in `dist/`, so build before running individual tests. Default checks do not call paid models; real Runtime checks require explicit opt-in.
+3. Update the relevant documentation and open a PR using the [template](../.github/PULL_REQUEST_TEMPLATE.md). Describe the user impact, checks actually run and anything unverified. Most technical documentation is currently in Chinese; English contributions and questions are welcome.
+
+Small fixes can go directly to a PR. For larger changes, discuss scope in [Issues](https://github.com/caulif/Reprise/issues) first. Useful starting points include documentation corrections and synthetic regression fixtures; contributing does not require paid model calls. Never include credentials or unsanitized private sessions. Use the [security policy](./SECURITY.md) for vulnerabilities and follow the [code of conduct](./CODE_OF_CONDUCT.md).
+
 ## 外部贡献者快速路径
 
 1. **Fork 或创建分支** — 在 GitHub 上 fork 仓库，或从最新 `main` 创建功能分支。
 2. **安装与构建** — `npm ci`、`npm run build`（见[中文 README](../README.zh-CN.md#快速开始)）。
-3. **选择验证** — 文档改动跑 `npm run verify:docs`；代码改动按 [开发指南](./development.md#验证命令) 选择 `check:fast` 或 `check`。默认验证不调用计费模型。
+3. **选择验证** — 文档改动跑 `npm run verify:docs`；代码改动跑 `npm run check`（见[开发指南](./development.md#验证命令)）。默认验证不调用计费模型。
 4. **更新唯一文档归宿** — 用户行为改 [使用指南](./usage.md)；架构不变量改 [架构](./architecture/overview.md)；未完成目标改 [路线图](./roadmap.md)。
 5. **发 PR** — 使用 [PR 模板](../.github/PULL_REQUEST_TEMPLATE.md)，说明影响、验证命令与未验证事项。
 

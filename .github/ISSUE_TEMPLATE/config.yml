@@ -1,11 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 安全漏洞（私下报告）
+  - name: Security vulnerability / 安全漏洞（私下报告）
     url: https://github.com/caulif/Reprise/security/advisories/new
-    about: 不要用公开 Issue 报告漏洞或粘贴 secret。
-  - name: 行为问题（公开请求联系）
-    url: https://github.com/caulif/Reprise/discussions
-    about: Discussions 为公开页面、无私信。仅发帖请求联系，不要写当事人身份或攻击细节。
-  - name: 贡献指南
+    about: Report privately. Never post vulnerability details or secrets in public issues. 请私下报告，勿公开漏洞细节或凭据。
+  - name: Conduct contact request / 行为问题（公开请求联系）
+    url: https://github.com/caulif/Reprise/issues/new?template=question.yml&title=Contact%20request
+    about: Public request for a private contact channel only. No identities or incident details. 此处公开，仅请求私下联系渠道，勿贴身份或事件细节。
+  - name: Contributing / 贡献指南
     url: https://github.com/caulif/Reprise/blob/main/docs/CONTRIBUTING.md
-    about: 本地验证、真实 smoke opt-in 与 PR 要求。
+    about: Local checks, real-call opt-in and pull requests / 本地验证、真实调用 opt-in 与 PR 要求。

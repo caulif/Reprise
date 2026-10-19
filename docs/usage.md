@@ -4,13 +4,9 @@ Reprise 是本地优先的任务比较工具：它从已安装 AI 工具的历�
 
 ## 开始
 
-内置 Candidate 现在按角色减少环境继承，Host shell 不继承 Harness 认证，启动 timeline、结果与报告详情显示本次冻结的执行边界。旧运行缺少记录时显示“未记录 / 未声明”。环境值、代理 URL 和原始命令行不作为启动摘要保存。可信本地模式没有 Reprise 系统级文件/网络隔离，也不保证禁止所有共享配置和扩展加载；不能据此认定盲测成立。原生权限默认值不因环境收敛改变。
+[English getting started](./getting-started.md) · [先看鹈鹕案例](./examples/pelican-zh-cn.md)
 
-### 内部模型图片能力
-
-openai-compatible 模型可通过 `reprise config set --image-input` 声明图片输入（其他必需配置参数沿用 config set）；声明只控制发送原生块，不创造网关能力。Case `privacy.allowBinary` 仍须授权，已有 text-only Case 不因模型开关自动获得二进制发送权限。Comparison 的受控渲染/预览可请求 `includeImages=true`，拒绝交付时继续文本证据并说明限制。
-
-`reprise config image-status` 离线显示图片探测状态。明确授权付费探测后，在 PowerShell 运行 `$env:REPRISE_RUN_IMAGE_PROBE='1'`，再运行 `reprise config test-image`。命令只发送一张随机条纹 PNG，一次调用且无重试；答案仅由 Host 核对。结果保存于数据目录的 `harness-image-probe.json`，配置指纹改变则显示 stale。passed 只表示当次简单探测通过（随机猜中仍有可能），不保证真实任务、动画或其他媒体能力。普通连接检查仍是文本检查，默认不自动探测图片。
+首次路径：安装构建 → 配置 Reprise 模型 → 确认执行工具已安装并登录 → 选择历史会话 → 核对并准备 → 确认执行 → 按需比较。
 
 安装与构建步骤见[中文 README](../README.zh-CN.md#快速开始)。摘要如下：
 
@@ -19,12 +15,40 @@ git clone https://github.com/caulif/Reprise.git
 cd Reprise
 npm ci
 npm run build
-node dist/src/cli/main.js
+node dist/src/cli/main.js --help
+node dist/src/cli/main.js --locale zh
 ```
 
 需要 Node.js **22.19** 或更高版本（以 [package.json](../package.json) 为准）。`--data-dir` 指定本机数据目录，默认是当前目录下的 `.reprise`；`--locale zh` 或 `--locale en` 保存操作者界面语言。
 
 下文中的 `reprise` 指 `node dist/src/cli/main.js`（或等价构建产物），**不是** npm 上的裸名包 `reprise`。若已将本项目注册为全局 CLI，命令名相同。
+
+构建与 `--help` 不调用模型；启动 TUI 后，先完成下方模型设置，再开始任务。内置 Codex 与 Claude Code 都支持导入本机会话和候选执行，具体模型来自工具目录；这不保证兼容所有版本。Reprise 不负责安装工具，执行工具应在本机可启动且已登录。只有 Windows 11 有真实终端和 Runtime 使用证据，仍有待验证场景，见[路线图](./roadmap.md)。
+
+## Reprise 模型设置
+
+先分清两条链路：**Reprise 模型**负责准备、引导和比较，**执行工具的模型**负责真正重做任务。前者在 `/config` 配置，后者使用 Codex 或 Claude Code 自己的登录态，在启动执行时选择模型；设置其中一条不代表另一条已可用，两侧都可能计费。
+
+配置页（首页“Reprise 模型设置”或输入 `/config`）保存一份供任务准备、执行引导和结果比较共用的 Reprise 模型。配置写入 Git 忽略的 `{dataDir}/harness-model.json`（默认即 `.reprise/harness-model.json`），也可将密钥写成 `env:NAME` 引用。密钥值不会写入事件、artifact 或报告。
+
+自定义模型的图片输入默认未声明，因此内部 Agent 仅接收文本；配置页会显示“未声明，仅文本”，启用后显示“已声明（未探测）”。这项声明影响 Recovery、Controller 与 Comparison，不代表供应商网关已通过图片请求验证，也不由当前执行 Runtime 的图片能力继承。Comparison 时间线显示实际 Session 的输入类型；仅文本 Session 的视觉质量不能据源码或像素脚本自称目视验证。
+
+### 第三方 OpenAI-compatible 服务（推荐入口）
+
+1. 打开 TUI，输入 `/config`。
+2. 选择 **openai-compatible** 类型。
+3. 填写服务的 **base URL**、**model ID**（使用服务文档中的实际标识，不要手写会过期的推荐列表）和 **API 密钥**。
+4. 选择服务真实支持的 **API 协议**：`openai-completions` 或 `openai-responses`。协议必须与服务匹配；服务自称「兼容 OpenAI」不保证两种协议都可用。
+5. 按服务能力开启 **reasoning**（推理强度）和 **图片输入**（`inputCapabilities`）。图片能力默认仅 text；只有模型和服务支持时才启用 image，它控制是否向模型发送原生图片块，不保证能理解所有 artifact。
+6. `Ctrl+S` 保存，`Ctrl+T` 可选连接测试（可能产生服务费用）。
+
+### 官方 Pi catalog（高级路径）
+
+官方目录登录**不在 Reprise 内**完成。需先安装 [Pi](https://github.com/badlogic/pi-mono) CLI，在 Pi 交互环境中执行 `/login`，凭据由 Pi 的 `auth.json` 保存。回到 Reprise 的 `/config`，选择 **pi-catalog** 类型并挑选对应目录项。Reprise 不读取或保存 Codex CLI、Claude Code 的登录文件。
+
+当前执行 Runtime 继续使用用户在目标产品中的登录态；Reprise 不替用户切换全局模型配置。
+
+真实验证脚本要求显式 opt-in；默认开发检查使用本地 fixture。TUI 的恢复、当前运行和对照是用户主动触发的实际任务，同样可能计费。
 
 ## TUI 路径
 
@@ -39,6 +63,26 @@ node dist/src/cli/main.js
 重新准备同一来源时，不同任务起点或授权会保存为独立冻结版本，已有运行仍引用原版本。同内容重试复用原对象；旧 case 损坏或格式未知时保留文件并显示错误，不自动覆盖。身份与文件校验边界见[冻结任务保全](architecture/evidence-and-comparison.md#冻结任务保全)。
 
 实时结果与运行记录共用最小事实展示。未知终态和清理状态保留未确认；旧 Comparison 只有 completed 调用状态而缺少实际结果详情时，不显示比较成功。失败诊断沿用已保存的标识，不补造失败原因、Session 或报告；已有未确认归属的报告仍可打开，并保留版本诊断。
+
+## 费用与取消
+
+任务核对页确认会开始准备并调用 Reprise 模型；执行确认后，候选工具与 Reprise 引导都可能计费；结果页选择“与原结果比较”会直接启动比较模型调用。连接测试也可能计费。真实验证脚本的 opt-in 不代表用户主动启动的 TUI 任务免费。
+
+普通 CLI/TUI 尚无独立预算设置入口。Recovery 与 Comparison 默认整体时间预算为 24 小时，Comparison 没有默认请求或工具次数上限；Controller 总时间截止由运行策略决定，不套用该 24 小时默认值。这些都不是费用封顶。更多设置与在途费用限制见[预算规则](./architecture/evidence-and-comparison.md#comparison-attempt)。建议从外部副作用可控的小任务开始，先确认自己的服务计费方式。
+
+运行中按 `Ctrl+C` 请求停止当前阶段；也可在使用相同数据目录的另一终端运行 `reprise cancel <operationId|experimentId|runId>`。发出取消不等于立刻结束，需查看最终状态与清理诊断。Reprise 不回滚外部服务副作用；不要把清理未确认当成成功。
+
+## 故障排查
+
+| 现象 | 处理 |
+|---|---|
+| 裸 `reprise` 找不到命令 | 使用 `node dist/src/cli/main.js`；若命令不存在，先 `npm run build` 确认 `dist/` 已生成。未全局安装时裸 `reprise` 不可用是预期行为。 |
+| 来源产品或会话列表为空 | 确认目标产品已安装且本机确有历史记录。`products` 只列出可识别产品；`sessions` 需要 `--product <id>`。发现（discovery）与导入（import）不是同一操作，见 `reprise sessions --help` 与 `reprise import --help`。 |
+| 模型连接失败 | 在 `/config` 核对 endpoint、API 协议类型（`openai-completions` / `openai-responses`）、模型 ID 和凭据来源。不要把配置全文粘贴到 Issue；用 `Ctrl+T` 连接测试并查看错误摘要。 |
+| 恢复显示「无法恢复」或 blocked | 查看 TUI 或事件日志中的缺失条件；缺关键输入时不会启动当前运行，没有「强行继续」开关。 |
+| 报告或图片入口不可用 | 区分未生成对照、未采集媒体、快照缺失和发布失败。空入口可能是数据尚未产生，不代表零差异。 |
+| 取消后仍在收尾 | `Ctrl+C` 或 `reprise cancel` 发起取消请求；清理与最终状态在事件日志和结果页分别显示，二者可能不同步片刻。 |
+| 同一实验再次运行失败 | 重复运行已实现并通过离线 fake Runtime 验证，真实 Runtime 验收仍未完成。保留失败 run 的诊断，核对工具、模型与副本条件，见[路线图](./roadmap.md#开放目标)。不要默认删除整个 `.reprise` 目录。 |
 
 ## CLI
 
@@ -110,28 +154,11 @@ Recovery 与 Comparison 默认整体时间预算为 24 小时；Controller 单�
 
 `recover-comparison` 对旧失败 attempt 默认只读：核对冻结事实、catalog 修订、草稿 digest、成功预览事件和当前发布校验，返回可恢复状态，不调用模型。只有显式加 `--publish --status ...` 才尝试发布，状态由操作者依据旧草稿判断。该命令仍使用兼容根级发布路径，拒绝覆盖已有的不同报告；同一已记录恢复意图与相同发布 digest 可幂等重试。它追加恢复事件并更新根投影，不补造新的报告 owner 认证；详细边界见[文件与兼容](./architecture/evidence-and-comparison.md#文件与兼容边界)。当前自主流程不需要该命令处理末尾空文本。
 
-## Reprise 模型设置
+## 内部模型图片能力
 
-配置页（首页“Reprise 模型设置”或输入 `/config`）保存一份供任务准备、执行引导和结果比较共用的 Reprise 模型。配置写入 Git 忽略的 `{dataDir}/harness-model.json`（默认即 `.reprise/harness-model.json`），也可将密钥写成 `env:NAME` 引用。密钥值不会写入事件、artifact 或报告。
+openai-compatible 模型可通过 `reprise config set --image-input` 声明图片输入（其他必需配置参数沿用 config set）；声明只控制发送原生块，不创造网关能力。Case `privacy.allowBinary` 仍须授权，已有 text-only Case 不因模型开关自动获得二进制发送权限。Comparison 的受控渲染/预览可请求 `includeImages=true`，拒绝交付时继续文本证据并说明限制。
 
-自定义模型的图片输入默认未声明，因此内部 Agent 仅接收文本；配置页会显示“未声明，仅文本”，启用后显示“已声明（未探测）”。这项声明影响 Recovery、Controller 与 Comparison，不代表供应商网关已通过图片请求验证，也不由当前执行 Runtime 的图片能力继承。Comparison 时间线显示实际 Session 的输入类型；仅文本 Session 的视觉质量不能据源码或像素脚本自称目视验证。
-
-### 第三方 OpenAI-compatible 服务（推荐入口）
-
-1. 打开 TUI，输入 `/config`。
-2. 选择 **openai-compatible** 类型。
-3. 填写服务的 **base URL**、**model ID**（使用服务文档中的实际标识，不要手写会过期的推荐列表）和 **API 密钥**。
-4. 选择服务真实支持的 **API 协议**：`openai-completions` 或 `openai-responses`。协议必须与服务匹配；服务自称「兼容 OpenAI」不保证两种协议都可用。
-5. 按服务能力开启 **reasoning**（推理强度）和 **图片输入**（`inputCapabilities`）。图片能力默认仅 text；只有模型和服务支持时才启用 image，它控制是否向模型发送原生图片块，不保证能理解所有 artifact。
-6. `Ctrl+S` 保存，`Ctrl+T` 可选连接测试（可能产生服务费用）。
-
-### 官方 Pi catalog（高级路径）
-
-官方目录登录**不在 Reprise 内**完成。需先安装 [Pi](https://github.com/badlogic/pi-mono) CLI，在 Pi 交互环境中执行 `/login`，凭据由 Pi 的 `auth.json` 保存。回到 Reprise 的 `/config`，选择 **pi-catalog** 类型并挑选对应目录项。Reprise 不读取或保存 Codex CLI、Claude Code 的登录文件。
-
-当前执行 Runtime 继续使用用户在目标产品中的登录态；Reprise 不替用户切换全局模型配置。
-
-真实验证脚本要求显式 opt-in；默认开发检查使用本地 fixture。TUI 的恢复、当前运行和对照是用户主动触发的实际任务，同样可能计费。
+`reprise config image-status` 离线显示图片探测状态。明确授权付费探测后，在 PowerShell 运行 `$env:REPRISE_RUN_IMAGE_PROBE='1'`，再运行 `reprise config test-image`。命令只发送一张随机条纹 PNG，一次调用且无重试；答案仅由 Host 核对。结果保存于数据目录的 `harness-image-probe.json`，配置指纹改变则显示 stale。passed 只表示当次简单探测通过（随机猜中仍有可能），不保证真实任务、动画或其他媒体能力。普通连接检查仍是文本检查，默认不自动探测图片。
 
 ## 数据去向
 
@@ -147,22 +174,12 @@ Recovery、Controller、Comparison 会将完成任务所需的历史内容、工
 
 报告、trace 和隔离副本是本机文件。不要把含有密钥、会话正文或私有路径的产物提交到 Git。
 
+内置 Candidate 现在按角色减少环境继承，Host shell 不继承 Harness 认证，启动 timeline、结果与报告详情显示本次冻结的执行边界。旧运行缺少记录时显示“未记录 / 未声明”。环境值、代理 URL 和原始命令行不作为启动摘要保存。可信本地模式没有 Reprise 系统级文件/网络隔离，也不保证禁止所有共享配置和扩展加载；不能据此认定盲测成立。原生权限默认值不因环境收敛改变。
+
+Controller 任务完成模式由 TaskCase.execution 显式提供冻结目标、交付物与授权；历史场景不自动迁移。总预算未配置时不设总时间截止，仍保留明确配置的单轮与运行策略。当前内置 Runtime 的工作区副本不保证 Host 私有数据读取隔离，盲测公平性未保证；进展 checkpoint 支持诊断，但不支持重启后自动重发或自动续跑。详见[执行模式与边界](architecture/execution.md#controller-可靠性与执行模式)。
+
 ## 当前试用限制
 
 - 已接纳启动的早期准备失败会保存 attempt 诊断；接纳前拒绝和持久化本身失败不保证产生记录。同一 Experiment 的不同 run 已用离线 fake Runtime 验证可从同一封存起点运行；真实 Runtime 的重复运行仍需显式 opt-in 验收。固定实验身份与旧格式边界见[执行流程](./architecture/execution.md#配置与证据)，剩余真实验证目标见[路线图](./roadmap.md#开放目标)。
 
 不要把离线验证当作真实 Runtime 的完成证据。
-
-## 故障排查
-
-| 现象 | 处理 |
-|---|---|
-| 裸 `reprise` 找不到命令 | 使用 `node dist/src/cli/main.js`；若命令不存在，先 `npm run build` 确认 `dist/` 已生成。未全局安装时裸 `reprise` 不可用是预期行为。 |
-| 来源产品或会话列表为空 | 确认目标产品已安装且本机确有历史记录。`products` 只列出可识别产品；`sessions` 需要 `--product <id>`。发现（discovery）与导入（import）不是同一操作，见 `reprise sessions --help` 与 `reprise import --help`。 |
-| 模型连接失败 | 在 `/config` 核对 endpoint、API 协议类型（`openai-completions` / `openai-responses`）、模型 ID 和凭据来源。不要把配置全文粘贴到 Issue；用 `Ctrl+T` 连接测试并查看错误摘要。 |
-| 恢复显示「无法恢复」或 blocked | 查看 TUI 或事件日志中的缺失条件；缺关键输入时不会启动当前运行，没有「强行继续」开关。 |
-| 报告或图片入口不可用 | 区分未生成对照、未采集媒体、快照缺失和发布失败。空入口可能是数据尚未产生，不代表零差异。 |
-| 取消后仍在收尾 | `Ctrl+C` 或 `reprise cancel` 发起取消请求；清理与最终状态在事件日志和结果页分别显示，二者可能不同步片刻。 |
-| 同一实验再次运行失败 | 属于当前已知限制，见 [路线图](./roadmap.md#已知实现问题)。不要默认删除整个 `.reprise` 目录作为修复手段。 |
-
-Controller 任务完成模式由 TaskCase.execution 显式提供冻结目标、交付物与授权；历史场景不自动迁移。总预算未配置时不设总时间截止，仍保留明确配置的单轮与运行策略。当前内置 Runtime 的工作区副本不保证 Host 私有数据读取隔离，盲测公平性未保证；进展 checkpoint 支持诊断，但不支持重启后自动重发或自动续跑。详见[执行模式与边界](architecture/execution.md#controller-可靠性与执行模式)。

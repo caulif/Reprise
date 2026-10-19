@@ -1,10 +1,16 @@
 # 安全政策
 
+## English quick guide
+
+Report vulnerabilities through [GitHub private vulnerability reporting](https://github.com/caulif/Reprise/security/advisories/new), never a public issue. Include the affected commit or version, impact, minimal reproduction and any mitigation. Use synthetic or sanitized evidence; never send credentials, login files, full private sessions or private paths.
+
+If private reporting is unavailable, open a [Question Issue](https://github.com/caulif/Reprise/issues/new?template=question.yml) containing **only a request for a private contact channel**. Issues are public, not direct messages. Do not include vulnerability details there. Fixes focus on current `main`; the maintainer aims to acknowledge reports within 7 days, without a guaranteed response or fix deadline.
+
 ## 报告渠道
 
 漏洞请通过 [GitHub 私有安全报告](https://github.com/caulif/Reprise/security/advisories/new) 提交给维护者，不要开公开漏洞 Issue。
 
-若私有入口不可用，可在公开 [GitHub Discussions](https://github.com/caulif/Reprise/discussions) 或 Issue 中**仅发帖请求维护者提供私下联系渠道**，不贴漏洞细节或敏感证据。这些页面均为公开、不支持私信；不要在此处描述漏洞。
+若私有入口不可用，可通过公开 [Question Issue](https://github.com/caulif/Reprise/issues/new?template=question.yml)**仅请求维护者提供私下联系渠道**，不贴漏洞细节或敏感证据。Issue 为公开页面，不支持私信；不要在此处描述漏洞。
 
 报告包含影响版本或提交、影响范围、最少复现步骤、预期与实际结果、是否已有公开利用以及可用的缓解措施。使用合成或脱敏输入，不提交有效密钥、认证文件、完整私有会话、prompt 或本机绝对路径；复现不需要真实计费时使用 fixture。
 
