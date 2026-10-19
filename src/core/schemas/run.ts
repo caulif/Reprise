@@ -1,4 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
+import { ExecutionBoundarySchema } from '../execution-boundary.js';
 import { EvidenceRefSchema, Hash, Id, JsonRecord, Timestamp } from "./ids.js";
 import { ArtifactRefSchema, CandidateSpecSchema } from "./task-case.js";
 import { CandidateSessionHandleSchema } from "./candidate.js";
@@ -84,6 +85,7 @@ export const RunManifestSchema = Type.Object({
   environment: Type.Object({
     environmentId: Id,
     workspacePath: Type.String({ minLength: 1 }),
+    executionBoundary: Type.Optional(ExecutionBoundarySchema),
     executionIsolation: Type.Optional(Type.Object({ hostPrivateReads: Type.Union([Type.Literal('isolated'), Type.Literal('unrestricted'), Type.Literal('unknown')]), mechanism: Type.String({ minLength: 1 }) })),
     gitSink: Type.Optional(Type.Object({
       status: Type.Union([

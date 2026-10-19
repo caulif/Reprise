@@ -116,6 +116,11 @@ export type RecoveryRuntimeCapabilities = {
 
 export interface ProductRuntime {
   readonly id: string;
+  /** Freezes executable configuration in memory; only the redacted record may be persisted. */
+  prepareExecution?(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, launch: CandidateLaunchContext): Promise<{
+    record: import('./execution-boundary.js').ExecutionBoundary;
+    createRunner(sink: TargetEventSink): Promise<TargetRunner>;
+  }>;
   /** Absent on older packs: workspace copies alone never imply Host-private read isolation. */
   executionIsolation?(): { hostPrivateReads: 'isolated' | 'unrestricted' | 'unknown'; mechanism: string };
   inspectAvailable(): Promise<readonly AvailableRuntime[]>;

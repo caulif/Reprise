@@ -1,3 +1,4 @@
+import { executionBoundaryText, nativeExecutionText } from '../core/execution-boundary.js';
 import { renderPairedReport, pairedMetricTexts } from './comparison-paired-report.js';
 import { pairedContentFromHtml } from './comparison-paired-content.js';
 import { renderShareableReport, shareableMetricTexts, sideFingerprint } from "./comparison-shareable-report.js";
@@ -443,7 +444,7 @@ function renderCompactReport(input: Parameters<typeof renderComparisonReportShel
 <section class="slot" data-agent-zone="comparison" data-id="agent-comparison">${input.comparisonBody}</section>
 <section class="differences" data-agent-zone="differences" aria-label="${escapeHtml(reportString(locale, "keyDifferences"))}">${(input.slots?.differences ?? []).map(text => `<p data-difference>${escapeHtml(text)}</p>`).join("")}</section>
 <section class="metric-table" data-host-zone="metrics" data-id="host-metrics" data-host="metrics" data-metrics-layout="table-k" data-fingerprint="${escapeHtml(hostMetricsFingerprint(input.metrics))}"><table><thead><tr><th scope="col">${escapeHtml(reportString(locale, "runtimeMetrics"))}</th><th scope="col">${escapeHtml(reportString(locale, "sessionHistorical"))}</th><th scope="col">${escapeHtml(reportString(locale, "sessionCurrent"))}</th></tr></thead><tbody>${metricRows}</tbody></table></section>
-<footer data-host-zone="cost-note" data-id="host-cost-note"><p class="metric-note">${escapeHtml(compactTimingNote(input.metrics, input.facts.metrics?.timingComparable, locale))}${escapeHtml(reportString(locale, "compactNote"))}</p><p class="analysis-model">${escapeHtml(reportString(locale, "analysisModel"))} · ${escapeHtml(actualModelName(input.facts.models.comparison) ?? reportString(locale, "missing"))}</p></footer>
+<footer data-host-zone="cost-note" data-id="host-cost-note"><p class="metric-note">${escapeHtml(compactTimingNote(input.metrics, input.facts.metrics?.timingComparable, locale))}${escapeHtml(reportString(locale, "compactNote"))}</p><p class="analysis-model">${escapeHtml(reportString(locale, "analysisModel"))} · ${escapeHtml(actualModelName(input.facts.models.comparison) ?? reportString(locale, "missing"))}</p><p data-host="execution-boundary">${escapeHtml(executionBoundaryText(input.facts.executionBoundary, locale))} ${escapeHtml(nativeExecutionText(input.facts.nativeExecution, locale))}</p></footer>
 </article></main></body></html>`;
 }
 
@@ -476,6 +477,7 @@ function renderRunDiagnostics(facts: ComparisonReportFacts, locale: AgentLocale)
   return `<details class="evidence-expand" data-host="run-diagnostics"><summary>${escapeHtml(reportString(locale, "runDiagnostics"))}</summary><ul class="kv-list">
     <li><span class="who">${escapeHtml(labels.baseline)}</span> ${escapeHtml(facts.replay.baselineEvidence)}</li>
     <li><span class="who">${escapeHtml(labels.candidate)}</span> ${escapeHtml(facts.run.outcome)} · ${escapeHtml(facts.run.terminationCode)} · ${escapeHtml(facts.run.initiatedBy)}</li>
+    <li>${escapeHtml(executionBoundaryText(facts.executionBoundary, locale))} ${escapeHtml(nativeExecutionText(facts.nativeExecution, locale))}</li>
     <li><span class="who">${escapeHtml(labels.baseline)} price</span> ${escapeHtml(baselinePrice)}</li>
     <li><span class="who">${escapeHtml(labels.candidate)} price</span> ${escapeHtml(candidatePrice)}</li>
   </ul></details>`;

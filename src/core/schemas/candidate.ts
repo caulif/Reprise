@@ -1,5 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { Id } from "./ids.js";
+import { NativeExecutionObservationSchema } from '../execution-boundary.js';
 
 export const CandidateLaunchContextSchema = Type.Object({
   schemaVersion: Type.Literal(1),
@@ -10,6 +11,11 @@ export const CandidateLaunchContextSchema = Type.Object({
   requestedModel: Type.String({ minLength: 1 }),
   resolvedModel: Type.String({ minLength: 1 }),
   permissions: Type.Record(Type.String(), Type.String()),
+  executionRequirements: Type.Optional(Type.Object({
+    filesystemIsolation: Type.Optional(Type.Boolean()),
+    disableExternalExtensions: Type.Optional(Type.Boolean()),
+    nativePermissionMode: Type.Optional(Type.String({ minLength: 1 })),
+  }, { additionalProperties: false })),
 });
 export type CandidateLaunchContext = Static<typeof CandidateLaunchContextSchema>;
 
@@ -67,6 +73,7 @@ export const CandidateRuntimeEventSchema = Type.Object({
   callId: Type.Optional(Type.String({ minLength: 1 })),
   evidenceRefs: Type.Array(Type.String()),
   live: Type.Optional(PublicLiveActivitySchema),
+  executionObservation: Type.Optional(NativeExecutionObservationSchema),
 }, { additionalProperties: true });
 export type CandidateRuntimeEvent = Static<typeof CandidateRuntimeEventSchema>;
 

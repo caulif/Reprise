@@ -1,3 +1,4 @@
+import { nativeExecutionObservations } from '../core/execution-boundary.js';
 import { ArtifactCaptureError } from './artifact-capture-error.js';
 import { lstat, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -105,6 +106,7 @@ export async function inspectRun(
     ...(finalMessage ? { finalMessage } : {}),
     commands,
     rejectedApprovals,
+    nativeExecution: nativeExecutionObservations(events),
     turns: settled.length,
     ...(wallClockMs === undefined ? {} : { wallClockMs }),
     turnTiming: candidateTurnTiming(events),

@@ -20,6 +20,9 @@ Runtime, history, and projection adapters for Claude Code. Recovery playbook tex
 
 ## Isolation and pollution
 
+- Candidate launch planning freezes the selected environment and argv before manifest persistence. The complete environment is consumed without merging process.env; catalog clients use Claude's role selection too. Legacy env remains a trusted local override, not a model tool parameter. CLAUDE_CONFIG_DIR, CLAUDE_CODE_OAUTH_TOKEN and Anthropic authentication/endpoint variables are selected along with standard proxy/CA settings; values and argv are not recorded.
+- The manifest records Host configuration and Pack declarations. Only a structured init permissionMode is native evidence; it may arrive after the first message. A mismatch stops further execution without changing permissions. Explicit argv overrides leave the declared mode unknown. Shared user/project configuration and extensions remain unverified; safe mode is never enabled automatically.
+
 - `--strict-mcp-config` isolates MCP only. Skills, agents, slash commands, and memory still load unless `--safe-mode` is used.
 - `bypassPermissions` still allows `CronCreate`, `CronDelete`, `ScheduleWakeup`, and `SendMessage` to create durable out-of-workspace effects. Those tools must stay disallowed.
 - Candidate runs write `~/.claude/projects` unless `--no-session-persistence` is set. Discovery must also exclude Reprise workspaces and data roots.

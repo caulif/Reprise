@@ -2,6 +2,24 @@ import { record, text, type JsonRecord } from "../../../core/json.js";
 import { runtimeTargetEvent, type TargetEvent } from "../../../core/runtime.js";
 import { liveFromCodexItem } from "../../shared/public-live-map.js";
 import { redactNotificationParams } from "./turn-settlement.js";
+import { Type } from '@sinclair/typebox';
+import { Value } from '@sinclair/typebox/value';
+import { NativeExecutionObservationSchema } from '../../../core/schema.js';
+import { nativeExecutionObservation } from '../../../core/execution-boundary.js';
+
+const SandboxPolicySchema = Type.Union([
+  Type.Object({ type: Type.Literal('dangerFullAccess') }),
+  Type.Object({ type: Type.Literal('readOnly'), networkAccess: Type.Boolean() }),
+  Type.Object({ type: Type.Literal('workspaceWrite'), writableRoots: Type.Array(Type.String()), networkAccess: Type.Boolean(), excludeTmpdirEnvVar: Type.Boolean(), excludeSlashTmp: Type.Boolean() }),
+  Type.Object({ type: Type.Literal('externalSandbox'), networkAccess: Type.Union([Type.Literal('enabled'), Type.Literal('restricted')]) }),
+]);
+const SANDBOX_MODES = { dangerFullAccess: 'danger-full-access', readOnly: 'read-only', workspaceWrite: 'workspace-write', externalSandbox: 'external-sandbox' } as const;
+
+export function codexExecutionObservation(value: unknown, configured: string) {
+  const mode = Value.Check(SandboxPolicySchema, value) ? SANDBOX_MODES[value.type] : value;
+  const observation = nativeExecutionObservation(mode, configured);
+  return Value.Check(NativeExecutionObservationSchema, observation) ? observation : undefined;
+}
 
 /** Maps Codex notifications to CandidateRuntimeEvent types. Deltas and heartbeats stay inside the adapter. */
 export function codexNotificationEvent(method: string, params: unknown): TargetEvent | undefined {

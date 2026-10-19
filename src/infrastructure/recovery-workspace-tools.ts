@@ -1,3 +1,4 @@
+import { hostShellEnvironment, hostShellOverrides } from './process/environment.js';
 import { parseApplyPatchText, applyUpdateHunks } from "./apply-patch.js";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from 'node:crypto';
@@ -97,6 +98,7 @@ type RecoveryToolContext = {
     unavailable?: (code: string) => void,
   ) => Promise<T | undefined>;
   ensureHome: () => Promise<string>;
+  shellEnvironment: Readonly<NodeJS.ProcessEnv>;
   readDirectory: NonNullable<RecoveryToolFilesystem["readDirectory"]>;
   readRegularFile: NonNullable<RecoveryToolFilesystem["readRegularFile"]>;
 };
@@ -110,6 +112,7 @@ function createRecoveryToolContext(
   const homeRoot = options.homeRoot
     ? resolve(options.homeRoot)
     : resolve(root, ".reprise-recovery-home");
+  const shellEnvironment = Object.freeze({ ...hostShellEnvironment(homeRoot), ...hostShellOverrides(options.shellEnv) });
   const ensureHome = async (): Promise<string> => {
     homeReady ??= mkdir(homeRoot, { recursive: true }).then(() => homeRoot);
     return homeReady;
@@ -146,7 +149,7 @@ function createRecoveryToolContext(
     }
     return undefined;
   };
-  return { root, options, mounts: options.mounts ?? {}, completionPaths: options.completionPaths ?? new Set(["recovery.md"]), limit, boundedRead, ensureHome, readDirectory, readRegularFile };
+  return { root, options, mounts: options.mounts ?? {}, completionPaths: options.completionPaths ?? new Set(["recovery.md"]), limit, boundedRead, ensureHome, shellEnvironment, readDirectory, readRegularFile };
 }
 export function workspaceTools(
   stagingRoot: string,
@@ -163,7 +166,8 @@ export function workspaceTools(
       const cwd = workdir ? resolve(base, workdir) : base;
       if (!pathContainedBy(base, cwd)) throw new ToolPreconditionRejected('invalid_path', 'workdir must stay within the writable workspace.');
       await assertNoSymlinkAncestors(base, cwd);
-      const invocation = shellProcessInput(cwd, await ctx.ensureHome(), command, options);
+      await ctx.ensureHome();
+      const invocation = shellProcessInput(cwd, ctx.shellEnvironment, command, options);
       const logRoot = options.processLogRoot ?? base;
       const outputLog = options.processLogRoot ? `process-${randomUUID()}.log` : `.reprise/recovery-work/process-${randomUUID()}.log`;
       const outputLogPath = resolve(logRoot, outputLog);
@@ -470,8 +474,8 @@ function powershellTool(ctx: RecoveryToolContext): AgentToolDefinition {
         assertShellDoesNotMutateReadonlyMount(ctx, command);
         const cwd = options.shellCwd ?? root;
         if (!existsSync(cwd)) throw new Error("Working directory does not exist. Cannot execute PowerShell commands.");
-        const home = await ensureHome();
-        return runShell(cwd, home, command, signal, options);
+        await ensureHome();
+        return runShell(cwd, ctx.shellEnvironment, command, signal, options);
       })(),
   };
 }
@@ -500,14 +504,14 @@ function assertShellCommandDoesNotTargetSensitiveFiles(command: string): void {
 }
 function runShell(
   root: string,
-  home: string,
+  environment: Readonly<NodeJS.ProcessEnv>,
   command: string,
   signal: AbortSignal,
   options: RecoveryToolOptions,
 ): Promise<{ content: string; details: Record<string, unknown> }> {
   const timeoutMs = options.shellTimeoutMs ?? RECOVERY_SHELL_TIMEOUT_MS;
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1) throw new Error("Shell timeout must be a positive integer.");
-  const invocation = shellProcessInput(root, home, command, options);
+  const invocation = shellProcessInput(root, environment, command, options);
   return runProcess({
     ...invocation,
     operation: "shell_exec", allowNonzeroExit: true, killTree: true,
@@ -524,7 +528,7 @@ function runShell(
     throw error;
   });
 }
-function shellProcessInput(root: string, home: string, command: string, options: RecoveryToolOptions) {
+function shellProcessInput(root: string, environment: Readonly<NodeJS.ProcessEnv>, command: string, options: RecoveryToolOptions) {
   if (!existsSync(root)) throw new ToolPreconditionRejected('invalid_path', 'Working directory does not exist.');
   const windows = process.platform === "win32";
   const resolved = windows
@@ -543,7 +547,7 @@ function shellProcessInput(root: string, home: string, command: string, options:
     command: windows ? resolved!.executable : portableShell!.executable,
     args: windows ? invocation!.args : portableShell!.args,
     cwd: windows ? invocation!.spawnCwd : root,
-    env: { ...sanitizedEnvironment(home), ...options.shellEnv, ...(windows ? invocation!.extraEnv : {}) },
+    env: { ...environment, ...(windows ? invocation!.extraEnv : {}) },
     ...(options.spawnProcess ? { spawnProcess: options.spawnProcess } : {}),
   };
 }
@@ -613,46 +617,6 @@ function formatShellBoundary(error: ProcessBoundaryError, windows: boolean, exec
 function envLookup(env: NodeJS.ProcessEnv, name: string): string | undefined {
   const found = Object.keys(env).find((key) => key.toLowerCase() === name.toLowerCase());
   return found === undefined ? undefined : env[found];
-}
-function sanitizedEnvironment(home: string): NodeJS.ProcessEnv {
-  const allowed = new Set([
-    "path",
-    "pathext",
-    "systemroot",
-    "windir",
-    "comspec",
-    "temp",
-    "tmp",
-    "lang",
-    "lc_all",
-    "lc_ctype",
-    "term",
-    "user",
-    "username",
-  ]);
-  const env: NodeJS.ProcessEnv = {};
-  for (const [key, value] of Object.entries(process.env))
-    if (value !== undefined && (allowed.has(key.toLowerCase()) || key.startsWith("LC_"))) env[key] = value;
-  const ensure = (canonical: string, fallback?: string) => {
-    if (envLookup(env, canonical) !== undefined) return;
-    const fromProcess = envLookup(process.env, canonical) ?? fallback;
-    if (fromProcess) env[canonical] = fromProcess;
-  };
-  const systemRoot = envLookup(env, "SystemRoot") ?? envLookup(process.env, "SystemRoot") ?? envLookup(process.env, "WINDIR");
-  ensure("SystemRoot", systemRoot);
-  ensure("WINDIR", envLookup(env, "SystemRoot"));
-  const root = envLookup(env, "SystemRoot");
-  ensure("ComSpec", root ? join(root, "System32", "cmd.exe") : undefined);
-  env.HOME = home;
-  env.USERPROFILE = home;
-  env.XDG_CONFIG_HOME = home;
-  env.APPDATA = home;
-  env.LOCALAPPDATA = home;
-  env.GIT_CONFIG_GLOBAL = resolve(home, "gitconfig");
-  env.GIT_CONFIG_SYSTEM = resolve(home, "missing-system-gitconfig");
-  env.GIT_CONFIG_NOSYSTEM = "1";
-  env.GIT_NO_LAZY_FETCH = "1";
-  return env;
 }
 function redactCommand(command: string): string {
   return command

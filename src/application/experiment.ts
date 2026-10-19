@@ -455,7 +455,10 @@ async function startCandidateRun(args: {
     sessionId: () => runnerRef.session().sessionId,
     onCommitted: (event) => { targetEvents.push(`event:${event.eventId}`); },
   });
-  const runner = await input.runtime.createRunner(resolved, environment, sink, launch);
+  if (launch.executionRequirements && !input.runtime.prepareExecution) throw new Error('This Pack cannot enforce explicit execution requirements.');
+  const execution = await input.runtime.prepareExecution?.(resolved, environment, launch);
+  if (execution) manifest.environment.executionBoundary = execution.record;
+  const runner = execution ? await execution.createRunner(sink) : await input.runtime.createRunner(resolved, environment, sink, launch);
   runnerRef.session = () => runner.session();
   try { return new CandidateRun({
     runner,

@@ -1,3 +1,4 @@
+import { executionBoundaryText } from '../../core/execution-boundary.js';
 import { resolve, normalize } from 'node:path';
 import { asPosixPath, relativeInside } from '../../core/paths.js';
 import type { ExperimentResult } from '../../application/experiment.js';
@@ -82,6 +83,7 @@ export function renderResultWithHits(
     push(kv(theme, t(locale, 'resultCleanup'), cleanupWord(result.record.outcome.cleanup?.status, vacant, locale), width - 2));
   }
   push(kv(theme, t(locale, 'resultComparison'), comparisonWord(comparison, locale), width - 2));
+  push(kv(theme, locale === 'zh' ? '执行边界' : 'Execution boundary', executionBoundaryText(result.record.manifest?.environment.executionBoundary, locale).replace(/^(?:执行边界：|Execution boundary: )/, ''), width - 2));
 
 
   const candidateLabel = candidateDisplayLabel(result, productLabel);

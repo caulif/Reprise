@@ -400,6 +400,23 @@ test('CandidateRun records cancel requested before finish and ignores a late set
   assert.equal(run.states().at(-1), 'finished');
 });
 
+test('manifest persistence failure never starts the Runtime', async t => {
+  const root = await temporaryExperiment();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = await ExperimentStore.open(root, 'experiment-1');
+  await store.acquireWriter();
+  t.after(() => store.close());
+  const { attempt, manifest } = persistedRun();
+  const runner = new ScriptedRunner([], []);
+  const run = new CandidateRun({ runner, policy, persistence: { attempt, manifest, journal: {
+    commitAttempt: (...args) => store.commitAttempt(...args),
+    commitManifest: async () => { throw new Error('manifest write failed'); },
+    append: event => store.append(event), events: id => store.events(id), nextSequence: () => store.nextSequence(),
+  } } });
+  await assert.rejects(run.start(initial, identity), /manifest write failed/);
+  assert.equal(runner.started.length, 0);
+});
+
 test('CandidateRun commits the attempt before the runtime sees the first message', async () => {
   const root = await temporaryExperiment();
   try {

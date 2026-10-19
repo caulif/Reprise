@@ -33,6 +33,8 @@ export type ComparisonContext = {
 
 export type ComparisonFactsContext = Omit<ComparisonContext, "attemptId">;
 export type ComparisonReportFacts = {
+  nativeExecution?: readonly import('../core/schema.js').NativeExecutionObservation[];
+  executionBoundary?: import('../core/schema.js').ExecutionBoundary;
   sessionDates?: { baseline?: string; candidate?: string };
   run: { runId: string; outcome: string; terminationCode: string; initiatedBy: string; elapsedMs?: number; candidateElapsedMs?: number };
   models: { candidate: string; candidateRequested?: string; candidateResolved?: string; baseline?: string; controller?: string; comparison?: string };

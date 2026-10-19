@@ -1,3 +1,4 @@
+import { candidateExecutionPlan } from '../../shared/execution-plan.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -172,7 +173,20 @@ export class CodexProductRuntime implements ProductRuntime {
     return LOCAL_SESSION_RECOVERY_CAPABILITIES;
   }
 
+  async prepareExecution(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, launch: CandidateLaunchContext) {
+    if (this.#options.args?.some(arg => arg.includes('\0'))) throw new Error('Invalid Runtime argv.');
+    const plan = candidateExecutionPlan('codex', environment.root, this.#options.sandbox ?? defaultCodexSandbox(), this.#options.env, launch.executionRequirements, Boolean(this.#options.args));
+    const options = { ...this.#options, ...(this.#options.args ? { args: [...this.#options.args] } : {}) };
+    const frozen = new CodexProductRuntime(options);
+    const snapshot = { runtime: { ...runtime }, environment: { ...environment }, launch: structuredClone(launch) };
+    return { record: plan.record, createRunner: (sink: TargetEventSink) => frozen.#createRunner(snapshot.runtime, snapshot.environment, sink, snapshot.launch, plan) };
+  }
+
   async createRunner(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, sink: TargetEventSink, launch: CandidateLaunchContext): Promise<TargetRunner> {
+    return (await this.prepareExecution(runtime, environment, launch)).createRunner(sink);
+  }
+
+  async #createRunner(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, sink: TargetEventSink, launch: CandidateLaunchContext, plan: ReturnType<typeof candidateExecutionPlan>): Promise<TargetRunner> {
     assertIsolatedLaunchWorkspace({
       runtime,
       environment,
@@ -184,10 +198,11 @@ export class CodexProductRuntime implements ProductRuntime {
       fail: (message) => new CodexRuntimeUnavailableError(message),
     });
     return new CodexTargetRunner({
+      completeEnv: plan.environment, temporaryDirectory: plan.temporaryDirectory,
       runtime, environment, sink,
       effort: this.#options.effort ?? 'medium',
       sandbox: this.#options.sandbox ?? defaultCodexSandbox(),
-      ...(this.#options.env ? { env: this.#options.env } : {}),
+      env: plan.environment,
       ...(this.#options.args ? { args: this.#options.args } : {}),
       ...(this.#options.platform ? { platform: this.#options.platform } : {}),
     });

@@ -204,6 +204,7 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
     <section class="slot" data-host-zone="evidence" data-id="host-evidence"><details class="evidence-expand" data-host="run-diagnostics"><summary>运行诊断</summary><ul class="kv-list">
     <li><span class="who">gpt-5</span> verifiable</li>
     <li><span class="who">未记录</span> incomplete · limit.turns · harness</li>
+    <li>执行边界：未记录 / 未声明（unknown）。 后续原生确认: 未记录.</li>
     <li><span class="who">gpt-5 price</span> unresolved · not_collected · 2026-10-15-static-pricing</li>
     <li><span class="who">未记录 price</span> unresolved · not_collected · 2026-10-15-static-pricing</li>
   </ul></details></section>

@@ -1,4 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
+export { ExecutionBoundarySchema, NativeExecutionObservationSchema, type NativeExecutionObservation, type ExecutionBoundary } from './execution-boundary.js';
 export { EffectiveHarnessConfigurationSchema, HarnessSdkPackageSchema, HarnessConfigurationReferenceSchema, HarnessConfigurationBoundSchema,
   HarnessProbeRequestedSchema, HarnessProbeCompletedSchema, type EffectiveHarnessConfiguration,
   type HarnessConfigurationReference, type HarnessProbeRequested, HARNESS_COMPAT_BOOLEAN_KEYS, HARNESS_COMPAT_SCALAR_KEYS,
