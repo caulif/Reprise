@@ -91,7 +91,7 @@ test('plain representation wins without silently falling back from corrupt or mi
   const found = await discoverCodexSessions(root);
   assert.equal(found.length, 1);
   assert.equal(found[0]?.sessionId, 'compressed-session');
-  assert.equal(resolveCodexSource(`${plain}.zst`), await realpath(plain));
+  assert.equal(await realpath(resolveCodexSource(`${plain}.zst`)), await realpath(plain));
   await writeFile(plain, 'broken json\n');
   await assert.rejects(inspectCodexSession(`${plain}.zst`));
   await writeFile(plain, body('different-id'));
@@ -159,7 +159,7 @@ test('representation races retry only missing files and support cancellation', a
     }
     return resolved;
   });
-  assert.equal(result, await realpath(`${source}.zst`));
+  assert.equal(await realpath(result), await realpath(`${source}.zst`));
   assert.equal(calls, 2);
   await assert.rejects(withCodexSource(source, () => Promise.reject(Object.assign(new Error('denied'), { code: 'EPERM' }))), { code: 'EPERM' });
   await assert.rejects(withCodexSource(join(root, 'missing.jsonl'), () => Promise.resolve('unexpected')), { code: 'ENOENT' });
