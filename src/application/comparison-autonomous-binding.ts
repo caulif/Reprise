@@ -31,6 +31,7 @@ export async function autonomousComparisonBinding(input: {
   if (record(contract?.payload).autonomousContractVersion === 3 && input.reportFormat !== 4) return 'Autonomous contract 3 requires report format 4.';
   if (record(contract?.payload).autonomousContractVersion === 4 && input.reportFormat !== 5) return 'Autonomous contract 4 requires report format 5.';
   if (record(contract?.payload).autonomousContractVersion === 5 && input.reportFormat !== 6) return 'Autonomous contract 5 requires report format 6.';
+  if (record(contract?.payload).autonomousContractVersion === 6 && input.reportFormat !== 7) return 'Autonomous contract 6 requires report format 7.';
   const accepted = events.filter(event => event.type === 'agent.tool_completed' && record(event.payload).tool === 'submit_report'
     && !('nativeHook' in record(event.payload)) && Value.Check(ComparisonDraftAcceptanceReceiptSchema, record(event.payload).details)).at(-1);
   const acceptance = record(accepted?.payload);

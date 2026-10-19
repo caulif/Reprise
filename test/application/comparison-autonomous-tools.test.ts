@@ -24,7 +24,7 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
   const draft = new ComparisonDraft({ attemptRoot: root, task: 'Compare text', locale: 'zh', catalog, deliveredImages: new Set(), facts: facts });
   return { root, facts, draft, tool: createAutonomousReportTool(draft, root) };
 }
-const params = { boundary: 'Task quality remains unverified.', reason: 'Current preserves the missing detail.', pairedDifferences: [], status: 'completed', category: 'Text comparison', headline: '推荐当前', path: 'scratch/report.html' };
+const params = { reason: 'Current preserves the missing detail.', pairedDifferences: [], status: 'completed', category: 'Text comparison', headline: '推荐当前', path: 'scratch/report.html' };
 const signal = new AbortController().signal;
 
 test('file report submission shares draft validation, accepts semantic HTML and invalidates old previews on revision', async t => {
@@ -42,7 +42,11 @@ test('file report submission shares draft validation, accepts semantic HTML and 
   const html = await readFile(join(f.root, 'report.html'), 'utf8');
   const model = comparisonReportModelFromHtml(html, f.facts,{ status: 'completed', reportPath: 'report.html', headline: params.headline, evidenceRefs: [] }, []);
   assert.equal(Value.Check(ComparisonReportModelSchema, model), true);
-  assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, boundary: undefined }), false);
+  assert.equal(model.formatVersion, 7);
+  assert.equal(Object.hasOwn(model, 'boundary'), false);
+  assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, boundary: 'old caveat' }), false);
+  await assert.rejects(f.tool.execute({ ...params, boundary: 'old caveat' }, signal), /Invalid/);
+  assert.doesNotMatch(f.tool.description, /before-adoption|reason, boundary/);
   assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, pairedDifferences: undefined }), false);
   assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, pairedDifferences: Array(4).fill({dimension:'a',baseline:'b',candidate:'c',impact:'d'}) }), false);
   assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, formatVersion: 2, boundary: undefined, differences: undefined }), true);

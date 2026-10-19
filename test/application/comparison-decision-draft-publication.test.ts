@@ -31,7 +31,7 @@ for (const mode of ['unchanged', 'revision', 'image', 'provider-failure'] as con
     }
     const html = await readFile(f.result.reportPath, 'utf8');
     assert.equal(html.split('Neither final output is confirmed usable.').length - 1, 1);
-    assert.match(html, /Final quality could reverse the choice/);
+    assert.doesNotMatch(html, /Final quality could reverse the choice|<[^>]*data-agent-slot="boundary"/);
     if (mode === 'revision') assert.match(html, /Revised after actual preview/);
   });
 }

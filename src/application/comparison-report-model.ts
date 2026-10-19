@@ -15,7 +15,7 @@ export function comparisonReportModelFromHtml(
   evidence: readonly ComparisonLinkRecord[] = [],
   locale: AgentLocale = "zh",
 ): ComparisonReportModel {
-  const paired = comparisonReportFormat(html) === 6 ? pairedContentFromHtml(html) : undefined;
+  const paired = comparisonReportFormat(html) >= 6 ? pairedContentFromHtml(html) : undefined;
   const slots = {
     header: extractInner(html, "data-host-zone", "header"),
     comparison: paired?.comparison ?? extractInner(html, "data-agent-zone", "comparison"),
@@ -34,7 +34,7 @@ export function comparisonReportModelFromHtml(
   const markup = evidenceQuoteMarkupOnly(html);
   const mediaRefs = media.filter((item) => markup.includes(item.reportHref) || (item.shortRef && markup.includes(item.shortRef))).map((item) => item.ref);
   const slotHeadline = plainLine(extractInner(html, "data-agent-slot", "headline"));
-  const headline = comparisonReportFormat(html) === 6 ? slotHeadline
+  const headline = comparisonReportFormat(html) >= 6 ? slotHeadline
     : result.headline ?? (slotHeadline.length > 0 && slotHeadline.length <= 280 ? slotHeadline : undefined);
   const base = {
     schemaVersion: 1 as const,
@@ -53,7 +53,11 @@ export function comparisonReportModelFromHtml(
     mediaRefs,
     ...(headline ? { headline } : {}),
   };
-  if (paired) return { ...base, task: comparisonPlainText(extractInner(html, "data-agent-slot", "category")), formatVersion: 6, headline: headline ?? "", boundary: comparisonPlainText(extractInner(html, "data-agent-slot", "boundary")), reason: paired.reason, pairedDifferences: paired.pairedDifferences };
+  if (paired) {
+    const content = { ...base, task: comparisonPlainText(extractInner(html, "data-agent-slot", "category")), headline: headline ?? "", reason: paired.reason, pairedDifferences: paired.pairedDifferences };
+    return comparisonReportFormat(html) === 7 ? { ...content, formatVersion: 7 }
+      : { ...content, formatVersion: 6, boundary: comparisonPlainText(extractInner(html, "data-agent-slot", "boundary")) };
+  }
   return comparisonReportFormat(html) >= 3
     ? { ...base, ...(comparisonReportFormat(html) >= 4 ? { task: comparisonPlainText(extractInner(html, 'data-agent-slot', 'category')) } : {}), formatVersion: comparisonReportFormat(html) as 3 | 4 | 5, headline: headline ?? '', boundary: comparisonPlainText(extractInner(html, 'data-agent-slot', 'boundary')), differences: comparisonDifferenceTexts(html) }
     : { ...base, formatVersion: 2 };

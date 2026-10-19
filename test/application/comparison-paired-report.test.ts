@@ -114,7 +114,9 @@ test('metrics preserve zero, tiny positive, missing and unknown pricing without 
   assert.equal(pairedMetricTexts({}, 'en')[0]?.text, 'Unknown');
 });
 
-test('structured evidence and media survive draft, actual preview preparation, publication and model rebuild', async t => {
+for (const formatVersion of [6, 7] as const) test(`format ${formatVersion}: structured evidence and media survive draft, preview, publication and rebuild`, async t => {
+  const reportSlots: Omit<typeof slots, 'boundary'> & { boundary?: string } = { ...slots };
+  if (formatVersion === 7) delete reportSlots.boundary;
   const root = await mkdtemp(join(tmpdir(), 'reprise-paired-roundtrip-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, 'review'));
@@ -126,7 +128,7 @@ test('structured evidence and media survive draft, actual preview preparation, p
   const draft = new ComparisonDraft({ attemptRoot: root, task: 'Compare', facts, locale: 'zh', catalog, deliveredImages: new Set([sha256(png)]) });
   const pairedDifferences = [{ ...slots.pairedDifferences[0]!, baselineAssessment: 'worse' as const, candidateAssessment: 'better' as const, evidenceRefs: ['ev-01'] }];
   const comparisonHtml = `<div data-component="page-row">${['历史', '当前'].map((label, index) => `<figure><img data-media-ref="media-0${index + 1}" alt="完整视口"><figcaption>${label} · 完整视口；单帧不证明动作连续性。</figcaption></figure>`).join('')}</div>`;
-  assert.match(await draft.submit({ formatVersion: 6, status: 'completed', ...slots, pairedDifferences, comparisonHtml }), /status=accepted/);
+  assert.match(await draft.submit({ formatVersion, status: 'completed', ...reportSlots, pairedDifferences, comparisonHtml }), /status=accepted/);
   const html = await readFile(join(root, 'report.html'), 'utf8');
   assert.match(html, /data-evidence-ref="ev-01"/);
   assert.match(html, /<a href="review\/full.png" aria-label="放大完整原图/);
@@ -153,8 +155,57 @@ test('structured evidence and media survive draft, actual preview preparation, p
   assert.equal(await draft.completedResult(), undefined, 'changing only the assessment after preview cannot publish');
   await writeFile(join(root, 'report.html'), html);
   const previousDigest = draft.acceptedReceipt().draftDigest;
-  assert.match(await draft.submit({ formatVersion: 6, status: 'completed', ...slots, pairedDifferences: [{ ...pairedDifferences[0]!, candidateAssessment: 'unverified' }], comparisonHtml }), /status=accepted/);
+  assert.match(await draft.submit({ formatVersion, status: 'completed', ...reportSlots, pairedDifferences: [{ ...pairedDifferences[0]!, candidateAssessment: 'unverified' }], comparisonHtml }), /status=accepted/);
   assert.notEqual(draft.acceptedReceipt().draftDigest, previousDigest);
   assert.equal(await draft.completedResult(), undefined, 'assessment-only revisions require a new preview');
-  assert.match(await draft.submit({ formatVersion: 6, status: 'completed', ...slots, pairedDifferences: [{ ...pairedDifferences[0]!, evidenceRefs: ['ev-99'] }], comparisonHtml }), /evidence_unresolved/);
+  assert.match(await draft.submit({ formatVersion, status: 'completed', ...reportSlots, pairedDifferences: [{ ...pairedDifferences[0]!, evidenceRefs: ['ev-99'] }], comparisonHtml }), /evidence_unresolved/);
+});
+
+
+test('decision-only report omits fixed caveats in both languages without discarding internal facts or legacy content', () => {
+  for (const locale of ['zh', 'en'] as const) {
+    const html = renderComparisonReportShell({ formatVersion: 7, task: 'Private original task', facts, metrics: facts.metrics!, slots, locale });
+    assert.equal(missingComparisonSlots(html), undefined);
+    assert.equal(hostMetricsMismatch(html, facts.metrics!), undefined);
+    assert.equal(comparisonCompactTextBudgetError(html), undefined);
+    assert.doesNotMatch(html, /<[^>]*data-agent-slot="boundary"|data-host="substitute-baseline"|采用前注意|Before adopting|User-selected substitute|历史材料为用户指定替代品/);
+    assert.ok(html.includes(slots.reason));
+    assert.ok(html.includes(slots.pairedDifferences[0]!.impact));
+    const extracted = agentContentFromDraft(html);
+    assert.ok('slots' in extracted);
+    assert.equal(Object.hasOwn(extracted.slots, 'boundary'), false);
+    const model = comparisonReportModelFromHtml(html, facts, { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, [], [], locale);
+    assert.equal(Value.Check(ComparisonReportModelSchema, model), true);
+    assert.equal(Object.hasOwn(model, 'boundary'), false);
+    assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, boundary: '' }), false);
+    assert.equal(renderComparisonReportFromModel({ model, facts, locale }), html);
+    const legacy = renderComparisonReportShell({ formatVersion: 6, task: 'ignored', facts, metrics: facts.metrics!, slots, locale });
+    const legacyModel = comparisonReportModelFromHtml(legacy, facts, { status: 'completed', reportPath: 'report.html', evidenceRefs: [] }, [], [], locale);
+    assert.equal(legacyModel.boundary, slots.boundary);
+    assert.match(legacy, /data-host="substitute-baseline"/);
+    assert.equal(renderComparisonReportFromModel({ model: legacyModel, facts, locale }), legacy);
+    assert.equal(Value.Check(ComparisonReportModelSchema, { ...legacyModel, boundary: undefined }), false);
+    const extraSlot = html.replace('</h1>', '</h1><p data-agent-slot="boundary">legacy caveat</p>');
+    assert.ok(missingComparisonSlots(extraSlot));
+    assert.ok('error' in agentContentFromDraft(extraSlot));
+    assert.ok(comparisonCompactTextBudgetError(html.replace(slots.reason, '')));
+    assert.ok(comparisonCompactTextBudgetError(html.replace(slots.reason, 'private.docx')));
+    assert.ok(comparisonCompactTextBudgetError(html.replace(slots.reason, '字'.repeat(901))));
+  }
+  assert.equal(facts.replay.baselineIsSubstitute, true);
+});
+
+test('format 7 draft rejects legacy fields and incomplete pairs before accepting decision content', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-decision-only-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const catalog = await ComparisonEvidenceCatalog.create({ attemptRoot: root, attemptId: 'attempt', links: [], media: [] });
+  const draft = new ComparisonDraft({ attemptRoot: root, task: 'Delivery', facts, catalog, locale: 'zh', deliveredImages: new Set() });
+  const submission = { formatVersion: 7 as const, status: 'completed' as const, category: slots.category, headline: slots.headline, reason: slots.reason, pairedDifferences: slots.pairedDifferences, comparisonHtml: '' };
+  for (const invalid of [
+    { ...submission, boundary: '' }, { ...submission, detailsHtml: '' }, { ...submission, differences: [] },
+    { ...submission, reason: '' },
+  ]) assert.match(await draft.submit(invalid), /code=draft_invalid/);
+  assert.match(await draft.submit(submission), /status=accepted/);
+  const html = await readFile(join(root, 'report.html'), 'utf8');
+  assert.doesNotMatch(html, /<[^>]*data-agent-slot="boundary"|data-host="substitute-baseline"/);
 });
