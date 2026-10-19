@@ -10,15 +10,36 @@ Reprise 从本机保存的会话中准备任务，恢复工作起点，让你选
 
 > **实验性项目。** 面向个人、本机实验。目前只有 Windows 11 有真实终端与 Runtime 使用验证；恢复起点不保证完整复现历史环境。
 
-## 演示
+## 真实结果
 
 ### 鹈鹕骑自行车
 
-![历史与当前鹈鹕骑行动画交付物并排展示](./docs/assets/pelican/comparison.png)
+Reprise 生成的报告推荐当前成果：车轮绕各自轮心旋转，同时指出它缺少历史版本的暂停控件。
 
-[查看完整案例与取舍](./docs/examples/pelican-zh-cn.md) · [观看交付物动画](./docs/assets/pelican/comparison.gif)
+[![Reprise 真实报告连续节选：模型、推荐、车轮证据与限制](./docs/assets/reports/pelican-report-excerpt.png)](./docs/assets/reports/pelican-report.png)
 
-这是真实保存的任务，不是模型排行榜。案例说明原始需求、双方交付及证据能支持的结论。对照于 2026 年 10 月 19 日使用较早的 Reprise 版本和已有候选成果生成，不是当天完整重跑，也不代表最新报告模板；记录的耗时不能直接比较。
+*直接截取真实报告中的连续区域，未改写或重排内容；点击查看完整截图。推荐是模型对这些具体任务的判断，不是模型排名。*
+
+同一份报告中的交付物截图（左：历史，右：当前）：
+
+[![同一份 Reprise 报告中嵌入的历史与当前交付物实拍](./docs/assets/reports/pelican-report-deliveries.png)](./docs/assets/reports/pelican-report.png)
+
+| 真实任务 | 报告推荐 | 具体发现 | 生成对照报告耗时 |
+|---|---|---|---|
+| [鹈鹕动画](./docs/examples/real-results.md#pelican) | 当前成果 | 车轮围绕轮心旋转，但缺少暂停控件。 | 5分33秒 |
+| [批注申请书](./docs/examples/real-results.md#word) | 当前成果 | 保留可编辑示意图；最终 Word 版式仍未验证。 | 13分16秒 |
+| [完整路径识别](./docs/examples/real-results.md#paths) | 历史成果 | 对含空格的相对路径覆盖更好。 | 17分54秒 |
+| [Edit 自移动保护](./docs/examples/real-results.md#edit) | 历史成果 | 回归覆盖和错误规范记录更完整。 | 12分16秒 |
+
+耗时来自用户记录，指 **Comparison 生成报告阶段**，不代表任务执行耗时或双方速度比较。[查看报告原图与证据边界](./docs/examples/real-results.md)；另有[鹈鹕交付物解读](./docs/examples/pelican-zh-cn.md)，单独检查 HTML 与动画实现。
+
+### 看看操作过程
+
+[![真实 Reprise 终端中的候选运行](./docs/assets/workflow/run.png)](./docs/assets/workflow/comparison.mp4)
+
+[观看 Comparison 操作短片（MP4）](./docs/assets/workflow/comparison.mp4) · [录屏来源与剪辑说明](./docs/assets/workflow/README.md)
+
+片段来自真实终端录屏，剪掉了等待时间。它展示的是较早的一次运行，与上面四份报告不是同一批，不是这些报告生成过程的连续录像。GitHub 可能以下载方式提供 MP4。
 
 ## 什么时候使用
 

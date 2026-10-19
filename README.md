@@ -10,15 +10,36 @@ What changes when another coding agent tackles a task you have already tried? Re
 
 > **Experimental.** Built for personal, local experiments. Windows 11 is the only platform with real terminal and Runtime validation so far; recovery is not a guarantee of an identical historical environment.
 
-## Demo
+## Real results
 
 ### A pelican riding a bicycle
 
-![Historical and candidate pelican cycling deliverables, shown side by side](./docs/assets/pelican/comparison.png)
+Reprise's generated report recommends the candidate for its wheel animation, while noting that it loses the historical version's pause control.
 
-[Explore the case and its tradeoffs](./docs/examples/pelican.md) · [Watch the deliverables animate](./docs/assets/pelican/comparison.gif)
+[![Excerpt from the actual Reprise report: models, recommendation, wheel evidence and limitations (Chinese)](./docs/assets/reports/pelican-report-excerpt.png)](./docs/assets/reports/pelican-report.png)
 
-This is a real saved task, not a model leaderboard. The case explains the request, both deliverables, and what can and cannot be concluded. Its comparison was generated on October 19, 2026 using an older Reprise revision and retained candidate work; it is not a fresh end-to-end replay or a preview of the latest report template. Recorded times are not directly comparable.
+*An unmodified, continuous excerpt of the report you get from Reprise (Chinese). Click for the full screenshot. Recommendations are model-generated assessments of these tasks, not a model ranking.*
+
+The same report includes the rendered deliveries (historical left, candidate right):
+
+[![Actual historical and candidate renderings embedded in the same Reprise report](./docs/assets/reports/pelican-report-deliveries.png)](./docs/assets/reports/pelican-report.png)
+
+| Real task | Report recommendation | Concrete finding | Comparison generation time |
+|---|---|---|---|
+| [Pelican animation](./docs/examples/real-results.md#pelican) | Candidate | Wheels rotate at their hubs; pause control is missing. | 5m 33s |
+| [Annotated application](./docs/examples/real-results.md#word) | Candidate | Preserves an editable diagram; final Word layout remains unverified. | 13m 16s |
+| [Full-path recognition](./docs/examples/real-results.md#paths) | Historical | Better handling of relative paths containing spaces. | 17m 54s |
+| [Edit self-move protection](./docs/examples/real-results.md#edit) | Historical | Broader regression coverage and more complete error documentation. | 12m 16s |
+
+Times are the user's recorded **report-generation durations**, not task execution times or speed comparisons. [Read the original report screenshots and evidence limits](./docs/examples/real-results.md). The [pelican delivery walkthrough](./docs/examples/pelican.md) separately inspects the HTML and animation.
+
+### See the workflow
+
+[![Actual Reprise terminal during a candidate run](./docs/assets/workflow/run.png)](./docs/assets/workflow/comparison.mp4)
+
+[Watch the short Comparison recording (MP4)](./docs/assets/workflow/comparison.mp4) · [Recording provenance](./docs/assets/workflow/README.md)
+
+Real terminal footage, with waiting omitted. It shows an earlier run, separate from the four reports above; it is not a continuous recording of their generation. GitHub may offer the MP4 as a download.
 
 ## When To Use It
 
