@@ -6,7 +6,7 @@ import { Type } from '@sinclair/typebox';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startProcessSession } from '../../src/infrastructure/process-session.js';
+import { startProcessSession, type ProcessSessionInput } from '../../src/infrastructure/process-session.js';
 import { workspaceTools } from '../../src/infrastructure/recovery-tools.js';
 import { workspaceProcessTools } from '../../src/infrastructure/workspace-process-tools.js';
 import { AgentHost, type AgentToolDefinition, type ProviderAdapter } from '../../src/infrastructure/agent/host.js';
@@ -14,14 +14,14 @@ import { ToolPreconditionRejected } from '../../src/core/tool-precondition-rejec
 import type { ProcessSpawner } from '../../src/infrastructure/process-runner.js';
 import { processOutputLog } from '../../src/infrastructure/process-output-log.js';
 
-function fixture() {
+function fixture(options: Pick<ProcessSessionInput, 'outputLogPath' | 'createOutputLog'> = {}) {
   const child = Object.assign(new EventEmitter(), {
     stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(),
     kill: () => { queueMicrotask(() => child.emit('close', null)); return true; },
   });
   const spawnProcess = (() => child) as unknown as ProcessSpawner;
   const signal = new AbortController().signal;
-  const process = startProcessSession({ command: 'fixture', args: [], cwd: '.', env: {}, signal, spawnProcess });
+  const process = startProcessSession({ command: 'fixture', args: [], cwd: '.', env: {}, signal, spawnProcess, ...options });
   const registry = workspaceProcessTools({ description: 'Fixture', start: async () => ({ process, cwd: '.' }) });
   const tools = Object.fromEntries(registry.tools.map(tool => [tool.name, tool]));
   const owner = { sessionId: 'session', invocationId: 'first' };
@@ -228,4 +228,154 @@ test('aborting a real process tree drains child writes before the caller proceed
   await new Promise(resolve => setTimeout(resolve, 100));
   assert.equal(await read(), before);
   assert.equal((await process.poll(0, 100)).state, 'cancelled');
+});
+
+
+test('exited processes keep log ownership, survive a cancel wait window, and can be polled to completion', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const { child, process, registry, tools, signal, owner } = fixture({ outputLogPath: 'fixture.log',
+    createOutputLog: () => ({ truncated: false, append() {}, finish: () => gate }),
+  });
+  const kill = t.mock.method(child, 'kill');
+  const started = await tools.exec_command!.execute({ cmd: 'test', yield_time_ms: 0 }, signal, owner);
+  const id = (started.details as { session_id: string }).session_id;
+  child.emit('close', 0);
+  assert.equal((await process.poll(0, 100)).state, 'flushing');
+  assert.throws(() => registry.assertIdle(), ToolPreconditionRejected);
+  const cancelling = tools.cancel_process!.execute({ session_id: id }, signal, owner);
+  t.mock.timers.tick(5_001);
+  const result = await cancelling;
+  assert.equal((result.details as { state: string }).state, 'flushing');
+  assert.equal(kill.mock.callCount(), 0);
+  release();
+  assert.equal((await process.poll(100, 100)).state, 'completed');
+  await process.cancel();
+  registry.assertIdle();
+  await tools.exec_command!.lifecycle!.finishInvocation(owner);
+});
+
+test('invocation completion waits for exited-process logs and never publishes partial log artifacts', async () => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const { child, process, signal, owner } = fixture({ outputLogPath: 'fixture.log',
+    createOutputLog: () => ({ truncated: false, append() {}, finish: () => gate }),
+  });
+  let artifacts = 0;
+  const registry = workspaceProcessTools({ description: 'Flush fixture',
+    start: async () => ({ process, cwd: '.', outputLog: 'fixture.log' }),
+    onProcessLog: async () => { artifacts++; return 'saved'; },
+  });
+  await registry.tools[0]!.execute({ cmd: 'test', yield_time_ms: 0 }, signal, owner);
+  child.emit('close', 0);
+  let finished = false;
+  const finishing = registry.tools[0]!.lifecycle!.finishInvocation(owner).then(() => { finished = true; });
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(finished, false);
+  assert.equal(artifacts, 0);
+  release(); await finishing;
+  assert.equal(artifacts, 1);
+  assert.equal(finished, true);
+});
+
+test('late log write failure retains its persistence diagnosis after process exit', async () => {
+  let reject!: (error: Error) => void;
+  const gate = new Promise<void>((_resolve, rejectPromise) => { reject = rejectPromise; });
+  const { child, process } = fixture({ outputLogPath: 'fixture.log',
+    createOutputLog: () => ({ truncated: false, append() {}, finish: () => gate }),
+  });
+  child.emit('close', 0);
+  reject(new Error('disk full'));
+  await assert.rejects(process.poll(100, 100), /Process output log persistence failed/);
+  await assert.rejects(process.cancel(), /Process output log persistence failed/);
+});
+
+test('repeated error lines are fully persisted without exceeding the bounded log ceiling', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-error-flood-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, 'output.log');
+  const log = processOutputLog(path);
+  const line = 'Invalid pattern: Illegal backslash at end of pattern.\n';
+  for (let i = 0; i < 40_000; i++) log.append(Buffer.from(line));
+  await log.finish();
+  assert.equal(await readFile(path, 'utf8'), line.repeat(40_000));
+  assert.equal(log.truncated, false);
+});
+
+
+test('unconfirmed process termination remains fatal even when the root closes later', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { child, process } = fixture();
+  t.mock.method(child, 'kill', () => true);
+  const cancelling = process.cancel();
+  const rejected = assert.rejects(cancelling, /Process tree termination was not confirmed/);
+  t.mock.timers.tick(5_001);
+  await rejected;
+  child.emit('close', 0);
+  await assert.rejects(process.poll(100, 100), /Process tree termination was not confirmed/);
+  await assert.rejects(process.cancel(), /Process tree termination was not confirmed/);
+});
+
+test('lifecycle rejects a log flush deadline without publishing an artifact or claiming a termination failure', async () => {
+  let saved = false;
+  const waits: number[] = [];
+  const registry = workspaceProcessTools({ description: 'Stalled log fixture', start: async () => ({
+    cwd: '.', outputLog: 'fixture.log', process: { state: 'flushing', running: true, cancel: async () => {},
+      poll: async waitMs => { waits.push(waitMs); return { state: 'flushing', output: '', truncated: false, remainingOutput: false, exitCode: 0 }; },
+    },
+  }), onProcessLog: async () => { saved = true; } });
+  const owner = { sessionId: 'session', invocationId: 'invocation' };
+  await registry.tools[0]!.execute({ cmd: 'fixture', yield_time_ms: 0 }, new AbortController().signal, owner);
+  await assert.rejects(registry.tools[0]!.lifecycle!.finishInvocation(owner), error => {
+    assert.ok(error instanceof AggregateError);
+    assert.match(String(error.errors[0]), /output log flush timed out/);
+    assert.doesNotMatch(String(error.errors[0]), /termination was not confirmed/);
+    return true;
+  });
+  assert.equal(saved, false);
+  assert.ok(waits.includes(60_000));
+  assert.throws(() => registry.assertIdle(), ToolPreconditionRejected);
+});
+
+test('a real process error flood drains both pipes and saves logs before completion', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-real-log-flood-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, 'output.log');
+  const line = 'Invalid pattern: Illegal backslash at end of pattern.\n';
+  const session = startProcessSession({ command: globalThis.process.execPath,
+    args: ['-e', `process.stderr.write(${JSON.stringify(line)}.repeat(40000));`],
+    cwd: root, env: globalThis.process.env, signal: new AbortController().signal, outputLogPath: path,
+  });
+  try {
+    const result = await session.poll(60_000, 100);
+    assert.equal(result.state, 'completed');
+    assert.equal(result.exitCode, 0);
+    assert.equal(await readFile(path, 'utf8'), line.repeat(40_000));
+  } finally { await session.cancel(); }
+});
+
+
+test('silent commands still persist an empty diagnostic log', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-empty-log-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, 'output.log');
+  const session = startProcessSession({ command: globalThis.process.execPath, args: ['-e', ''],
+    cwd: root, env: globalThis.process.env, signal: new AbortController().signal, outputLogPath: path,
+  });
+  assert.equal((await session.poll(5_000, 100)).state, 'completed');
+  assert.equal(await readFile(path, 'utf8'), '');
+});
+
+test('lifecycle still cancels a command when its initial output poll fails', async () => {
+  let cancelled = false;
+  const registry = workspaceProcessTools({ description: 'Failed poll fixture', start: async () => ({
+    cwd: '.', process: { state: 'running', running: true, cancel: async () => { cancelled = true; },
+      poll: async () => { throw new Error('Output persistence failed'); },
+    },
+  }) });
+  const owner = { sessionId: 'session', invocationId: 'invocation' };
+  await assert.rejects(registry.tools[0]!.execute({ cmd: 'fixture' }, new AbortController().signal, owner), /Output persistence failed/);
+  await assert.rejects(registry.tools[0]!.lifecycle!.finishInvocation(owner), AggregateError);
+  assert.equal(cancelled, true);
 });
