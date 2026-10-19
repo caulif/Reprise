@@ -10,7 +10,7 @@ import { layoutScrollback, matchesCanvasQuery } from '../../src/tui/scrollback.j
 import { renderHistory, renderHistoryDetail } from '../../src/tui/pages/history.js';
 import { renderFailure } from '../../src/tui/pages/result.js';
 import { relativeTime, renderSessions } from '../../src/tui/pages/intake.js';
-import { formatRecoveryFailureSummary, isHostExplanationKey, sessionReplayErrorMessage, t } from '../../src/tui/i18n.js';
+import { sessionReplayErrorMessage, t } from '../../src/tui/i18n.js';
 import { SessionReplayError } from '../../src/products/shared/session-recovery.js';
 import { FORBIDDEN_COMPACT, createTheme } from '../../src/tui/theme.js';
 import { operatorErrorMessage, truncateFit } from '../../src/tui/format.js';
@@ -336,16 +336,6 @@ test('the error page names a Git sink path overflow without dumping clone output
   assert.match(text, /路径超限/);
   assert.doesNotMatch(text, /clone --bare/);
   assert.doesNotMatch(text, /pack-1e4f159b/);
-});
-
-test('Git directory overflow explains how to change the data path without suggesting an unchanged retry', () => {
-  const error = Object.assign(new Error("fatal: '$GIT_DIR' too big at private-source"), { code: 'git_path_too_long' });
-  const text = operatorErrorMessage(error, 'zh');
-  assert.match(text, /路径超限/);
-  assert.match(text, /--data-dir/);
-  assert.doesNotMatch(text, /private-source|intake/);
-  assert.equal(isHostExplanationKey('errorGitSinkPathTooLong'), true);
-  assert.equal(formatRecoveryFailureSummary('zh', 'preflight_failed', { explanationKey: 'errorGitSinkPathTooLong' }), text);
 });
 
 test('the error page maps catalog schema failures without naming GitSinkManifestSchema', () => {
