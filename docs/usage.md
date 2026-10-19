@@ -24,6 +24,8 @@ node dist/src/cli/main.js
 
 需要 Node.js **22.19** 或更高版本（以 [package.json](../package.json) 为准）。`--data-dir` 指定本机数据目录，默认是当前目录下的 `.reprise`；`--locale zh` 或 `--locale en` 保存操作者界面语言。
 
+Comparison 默认跟随 TUI 的语言设置：选择英文后，新生成报告的结论、理由、成对差异、图片说明及固定标签均使用英文，历史任务的语言不改变这一选择。原文引用、代码、路径及模型／Agent 名称保留原样。每次 Comparison 开始时确定语言，本次修订、请求重试和离线恢复沿用它；中途切换设置从下一次 Comparison 生效。已有报告保留生成时的语言，切换界面语言不会翻译旧报告；需要另一种语言时重新生成。
+
 下文中的 `reprise` 指 `node dist/src/cli/main.js`（或等价构建产物），**不是** npm 上的裸名包 `reprise`。若已将本项目注册为全局 CLI，命令名相同。
 
 ## TUI 路径

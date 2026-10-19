@@ -19,6 +19,23 @@ const context: ComparisonContext = {
 };
 const report: ComparisonResult = { status: 'completed', reportPath: 'report.html', evidenceRefs: [] };
 
+test('attempt language overrides a reused Agent default independently of the historical task language', async () => {
+  const prompts: string[] = [];
+  const agent = new AutonomousComparisonAgent({ locale: 'zh', timeoutMs: 0, host: new AgentHost({ createSession(input) {
+    prompts.push(input.systemPrompt);
+    return { append: async () => 'Report submitted.', cancel() {} };
+  } }) });
+  for (const locale of ['en', 'zh'] as const) {
+    const attemptId = `attempt-${locale}`;
+    const result = await agent.compare({ ...context, attemptId, locale, task: { ...context.task, summary: '比较中文任务的交付结果' } }, [], undefined, undefined,
+      { getSubmittedResult: async () => report });
+    assert.equal(result.status, 'completed');
+    assert.match(prompts.at(-1)!, new RegExp(`image captions and process sentences are in ${locale === 'en' ? 'English' : 'Simplified Chinese'}`));
+    assert.match(prompts.at(-1)!, /Quoted source material stays in its original language/);
+    await agent.release(attemptId);
+  }
+});
+
 test('actual Pi retry wiring publishes a separately priced fallback and preserves returned usage totals', async () => {
   const model: Model<'openai-completions'> = { id: 'deepseek-v4.1-flash', name: 'fixture', api: 'openai-completions', provider: 'fixture', baseUrl: 'https://example.test',
     reasoning: false, input: ['text'], contextWindow: 128_000, maxTokens: 16_384, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };

@@ -66,7 +66,7 @@ export class AutonomousComparisonAgent implements ComparisonAgentPort {
     try {
       const { session } = await this.#sessions.get(id, () => this.input.host.createSession({
         role: 'comparison', allowModelText: context.allowModelText,
-        systemPrompt: withLanguageBlock(`${AUTONOMOUS_COMPARISON_PROMPT}\n\nPinned Host metrics: ${JSON.stringify(context.reportFacts.metrics ?? {})}\nThese recorded estimates are not invoices or semantic approval. Unknown is not zero; elapsed time does not establish cost.`, this.input.locale ?? 'zh', 'comparison'),
+        systemPrompt: withLanguageBlock(`${AUTONOMOUS_COMPARISON_PROMPT}\n\nPinned Host metrics: ${JSON.stringify(context.reportFacts.metrics ?? {})}\nThese recorded estimates are not invoices or semantic approval. Unknown is not zero; elapsed time does not establish cost.`, context.locale ?? this.input.locale ?? 'zh', 'comparison'),
         compactionInstructions: 'Preserve the user task, decisive observations and counterexamples with source refs, important unknowns, working file paths, current report/catalog and preview bindings, and the next useful action. Drop rereadable source bodies and obsolete plans. There are no workflow stages to resume.',
         tools: tools.map(tool => ({ ...tool, execute: async (params, toolSignal, owner) => {
           resources.beforeTool(tool.name);

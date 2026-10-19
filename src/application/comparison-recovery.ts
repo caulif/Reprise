@@ -3,7 +3,7 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import { join, relative, resolve, isAbsolute } from 'node:path';
 import { Type, type Static, type TSchema } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import { parseFragment } from 'parse5';
+import { parse, parseFragment } from 'parse5';
 import type { ComparisonResult } from '../agents/comparison-contract.js';
 import { AgentImageRefSchema, AgentTextBodySchema } from '../core/agent-model-input-schema.js';
 import { sha256, writeAtomic } from '../core/identity.js';
@@ -135,6 +135,7 @@ export async function inspectComparisonRecovery(input: {
   const links = catalog.links;
   const media = catalog.media;
   const html = await readFile(join(attemptRoot, 'report.html'), 'utf8');
+  const locale = context.locale ?? legacyReportLocale(html);
   const draftDigest = sha256(html);
   const { headline, evidenceRefs } = reportContent(html);
   const result: ComparisonResult = { status: 'completed', reportPath: 'report.html', headline, evidenceRefs };
@@ -154,7 +155,7 @@ export async function inspectComparisonRecovery(input: {
     && ((event.payload as Record<string, unknown>).details as { draftDigest: string; revision: number }).revision === catalog.revision).at(-1);
   if (!previewed) return { ready: false, reason: 'No successful preview with a session ID for this draft and catalog revision.', draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html, result, media, evidence: links };
   const sessionId = (previewed.payload as { sessionId: string }).sessionId;
-  const draftModel = comparisonReportModelFromHtml(html, context.reportFacts, result, media, links);
+  const draftModel = comparisonReportModelFromHtml(html, context.reportFacts, result, media, links, locale);
   const reviewError = autonomousComparisonRequested(events, input.attemptId)
     ? await autonomousComparisonBinding({ store, events, reportFormat: comparisonReportFormat(html), attemptId: input.attemptId, draftDigest, catalogRevision: catalog.revision })
     : await recoveryReviewBinding({ store, events, attemptId: input.attemptId, draftDigest, catalogRevision: catalog.revision,
@@ -167,10 +168,16 @@ export async function inspectComparisonRecovery(input: {
   const verified = await verifyAndRenderComparisonReport({
     html, hostTask: context.task.summary, facts: context.reportFacts, result,
     attemptRoot, evidence: links, media, deliveredImageContentHashes,
-    quoteSources,
+    quoteSources, locale,
   });
   if ('failureClass' in verified) return { ready: false, reason: `${verified.code}: ${verified.message}`, draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html, result, media, evidence: links };
   return { ready: true, draftDigest, revision: catalog.revision, experimentRoot, attemptRoot, html: verified.html, result, sessionId, model: verified.model, media, evidence: links, quoteSources };
+}
+
+function legacyReportLocale(html: string): 'zh' | 'en' {
+  const root = parse(html) as HtmlNode;
+  const document = root.childNodes?.find(node => node.attrs?.some(attr => attr.name === 'lang'));
+  return document?.attrs?.find(attr => attr.name === 'lang')?.value.toLowerCase() === 'en' ? 'en' : 'zh';
 }
 
 export async function publishRecoveredComparison(input: {

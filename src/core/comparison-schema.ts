@@ -129,6 +129,7 @@ export const ComparisonPairedDifferenceSchema = Type.Object({
 export type ComparisonPairedDifference = Static<typeof ComparisonPairedDifferenceSchema>;
 export const ComparisonReportModelSchema = Type.Intersect([Type.Object({
   schemaVersion: Type.Literal(1),
+  locale: Type.Optional(Type.Union([Type.Literal('zh'), Type.Literal('en')])),
   sessionAgents: Type.Optional(SessionAgentsSchema),
   /** 2 = autonomous comparison/details zones. Absent or 1 = legacy four-zone audit files (readable, not rewritten). */
   formatVersion: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2), Type.Literal(3), Type.Literal(4), Type.Literal(5), Type.Literal(6), Type.Literal(7)])),
@@ -179,6 +180,7 @@ export const ComparisonReportModelSchema = Type.Intersect([Type.Object({
 ])]);
 export type ComparisonReportModel = Static<typeof ComparisonReportModelSchema>;
 export const ComparisonBriefingContextSchema = Type.Object({
+  locale: Type.Optional(Type.Union([Type.Literal('zh'), Type.Literal('en')])),
   task: Type.Object({ caseId: Type.String(), summary: Type.String() }), baseline: Type.Object({ summary: Type.String(), evidenceRefs: Type.Array(Type.String()) }),
   candidates: Type.Array(Type.Object({ runId: Type.String(), evidenceRefs: Type.Array(Type.String()) })), telemetry: Type.Array(Type.Object({ runId: Type.String() })), reportFacts: ComparisonReportFactsSchema,
   artifactRefs: Type.Array(Type.String()), allowModelText: Type.Boolean(), replayScope: Type.Object({ historical: Type.String(), candidate: Type.String() }), hostReplay: Type.Optional(Type.Object({ sourceRootKind: Type.String(), stopKind: Type.String(), conditions: Type.Array(Type.String()) })), promptContent: Type.Optional(Type.String()),

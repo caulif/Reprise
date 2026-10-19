@@ -12,7 +12,7 @@ import { prepareComparisonArtifacts } from '../../src/application/comparison-pub
 import { inspectComparisonRecovery, publishRecoveredComparison } from '../../src/application/comparison-recovery.js';
 import { readLocalHistory } from '../../src/application/experiment-history-list.js';
 import { sha256 } from '../../src/core/identity.js';
-import { ComparisonInvocationSchema } from '../../src/core/schema.js';
+import { ComparisonBriefingContextSchema, ComparisonInvocationSchema, ComparisonReportModelSchema } from '../../src/core/schema.js';
 import { ExperimentStore } from '../../src/infrastructure/store/experiment-store.js';
 import { Value } from '@sinclair/typebox/value';
 
@@ -187,6 +187,29 @@ test('offline recovery requires the frozen preview digest and never overwrites a
   const missing = await fixture(false);
   t.after(() => rm(missing.dataDir, { recursive: true, force: true }));
   assert.equal((await inspectComparisonRecovery(missing.input)).ready, false);
+});
+
+for (const frozen of [false, true]) test(`offline English recovery preserves its language after TUI switches to Chinese (frozen=${frozen})`, async t => {
+  const f = await fixture(true);
+  t.after(() => rm(f.dataDir, { recursive: true, force: true }));
+  await writeFile(join(f.dataDir, 'tui-preferences.json'), JSON.stringify({ locale: 'zh' }));
+  if (frozen) {
+    const path = join(f.attemptRoot, 'facts', 'context.json');
+    const context: unknown = JSON.parse(await readFile(path, 'utf8'));
+    assert.ok(Value.Check(ComparisonBriefingContextSchema, context));
+    await writeFile(path, JSON.stringify({ ...context, locale: 'en' }));
+  }
+  const recovered = await inspectComparisonRecovery(f.input);
+  assert.equal(recovered.ready, true, recovered.reason);
+  assert.equal(recovered.model?.locale, 'en');
+  assert.match(recovered.html, /<html lang="en"/);
+  assert.doesNotMatch(recovered.html, /历史会话|当前会话/);
+  await publishRecoveredComparison({ ...f.input, status: 'completed' });
+  const published = await readFile(join(f.experimentRoot, 'report.html'), 'utf8');
+  assert.match(published, /<html lang="en"/);
+  const model: unknown = JSON.parse(await readFile(join(f.experimentRoot, 'report-model.json'), 'utf8'));
+  assert.ok(Value.Check(ComparisonReportModelSchema, model));
+  assert.equal(model.locale, 'en');
 });
 
 test('new recovery requires the latest settled findings, accepted binding and a subsequent preview', async (t) => {
