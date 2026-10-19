@@ -55,7 +55,7 @@ export function comparisonReportModelFromHtml(
   };
   if (paired) {
     const content = { ...base, task: comparisonPlainText(extractInner(html, "data-agent-slot", "category")), headline: headline ?? "", reason: paired.reason, pairedDifferences: paired.pairedDifferences };
-    return comparisonReportFormat(html) === 7 ? { ...content, formatVersion: 7 }
+    return comparisonReportFormat(html) === 7 ? { ...content, formatVersion: 7, ...(facts.sessionAgents ? { sessionAgents: facts.sessionAgents } : {}) }
       : { ...content, formatVersion: 6, boundary: comparisonPlainText(extractInner(html, "data-agent-slot", "boundary")) };
   }
   return comparisonReportFormat(html) >= 3

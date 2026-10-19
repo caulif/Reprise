@@ -40,6 +40,22 @@ test('session dates use earliest valid history and run time in UTC and survive f
   assert.equal(legacy.match(/Date unknown/g)?.length, 2);
 });
 
+test('session Agent names follow each product Pack independently of model names and remain in frozen facts', () => {
+  const historical = taskCase();
+  historical.sourceRuntimeEvidence.model = 'shared-model';
+  const run = runRecord();
+  run.attempt.candidate.productId = 'claude-code';
+  run.attempt.candidate.requestedModel = 'shared-model';
+  const context = buildComparisonContext(historical, [run]);
+  assert.deepEqual(context.reportFacts.sessionAgents, { baseline: 'Codex', candidate: 'Claude Code' });
+  const frozen: unknown = JSON.parse(JSON.stringify(context));
+  assert.ok(Value.Check(ComparisonBriefingContextSchema, frozen));
+  assert.deepEqual(frozen.reportFacts.sessionAgents, context.reportFacts.sessionAgents);
+  run.attempt.candidate.productId = 'future-agent';
+  assert.deepEqual(buildComparisonContext(historical, [run]).reportFacts.sessionAgents, { baseline: 'Codex', candidate: 'future-agent' });
+  assert.deepEqual(buildComparisonContext(historical, []).reportFacts.sessionAgents, { baseline: 'Codex' });
+});
+
 test('session dates retain history-only metadata without substituting import time', () => {
   const historical = taskCase();
   historical.taskContext = { historyStartedAt: '2026-10-10T23:30:00-04:00' };

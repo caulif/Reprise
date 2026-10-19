@@ -42,7 +42,9 @@ const MetricSideSchema = Type.Object({
   toolCostsIncluded: Type.Optional(Type.Boolean()),
 });
 
+const SessionAgentsSchema = Type.Object({ baseline: Type.Optional(Type.String({ minLength: 1 })), candidate: Type.Optional(Type.String({ minLength: 1 })) });
 const ComparisonReportFactsSchema = Type.Object({
+  sessionAgents: Type.Optional(SessionAgentsSchema),
   nativeExecution: Type.Optional(Type.Array(NativeExecutionObservationSchema)),
   executionBoundary: Type.Optional(ExecutionBoundarySchema),
   sessionDates: Type.Optional(Type.Object({
@@ -127,6 +129,7 @@ export const ComparisonPairedDifferenceSchema = Type.Object({
 export type ComparisonPairedDifference = Static<typeof ComparisonPairedDifferenceSchema>;
 export const ComparisonReportModelSchema = Type.Intersect([Type.Object({
   schemaVersion: Type.Literal(1),
+  sessionAgents: Type.Optional(SessionAgentsSchema),
   /** 2 = autonomous comparison/details zones. Absent or 1 = legacy four-zone audit files (readable, not rewritten). */
   formatVersion: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2), Type.Literal(3), Type.Literal(4), Type.Literal(5), Type.Literal(6), Type.Literal(7)])),
   boundary: Type.Optional(Type.String()),

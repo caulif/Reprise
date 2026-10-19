@@ -209,3 +209,29 @@ test('format 7 draft rejects legacy fields and incomplete pairs before accepting
   const html = await readFile(join(root, 'report.html'), 'utf8');
   assert.doesNotMatch(html, /<[^>]*data-agent-slot="boundary"|data-host="substitute-baseline"/);
 });
+
+
+test('Agent labels are escaped, frozen separately from models and never injected into old reports', () => {
+  const sessionAgents = { baseline: 'Codex', candidate: 'Claude Code' };
+  const namedFacts = { ...facts, sessionAgents };
+  const result = { status: 'completed' as const, reportPath: 'report.html' as const, evidenceRefs: [] };
+  for (const locale of ['zh', 'en'] as const) {
+    const html = renderComparisonReportShell({ formatVersion: 7, task: 'Delivery', facts: namedFacts, metrics: facts.metrics!, slots, locale });
+    assert.match(html, /data-session-agent="baseline">Codex<\/span><\/span><strong>historical-model/);
+    assert.match(html, /data-session-agent="candidate">Claude Code<\/span><\/span><strong>current-model/);
+    const snapshot = comparisonReportModelFromHtml(html, namedFacts, result, [], [], locale);
+    assert.equal(Value.Check(ComparisonReportModelSchema, snapshot), true);
+    assert.deepEqual(snapshot.sessionAgents, sessionAgents);
+    assert.equal(renderComparisonReportFromModel({ model: snapshot, facts: { ...facts, sessionAgents: { baseline: 'Renamed Pack', candidate: 'Another Pack' } }, locale }), html);
+    const oldHtml = renderComparisonReportShell({ formatVersion: 7, task: 'Delivery', facts, metrics: facts.metrics!, slots, locale });
+    const oldModel = comparisonReportModelFromHtml(oldHtml, facts, result, [], [], locale);
+    assert.equal(renderComparisonReportFromModel({ model: oldModel, facts: namedFacts, locale }), oldHtml);
+    const legacy = renderComparisonReportShell({ formatVersion: 6, task: 'Delivery', facts: namedFacts, metrics: facts.metrics!, slots, locale });
+    assert.doesNotMatch(legacy, /data-session-agent/);
+    assert.equal(legacy, renderComparisonReportShell({ formatVersion: 6, task: 'Delivery', facts, metrics: facts.metrics!, slots, locale }));
+    const extended = renderComparisonReportShell({ formatVersion: 7, task: 'Delivery', facts: { ...facts, sessionAgents: { candidate: '<Future & Agent>' } }, metrics: facts.metrics!, slots, locale });
+    assert.match(extended, /data-session-agent="candidate">&lt;Future &amp; Agent&gt;<\/span>/);
+    assert.doesNotMatch(extended, /data-session-agent="baseline"/);
+    assert.equal(Value.Check(ComparisonReportModelSchema, { ...snapshot, sessionAgents: { candidate: 42 } }), false);
+  }
+});

@@ -16,6 +16,8 @@ format 6 强制提交 boundary 并固定展示“采用前注意”，替代历�
 
 format 1–6 与 contract 1–5 继续按各自原规则读取和恢复，旧 format 6 的 boundary 与替代说明继续可恢复；不原地修改已发布模型或 HTML，不从旧文本推导新内容。format 7 不接受 boundary，contract 6 必须绑定 format 7，旧 contract 5 不能借新格式丢失原有内容。
 
+format 7 的会话身份卡以“历史／当前 · Agent 名称、模型、日期”区分产品与模型。名称由历史 source.productId 和当前 Candidate productId 对应的注册 Pack manifest.displayName 提供，未知 Pack 回退显示其产品 ID，不从模型名猜 Agent。可选 sessionAgents 随事实输入与报告模型保存；重建优先使用报告内冻结名称，缺字段的旧报告不补注当前注册名称。字段不限制产品枚举，后续 Pack 可复用其 displayName，无需修改模板或 Runtime 端口。
+
 ## 备选方案
 
 **只隐藏栏目或允许 boundary 为空**：字段与提示词仍诱导填充，而且隐藏旧内容会改变历史报告恢复语义，因此不采用。

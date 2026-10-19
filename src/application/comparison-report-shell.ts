@@ -251,11 +251,14 @@ export function renderComparisonReportFromModel(input: {
   locale?: AgentLocale;
 }): string {
   const mapped = mapLegacyModelSlots(input.model);
+  const facts = { ...input.facts };
+  if (input.model.sessionAgents) facts.sessionAgents = input.model.sessionAgents;
+  else delete facts.sessionAgents;
   return renderComparisonReportShell({
     ...(input.model.formatVersion === 3 || input.model.formatVersion === 4 || input.model.formatVersion === 5 || input.model.formatVersion === 6 || input.model.formatVersion === 7 ? { formatVersion: input.model.formatVersion } : {}),
     ...(input.diagnostic ? { title: "Comparison unavailable" } : {}),
     task: input.model.task,
-    facts: input.facts,
+    facts,
     metrics: metricsFromReportFacts(input.facts),
     ...(input.evidence ? { evidence: input.evidence } : {}),
     ...(input.media ? { media: input.media } : {}),

@@ -1,3 +1,4 @@
+import { productPacks } from '../products/index.js';
 import { validateTaskCase } from '../core/task-case-identity.js';
 import { Value } from '@sinclair/typebox/value';
 import {
@@ -136,13 +137,15 @@ function buildReportFacts(
 ): ComparisonReportFacts {
   const historicalTimes = [taskCase.taskContext?.historyStartedAt, ...taskCase.historicalEvents.map((event) => event.timestamp)]
     .map(validSessionTimestamp).filter((value): value is string => value !== undefined).sort();
+  const agentName = (productId: string) => productPacks.find(pack => pack.manifest.productId === productId)?.manifest.displayName.trim() || productId;
+  const sessionAgents = { baseline: agentName(taskCase.source.productId), ...(run ? { candidate: agentName(run.attempt.candidate.productId) } : {}) };
   const currentTime = validSessionTimestamp(run?.manifest?.startedAt) ?? validSessionTimestamp(run?.attempt.createdAt);
   const sessionDates = {
     ...(historicalTimes[0] ? { baseline: historicalTimes[0].slice(0, 10) } : {}),
     ...(currentTime ? { candidate: currentTime.slice(0, 10) } : {}),
   };
   if (!run) return {
-    sessionDates,
+    sessionDates, sessionAgents,
     run: { runId: 'unavailable', outcome: 'unavailable', terminationCode: 'unavailable', initiatedBy: 'unavailable' },
     models: comparisonModels(taskCase, undefined, pricing?.comparisonModel), activity: {}, limits: { triggered: [] }, runtime: { productId: 'unavailable' },
     delivery: { changedPaths: [], targetArtifactStatus: 'unavailable', verificationStatus: 'unavailable' },
@@ -151,7 +154,7 @@ function buildReportFacts(
   const triggered = run.outcome.termination.kind === 'limit_reached' ? [run.outcome.termination.code] : [];
   const metrics = projectedMetrics(taskCase, inspection, run, pricing?.dataDir);
   return {
-    sessionDates,
+    sessionDates, sessionAgents,
     run: { runId: run.attempt.runId, outcome: run.outcome.task.status, terminationCode: run.outcome.termination.code, initiatedBy: run.outcome.termination.initiatedBy, ...(inspection?.wallClockMs === undefined ? {} : { candidateElapsedMs: inspection.wallClockMs }) },
     models: comparisonModels(taskCase, run, pricing?.comparisonModel),
     activity: { ...(inspection ? { candidateTurns: inspection.turns } : {}) },
