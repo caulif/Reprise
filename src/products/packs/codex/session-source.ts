@@ -1,11 +1,23 @@
 import { lstatSync, realpathSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { stripWindowsExtendedPrefix } from '../../../core/paths.js';
 import type { SessionEncoding } from '../../shared/session-source.js';
 
 export function codexSourceEncoding(path: string): SessionEncoding {
   return path.endsWith('.jsonl.zst') ? 'zstd' : 'identity';
+}
+
+export function codexHistoryRoots(sessionsRoot: string): readonly string[] {
+  if (basename(sessionsRoot).toLowerCase() !== 'sessions') return [sessionsRoot];
+  const archived = join(dirname(sessionsRoot), 'archived_sessions');
+  try {
+    const info = lstatSync(archived);
+    return info.isDirectory() && !info.isSymbolicLink() ? [sessionsRoot, archived] : [sessionsRoot];
+  } catch (error) {
+    if (isMissingSource(error)) return [sessionsRoot];
+    throw error;
+  }
 }
 
 /** Resolve representation changes only within the requested file's directory. */

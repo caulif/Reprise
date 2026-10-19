@@ -1,5 +1,7 @@
 import { isolateCandidateProcessEnv } from '../../../infrastructure/process/spawn.js';
 import { mkdir, rm } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { selectedProcessEnvironment } from '../../../infrastructure/process/environment.js';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface, type Interface } from 'node:readline';
@@ -33,7 +35,7 @@ import type { CodexReasoningEffort, CodexSandboxMode } from './runtime.js';
 
 type JsonRpcId = number | string;
 type PendingRequest = { resolve: (value: unknown) => void; reject: (reason: Error) => void; timer: ReturnType<typeof setTimeout> };
-type StartedThread = { id: string; model: string };
+type StartedThread = { id: string; model: string; path?: string };
 type StartedTurn = { id: string };
 
 const DEFAULT_RPC_TIMEOUT_MS = DEFAULT_RUNTIME_RPC_TIMEOUT_MS;
@@ -256,6 +258,7 @@ export class CodexAppServerClient {
 }
 
 export class CodexTargetRunner implements TargetRunner {
+  readonly #historyRoot: string;
   #configurationConflict = false;
   readonly #runtime: ResolvedRuntime;
   readonly #environment: PreparedRuntimeEnvironment;
@@ -273,6 +276,7 @@ export class CodexTargetRunner implements TargetRunner {
   #endpointKind: 'custom_base_url' | 'default';
 
   constructor(input: { runtime: ResolvedRuntime; environment: PreparedRuntimeEnvironment; sink: TargetEventSink; effort: CodexReasoningEffort; sandbox: CodexSandboxMode; env?: Readonly<Record<string, string | undefined>>; completeEnv?: NodeJS.ProcessEnv; temporaryDirectory?: string; args?: readonly string[]; platform?: NodeJS.Platform }) {
+    this.#historyRoot = resolve(input.environment.root, (input.completeEnv ?? selectedProcessEnvironment('codex', input.env)).CODEX_HOME?.trim() || join(homedir(), '.codex'), 'sessions');
     this.#runtime = input.runtime;
     this.#environment = input.environment;
     this.#sink = input.sink;
@@ -300,6 +304,8 @@ export class CodexTargetRunner implements TargetRunner {
     this.#client.setRequestTimeout(milliseconds);
   }
 
+  historySource() { return { root: this.#historyRoot, ...(this.#thread?.path ? { sourcePath: this.#thread.path } : {}) }; }
+
   session(): CandidateSessionHandle {
     return {
       sessionId: this.#thread?.id ?? 'unstarted',
@@ -318,7 +324,7 @@ export class CodexTargetRunner implements TargetRunner {
       cwd: this.#environment.root,
       approvalPolicy: 'never',
       sandbox: this.#sandbox,
-      ephemeral: true,
+      ephemeral: false,
       threadSource: 'reprise',
     });
     this.#thread = readStartedThread(result);
@@ -490,7 +496,7 @@ function readStartedThread(value: unknown): StartedThread {
   const id = text(thread.id);
   const model = text(response.model);
   if (!id || !model) throw new CodexRuntimeUnavailableError('Codex app-server thread/start response was incomplete.');
-  return { id, model };
+  return { id, model, ...(text(thread.path) ? { path: text(thread.path)! } : {}) };
 }
 
 function readStartedTurn(value: unknown): StartedTurn {

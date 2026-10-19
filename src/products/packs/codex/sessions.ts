@@ -42,7 +42,7 @@ import {
 } from '../../shared/session-recovery.js';
 import { readCodexCatalog, catalogPathKey } from './catalog.js';
 import { extractCodexHistoricalArtifacts } from './historical-artifacts.js';
-import { codexSourceEncoding, withCodexSource } from './session-source.js';
+import { codexHistoryRoots, codexSourceEncoding, withCodexSource } from './session-source.js';
 import type { SessionReceipt } from '../../shared/session-source.js';
 
 export type CodexSessionSummary = SessionSummary;
@@ -60,7 +60,9 @@ export async function discoverCodexSessions(sessionsRoot: string, limit = 50): P
 
 async function discoverCodexSessionPage(query: SessionDiscoveryQuery): Promise<SessionDiscoveryPage> {
   const root = resolve(query.root ?? defaultCodexSessionsRoot());
-  const listing = await listJsonlFiles(root, (name) => name.startsWith('rollout-') && (name.endsWith('.jsonl') || name.endsWith('.jsonl.zst')), query.signal);
+  const roots = codexHistoryRoots(root);
+  const listings = await Promise.all(roots.map(sourceRoot => listJsonlFiles(sourceRoot, (name) => name.startsWith('rollout-') && (name.endsWith('.jsonl') || name.endsWith('.jsonl.zst')), query.signal)));
+  const listing = { entries: listings.flatMap(item => item.entries), diagnostics: listings.flatMap(item => item.diagnostics) };
   const plainPaths = new Set(listing.entries.filter((entry) => entry.path.endsWith('.jsonl')).map((entry) => catalogPathKey(entry.path)));
   const ranked = rankSessionFiles(listing.entries.filter((entry) => !entry.path.endsWith('.jsonl.zst') || !plainPaths.has(catalogPathKey(entry.path.slice(0, -4)))));
   const rolloutPage = await discoverSessionPage({
@@ -71,7 +73,7 @@ async function discoverCodexSessionPage(query: SessionDiscoveryQuery): Promise<S
     cacheKey: 'codex', ...(query.refresh ? { refresh: true } : {}), diagnostics: listing.diagnostics,
     inspect: (entry) => summarizeCodexSession(entry, query.signal),
     inspectPartial: (entry, signal) => summarizeCodexSessionHead(entry, signal),
-    exclude: (session) => isExcludedSession(session, query, [root]),
+    exclude: (session) => isExcludedSession(session, query, roots),
     failedSummary: (entry, code) => discoveryFailureSummary('codex', entry, code, peekCodexSessionMetaId),
   });
   if (query.cursor) return rolloutPage;
@@ -87,7 +89,7 @@ async function discoverCodexSessionPage(query: SessionDiscoveryQuery): Promise<S
     sessionIdsByPath,
   });
   const duplicates: { count: number } = { count: 0 };
-  const merged = mergeCodexSources(rolloutPage.items, catalog.sessions, (session) => isExcludedSession(session, query, [root]), duplicates);
+  const merged = mergeCodexSources(rolloutPage.items, catalog.sessions, (session) => isExcludedSession(session, query, roots), duplicates);
   return { ...rolloutPage, items: merged, scanned: Math.max(rolloutPage.scanned, merged.length),
     skipped: rolloutPage.skipped,
     diagnostics: [

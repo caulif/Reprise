@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
@@ -7,8 +7,9 @@ import { SAFE_ID } from '../../../core/identity.js';
 import { isRecord, record, text, type JsonRecord } from '../../../core/json.js';
 import { discoverSessionPage, forEachJsonlHeadSummaryLine, forEachJsonlSummaryLine, listJsonlFiles, rankSessionFiles, SessionDiscoveryError, type SessionFileEntry, validSessionTimestamp } from '../../shared/session-files.js';
 import { peekClaudeSessionId } from './protocol.js';
-import { forEachJsonlRecordLenient, withStableJsonlRead } from '../../shared/jsonl-io.js';
+import { forEachJsonlRecordLenient, peekSessionId, withStableJsonlRead } from '../../shared/jsonl-io.js';
 import { isExcludedSession } from '../../shared/session-exclusion.js';
+import { SessionSourceError } from '../../shared/session-source.js';
 import {
   emptyDiscoverySummaryState,
   recordLaterUserSummary,
@@ -21,6 +22,7 @@ import { assertTranscriptSessionId, discoveryFailureSummary } from '../../shared
 import { extractClaudeHistoricalArtifacts } from './historical-artifacts.js';
 import type {
   ImportDiagnostic,
+  DiscoveryDiagnostic,
   ImportedSession,
   SessionDiscoveryPage,
   SessionDiscoveryQuery,
@@ -73,11 +75,13 @@ export async function discoverClaudeSessions(sessionsRoot: string, limit = 50, e
 async function discoverClaudeSessionPage(query: SessionDiscoveryQuery): Promise<SessionDiscoveryPage> {
   const root = resolve(query.root ?? defaultClaudeSessionsRoot());
   const listing = await listJsonlFiles(root, (name) => name.endsWith('.jsonl'), query.signal);
-  const transcriptIds = await collectClaudeTranscriptIds(listing.entries, query.signal);
+  const transcripts = listing.entries.filter((entry) => isMainClaudeTranscript(root, entry.path));
+  const transcriptIds = await collectClaudeTranscriptIds(transcripts, query.signal);
   const history = await loadClaudeHistoryEntries(join(dirname(root), 'history.jsonl'), transcriptIds, query.signal);
+  const historyById = new Map(history.entries.map((entry) => [entry.sessionId, entry]));
   const entries = [
-    ...listing.entries,
-    ...history.entries.map((entry) => ({ path: historyLocator(entry.historyPath, entry.sessionId), mtime: entry.timestampMs, size: 0 })),
+    ...transcripts,
+    ...history.entries.map((entry) => ({ path: historyLocator(entry.historyPath, entry.sessionId), mtime: history.mtime ?? 0, size: history.size ?? 0 })),
   ];
   const ranked = rankSessionFiles(entries);
   return discoverSessionPage({
@@ -90,11 +94,17 @@ async function discoverClaudeSessionPage(query: SessionDiscoveryQuery): Promise<
     cacheKey: 'claude-code',
     ...(query.refresh ? { refresh: true } : {}),
     diagnostics: [...listing.diagnostics, ...history.diagnostics],
-    inspect: (entry) => summarizeClaudeSource(entry, query.signal, history.entries),
+    inspect: (entry) => summarizeClaudeSource(entry, query.signal, historyById),
     inspectPartial: (entry, signal) => summarizeClaudeSessionHead(entry, signal),
     exclude: (session) => isExcludedSession(session, query, [root]),
     failedSummary: (entry, code) => discoveryFailureSummary(PRODUCT_ID, entry, code, peekClaudeSessionId),
   });
+}
+
+function isMainClaudeTranscript(root: string, path: string): boolean {
+  const parts = relative(root, path).replaceAll('\\', '/').split('/');
+  const name = parts.at(-1)!;
+  return !parts.slice(2, -1).includes('subagents') && !/^agent-/u.test(name) && !/\.(?:bak|backup)\.jsonl$/u.test(name);
 }
 
 type ClaudeHistoryEntry = {
@@ -132,32 +142,30 @@ async function collectClaudeTranscriptIds(entries: readonly SessionFileEntry[], 
   const ids = new Set<string>();
   for (const entry of entries) {
     try {
-      await forEachJsonlSummaryLine(entry.path, 'Claude transcript metadata', { maxBytes: MAX_SUMMARY_BYTES, maxLines: MAX_SUMMARY_LINES, ...(signal ? { signal } : {}) }, (row) => {
-        const sessionId = text(row.sessionId);
-        if (sessionId && SAFE_ID.test(sessionId)) ids.add(sessionId);
-      });
+      const id = await peekSessionId(entry.path, (row) => text(row.sessionId), signal ? { signal } : {});
+      if (id) ids.add(id);
     } catch (error) {
-      if (error instanceof SessionDiscoveryError && error.code === 'too-large') continue;
-      throw error;
+      if (signal?.aborted || error instanceof DOMException && error.name === 'AbortError') throw error;
+      // The summary index records this file's failure; a broken source must not hide other sessions.
     }
-    const fileId = basename(entry.path, '.jsonl');
-    if (SAFE_ID.test(fileId)) ids.add(fileId);
   }
   return ids;
 }
 
-async function loadClaudeHistoryEntries(historyPath: string, transcriptIds: ReadonlySet<string>, signal: AbortSignal | undefined): Promise<{ entries: readonly ClaudeHistoryEntry[]; diagnostics: readonly { code: 'invalid-metadata' | 'unreadable-file' | 'invalid-jsonl' | 'too-large'; count: number }[] }> {
+async function loadClaudeHistoryEntries(historyPath: string, transcriptIds: ReadonlySet<string>, signal: AbortSignal | undefined): Promise<{ entries: readonly ClaudeHistoryEntry[]; diagnostics: readonly DiscoveryDiagnostic[]; mtime?: number; size?: number }> {
+  let info;
   try {
-    const info = await stat(historyPath);
+    info = await stat(historyPath);
     if (!info.isFile()) return { entries: [], diagnostics: [] };
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return { entries: [], diagnostics: [] };
     return { entries: [], diagnostics: [{ code: 'unreadable-file', count: 1 }] };
   }
   const entries = new Map<string, ClaudeHistoryEntry>();
+  const diagnostics: DiscoveryDiagnostic[] = [];
   let invalid = 0;
   try {
-    await forEachJsonlSummaryLine(historyPath, 'Claude history', { maxBytes: MAX_SUMMARY_BYTES, maxLines: MAX_SUMMARY_LINES, ...(signal ? { signal } : {}) }, (row) => {
+    const walk = await forEachJsonlRecordLenient(historyPath, 'Claude history', (row) => {
       if (!Value.Check(ClaudeHistoryEntrySchema, row)) { invalid += 1; return; }
       const historyRow = record(row);
       const sessionId = text(historyRow.sessionId);
@@ -165,7 +173,7 @@ async function loadClaudeHistoryEntries(historyPath: string, transcriptIds: Read
       if (!sessionId || !SAFE_ID.test(sessionId) || !display) { invalid += 1; return; }
       if (transcriptIds.has(sessionId)) return;
       const timestamp = historyTimestamp(historyRow.timestamp);
-      const cwd = text(historyRow.project);
+      const cwd = text(historyRow.project)?.trim();
       const next: ClaudeHistoryEntry = {
         sessionId,
         display,
@@ -176,12 +184,14 @@ async function loadClaudeHistoryEntries(historyPath: string, transcriptIds: Read
       };
       const previous = entries.get(sessionId);
       if (!previous || previous.timestampMs <= next.timestampMs) entries.set(sessionId, next);
-    });
+    }, signal);
+    if (walk.diagnostics.length) diagnostics.push({ code: 'invalid-jsonl', count: 1 });
   } catch (error) {
-    if (error instanceof SessionDiscoveryError) return { entries: [], diagnostics: [{ code: error.code as 'invalid-jsonl' | 'too-large', count: 1 }] };
-    throw error;
+    if (signal?.aborted || error instanceof DOMException && error.name === 'AbortError') throw error;
+    diagnostics.push({ code: error instanceof SessionSourceError && error.code === 'read-limit' ? 'too-large' : 'unreadable-file', count: 1 });
   }
-  return { entries: [...entries.values()], diagnostics: invalid ? [{ code: 'invalid-metadata', count: invalid }] : [] };
+  if (invalid) diagnostics.push({ code: 'invalid-metadata', count: invalid });
+  return { entries: [...entries.values()], diagnostics, mtime: info.mtimeMs, size: info.size };
 }
 
 function historyTimestamp(value: unknown): { timestampMs: number; startedAt?: string } {
@@ -190,14 +200,14 @@ function historyTimestamp(value: unknown): { timestampMs: number; startedAt?: st
   return Number.isFinite(date.getTime()) ? { timestampMs: value, startedAt: date.toISOString() } : { timestampMs: 0 };
 }
 
-async function summarizeClaudeSource(entry: SessionFileEntry, signal: AbortSignal | undefined, historyEntries: readonly ClaudeHistoryEntry[]): Promise<SessionSummary> {
+async function summarizeClaudeSource(entry: SessionFileEntry, signal: AbortSignal | undefined, historyEntries: ReadonlyMap<string, ClaudeHistoryEntry>): Promise<SessionSummary> {
   const sessionId = historyLocatorSessionId(entry.path);
   return sessionId ? summarizeClaudeHistorySession(entry.path, sessionId, historyEntries) : summarizeClaudeSession(entry, signal);
 }
 
-async function summarizeClaudeHistorySession(sourcePath: string, sessionId: string, historyEntries: readonly ClaudeHistoryEntry[]): Promise<SessionSummary> {
+async function summarizeClaudeHistorySession(sourcePath: string, sessionId: string, historyEntries: ReadonlyMap<string, ClaudeHistoryEntry>): Promise<SessionSummary> {
   if (!historyPathFromLocator(sourcePath)) throw new Error('Claude history locator is invalid.');
-  const entry = historyEntries.find((candidate) => candidate.sessionId === sessionId);
+  const entry = historyEntries.get(sessionId);
   if (!entry) throw new Error('Claude history entry is no longer available.');
   return {
     productId: PRODUCT_ID,
@@ -208,7 +218,7 @@ async function summarizeClaudeHistorySession(sourcePath: string, sessionId: stri
     summary: compact(entry.display),
     signals: { userMessages: 1, assistantMessages: 0, toolCalls: 0, completedTurns: 0 },
     evidenceLevel: 'history',
-    sourceKind: entry.cwd ? 'unknown' : 'projectless',
+    ...(entry.cwd ? {} : { sourceKind: 'projectless' as const }),
     availability: 'catalog-only',
     recoveryReadiness: 'history-only',
   };

@@ -9,7 +9,7 @@ import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import type { DiscoveryDiagnostic, SessionSummary } from '../../contract.js';
 import { peekSessionId } from '../../shared/jsonl-io.js';
-import { codexSourceEncoding, resolveCodexSource } from './session-source.js';
+import { codexHistoryRoots, codexSourceEncoding, resolveCodexSource } from './session-source.js';
 import { peekCodexSessionMetaId } from './protocol.js';
 import { readCodexGlobalState, type CodexGlobalState } from './global-state.js';
 import { classifyCodexProject } from './project-attribution.js';
@@ -154,12 +154,13 @@ function safeRolloutPath(value: string | undefined, sessionsRoot: string): strin
   if (!value) return undefined;
   const stripped = stripWindowsExtendedPrefix(value);
   const resolved = isFsAbsolute(stripped) ? stripped : resolve(sessionsRoot, stripped);
-  if (!pathContainedBy(sessionsRoot, resolved)) return undefined;
   try {
+    const sourceRoot = codexHistoryRoots(sessionsRoot).find(root => pathContainedBy(root, resolved));
+    if (!sourceRoot) return undefined;
     const source = resolveCodexSource(resolved);
     if (!lstatSync(source).isFile()) return undefined;
     const realFile = stripWindowsExtendedPrefix(realpathSync(source));
-    const realRoot = stripWindowsExtendedPrefix(realpathSync(sessionsRoot));
+    const realRoot = stripWindowsExtendedPrefix(realpathSync(sourceRoot));
     if (!pathContainedBy(realRoot, realFile)) return undefined;
     return realFile;
   } catch {

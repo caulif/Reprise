@@ -545,13 +545,14 @@ function applyInspection(c: ControllerHandle, data: string): Consume | undefined
   const result = dispatchInspectionInput(data, Boolean(c.inspection));
   if (!result) return undefined;
   if (result.action === 'toggle-outcome') {
+    if (c.inspection?.managed) return { consume: true };
     c.inspectionShowOutcome = !c.inspectionShowOutcome;
     c.inspectionScrollOffset = 0;
     c.render();
     return { consume: true };
   }
   if (result.action === 'scroll-up' || result.action === 'scroll-down' || result.action === 'page-up' || result.action === 'page-down') {
-    if (c.inspectionShowOutcome) {
+    if (c.inspectionShowOutcome || c.inspection?.managed) {
       const width = c.columns();
       const height = c.viewport().height ?? 24;
       const model = c.view().inspection;
@@ -566,6 +567,11 @@ function applyInspection(c: ControllerHandle, data: string): Consume | undefined
   if (result.action === 'back-sessions') {
     c.page = 'sessions';
     c.message = c.sessionsMessage();
+    c.render();
+    return { consume: true };
+  }
+  if (c.inspection?.managed) {
+    c.message = t(c.locale, 'managedHistoryReadOnly');
     c.render();
     return { consume: true };
   }

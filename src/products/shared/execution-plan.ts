@@ -20,11 +20,11 @@ export function candidateExecutionPlan(role: 'codex' | 'claude', root: string, p
     hostShell: { source: 'host-configured', rule: 'host-shell-v1', filesystem: 'unrestricted', network: 'unrestricted' },
     filesystem: 'unknown', network: 'unknown', extensions: 'unknown',
     invocation: customArgs ? 'explicit-argv-override' : 'pack-default',
-    controls: role === 'codex' ? ['approval-policy-never', 'ephemeral-session', 'thread-source-reprise'] : !customArgs ? ['strict-mcp-config', 'no-session-persistence', 'disallow-scheduling-and-messaging', ...(safeMode ? ['safe-mode-requested'] : [])] : [],
+    controls: role === 'codex' ? ['approval-policy-never', 'persistent-session', 'thread-source-reprise'] : !customArgs ? ['strict-mcp-config', 'persistent-session', 'disallow-scheduling-and-messaging', ...(safeMode ? ['safe-mode-requested'] : [])] : [],
     limitations: [
       'Workspace copies and environment selection do not restrict disk reads or network access.',
       'Native login/configuration locations remain visible; Codex credentials are not read or copied by launch planning.',
-      role === 'claude' && !customArgs ? 'Strict MCP configuration, disabled scheduling/messaging tools and session persistence off; hooks, skills, agents, memory and other shared configuration are not fully controlled.' : 'Shared user/project configuration, MCP, hooks and skills are not disabled or verified.',
+      role === 'claude' && !customArgs ? 'Strict MCP configuration, disabled scheduling/messaging tools and candidate session persistence on; hooks, skills, agents, memory and other shared configuration are not fully controlled.' : 'Shared user/project configuration, MCP, hooks and skills are not disabled or verified.',
       'No automatic permission relaxation; a wide-permission Candidate can attempt its own alternative commands.',
       'Temporary directories are invocation-owned; real Runtime compatibility has not been verified.',
     ],
