@@ -8,6 +8,23 @@ import { safeAgentFailureText } from '../infrastructure/agent/failure.js';
 import { writeImmutableJson, type ExperimentStore } from '../infrastructure/store/experiment-store.js';
 import { newComparisonAttempt } from './comparison-briefing.js';
 import { harnessConfigurationScope, type HarnessConfigurationScope } from './harness-configuration.js';
+import { cleanupOperation, throwFailures, type CleanupFailure } from './experiment-startup.js';
+
+export async function prepareComparisonConfiguration(input: {
+  store: ExperimentStore; runId: string; attemptId: string; attemptRoot: string; locale: AgentLocale;
+  reference: HarnessConfigurationReference | undefined; signal: AbortSignal | undefined;
+}): Promise<void> {
+  try {
+    await bindComparisonAttemptConfiguration(input.store, input.runId, input.attemptId, input.locale, input.reference);
+  } catch (error) {
+    const failures: CleanupFailure[] = [];
+    await cleanupOperation(failures, 'comparison_failure_audit', () => failComparisonOperation(input.store, input.attemptRoot, {
+      experimentId: input.store.experimentId, runId: input.runId, attemptId: input.attemptId, stage: 'agents',
+      status: input.signal?.aborted ? 'cancelled' : 'failed',
+    }, error));
+    throwFailures([error, ...failures.map(failure => failure.error)], 'Comparison configuration and failure audit failed.');
+  }
+}
 
 export function comparisonConfigurationScope(store: ExperimentStore, runId: string, attemptId: string, locale: AgentLocale,
   onBound?: (reference: HarnessConfigurationReference) => void): HarnessConfigurationScope {

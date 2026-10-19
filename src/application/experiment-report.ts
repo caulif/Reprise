@@ -66,7 +66,7 @@ import { createComparisonQuoteSourcePort, type ComparisonQuoteSourcePort } from 
 import { ComparisonReviewRequestSchema, ComparisonReviewStartedSchema } from "../core/comparison-review-schema.js";
 import { createQuoteEvidenceTool, validateComparisonEvidenceQuotes } from "./comparison-evidence-quotes.js";
 import { sealComparisonReport } from "./comparison-report-ownership.js";
-import { bindComparisonAttemptConfiguration } from './comparison-operation.js';
+import { prepareComparisonConfiguration } from './comparison-operation.js';
 
 export { comparisonCandidateMount };
 
@@ -260,8 +260,8 @@ async function compareExperimentOutcome(
         .requestedModel,
     },
   });
-  await bindComparisonAttemptConfiguration(input.store, input.input.runId, attemptId, locale,
-    (input.input.comparisonAgentConfig ?? input.input.agentConfig).effectiveReference);
+  await prepareComparisonConfiguration({ store: input.store, runId: input.input.runId, attemptId, attemptRoot, locale,
+    reference: (input.input.comparisonAgentConfig ?? input.input.agentConfig).effectiveReference, signal: input.signal });
   await materializeComparisonSandbox(input.store, record.artifactRefs, attemptRoot);
   if (input.candidateSnapshotStatus !== "complete") {
     await mkdir(comparisonCandidateMount({

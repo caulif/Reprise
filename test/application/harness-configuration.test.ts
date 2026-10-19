@@ -8,7 +8,7 @@ import { createHarnessAgents } from '../../src/application/harness-agents.js';
 import { harnessConfigurationScope } from '../../src/application/harness-configuration.js';
 import { PiModelCaller, HarnessProbeAuditError, type PiModels } from '../../src/infrastructure/agent/model-caller.js';
 import { ExperimentStore } from '../../src/infrastructure/store/experiment-store.js';
-import { EffectiveHarnessConfigurationSchema, HarnessConfigurationBoundSchema, HarnessProbeRequestedSchema, type RunAttempt, type RunManifest, type HarnessConfigurationReference } from '../../src/core/schema.js';
+import { ComparisonOperationFailureSchema, EffectiveHarnessConfigurationSchema, HarnessConfigurationBoundSchema, HarnessProbeRequestedSchema, type RunAttempt, type RunManifest, type HarnessConfigurationReference } from '../../src/core/schema.js';
 import { DEFAULT_RUN_POLICY } from '../../src/application/default-run-policy.js';
 import { canonicalJson } from '../../src/core/task-case-identity.js';
 import { sha256 } from '../../src/core/identity.js';
@@ -100,6 +100,74 @@ test('Comparison cannot rebind an uncommitted configuration reference', async t 
   await assert.rejects(bindComparisonAttemptConfiguration(f.store, f.owner.runId, 'locale-attempt', 'en',
     { ...f.owner, configurationId: 'config-missing', artifactId: 'config-missing.json', contentHash: 'a'.repeat(64) }), /committed Harness configuration/);
 });
+
+for (const origin of ['artifact', 'binding', 'cancelled', 'audit'] as const) {
+test(`live Comparison configuration failure preserves the finished run and records its terminal state: ${origin}`, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-inline-comparison-config-failure-'));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  const runtime = new VerifiedRuntime();
+  const base = input(root, runtime);
+  await mkdir(base.sourceRoot, { recursive: true });
+  const abort = new AbortController();
+  const agents = createHarnessAgents(config, fixtureCaller());
+  t.mock.method(agents.controller, 'decide', base.controller.decide.bind(base.controller));
+  t.mock.method(agents.comparison, 'compare', async () => { throw new Error('Comparison must not start after configuration failure.'); });
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- The fault injector calls the original with the actual Store below.
+  const commit = ExperimentStore.prototype.commitArtifact;
+  t.mock.method(ExperimentStore.prototype, 'commitArtifact', function (this: ExperimentStore, artifact: Parameters<typeof commit>[0]) {
+    if (origin !== 'binding' && artifact.kind === 'harness_effective_configuration'
+      && this.events(base.runId).some(event => event.type === 'comparison.started')) {
+      if (origin === 'cancelled') abort.abort();
+      throw new Error('fixture Comparison configuration failed');
+    }
+    return commit.call(this, artifact);
+  });
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- The fault injector calls the original with the actual Store below.
+  const append = ExperimentStore.prototype.append;
+  t.mock.method(ExperimentStore.prototype, 'append', function (this: ExperimentStore, event: Parameters<typeof append>[0]) {
+    if (origin === 'binding' && event.type === 'harness.configuration_bound'
+      && Value.Check(HarnessConfigurationBoundSchema, event.payload) && event.payload.reference.operation === 'comparison') {
+      throw new Error('fixture Comparison configuration failed');
+    }
+    if (origin === 'audit' && event.type === 'comparison.operation_failed') throw new Error('fixture Comparison failure audit failed');
+    return append.call(this, event);
+  });
+  const workflow = createExperimentWorkflow({ dataDir: base.dataDir, lookup: createProductLookup([{ ...codexProductPack, runtime }]),
+    now: () => base.now, defaults: { candidate: base.candidate, policy: base.policy }, agents: async (_signal, scope) => {
+      assert.ok(scope);
+      const binding = await scope.bind(agents.config.effective!);
+      return { ...agents, config: { ...agents.config, effectiveReference: binding.reference } };
+    } });
+  const handle = await workflow.start({ taskCase: base.taskCase, sourceRoot: base.sourceRoot, experimentId: base.experimentId,
+    runId: base.runId, compare: true, signal: abort.signal, onEvent: () => {} });
+  await assert.rejects(handle.result, error => {
+    if (origin !== 'audit') return error instanceof Error && error.message === 'fixture Comparison configuration failed';
+    assert.ok(error instanceof AggregateError);
+    assert.deepEqual(error.errors.map((item: unknown) => item instanceof Error ? item.message : String(item)),
+      ['fixture Comparison configuration failed', 'fixture Comparison failure audit failed']);
+    return true;
+  });
+  const experimentRoot = join(base.dataDir, 'experiments', base.experimentId);
+  const store = await ExperimentStore.open(experimentRoot, base.experimentId);
+  const events = store.events(base.runId);
+  await store.close();
+  assert.equal(events.filter(event => event.type === 'run.finished').length, 1);
+  assert.equal(events.some(event => event.type === 'run.startup_failed' || event.type === 'comparison.requested'), false);
+  const started = events.find(event => event.type === 'comparison.started')!;
+  const attemptId = (started.payload as { attemptId: string }).attemptId;
+  const fact: unknown = JSON.parse(await readFile(join(experimentRoot, 'comparison-attempts', attemptId, 'operation-failure.json'), 'utf8'));
+  assert.ok(Value.Check(ComparisonOperationFailureSchema, fact));
+  assert.equal(fact.stage, 'agents');
+  assert.equal(fact.status, origin === 'cancelled' ? 'cancelled' : 'failed');
+  assert.equal(events.filter(event => event.type === 'comparison.operation_failed').length, origin === 'audit' ? 0 : 1);
+  assert.equal(events.filter(event => event.type === 'comparison.completed').length, origin === 'audit' ? 0 : 1);
+  if (origin !== 'audit') {
+    const history = (await readLocalHistory(base.dataDir)).experiments[0]!;
+    assert.equal(history.comparisonStatus, fact.status);
+    assert.equal(history.comparisonFailureStage, 'agents');
+  }
+});
+}
 
 for (const mode of ['expired_at_bind', 'expires_during_probe', 'explicit_conflict'] as const) {
 test(`Recovery effective operation deadline closes initialization: ${mode}`, async t => {
