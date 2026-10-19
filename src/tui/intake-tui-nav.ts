@@ -132,7 +132,7 @@ export function IntakeTui_showError(this: IntakeTui, error: unknown, returnPage:
 
 export function IntakeTui_returnFromError(this: IntakeTui): { consume: true } {
     this.page = this.errorReturnPage;
-    this.message = t(this.locale, "returnedPrevious");
+    this.message = `${t(this.locale, "returnedPrevious")} ${this.message ?? ''}`.trim();
     this.render();
     return { consume: true };
   }

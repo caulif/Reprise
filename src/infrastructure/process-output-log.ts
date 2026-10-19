@@ -13,6 +13,16 @@ export function processOutputLog(path: string, onFailure?: (error: unknown) => v
   let failure: unknown;
   const failed = (error: unknown) => { if (failure === undefined) { failure = error; onFailure?.(error); } };
   let chain: Promise<void> = mkdir(dirname(path), { recursive: true }).then(() => undefined).catch(failed);
+  let buffered: Buffer[] = [];
+  let bufferedBytes = 0;
+  let scheduled: ReturnType<typeof setImmediate> | undefined;
+  const flush = () => {
+    if (scheduled) { clearImmediate(scheduled); scheduled = undefined; }
+    if (!bufferedBytes) return;
+    const batch = Buffer.concat(buffered, bufferedBytes);
+    buffered = []; bufferedBytes = 0;
+    chain = chain.then(() => appendFile(path, batch)).catch(failed);
+  };
   const save = (text: string) => {
     const safe = redactModelVisibleText(text).text;
     const remaining = 16_777_216 - bytes;
@@ -20,7 +30,10 @@ export function processOutputLog(path: string, onFailure?: (error: unknown) => v
     if (remaining <= 0) return;
     const accepted = Buffer.from(safe).subarray(0, remaining);
     bytes += accepted.length;
-    chain = chain.then(() => appendFile(path, accepted)).catch(failed);
+    if (!accepted.length) return;
+    buffered.push(accepted); bufferedBytes += accepted.length;
+    if (bufferedBytes >= 65_536) flush();
+    else scheduled ??= setImmediate(flush);
   };
   return {
     get truncated() { return truncated; },
@@ -41,6 +54,8 @@ export function processOutputLog(path: string, onFailure?: (error: unknown) => v
     },
     async finish() {
       save(dropping ? '[oversized output line omitted]\n' : pending + decoder.end()); pending = '';
+      flush();
+      if (bytes === 0) chain = chain.then(() => appendFile(path, '')).catch(failed);
       await chain;
       if (failure) throw new Error('Process output log persistence failed.', { cause: failure });
     },

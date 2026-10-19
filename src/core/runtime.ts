@@ -4,7 +4,7 @@ import { CandidateRuntimeEventTypeSchema, type CandidateLaunchContext, type Cand
 export type Delivery = 'accepted' | 'rejected' | 'unknown';
 export type RuntimeStopReason = 'completed' | 'cancelled' | 'failed' | 'shutdown';
 export type ManagedProcessSnapshot = {
-  state: 'running' | 'completed' | 'cancelled' | 'failed';
+  state: 'running' | 'flushing' | 'completed' | 'cancelled' | 'failed';
   output: string;
   truncated: boolean;
   remainingOutput: boolean;
@@ -12,6 +12,8 @@ export type ManagedProcessSnapshot = {
 };
 /** Invocation-owned pipe process; waiting never imposes a command lifetime. */
 export interface ManagedProcessSession {
+  readonly state: ManagedProcessSnapshot['state'];
+  /** Workspace ownership remains active while output logs are flushing. */
   readonly running: boolean;
   readonly logTruncated?: boolean;
   poll(waitMs: number, maxBytes: number, chars?: string): Promise<ManagedProcessSnapshot>;

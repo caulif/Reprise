@@ -101,6 +101,9 @@ export type DiscoveryDiagnosticCode =
   | 'catalog-read-error'
   | 'global-state-unavailable'
   | 'source-missing'
+  | 'unsupported-encoding'
+  | 'decompression-failed'
+  | 'source-changed'
   | 'duplicate-source'
   | 'conflicting-project-source';
 
@@ -156,6 +159,8 @@ export type ImportedRawFile = {
   readonly relativePath: string;
   readonly text: string;
   readonly sourcePath?: string;
+  readonly encoding?: import('./shared/session-source.js').SessionEncoding;
+  readonly receipt?: import('./shared/session-source.js').SessionReceipt;
 };
 
 export type ImportedExtraFile = {

@@ -20,6 +20,7 @@ import {
   isolateGitTopology,
   readGitSinkManifest,
   removeGitSink,
+  GitPathLimitError,
 } from "../../src/environment/git-sink.js";
 import { isolateCandidateProcessEnv, spawnRuntimeProcess } from "../../src/infrastructure/process/spawn.js";
 
@@ -46,6 +47,23 @@ async function initRepo(root: string, origin?: string, branch = "main"): Promise
   }
   return git(["rev-parse", `refs/heads/${branch}`], root);
 }
+
+test('Windows Git path overflow is a typed error even with core.longpaths enabled', { skip: process.platform !== 'win32' }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'r-git-limit-'));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  const source = join(root, 'source');
+  await initRepo(source);
+  const providerRoot = join(root, 'x'.repeat(Math.max(1, 181 - root.length - 1)));
+  const sink = gitSinkRoot(providerRoot, '0'.repeat(32));
+  await assert.rejects(isolateGitTopology(source, sink), (error: unknown) => {
+    assert.ok(error instanceof GitPathLimitError);
+    assert.equal(error.code, 'git_path_too_long');
+    assert.ok(error.cause instanceof Error);
+    assert.match(error.cause.message, /\$GIT_DIR.*too big|filename too long/i);
+    assert.doesNotMatch(error.message, /git --|r-git-limit/);
+    return true;
+  });
+});
 
 test("prepareRun retargets nested origin to a harness sink and does not advance the user remote", async (t) => {
   const tmp = await mkdtemp(join(tmpdir(), "reprise-git-sink-"));

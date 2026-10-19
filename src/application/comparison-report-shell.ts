@@ -103,7 +103,7 @@ export function agentUnsafeContentError(html: string): string | undefined {
 }
 
 export function agentContentFromDraft(html: string):
-  | { formatVersion?: 3 | 4 | 5 | 6; slots: ReportSlots }
+  | { formatVersion?: 3 | 4 | 5 | 6 | 7; slots: ReportSlots }
   | { error: string } {
   const errors: string[] = [];
   const root = parse(html, { onParseError: (error) => errors.push(error.code) }) as unknown as HtmlNode;
@@ -121,8 +121,8 @@ export function agentContentFromDraft(html: string):
   const expected = [
     ...comparisonAgentZones(html).map((name) => `data-agent-zone:${name}`),
     "data-agent-slot:headline", "data-agent-slot:category", ...(comparisonReportFormat(html) === 4 ? [] : ["data-agent-slot:task"]),
-    ...(comparisonReportFormat(html) >= 3 ? ["data-agent-slot:boundary"] : []),
-    ...(comparisonReportFormat(html) === 6 ? ["data-agent-slot:reason"] : []),
+    ...(comparisonReportFormat(html) >= 3 && comparisonReportFormat(html) <= 6 ? ["data-agent-slot:boundary"] : []),
+    ...(comparisonReportFormat(html) >= 6 ? ["data-agent-slot:reason"] : []),
   ];
   for (const key of markers.keys()) {
     if (!expected.includes(key)) return { error: `Comparison report contains unsupported ${key}.` };
@@ -149,11 +149,11 @@ export function agentContentFromDraft(html: string):
   const innerOf = (node: HtmlNode): string => (node.childNodes ?? []).map((child) => serializeOuter(child as never)).join("");
   if (comparisonReportFormat(html) >= 3) {
     const differenceNodes = (markers.get("data-agent-zone:differences")?.[0] ? descendants(markers.get("data-agent-zone:differences")![0]!) : []).filter(node => node.attrs?.some(attr => attr.name === "data-difference"));
-    return { formatVersion: comparisonReportFormat(html) as 3 | 4 | 5 | 6, slots: {
+    return { formatVersion: comparisonReportFormat(html) as 3 | 4 | 5 | 6 | 7, slots: {
       comparison: innerOf(markers.get("data-agent-zone:comparison")![0]!),
-      ...(comparisonReportFormat(html) === 6 ? pairedContentFromHtml(html) : {}),
+      ...(comparisonReportFormat(html) >= 6 ? pairedContentFromHtml(html) : {}),
       headline: escapeHtml(textOf(markers.get("data-agent-slot:headline")![0]!)),
-      boundary: textOf(markers.get("data-agent-slot:boundary")![0]!),
+      ...(comparisonReportFormat(html) <= 6 ? { boundary: textOf(markers.get("data-agent-slot:boundary")![0]!) } : {}),
       differences: differenceNodes.map(textOf),
       category: textOf(markers.get("data-agent-slot:category")![0]!),
     } };
@@ -167,7 +167,7 @@ export function agentContentFromDraft(html: string):
 }
 
 export function renderComparisonReportShell(input: {
-  formatVersion?: 3 | 4 | 5 | 6;
+  formatVersion?: 3 | 4 | 5 | 6 | 7;
   title?: string;
   task: string;
   facts: ComparisonReportFacts;
@@ -200,7 +200,7 @@ export function renderComparisonReportShell(input: {
       input.diagnostic ? diagnosticDelivery(input.diagnostic, locale) : "",
       input.diagnostic ? diagnosticLimitations(input.diagnostic) : "",
     ].filter(Boolean).join("");
-  if (input.formatVersion === 6) return renderPairedReport({ category, headline, facts: input.facts, metrics: input.metrics, labels, locale, slots });
+  if (input.formatVersion === 6 || input.formatVersion === 7) return renderPairedReport({ formatVersion: input.formatVersion, category, headline, facts: input.facts, metrics: input.metrics, labels, locale, slots });
   if (input.formatVersion === 4) return renderShareableReport({ category, headline, boundary: slots.boundary ?? "", comparisonBody, facts: input.facts, metrics: input.metrics, labels, locale, cost: [formatCost(input.metrics.baseline, locale), formatCost(input.metrics.candidate, locale)] });
   if (input.formatVersion === 5) return renderCompactReport({ ...input, category, task: category, title: category, headline, comparisonBody, locale, labels });
   if (input.formatVersion === 3) return renderCompactReport({ ...input, category, task, title, headline, comparisonBody, locale, labels });
@@ -251,21 +251,24 @@ export function renderComparisonReportFromModel(input: {
   locale?: AgentLocale;
 }): string {
   const mapped = mapLegacyModelSlots(input.model);
+  const facts = { ...input.facts };
+  if (input.model.sessionAgents) facts.sessionAgents = input.model.sessionAgents;
+  else delete facts.sessionAgents;
   return renderComparisonReportShell({
-    ...(input.model.formatVersion === 3 || input.model.formatVersion === 4 || input.model.formatVersion === 5 || input.model.formatVersion === 6 ? { formatVersion: input.model.formatVersion } : {}),
+    ...(input.model.formatVersion === 3 || input.model.formatVersion === 4 || input.model.formatVersion === 5 || input.model.formatVersion === 6 || input.model.formatVersion === 7 ? { formatVersion: input.model.formatVersion } : {}),
     ...(input.diagnostic ? { title: "Comparison unavailable" } : {}),
     task: input.model.task,
-    facts: input.facts,
+    facts,
     metrics: metricsFromReportFacts(input.facts),
     ...(input.evidence ? { evidence: input.evidence } : {}),
     ...(input.media ? { media: input.media } : {}),
     slots: {
       ...mapped,
       ...(input.model.headline ? { headline: escapeHtml(input.model.headline) } : {}),
-      ...((input.model.formatVersion === 3 || input.model.formatVersion === 4 || input.model.formatVersion === 5 || input.model.formatVersion === 6) ? { boundary: input.model.boundary ?? "", differences: input.model.differences ?? [], reason: input.model.reason, pairedDifferences: input.model.pairedDifferences } : {}),
+      ...((input.model.formatVersion === 3 || input.model.formatVersion === 4 || input.model.formatVersion === 5 || input.model.formatVersion === 6 || input.model.formatVersion === 7) ? { boundary: input.model.boundary ?? "", differences: input.model.differences ?? [], reason: input.model.reason, pairedDifferences: input.model.pairedDifferences } : {}),
     },
     ...(input.diagnostic ? { diagnostic: input.diagnostic } : {}),
-    ...(input.locale ? { locale: input.locale } : {}),
+    locale: input.model.locale ?? input.locale ?? 'zh',
   });
 }
 
@@ -276,7 +279,7 @@ function mapLegacyModelSlots(model: ComparisonReportModel): ReportSlots {
     ?? [slots["visual-evidence"], slots["key-differences"]].filter(Boolean).join("");
   const details = slots.details
     ?? [slots.delivery, slots.limitations].filter(Boolean).join("");
-  const category = (model.formatVersion === 3 || model.formatVersion === 4 || model.formatVersion === 5 || model.formatVersion === 6) && slots.header ? categoryFromHeader(slots.header) : undefined;
+  const category = (model.formatVersion === 3 || model.formatVersion === 4 || model.formatVersion === 5 || model.formatVersion === 6 || model.formatVersion === 7) && slots.header ? categoryFromHeader(slots.header) : undefined;
   return {
     ...(slots.header ? { header: slots.header } : {}),
     ...(category !== undefined ? { category } : {}),
@@ -327,7 +330,7 @@ export function hostMetricsMismatch(html: string, metrics: {
     return "Host metrics numbers were modified.";
   }
   const normalizedBlock = block.replace(/\s+/g, " ");
-  const visibleTexts = comparisonReportFormat(html) === 6 ? pairedMetricTexts(metrics, locale) : comparisonReportFormat(html) === 4 ? shareableMetricTexts(metrics, [formatCost(metrics.baseline, locale), formatCost(metrics.candidate, locale)], locale) : compactTable ? compactMetricTexts(metrics, locale) : visibleMetricTexts(metrics, locale);
+  const visibleTexts = comparisonReportFormat(html) >= 6 ? pairedMetricTexts(metrics, locale) : comparisonReportFormat(html) === 4 ? shareableMetricTexts(metrics, [formatCost(metrics.baseline, locale), formatCost(metrics.candidate, locale)], locale) : compactTable ? compactMetricTexts(metrics, locale) : visibleMetricTexts(metrics, locale);
   if (legacy) {
     visibleTexts[0] = legacyTime(metrics.baseline?.elapsedMs, locale);
     visibleTexts[1] = legacyTime(metrics.candidate?.elapsedMs, locale);

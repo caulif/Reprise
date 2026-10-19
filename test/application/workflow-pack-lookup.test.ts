@@ -2,6 +2,8 @@ import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { writeFileSync } from 'node:fs';
+import { saveTuiPreferences } from '../../src/tui/preferences.js';
 import { join } from "node:path";
 import { createExperimentWorkflow } from "../../src/application/experiment-workflow.js";
 import { preflightExperiment } from "../../src/application/experiment-preflight.js";
@@ -69,7 +71,8 @@ for (const productId of ['local-only', 'codex']) test(`injected ${productId} pro
   for (const marker of ['first-local-projection', 'second-local-projection']) {
     const runtime = new LocalRuntime(productId, marker);
     let inspections = 0, steering = 0, comparisons = 0;
-    const pack: ProductPack = { ...localPack(runtime), projection: {
+    const local = localPack(runtime);
+    const pack: ProductPack = { ...local, manifest: { ...local.manifest, displayName: `Agent ${marker}` }, projection: {
       inspectRunFacts(events) {
         inspections++;
         return { ...codexProductPack.projection.inspectRunFacts(events), assistantTexts: [marker], finalMessage: marker };
@@ -89,16 +92,24 @@ for (const productId of ['local-only', 'codex']) test(`injected ${productId} pro
         }
         return base.controller.decide(context, ...args);
       });
-      t.mock.method(agents.comparison, 'compare', async () => {
+      t.mock.method(agents.comparison, 'compare', async (context: Parameters<HarnessAgents['comparison']['compare']>[0]) => {
+        assert.deepEqual(context.reportFacts.sessionAgents, { baseline: pack.manifest.displayName, candidate: pack.manifest.displayName });
+        assert.equal(context.locale, comparisons === 0 ? 'en' : 'zh');
         comparisons++;
         return { status: 'cancelled' as const, sessionId: 'fixture-comparison' };
       });
       return agents;
     });
     const candidate = { ...f.base.candidate, productId, requestedModel: marker };
+    await mkdir(f.base.dataDir, { recursive: true });
+    await saveTuiPreferences(f.base.dataDir, { locale: 'en' });
     const handle = await f.workflow.start({ taskCase: f.taskCase, sourceRoot: f.base.sourceRoot, candidate,
-      experimentId: f.base.experimentId, runId: f.base.runId, onEvent: () => {} });
+      experimentId: f.base.experimentId, runId: f.base.runId, compare: true, onEvent: event => {
+        if (event.type === 'comparison.started') writeFileSync(join(f.base.dataDir, 'tui-preferences.json'), JSON.stringify({ locale: 'zh' }));
+      } });
     const result = await handle.result;
+    assert.equal(comparisons, 1, JSON.stringify(result.comparison));
+    assert.equal(result.comparison.result.status, 'cancelled');
     assert.equal(steering, 1);
     assert.equal(result.record.attempt.candidate.productId, productId);
     assert.equal(result.record.manifest?.resolvedModel.resolved, marker);
@@ -107,11 +118,15 @@ for (const productId of ['local-only', 'codex']) test(`injected ${productId} pro
       && typeof event.payload === 'object' && event.payload !== null && 'assistantText' in event.payload && event.payload.assistantText === marker));
     await store.close();
     const beforeReopen = inspections;
-    const compared = await f.workflow.comparePersisted(f.base.experimentId, undefined, undefined, f.base.runId);
+    assert.match(await readFile(result.reportPath, 'utf8'), /<html lang="en"/);
+    const compared = await f.workflow.comparePersisted(f.base.experimentId, event => {
+      if (event.type === 'comparison.started') writeFileSync(join(f.base.dataDir, 'tui-preferences.json'), JSON.stringify({ locale: 'en' }));
+    }, undefined, f.base.runId);
     assert.ok(inspections > beforeReopen, 'persisted comparison must use this workflow projection');
-    assert.equal(comparisons, 1);
+    assert.equal(comparisons, 2);
     assert.deepEqual(compared.record, result.record);
     assert.equal(compared.comparison.result.status, 'cancelled');
+    assert.match(await readFile(compared.reportPath, 'utf8'), /<html lang="zh/);
   }
   if (productId === 'local-only') assert.equal(productPacks.some(pack => pack.manifest.productId === productId), false);
 });

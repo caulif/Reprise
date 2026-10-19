@@ -81,6 +81,7 @@ export type ExperimentInput = {
   comparisonAgentConfig?: ExperimentAgentConfig;
   runtime: ProductRuntime;
   pack?: ProductPack;
+  resolveProductName?: (productId: string) => string;
   activity?: ExperimentActivity;
   startup?: ExperimentStartup;
   environmentProvider?: LocalWorkspaceProvider;

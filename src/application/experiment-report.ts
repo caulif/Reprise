@@ -66,6 +66,7 @@ import { createComparisonQuoteSourcePort, type ComparisonQuoteSourcePort } from 
 import { ComparisonReviewRequestSchema, ComparisonReviewStartedSchema } from "../core/comparison-review-schema.js";
 import { createQuoteEvidenceTool, validateComparisonEvidenceQuotes } from "./comparison-evidence-quotes.js";
 import { sealComparisonReport } from "./comparison-report-ownership.js";
+import { prepareComparisonConfiguration } from './comparison-operation.js';
 
 export { comparisonCandidateMount };
 
@@ -73,7 +74,7 @@ const MAX_COMPARISON_INPUT_BYTES = 262_144;
 
 export type CompletedRunContext = {
   signal?: AbortSignal;
-  input: Pick<ExperimentInput, 'dataDir' | 'experimentId' | 'runId' | 'candidate' | 'pack' | 'agentConfig' | 'comparisonAgentConfig' | 'comparison' | 'comparisonPreviewRenderer' | 'extractHistoricalArtifacts'>;
+  input: Pick<ExperimentInput, 'dataDir' | 'experimentId' | 'runId' | 'candidate' | 'pack' | 'agentConfig' | 'comparisonAgentConfig' | 'comparison' | 'comparisonPreviewRenderer' | 'extractHistoricalArtifacts' | 'resolveProductName'>;
   taskCase: TaskCase;
   preflight: ExperimentPreflight;
   store: ExperimentStore;
@@ -246,6 +247,7 @@ async function compareExperimentOutcome(
   inspection: Awaited<ReturnType<typeof inspectRun>>,
 ) {
   const { attemptId, attemptRoot } = input.comparisonAttempt ?? newComparisonAttempt(input.experimentRoot);
+  const locale = input.comparisonAttempt?.locale ?? await readOperatorLocale(input.input.dataDir);
   input.onComparisonAttempt?.(attemptId);
   if (!input.comparisonAttempt) await input.store.append({
     type: "comparison.started",
@@ -253,12 +255,13 @@ async function compareExperimentOutcome(
     operationId: `comparison-started-${attemptId}`,
     payload: {
       attemptId,
+      locale,
       model: (input.input.comparisonAgentConfig ?? input.input.agentConfig)
         .requestedModel,
-      ...((input.input.comparisonAgentConfig ?? input.input.agentConfig).effectiveReference
-        ? { effectiveReference: (input.input.comparisonAgentConfig ?? input.input.agentConfig).effectiveReference } : {}),
     },
   });
+  await prepareComparisonConfiguration({ store: input.store, runId: input.input.runId, attemptId, attemptRoot, locale,
+    reference: (input.input.comparisonAgentConfig ?? input.input.agentConfig).effectiveReference, signal: input.signal });
   await materializeComparisonSandbox(input.store, record.artifactRefs, attemptRoot);
   if (input.candidateSnapshotStatus !== "complete") {
     await mkdir(comparisonCandidateMount({
@@ -267,21 +270,17 @@ async function compareExperimentOutcome(
       attemptRoot,
     }), { recursive: true });
   }
-  const prepared = await prepareComparisonHistory(input, record, inspection, attemptId, attemptRoot);
+  const prepared = await prepareComparisonHistory(input, record, inspection, attemptId, attemptRoot, locale);
   if ('comparisonResult' in prepared) return prepared;
   const preparedHistory = prepared;
   await mkdir(preparedHistory.finalsRoot, { recursive: true });
   await auditHistoricalDelivery(input.store, input.input.runId, attemptId, preparedHistory.manifest);
   const events = input.store.events(input.input.runId).filter(event =>
     event.sequence >= record.trace.firstSequence && event.sequence <= record.trace.lastSequence);
-  const locale = await readOperatorLocale(input.input.dataDir);
-  const comparisonModel = (input.input.comparisonAgentConfig ?? input.input.agentConfig).requestedModel;
   const context: ComparisonContext = {
-    ...buildComparisonContext(input.taskCase, [record], [inspection], {
-      dataDir: input.input.dataDir,
-      comparisonModel,
-    }),
+    ...comparisonFactsForRun(input, record, inspection),
     attemptId,
+    locale,
     ownedEvidenceRefs: comparisonOwnedObservationRefs(input.taskCase, events),
   };
   if (preparedHistory.manifest?.schemaVersion === 2 && preparedHistory.manifest.capture.kind === 'user_selected_substitute') {
@@ -304,7 +303,7 @@ async function compareExperimentOutcome(
       ...(input.signal ? { signal: input.signal } : {}),
     });
     const reportShellHtml = renderComparisonReportShell({
-      ...(input.input.comparison.workflow === 'autonomous' ? { formatVersion: 6 as const } : {}),
+      ...(input.input.comparison.workflow === 'autonomous' ? { formatVersion: 7 as const } : {}),
       task: context.task.summary,
       facts: context.reportFacts,
       metrics: metricsFromReportFacts(context.reportFacts),
@@ -341,16 +340,23 @@ async function compareExperimentOutcome(
   });
 }
 
-async function prepareComparisonHistory(input: CompletedRunContext, record: RunRecord, inspection: Awaited<ReturnType<typeof inspectRun>>, attemptId: string, attemptRoot: string) {
+function comparisonFactsForRun(input: CompletedRunContext, record: RunRecord, inspection: Awaited<ReturnType<typeof inspectRun>>) {
+  return buildComparisonContext(input.taskCase, [record], [inspection], {
+    dataDir: input.input.dataDir,
+    comparisonModel: (input.input.comparisonAgentConfig ?? input.input.agentConfig).requestedModel,
+    ...(input.input.resolveProductName ? { resolveProductName: input.input.resolveProductName } : {}),
+  });
+}
+
+async function prepareComparisonHistory(input: CompletedRunContext, record: RunRecord, inspection: Awaited<ReturnType<typeof inspectRun>>, attemptId: string, attemptRoot: string, locale: AgentLocale) {
   try {
     return await prepareHistoricalArtifacts({ taskCase: input.taskCase, caseDir: join(input.input.dataDir, 'cases', input.taskCase.caseId),
       attemptRoot, ...(input.input.extractHistoricalArtifacts ? { extract: input.input.extractHistoricalArtifacts } : {}) });
   } catch (error) {
-    const context = buildComparisonContext(input.taskCase, [record], [inspection], { dataDir: input.input.dataDir,
-      comparisonModel: (input.input.comparisonAgentConfig ?? input.input.agentConfig).requestedModel });
+    const context = comparisonFactsForRun(input, record, inspection);
     return persistComparisonInvocation({ store: input.store, runId: input.input.runId, experimentRoot: input.experimentRoot,
       attemptId, attemptRoot, comparisonResult: mapBriefingErrorToComparisonResult(error), facts: context.reportFacts,
-      task: context.task.summary, locale: await readOperatorLocale(input.input.dataDir) });
+      task: context.task.summary, locale });
   }
 }
 
@@ -631,7 +637,7 @@ async function invokeCompare(
   };
   const draft = new ComparisonDraft({
     attemptRoot, task: context.task.summary, facts: context.reportFacts,
-    locale: await readOperatorLocale(input.input.dataDir), catalog,
+    locale: context.locale ?? 'zh', catalog,
     deliveredImages: deliveredImageContentHashes,
     renderCheckHistory: () => ({ records: renderChecks, omitted: omittedRenderChecks }),
     quoteSources,
@@ -856,7 +862,7 @@ function comparisonAudit(
 
 async function persistComparisonRequest(store: ExperimentStore, runId: string, attemptId: string, context: unknown, reviewInspectionRequired = false, workflow?: 'autonomous'): Promise<void> {
   const reviewContract = reviewInspectionRequired ? { attemptId, reviewInspectionContractVersion: 2 as const } : undefined;
-  const autonomousContract = workflow === 'autonomous' ? { attemptId, autonomousContractVersion: 5 as const } : undefined;
+  const autonomousContract = workflow === 'autonomous' ? { attemptId, autonomousContractVersion: 6 as const } : undefined;
   if (autonomousContract && (!Value.Check(ComparisonAutonomousContractSchema, autonomousContract) || reviewContract)) throw new Error('Invalid autonomous Comparison request contract.');
   if (reviewContract && !Value.Check(ComparisonReviewRequestSchema, reviewContract)) throw new Error('Invalid Comparison review request contract.');
   const bytes = Buffer.from(JSON.stringify(context), "utf8");

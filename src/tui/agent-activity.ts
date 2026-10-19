@@ -65,24 +65,23 @@ export function activityStatusLabel(status: ActivityStatus | undefined, locale: 
 export function toolCaption(entry: TimelineEntry, locale: Locale = 'zh'): string {
   const verb = entry.verb;
   if (verb === 'working' || entry.title === 'working') return t(locale, 'waitingVisibleActivity');
-  const action = verbLabel(verb, entry.title);
+  const action = verbLabel(verb, entry.title, locale);
   const object = entry.object ?? entry.detail ?? '';
   const status = activityStatusLabel(entry.activityStatus, locale);
   const parts = [action, object, status].filter(Boolean);
   return parts.join(' · ') || entry.title;
 }
 
-function verbLabel(verb: ActivityVerb | undefined, fallback: string): string {
-  if (verb === 'read') return '阅读';
-  if (verb === 'inspect') return '检查';
-  if (verb === 'write' || verb === 'edit') return '写入';
-  if (verb === 'run') return '运行';
-  if (verb === 'send') return '投递';
-  if (verb === 'wait') return '等待';
-  if (verb === 'decide') return '判断';
-  if (verb === 'publish') return '发布';
-  if (verb === 'error') return '失败';
-  if (verb === 'working') return '等待';
+function verbLabel(verb: ActivityVerb | undefined, fallback: string, locale: Locale): string {
+  if (verb === 'read') return t(locale, 'activityVerbRead');
+  if (verb === 'inspect') return t(locale, 'activityVerbInspect');
+  if (verb === 'write' || verb === 'edit') return t(locale, 'activityVerbWrite');
+  if (verb === 'run') return t(locale, 'activityVerbRun');
+  if (verb === 'send') return t(locale, 'activityVerbSend');
+  if (verb === 'wait') return t(locale, 'activityVerbWait');
+  if (verb === 'decide') return t(locale, 'activityVerbDecide');
+  if (verb === 'publish') return t(locale, 'activityVerbPublish');
+  if (verb === 'error') return t(locale, 'activityVerbError');
   return fallback.replace(/^Candidate · /, '');
 }
 

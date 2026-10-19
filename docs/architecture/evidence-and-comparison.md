@@ -16,6 +16,8 @@ Recovery 的固定 artifact 与决定、诊断等不可变 JSON 按 `runs/<runId
 
 ## 冻结任务保全
 
+Codex 明文与压缩来源先通过统一字节读取器；完整导入生成解码正文的进程内 hash/长度 receipt。冻结解码到私有临时文件并在脱敏前核对 receipt，变化时拒绝发布；输出仍为脱敏后的 `raw/session.jsonl`，压缩表示本身不改变来源 hash 与任务身份。文件帧完整性、预算及兼容边界见[压缩会话导入决策](../decisions/accepted/2026-10-19-codex-compressed-session-intake.md)。
+
 共享冻结入口不删除或重写任何已有 case 目录。当前新冻结写入显式版本 2；统一读端支持版本 1 和 2，未知版本拒绝。旧版本保留原 ID、hash、路径与起点，不自动升级或补认证。损坏、缺完整标记或同身份内容冲突均保留旧证据并明确拒绝。历史列表只统计非法 case，执行读端暴露诊断。
 
 v2 的 `provenance.sourceHash` 表示脱敏后来源字节，`contentHash` 是 `task-case-v2` 算法对任务内容与保留文件清单的 SHA-256；`caseId` 为 `case-v2-` 加 digest 的前 32 个十六进制字符。同来源不同起点、执行/授权、有效隐私条件、解释版本、证据或文件字节变化形成新身份，可以并存；只改变 importedAt、来源存储路径或 casesRoot 不改变身份。排序对象键但保留消息和事件顺序；正文及 taskContext 中有任务语义的路径保留。自身 caseId/contentHash 和 case-owned artifactRefs 的 caseId 不参加递归 hash。observations 元数据分别提供 case schema/identity 算法和 sourceHash/contentHash；逐消息 source refs 仍使用原行内容 hash，不把 case digest 当作来源行 hash。
@@ -54,6 +56,8 @@ History 的默认运行按已提交 `run.attempt_created` 顺序选择，日志�
 
 默认 Pi Harness 为每次 Candidate、Recovery 与持久化重比提交版本 1 的有效配置 DTO：先提交 run-owned 配置 artifact，再写 `harness.configuration_bound`，其中保留同一配置正文、hash 和 owner 引用。该事件先于本操作的连接 probe；artifact 残留不能认证配置。RunManifest 的角色配置、Recovery initialize 记录和 Comparison 操作绑定准确引用；重用 Agent 或连接检查缓存时仍提交本次 owner，引用不写回共享 Agent 实例。自定义 Port 与旧记录缺有效引用时保持未记录，不从 requested budget 推断已经生效。
 
+Comparison 的有效语言以本次 attempt 快照为准。即时对比从已提交的运行绑定派生 attempt 专属配置，保留原运行记录；持久化重比在配置绑定及连接 probe 前应用该语言。复用已绑定且语言一致的本次配置，不重复提交；开始事件不再以原运行引用冒充本次配置，使用包含 comparisonAttemptId 的配置绑定定位本次有效值。
+
 快照区分 Controller 单次无限、Recovery 的实际单次上限与操作总限，以及自主 Comparison 配置单次上限、整体截止和逐请求 `min(剩余整体时间, 单次上限)` 规则。内置 Recovery 的两项预算使用本次 recoveryBudget.callTimeoutMs；整体计时、配置绑定前后及显式冲突边界见[Recovery 预算](./recovery.md#recovery-agent-单任务会话)。空 Comparison resources override 保留默认整体截止；未在自主模式执行的旧阶段限额只放 requestedResources，不冒充 enforcedResources。快照与 Agent 构造共用预算解析，Candidate/policy 以及 Pi 私有配置、首次解析模型使用冻结副本，后续调用方对象或模型注册表变化不能改写本次执行条件。
 
 模型 DTO 显式挑选 provider/model、API、上下文和输出窗口、输入能力、reasoning/effort、已知无敏感标量 compat override 与已安装 SDK 版本。嵌套 schema 拒绝未知字段；不展开本机配置，不保存 apiKey、keyRef、headers 或 endpoint。SDK 按 URL 推导的默认 compat、复杂未记录参数和网络路由明确不完整；fingerprint 仅供比对，不能重建这些内容或凭据。此 DTO 记录 Harness 可控制条件，不宣称完整重建 Provider wire 请求；普通 generation 的实际输入仍以 Host 快照为准。
@@ -74,6 +78,8 @@ History 从已校验的提交日志前缀构造只读附件读取器，每个 Se
 
 ## Comparison attempt
 
+Comparison 在 attempt 开始时从操作者语言偏好取一次快照，并记录在开始事件及冻结 Context；内置 Agent、草稿工具、报告校验和失败页面共用此值，不受较早创建的 Agent 默认语言或中途设置变化影响。报告模型保留生成语言，重建优先使用该值；离线恢复使用冻结 Context，旧 Context 缺语言时沿用原 HTML 的 lang（缺失时保持旧中文默认），不读取当前 TUI 设置。旧模型缺语言时仍兼容原调用方指定值。此字段只增量保存，不迁移或覆写已发布报告，见[语言快照决策](../decisions/accepted/2026-10-19-comparison-attempt-language.md)。
+
 Comparison 正式工具与 coding 试验复用受管 `exec_command` / `write_stdin` / `cancel_process`：默认等待 10 秒后返回状态，等待结束不终止进程；进程绑定当前 Session/invocation，成功结束前必须完成或取消并确认收尾。命令非零结果与可纠正前置拒绝不等于 Agent 致命失败，审计、日志持久化及终止不确定仍阻止成功发布。命令包装保留 owner、生命周期与浏览器限制，日志归属当前运行。工具及命名兼容决定见[受管进程与会话名称](../decisions/accepted/2026-10-15-comparison-managed-processes-and-session-names.md)。
 
 报告对外只区分历史与当前，模型标签分别来自历史证据和当前运行的实际解析模型；分析模型另列，不能填补当前模型缺失。内部 candidate/baseline 字段及旧报告字节不迁移，原始引文不作术语替换，Token 聚合和计价口径不变。
@@ -88,7 +94,7 @@ Shell 的只读命令 guard 仅提前阻止已知写命令，不是 OS 文件权
 
 Host 指标固定在已审计的自主 Session system prompt，压缩摘要丢失指标时，后续实际请求与 History 重建仍可取得原值。当前 Port 的 completed 结果必须实际具有 `reportPath=report.html`；assert 不通过临时副本替调用方填充字段，旧历史 envelope schema/reader 继续兼容原记录。见[指标输入与结果断言](../decisions/accepted/2026-10-15-comparison-pinned-input-and-result-validation.md)。
 
-`submit_report` 从 scratch/ 读取 UTF-8 媒体片段，另提交抽象任务名、短推荐 headline、一句 reason、采用前注意 boundary 和最多三条 pairedDifferences（dimension、baseline、candidate、impact、可选 evidenceRefs）。当前 format 6 由 Host 对齐历史/当前短结果及用户影响，合并原证据表与差异列表；媒体片段仅容纳完整图片与近旁图注，不能再写自由证据表或第二份差异正文。推荐只允许“推荐当前 / 推荐历史 / 暂不能推荐”（英文对应 Recommend Current / Recommend History / Cannot recommend yet）；推荐理由与采用前注意紧邻标题，替代材料说明紧贴历史身份卡。沿用抽象任务名32、作者正文900个非空白码点预算，不给每个结果字段新增机械字数上限。Token 每个数字自带小写 k，一位小数；真实零、极小正数、未知保持区别，未配置价格就在费用单元格显示。模型费用行明确为估算 USD，删除指标长脚注；指标区仅显示三行指标名称及对应数值，不放小字、行内说明或表尾脚注；计时比较状态与原因继续保留在事实中，采集、来源、语义与范围见[任务执行计时](./task-timing.md)。原始任务不进入页头；文字、图注与图片继续脱敏。完整视口不裁主体，已登记图片由 Host 链接完整原图，键盘可打开；尚不支持坐标叠加。新请求使用 autonomousContractVersion=5 并绑定 format 6；旧 contract 1/2/3/4 和报告1/2/3/4/5按原规则恢复，不改写已发布事实，也不从旧字符串猜配对字段。当前稿件必须经过 digest/catalog 绑定的预览及后续 generation，结构通过不代表视觉或语义验收。见[差异优先报告契约](../decisions/accepted/2026-10-17-comparison-paired-differences.md)。
+`submit_report` 从 scratch/ 读取 UTF-8 媒体片段，另提交抽象任务名、短推荐 headline、一句 reason 和最多三条 pairedDifferences（dimension、baseline、candidate、impact、可选 evidenceRefs）。当前 format 7 由 Host 对齐历史/当前短结果及用户影响，合并原证据表与差异列表；媒体片段仅容纳完整图片与近旁图注，不能再写自由证据表或第二份差异正文。推荐只允许“推荐当前 / 推荐历史 / 暂不能推荐”（英文对应 Recommend Current / Recommend History / Cannot recommend yet）；会话身份卡在模型名上方显示 Agent 名称，来自 workflow 自身 ProductLookup 中两侧产品 ID 对应的 Pack displayName；即时对比与持久化重比均沿用注入的名称解析端口，不查询全局注册表。底层调用未提供该端口时回退产品 ID，不从模型名猜测。可选 sessionAgents 随事实和报告模型冻结，旧报告缺字段时不补写。推荐理由紧邻标题；不提供 boundary 字段、采用前注意栏目或历史替代材料固定说明。只展示帮助判断两份成果差异、价值与选择的内容；确实影响判断的条件或未知，在推荐理由或对应配对结果／影响中精简表达一次，不搬运注意事项清单或另设等价栏目。替代材料身份仍保留在内部事实与审计记录，不能据此把成果差异归因于历史模型。沿用抽象任务名32、作者正文900个非空白码点预算，不给每个结果字段新增机械字数上限。Token 每个数字自带小写 k，一位小数；真实零、极小正数、未知保持区别，未配置价格就在费用单元格显示。模型费用行明确为估算 USD，删除指标长脚注；指标区仅显示三行指标名称及对应数值，不放小字、行内说明或表尾脚注；计时比较状态与原因继续保留在事实中，采集、来源、语义与范围见[任务执行计时](./task-timing.md)。原始任务不进入页头；文字、图注与图片继续脱敏。完整视口不裁主体，已登记图片由 Host 链接完整原图，键盘可打开；尚不支持坐标叠加。新请求使用 autonomousContractVersion=6 并绑定 format 7；旧 contract 1/2/3/4/5 和报告1/2/3/4/5/6按原规则恢复，不改写已发布事实，也不从旧字符串猜配对字段。当前稿件必须经过 digest/catalog 绑定的预览及后续 generation，结构通过不代表视觉或语义验收。见[面向判断的报告展示](../decisions/accepted/2026-10-19-comparison-decision-only.md)与[差异优先报告契约](../decisions/accepted/2026-10-17-comparison-paired-differences.md)。
 
 默认 Comparison 仅有整体 24 小时预算，不默认限制请求数、工具数、费用、来源阶段时间、保存累计耗时或续查次数。自主模式的空资源 override 也保留默认整体截止；显式请求/工具/费用限制仍执行，但不引入阶段截止。每次调用使用整体实际剩余时间与单次调用 timeout 的较小值。取消、数据授权、工具大小和并发容量及发布完整性检查继续有效。详见[整体时间预算](../decisions/accepted/2026-10-14-agent-default-budgets.md)。
 

@@ -1,4 +1,4 @@
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import type { RecoveryResult } from "../../agents/recovery-agent.js";
 import { RecoveryExplanationSchema, type RecoveryExplanation } from "../../core/schema.js";
@@ -11,6 +11,7 @@ import {
 } from "./user-status.js";
 import type { EnvironmentBaseline, LocalWorkspaceProvider, RecoveryStaging } from "../../environment/local-workspace-provider.js";
 import { RecoveryValidationError } from "../../environment/local-workspace-provider.js";
+import { unsupportedBaseline } from "../../environment/local-workspace-fs.js";
 import { RecoveryEvidenceValidationError } from "../../infrastructure/recovery-tools.js";
 import type { StructuredAgentResult } from "../../infrastructure/agent/host.js";
 import { ExperimentStore, writeImmutableJson } from "../../infrastructure/store/experiment-store.js";
@@ -20,6 +21,7 @@ import type { RecoveryReadinessResult } from "./readiness.js";
 import type { RecoveryAttempt } from "./types.js";
 import type { RecoveryAttemptInput } from "./input.js";
 import { safeAgentFailureText } from "../../infrastructure/agent/failure.js";
+import { throwFailures } from '../experiment-startup.js';
 
 export type FailRecoverExperimentInput = {
   error: unknown;
@@ -54,6 +56,7 @@ export type RecoveryExplanationKey =
   | "recoverySourceChanged"
   | "recoveryStagingInvalid"
   | "recoveryPreflightFailed"
+  | "errorGitSinkPathTooLong"
   | "harnessTransient"
   | "harnessAuthentication"
   | "harnessProtocol"
@@ -76,7 +79,7 @@ export function failureExplanationKey(
     if (failure?.message && /recovery\.md is missing/i.test(failure.message)) return { key: "recoveryReportMissing" };
     return { key: "recoveryStagingInvalid" };
   }
-  if (stage === "preflight_failed") return { key: "recoveryPreflightFailed" };
+  if (stage === "preflight_failed") return { key: failure?.code === 'git_path_too_long' ? 'errorGitSinkPathTooLong' : "recoveryPreflightFailed" };
   if (stage === "agent_invalid_output") return { key: "harnessProtocol" };
   if (stage === "runner_crashed") return { key: "harnessFailure" };
   const kind = failure?.kind;
@@ -96,7 +99,7 @@ export function recoveryFailureDecision(
   const mapped = failureExplanationKey(stage, failure);
   if (mapped.key === 'recoverySourceChanged') return { category: 'source_changed', retryable: false, action: 'refreeze' };
   if (mapped.key === 'recoveryStagingInvalid' || mapped.key === 'recoveryReportMissing') return { category: 'staging_invalid', retryable: false, action: 'diagnose' };
-  if (mapped.key === 'recoveryPreflightFailed') return { category: 'preflight', retryable: false, action: 'return' };
+  if (mapped.key === 'recoveryPreflightFailed' || mapped.key === 'errorGitSinkPathTooLong') return { category: 'preflight', retryable: false, action: 'return' };
   if (mapped.key === 'harnessAuthentication') return { category: 'authentication', retryable: false, action: 'config' };
   if (mapped.key === 'harnessProtocol') return { category: 'protocol', retryable: true, action: 'diagnose' };
   if (mapped.key === 'harnessTransient') return { category: 'transient', retryable: true, action: 'retry' };
@@ -120,6 +123,7 @@ function recoveryExplanation(input: FailRecoverExperimentInput, stage: string): 
   const mapped = failureExplanationKey(stage, {
     ...(failed?.kind ? { kind: failed.kind } : {}),
     ...(validation?.code ? { code: validation.code } : {}),
+    ...(stage === 'preflight_failed' ? { code: recoveryPreflightDiagnostic(input.error, input.preflightOperation).reasonCode } : {}),
     ...(input.error instanceof Error ? { message: input.error.message } : failed?.message ? { message: failed.message } : {}),
   });
   return {
@@ -136,6 +140,27 @@ function recoveryExplanation(input: FailRecoverExperimentInput, stage: string): 
 }
 
 export async function failRecoverExperiment(input: FailRecoverExperimentInput): Promise<RecoveryAttempt> {
+  const failures: unknown[] = [];
+  let result: RecoveryAttempt | undefined;
+  try {
+    result = await persistFailedRecovery(input);
+  } catch (error) {
+    failures.push(error);
+  }
+  try {
+    const cleanupFailure = await cleanupFailedRecovery(input, classifyRecoveryFailureStage(input.failureStage ?? 'preflight_failed', input.error));
+    if (result && cleanupFailure) {
+      result.baseline.warnings.push('Recovery cleanup requires review.');
+      result = { ...result, cleanupFailed: true, ...(input.staging ? { staging: input.staging } : {}) };
+    }
+  } catch (error) {
+    failures.push(error);
+  }
+  throwFailures(failures, 'Recovery failure persistence and cleanup failed.');
+  return result!;
+}
+
+async function persistFailedRecovery(input: FailRecoverExperimentInput): Promise<RecoveryAttempt> {
   const settled = await settleFailedRecovery(input);
   const explanation = recoveryExplanation(input, settled.failureStage);
   if (!Value.Check(RecoveryExplanationSchema, explanation)) {
@@ -185,7 +210,6 @@ export async function failRecoverExperiment(input: FailRecoverExperimentInput): 
   );
   return {
     baseline,
-    ...(settled.cleanupFailure ? { cleanupFailed: true, ...(input.staging ? { staging: input.staging } : {}) } : {}),
     recovery: failed,
     experimentRoot: input.experimentRoot,
     experimentId: input.attemptInput.experimentId,
@@ -213,27 +237,6 @@ async function settleFailedRecovery(input: FailRecoverExperimentInput) {
       payload: diagnostic,
     });
   }
-  let cleanupFailure: string | undefined;
-  if (input.staging && failureStage === "provider_validation_failed") {
-    try {
-      await persistRecoveryValidationArtifacts(input.store, input.staging, input.attemptInput.runId);
-    } catch (artifactError) {
-      await input.store.append({ type: "recovery.validation_artifact_failed", runId: input.attemptInput.runId, operationId: runOperationId(input.attemptInput.runId, "recovery-validation-artifact-failed"), payload: { reasonCode: artifactError instanceof Error ? artifactError.name : "unknown" } });
-    }
-  }
-  if (input.staging) {
-    try {
-      await input.provider.discardRecovery(input.staging);
-    } catch (cleanupError) {
-      cleanupFailure = safeRecoveryFailureSummary(cleanupError, "runner_crashed");
-      await input.store.append({ type: "recovery.cleanup_failed", runId: input.attemptInput.runId, operationId: runOperationId(input.attemptInput.runId, "recovery-cleanup-failed"), payload: { summary: cleanupFailure } });
-    }
-  }
-  const fallback = await input.provider.resolveBaseline(
-    { caseId: input.attemptInput.caseId, sourceRoot: resolve(input.attemptInput.sourceRoot) },
-    [],
-    {},
-  );
   const stateAtFailure = input.lifecycleState();
   if (stateAtFailure !== "accepted" && stateAtFailure !== "failed")
     input.moveRecoveryState("failed");
@@ -255,19 +258,21 @@ async function settleFailedRecovery(input: FailRecoverExperimentInput) {
     });
   }
   const failureMessage = safeRecoveryFailureSummary(input.error, failureStage);
-  const fallbackWarning =
+  const failureWarning =
     failureStage === "agent_model_failed" && input.forensicsCompleted
       ? "Recovery model failed after Host forensics; the persisted investigation diagnostics require review."
-      : `Recovery failed; replay uses the current source state: ${failureMessage}`;
+      : `Recovery failed; no runnable baseline was produced: ${failureMessage}`;
   const baseline: EnvironmentBaseline = {
-    ...fallback,
+    ...unsupportedBaseline(input.attemptInput.caseId),
+    ...(input.staging ? { fingerprint: input.staging.sourceFingerprint } : {}),
+    budget: input.staging?.sourceBudget ?? { fileCount: 0, totalBytes: 0, largestFileBytes: 0, blockedReasons: ['Recovery did not produce a runnable baseline.'] },
     match: "observational",
-    warnings: [...fallback.warnings, fallbackWarning, ...(cleanupFailure ? ["Recovery cleanup requires review."] : [])],
+    warnings: [failureWarning],
     recovery: {
       status: "failed",
       unresolved: ["Recovery was not verified."],
-      sourceDigest: fallback.fingerprint.digest,
-      recoveredDigest: fallback.fingerprint.digest,
+      sourceDigest: input.staging?.sourceFingerprint.digest ?? '',
+      recoveredDigest: '',
       failureStage,
       ...(failureStage === "preflight_failed"
         ? {
@@ -281,7 +286,27 @@ async function settleFailedRecovery(input: FailRecoverExperimentInput) {
       accepted: false,
     },
   };
-  return { failureStage, providerFailureRetryable, taskOutcome, failureMessage, baseline, cleanupFailure };
+  return { failureStage, providerFailureRetryable, taskOutcome, failureMessage, baseline };
+}
+
+async function cleanupFailedRecovery(input: FailRecoverExperimentInput, failureStage: string): Promise<string | undefined> {
+  if (input.staging && failureStage === 'provider_validation_failed') {
+    try {
+      await persistRecoveryValidationArtifacts(input.store, input.staging, input.attemptInput.runId);
+    } catch (artifactError) {
+      await input.store.append({ type: 'recovery.validation_artifact_failed', runId: input.attemptInput.runId, operationId: runOperationId(input.attemptInput.runId, 'recovery-validation-artifact-failed'), payload: { reasonCode: artifactError instanceof Error ? artifactError.name : 'unknown' } });
+    }
+  }
+  if (input.staging) {
+    try {
+      await input.provider.discardRecovery(input.staging);
+    } catch (cleanupError) {
+      const summary = safeRecoveryFailureSummary(cleanupError, 'runner_crashed');
+      await input.store.append({ type: 'recovery.cleanup_failed', runId: input.attemptInput.runId, operationId: runOperationId(input.attemptInput.runId, 'recovery-cleanup-failed'), payload: { summary } });
+      return summary;
+    }
+  }
+  return undefined;
 }
 
 type PersistFailedRecoveryArtifactsInput = {
@@ -331,7 +356,7 @@ async function persistFailedRecoveryArtifacts(input: PersistFailedRecoveryArtifa
     payload: {
       failureStage,
       summary: failureMessage,
-      fallback: "current_state",
+      fallback: "none",
       ...(failureStage === "preflight_failed"
         ? {
             preflight: recoveryPreflightDiagnostic(error, preflightOperation),
@@ -421,7 +446,8 @@ function safeRecoveryFailureSummary(
     return "Recovery agent returned an invalid completion envelope.";
   if (stage === "provider_validation_failed")
     return "Provider validation rejected the recovery result.";
-  if (stage === "preflight_failed") return "Recovery preflight failed.";
+  if (stage === "preflight_failed") return recoveryPreflightDiagnostic(error, 'recovery_preflight').reasonCode === 'git_path_too_long'
+    ? 'Recovery Git repository path exceeds the supported limit. Use a shorter --data-dir path.' : "Recovery preflight failed.";
   if (stage === "cancelled") return "Recovery agent was cancelled.";
   if (stage === "runner_crashed") return "Recovery runner crashed.";
   return error instanceof Error && error.name === "AbortError"

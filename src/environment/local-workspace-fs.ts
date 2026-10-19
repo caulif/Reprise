@@ -412,6 +412,7 @@ function workspaceBudgetFromTotals(
 }
 
 type FingerprintTotals = { fileCount: number; totalBytes: number; largestFileBytes: number };
+const FINGERPRINT_READ_CONCURRENCY = 32;
 type FingerprintScan = {
   resources: FingerprintEntry[];
   totals: FingerprintTotals;
@@ -428,12 +429,21 @@ export async function fingerprintTree(
   if (scan.budget.blockedReasons.length > 0) {
     return { fingerprint: { capturedAt: new Date().toISOString(), resources: metadata, digest: sha256(JSON.stringify(metadata)) }, budget: scan.budget };
   }
-  const resources = await Promise.all(scan.resources.map(async (resource) => {
-    if (resource.kind !== 'file') return resource;
-    const path = join(root, ...resource.path.split('/'));
-    const contentHash = resource.size > MAX_INLINE_HASH_BYTES ? await sha256File(path) : sha256(await readFile(path));
-    return { ...resource, contentHash };
-  }));
+  const resources: FingerprintEntry[] = [];
+  for (let offset = 0; offset < scan.resources.length; offset += FINGERPRINT_READ_CONCURRENCY) {
+    const batch = scan.resources.slice(offset, offset + FINGERPRINT_READ_CONCURRENCY);
+    // Settle the whole batch before propagating failure so no reads outlive this operation.
+    const results = await Promise.allSettled(batch.map(async (resource) => {
+      if (resource.kind !== 'file') return resource;
+      const path = join(root, ...resource.path.split('/'));
+      const contentHash = resource.size > MAX_INLINE_HASH_BYTES ? await sha256File(path) : sha256(await readFile(path));
+      return { ...resource, contentHash };
+    }));
+    for (const result of results) {
+      if (result.status === 'rejected') throw result.reason;
+      resources.push(result.value);
+    }
+  }
   resources.sort(compareFingerprintEntries);
   return { fingerprint: { capturedAt: new Date().toISOString(), resources, digest: sha256(JSON.stringify(resources)) }, budget: scan.budget };
 }

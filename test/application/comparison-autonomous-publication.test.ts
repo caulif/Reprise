@@ -5,6 +5,9 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
+import { saveTuiPreferences } from '../../src/tui/preferences.js';
+import { runAutonomousPublication } from '../support/autonomous-comparison.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createAssistantMessageEventStream, type AssistantMessage, type Context, type Model } from '@earendil-works/pi-ai';
@@ -25,10 +28,38 @@ const model: Model<'openai-completions'> = { id: 'fixture', name: 'fixture', api
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 const config: HarnessModelConfig = { schemaVersion: 2, provider: { kind: 'pi-catalog', id: 'fixture' },
   providerId: 'fixture', modelId: 'fixture', effort: 'low' };
-const submission = { boundary: '历史侧的质量仍需核验。', reason: 'The candidate produced a focused change.', pairedDifferences: [{ dimension: '交付完整吗？', baseline: '尚未核验', candidate: '已交付变更', impact: '当前交付便于继续核对。' }], status: 'completed', category: 'Delivery', headline: '推荐当前', path: 'scratch/report.html' };
+const submission = { reason: 'The candidate produced a focused change.', pairedDifferences: [{ dimension: '交付完整吗？', baseline: '尚未核验', candidate: '已交付变更', impact: '当前交付便于继续核对。' }], status: 'completed', category: 'Delivery', headline: '推荐当前', path: 'scratch/report.html' };
 const original = '';
 const revised = '<a href="#revised">Revised presentation</a>';
 type Step = { name: string; arguments: Record<string, unknown> };
+
+test('English TUI preference controls the complete publication despite a mid-attempt language switch', async t => {
+  let preferencesPath = '';
+  const f = await runAutonomousPublication(t, {
+    beforeStart: async base => {
+      await mkdir(base.dataDir, { recursive: true });
+      await saveTuiPreferences(base.dataDir, { locale: 'en' });
+      preferencesPath = join(base.dataDir, 'tui-preferences.json');
+    },
+    onGeneration: (context, index) => {
+      assert.match(context.systemPrompt!, /image captions and process sentences are in English/);
+      if (index === 0) writeFileSync(preferencesPath, JSON.stringify({ locale: 'zh' }));
+    },
+  });
+  assert.equal(f.result.comparison.result.status, 'completed', JSON.stringify(f.result.comparison));
+  assert.equal(f.events.find(event => event.type === 'comparison.started')?.payload.locale, 'en');
+  const html = await readFile(f.result.reportPath, 'utf8');
+  assert.match(html, /<html lang="en"/);
+  assert.match(html, /History|Historical/);
+  assert.match(html, /Cannot recommend yet/);
+  assert.doesNotMatch(html, /历史会话|当前会话|对你的影响|推荐当前|暂不能推荐/);
+  const model: unknown = JSON.parse(await readFile(join(f.result.experimentRoot, 'report-model.json'), 'utf8'));
+  assert.ok(Value.Check(ComparisonReportModelSchema, model));
+  assert.equal(model.locale, 'en');
+  const recovered = await inspectComparisonRecovery({ dataDir: f.base.dataDir, experimentId: f.base.experimentId, attemptId: f.attemptRoot.split(/[\\/]/).at(-1)! });
+  assert.equal(recovered.ready, true, recovered.reason);
+  assert.match(recovered.html, /<html lang="en"/);
+});
 
 for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewed', 'cancelled', 'selected-delivery', 'git-delivery'] as const) {
   test(`default autonomous factory traverses production publication: ${mode}`, async t => {
@@ -136,7 +167,7 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
     const request = events.find(event => event.type === 'comparison.requested');
     assert.ok(request && typeof request.payload === 'object' && request.payload !== null);
     const payload = request.payload as { attemptId: string; autonomousContractVersion: number; reviewInspectionContractVersion?: number };
-    assert.equal(payload.autonomousContractVersion, 5);
+    assert.equal(payload.autonomousContractVersion, 6);
     assert.equal(payload.reviewInspectionContractVersion, undefined);
     const context = JSON.parse(await readFile(join(result.experimentRoot, 'comparison-attempts', payload.attemptId, 'facts', 'context.json'), 'utf8')) as { reportFacts: { sessionDates: { baseline: string; candidate: string } } };
     assert.deepEqual(context.reportFacts.sessionDates, { baseline: '2026-09-21', candidate: base.now.slice(0, 10) });
@@ -149,8 +180,8 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
       const facts = JSON.parse(await readFile(join(result.experimentRoot, 'comparison-attempts', payload.attemptId, 'facts', 'context.json'), 'utf8')) as { reportFacts: { replay: { conditions: string[] } } };
       assert.ok(facts.reportFacts.replay.conditions.some(condition => /user-selected substitute|用户指定替代基准/.test(condition)));
       const report = await readFile(join(result.experimentRoot, 'report.html'), 'utf8');
-      assert.match(report, /data-host="substitute-baseline"/);
-      assert.match(report, /历史材料为用户指定替代品，差异不能归因于历史模型；模型与指标仍属于原会话。/);
+      assert.doesNotMatch(report, /data-host="substitute-baseline"/);
+      assert.doesNotMatch(report, /历史材料为用户指定替代品|采用前注意/);
       const href = report.match(/href="([^"]*published-finals[^"]*baseline\.txt)"/)?.[1];
       assert.ok(href);
       assert.equal(await readFile(join(result.experimentRoot, ...href.split('/')), 'utf8'), 'chosen baseline bytes');
@@ -163,7 +194,7 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
       && (event.payload as { role?: string }).role === 'comparison').length, 1);
     const recovery = await inspectComparisonRecovery({ dataDir: base.dataDir, experimentId: base.experimentId, attemptId: payload.attemptId });
     assert.equal(recovery.ready, published, recovery.reason);
-    if (mode === 'selected-delivery') assert.match(recovery.html, /历史材料为用户指定替代品，差异不能归因于历史模型；模型与指标仍属于原会话。/);
+    if (mode === 'selected-delivery') assert.doesNotMatch(recovery.html, /data-host="substitute-baseline"|历史材料为用户指定替代品/);
     const history = await readCommittedExperimentHistory(result.experimentRoot, base.experimentId);
     assert.equal(history.diagnosticCode, undefined);
     assert.equal(history.incompleteModelInput, false);
@@ -172,16 +203,16 @@ for (const mode of ['published', 'missing-preview', 'stale-preview', 'repreviewe
     if (published) {
       const html = await readFile(reportPath, 'utf8');
       assert.ok(html.includes(mode === 'repreviewed' ? revised : original));
-      assert.match(html, /data-report-format="6"/);
+      assert.match(html, /data-report-format="7"/);
       assert.match(html, /2026-09-21 UTC/);
       assert.match(recovery.html, /2026-09-21 UTC/);
       assert.doesNotMatch(html, /data-agent-zone="details"|data-host-zone="evidence"|data-host-limitation="hostLimitationShareCardPresentation"/);
       const model: unknown = JSON.parse(await readFile(join(result.experimentRoot, 'report-model.json'), 'utf8'));
       assert.ok(Value.Check(ComparisonReportModelSchema, model));
-      assert.equal(model.formatVersion, 6);
-      assert.equal(model.boundary, submission.boundary.replace('历史侧', '历史会话'));
+      assert.equal(model.formatVersion, 7);
+      assert.equal(Object.hasOwn(model, 'boundary'), false);
       assert.deepEqual(model.pairedDifferences, submission.pairedDifferences);
-      assert.equal(recovery.model?.boundary, submission.boundary.replace('历史侧', '历史会话'));
+      assert.equal(Object.hasOwn(recovery.model!, 'boundary'), false);
       assert.deepEqual(recovery.model?.pairedDifferences, submission.pairedDifferences);
     }
     else await assert.rejects(readFile(reportPath), { code: 'ENOENT' });

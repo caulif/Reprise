@@ -42,7 +42,9 @@ const MetricSideSchema = Type.Object({
   toolCostsIncluded: Type.Optional(Type.Boolean()),
 });
 
+const SessionAgentsSchema = Type.Object({ baseline: Type.Optional(Type.String({ minLength: 1 })), candidate: Type.Optional(Type.String({ minLength: 1 })) });
 const ComparisonReportFactsSchema = Type.Object({
+  sessionAgents: Type.Optional(SessionAgentsSchema),
   nativeExecution: Type.Optional(Type.Array(NativeExecutionObservationSchema)),
   executionBoundary: Type.Optional(ExecutionBoundarySchema),
   sessionDates: Type.Optional(Type.Object({
@@ -127,8 +129,10 @@ export const ComparisonPairedDifferenceSchema = Type.Object({
 export type ComparisonPairedDifference = Static<typeof ComparisonPairedDifferenceSchema>;
 export const ComparisonReportModelSchema = Type.Intersect([Type.Object({
   schemaVersion: Type.Literal(1),
+  locale: Type.Optional(Type.Union([Type.Literal('zh'), Type.Literal('en')])),
+  sessionAgents: Type.Optional(SessionAgentsSchema),
   /** 2 = autonomous comparison/details zones. Absent or 1 = legacy four-zone audit files (readable, not rewritten). */
-  formatVersion: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2), Type.Literal(3), Type.Literal(4), Type.Literal(5), Type.Literal(6)])),
+  formatVersion: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(2), Type.Literal(3), Type.Literal(4), Type.Literal(5), Type.Literal(6), Type.Literal(7)])),
   boundary: Type.Optional(Type.String()),
   reason: Type.Optional(Type.String({ minLength: 1, pattern: "\\S" })),
   pairedDifferences: Type.Optional(Type.Array(ComparisonPairedDifferenceSchema, { maxItems: 3 })),
@@ -168,6 +172,7 @@ export const ComparisonReportModelSchema = Type.Intersect([Type.Object({
   mediaRefs: Type.Array(ComparisonMediaRefSchema),
   limitationCodes: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
 }), Type.Union([
+  Type.Object({ formatVersion: Type.Literal(7), boundary: Type.Optional(Type.Never()), headline: Type.String({ pattern: "^(推荐当前|推荐历史|暂不能推荐|Recommend Current|Recommend History|Cannot recommend yet)$" }), reason: Type.String({ minLength: 1, pattern: "\\S" }), pairedDifferences: Type.Array(ComparisonPairedDifferenceSchema, { maxItems: 3 }) }),
   Type.Object({ formatVersion: Type.Literal(6), headline: Type.String({ pattern: "^(推荐当前|推荐历史|暂不能推荐|Recommend Current|Recommend History|Cannot recommend yet)$" }), boundary: Type.String(), reason: Type.String({ minLength: 1, pattern: "\\S" }), pairedDifferences: Type.Array(ComparisonPairedDifferenceSchema, { maxItems: 3 }) }),
   Type.Object({ formatVersion: Type.Union([Type.Literal(3), Type.Literal(5)]), headline: Type.String({ minLength: 1 }), boundary: Type.String(), differences: Type.Array(Type.String({ minLength: 1, pattern: "\\S" }), { maxItems: 3 }) }),
   Type.Object({ formatVersion: Type.Literal(4), headline: Type.String({ minLength: 1 }), boundary: Type.String(), differences: Type.Array(Type.String(), { maxItems: 0 }) }),
@@ -175,6 +180,7 @@ export const ComparisonReportModelSchema = Type.Intersect([Type.Object({
 ])]);
 export type ComparisonReportModel = Static<typeof ComparisonReportModelSchema>;
 export const ComparisonBriefingContextSchema = Type.Object({
+  locale: Type.Optional(Type.Union([Type.Literal('zh'), Type.Literal('en')])),
   task: Type.Object({ caseId: Type.String(), summary: Type.String() }), baseline: Type.Object({ summary: Type.String(), evidenceRefs: Type.Array(Type.String()) }),
   candidates: Type.Array(Type.Object({ runId: Type.String(), evidenceRefs: Type.Array(Type.String()) })), telemetry: Type.Array(Type.Object({ runId: Type.String() })), reportFacts: ComparisonReportFactsSchema,
   artifactRefs: Type.Array(Type.String()), allowModelText: Type.Boolean(), replayScope: Type.Object({ historical: Type.String(), candidate: Type.String() }), hostReplay: Type.Optional(Type.Object({ sourceRootKind: Type.String(), stopKind: Type.String(), conditions: Type.Array(Type.String()) })), promptContent: Type.Optional(Type.String()),
@@ -182,7 +188,7 @@ export const ComparisonBriefingContextSchema = Type.Object({
 });
 export const ComparisonShortRefSchema = Type.String({ pattern: "^ev-[0-9]{2,6}$" });
 export const ComparisonDraftSubmissionSchema = Type.Object({
-  formatVersion: Type.Optional(Type.Union([Type.Literal(3), Type.Literal(4), Type.Literal(5), Type.Literal(6)])),
+  formatVersion: Type.Optional(Type.Union([Type.Literal(3), Type.Literal(4), Type.Literal(5), Type.Literal(6), Type.Literal(7)])),
   boundary: Type.Optional(Type.String()),
   reason: Type.Optional(Type.String({ minLength: 1, pattern: "\\S" })),
   pairedDifferences: Type.Optional(Type.Array(ComparisonPairedDifferenceSchema, { maxItems: 3 })),

@@ -1,4 +1,5 @@
 import type { TimingFacts } from '../core/timing-schema.js';
+import type { AgentLocale } from './language.js';
 import { Value } from '@sinclair/typebox/value';
 import type { HostZoneSnapshot } from '../core/comparison-html.js';
 import { ComparisonResultSchema, type ComparisonAgentEnvelope, type ComparisonEvidenceCatalogSnapshot } from '../core/schema.js';
@@ -7,6 +8,7 @@ import type { AgentAuditSink, AgentInvocation, AgentToolDefinition } from '../in
 export type { ComparisonAgentEnvelope } from '../core/schema.js';
 export type ComparisonResult = Omit<ComparisonAgentEnvelope, 'reportPath'> & { reportPath: 'report.html' };
 export type ComparisonContext = {
+  locale?: AgentLocale;
   task: { caseId: string; summary: string };
   baseline: { summary: string; evidenceRefs: readonly string[] };
   candidates: readonly { runId: string; evidenceRefs: readonly string[] }[];
@@ -36,6 +38,7 @@ export type ComparisonReportFacts = {
   nativeExecution?: readonly import('../core/schema.js').NativeExecutionObservation[];
   executionBoundary?: import('../core/schema.js').ExecutionBoundary;
   sessionDates?: { baseline?: string; candidate?: string };
+  sessionAgents?: { baseline?: string; candidate?: string };
   run: { runId: string; outcome: string; terminationCode: string; initiatedBy: string; elapsedMs?: number; candidateElapsedMs?: number };
   models: { candidate: string; candidateRequested?: string; candidateResolved?: string; baseline?: string; controller?: string; comparison?: string };
   activity: { candidateTurns?: number; controllerCalls?: number; toolCalls?: { total: number; succeeded: number; failed: number; rejectedApprovals: number } };

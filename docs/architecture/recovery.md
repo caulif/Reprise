@@ -10,7 +10,9 @@ Provider 在已有隔离 staging 上建立新独立 Git 树，仅获取指定 co
 
 此路径要求已有可物化的隔离仓库；超预算导致 sparse、缺少对象、输入不匹配、symlink/submodule 或 LFS filter 均不能声称恢复成功。调用方未明确起点时仍走历史调查；确定性路径拒绝后不会擅自改成另一个起点。第一版仍复用现有 source staging 复制，不是大型仓库复制加速或完整依赖缓存实现。见[轻量化决策](../decisions/accepted/2026-10-12-lightweight-recovery-and-managed-processes.md)。
 
-显式 Git 起点的新默认 Provider 位于数据目录的 `r/<experiment hash>/<recovery-run hash>`，避免实验 UUID、运行 UUID 和 Git sink 目录叠加触发 Windows Git 的路径长度上限。scene 通过可选 `recoveryProviderLayout: compact-v1` 与原 run ID 重建目录；旧 scene 和既有调查路径保持原位置。候选路径解析只接受当前 experiment 的哈希目录与指定 Candidate run，不接受其他实验的副本。这减少内部目录开销，不能保证任意长的数据根或源码路径都被 Git 支持。
+普通历史调查与显式 Git 起点的新默认 Provider 都位于数据目录的 `r/<experiment hash>/<recovery-run hash>`，避免实验 UUID、运行 UUID 和 Git sink 目录叠加触发 Windows Git 的路径长度上限。scene 通过可选 `recoveryProviderLayout: compact-v1` 与原 run ID 重建目录；旧 scene、既有 checkpoint 与调用方显式注入的 Provider 保持原位置。候选路径解析只接受当前 experiment 的哈希目录与指定 Candidate run，不接受其他实验的副本。这减少内部目录开销，不能保证任意长的数据根或源码路径都被 Git 支持。Git 路径超限记为不可原样重试的 `git_path_too_long`，提示使用更短的 `--data-dir`，不建议原位置重试。
+
+Recovery 失败先保存失败事件、解释和诊断，再捕获可用验证材料并清理 staging；诊断持久化失败仍尝试清理，错误一并向调用方传播。失败收尾不复制当前 source、不建立 fallback Git sink；返回无 root、不可 fork 的 unsupported baseline，只沿用已观察的 source 指纹，未观察的 source/recovered digest 留空，不表示存在可运行工作区。新的 warning 使用 `fallback: none`；旧 fallback 事件仍按原事实读取。见[统一布局与失败诊断决策](../decisions/accepted/2026-10-19-recovery-layout-and-failure-evidence.md)。
 
 ## 来源、staging 与 checkpoint
 
@@ -39,6 +41,8 @@ ready 表示必要任务输入已具备且 Candidate 可开始，不默认要求
 Recovery 默认使用 `exec_command`、`write_stdin` 和 `cancel_process`。命令首次等待默认 10 秒，返回 running 与 invocation-owned 会话句柄后可继续获取新增输出；等待时间不是命令生命期，不再受旧 shell 默认 60 秒限制。旧 `shell_exec` 仍供未启用 managed execution 的调用方兼容使用。命令非零退出保留实际 exitCode，失效/越权句柄、工作区忙及编辑不存在的文件属于可纠正前置条件；审计、未知 I/O 和受控写入故障保持致命，并立即取消模型调用。
 
 文件读取、列表与搜索声明并行；独立 observations 读取可与项目后台命令重叠。后台命令可能写入，项目文件操作仍需等待或取消该命令，两个任意 shell 命令不自动并发。Session 在发布 invocation 完成/让出前排空受管进程；若模型未完成命令就结束，终止并收尾后返回失败，不把后台工作算作成功。不能确认终止时拒绝封存；这些措施仍不构成任意 shell 外部副作用的容器隔离。
+
+受管命令退出后，日志尚未保存时返回 `flushing`，仍占有工作区；使用 `write_stdin` 继续等待。`cancel_process` 分别等待进程关闭和日志收尾，各等待窗口为 5 秒；进程已退出而日志仍在排空时返回 `flushing`，不误报进程终止失败，也不发布部分日志。invocation 收尾再等待最多 60 秒保存日志，超时明确报日志排空失败并拒绝封存；真实写入失败仍致命。日志在既有脱敏及 16 MiB 上限内合并写入。见[日志收尾决策](../decisions/accepted/2026-10-19-managed-process-log-drain.md)。
 
 输出按增量分页返回，待消费缓冲最多 1 MiB；脱敏日志最多 16 MiB，超长行省略。两者的 truncated 与 logTruncated 分别报告，属于诊断资源保护，不是请求次数额度。Recovery 将终态日志提交为 `recovery_process_output` artifact，并记录 `recovery.process_log_committed`，避免 staging 清理后日志引用失效。新增参数、输出和日志引用继续通过工具与 artifact 事件复原。
 

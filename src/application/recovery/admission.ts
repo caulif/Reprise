@@ -2,6 +2,7 @@ import { readdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { pathContainedBy } from "../../core/paths.js";
+import { replicaWorkspaceLocation } from '../recovery-provider-layout.js';
 import {
   CandidateLaunchContextSchema,
   type CandidateLaunchContext,
@@ -20,7 +21,7 @@ export async function admitCandidateLaunch(input: {
 }): Promise<CandidateLaunchContext> {
   const workspaceRoot = resolve(input.workspaceRoot);
   const experimentRoot = resolve(input.experimentRoot);
-  if (!pathContainedBy(experimentRoot, workspaceRoot)) {
+  if (!pathContainedBy(experimentRoot, workspaceRoot) && !replicaWorkspaceLocation(experimentRoot, input.runId, workspaceRoot)) {
     throw new Error("Candidate launch workspace is outside the experiment isolation root.");
   }
   if (input.requireObservations) {

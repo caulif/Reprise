@@ -48,7 +48,7 @@ export function renderPairedContent(differences: readonly ComparisonPairedDiffer
 export function pairedContentError(html: string): string | undefined {
   const content = pairedContentFromHtml(html);
   const headline = text(parseFragment(extractInner(html, 'data-agent-slot', 'headline')));
-  if (!['推荐当前', '推荐历史', '暂不能推荐', 'Recommend Current', 'Recommend History', 'Cannot recommend yet'].includes(headline)) return 'Use only the short recommendation title; put the reason and prerequisites in their own fields.';
+  if (!['推荐当前', '推荐历史', '暂不能推荐', 'Recommend Current', 'Recommend History', 'Cannot recommend yet'].includes(headline)) return 'Use only the short recommendation title; put a concise explanation in reason.';
   if (!content.reason.trim() || content.pairedDifferences.length > 3 || content.pairedDifferences.some(d => !Value.Check(ComparisonPairedDifferenceSchema, d))) return 'Supply a reason and at most three complete paired differences.';
   const mediaError = (node: Node, caption = false, labelled = false): boolean => {
     if (node.nodeName === '#text' && 'value' in node) return !caption && !!node.value.trim();

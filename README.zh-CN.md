@@ -125,6 +125,14 @@ Reprise 仍处于实验阶段，预期包名为 `@caulif/reprise`，目前采用
 
 请不要公开凭据、私有会话正文或未经脱敏的实验产物。
 
+## 致谢
+
+感谢 MiniMax 提供的一个月 Ultra 套餐支持。
+
+## 友情链接
+
+[LINUX DO](https://linux.do/) — 新的理想型社区
+
 ## 安全与许可证
 
 漏洞请按[安全政策](./docs/SECURITY.md)私下报告。Reprise 使用 [MIT 许可证](./LICENSE)。

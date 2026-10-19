@@ -514,8 +514,8 @@ test("Recovery records a redacted preflight diagnostic after staging retry is ex
   });
   assert.equal(
     copyCalls,
-    3,
-    "the fallback reads the source only after the two staging attempts",
+    2,
+    "failure diagnostics must not copy a fallback baseline",
   );
   assert.equal(attempt.baseline.recovery?.failureStage, "preflight_failed");
   const expectedDiagnostic = {
