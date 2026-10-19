@@ -54,6 +54,8 @@ History 的默认运行按已提交 `run.attempt_created` 顺序选择，日志�
 
 默认 Pi Harness 为每次 Candidate、Recovery 与持久化重比提交版本 1 的有效配置 DTO：先提交 run-owned 配置 artifact，再写 `harness.configuration_bound`，其中保留同一配置正文、hash 和 owner 引用。该事件先于本操作的连接 probe；artifact 残留不能认证配置。RunManifest 的角色配置、Recovery initialize 记录和 Comparison 操作绑定准确引用；重用 Agent 或连接检查缓存时仍提交本次 owner，引用不写回共享 Agent 实例。自定义 Port 与旧记录缺有效引用时保持未记录，不从 requested budget 推断已经生效。
 
+Comparison 的有效语言以本次 attempt 快照为准。即时对比从已提交的运行绑定派生 attempt 专属配置，保留原运行记录；持久化重比在配置绑定及连接 probe 前应用该语言。复用已绑定且语言一致的本次配置，不重复提交；开始事件不再以原运行引用冒充本次配置，使用包含 comparisonAttemptId 的配置绑定定位本次有效值。
+
 快照区分 Controller 单次无限、Recovery 的实际单次上限与操作总限，以及自主 Comparison 配置单次上限、整体截止和逐请求 `min(剩余整体时间, 单次上限)` 规则。内置 Recovery 的两项预算使用本次 recoveryBudget.callTimeoutMs；整体计时、配置绑定前后及显式冲突边界见[Recovery 预算](./recovery.md#recovery-agent-单任务会话)。空 Comparison resources override 保留默认整体截止；未在自主模式执行的旧阶段限额只放 requestedResources，不冒充 enforcedResources。快照与 Agent 构造共用预算解析，Candidate/policy 以及 Pi 私有配置、首次解析模型使用冻结副本，后续调用方对象或模型注册表变化不能改写本次执行条件。
 
 模型 DTO 显式挑选 provider/model、API、上下文和输出窗口、输入能力、reasoning/effort、已知无敏感标量 compat override 与已安装 SDK 版本。嵌套 schema 拒绝未知字段；不展开本机配置，不保存 apiKey、keyRef、headers 或 endpoint。SDK 按 URL 推导的默认 compat、复杂未记录参数和网络路由明确不完整；fingerprint 仅供比对，不能重建这些内容或凭据。此 DTO 记录 Harness 可控制条件，不宣称完整重建 Provider wire 请求；普通 generation 的实际输入仍以 Host 快照为准。

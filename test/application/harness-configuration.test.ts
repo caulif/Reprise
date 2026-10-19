@@ -23,6 +23,10 @@ import { readRunComparison } from '../../src/application/comparison-report-owner
 import { renderHistoryDetail } from '../../src/tui/pages/history.js';
 import { createTheme } from '../../src/tui/theme.js';
 import { recoverExperiment } from '../../src/application/recovery/run.js';
+import { createExperimentWorkflow } from '../../src/application/experiment-workflow.js';
+import { saveTuiPreferences } from '../../src/tui/preferences.js';
+import { writeFileSync } from 'node:fs';
+import { bindComparisonAttemptConfiguration } from '../../src/application/comparison-operation.js';
 
 const config = { schemaVersion: 2 as const, provider: { kind: 'openai-compatible' as const, id: 'fixture-provider' },
   providerId: 'fixture-provider', modelId: 'fixture-model', effort: 'high' as const,
@@ -39,6 +43,63 @@ function fixtureCaller(complete: NonNullable<Partial<PiModels>['completeSimple']
     streamSimple: () => { throw new Error('not a session fixture'); } } as unknown as PiModels;
   return new PiModelCaller(config, models);
 }
+
+test('live and persisted Comparison bind the frozen language without changing the run or reused Agent configuration', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-comparison-config-locale-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const runtime = new VerifiedRuntime();
+  const base = input(root, runtime);
+  await mkdir(base.sourceRoot, { recursive: true });
+  await mkdir(base.dataDir, { recursive: true });
+  await saveTuiPreferences(base.dataDir, { locale: 'zh' });
+  const agents = createHarnessAgents(config, fixtureCaller());
+  const original = canonicalJson(agents.config.effective);
+  t.mock.method(agents.controller, 'decide', base.controller.decide.bind(base.controller));
+  const observed: string[] = [];
+  t.mock.method(agents.comparison, 'compare', async (context: Parameters<typeof agents.comparison.compare>[0]) => {
+    const store = await ExperimentStore.open(join(base.dataDir, 'experiments', base.experimentId), base.experimentId);
+    try {
+      const binding = store.events(base.runId).find(event => event.type === 'harness.configuration_bound'
+        && Value.Check(HarnessConfigurationBoundSchema, event.payload) && event.payload.reference.comparisonAttemptId === context.attemptId);
+      assert.ok(binding && Value.Check(HarnessConfigurationBoundSchema, binding.payload));
+      assert.equal(binding.payload.configuration.locale, context.locale);
+      assert.equal(binding.payload.configuration.locale, 'en');
+      assert.equal(binding.payload.reference.operation, 'comparison');
+      const bytes = await store.readArtifact({ ...binding.payload.reference });
+      assert.equal(sha256(bytes), binding.payload.reference.contentHash);
+      observed.push(binding.payload.configuration.locale);
+    } finally { await store.close(); }
+    return { status: 'cancelled' as const };
+  });
+  const workflow = createExperimentWorkflow({ dataDir: base.dataDir, lookup: createProductLookup([{ ...codexProductPack, runtime }]),
+    now: () => base.now, defaults: { candidate: base.candidate, policy: base.policy }, agents: async (_signal, scope) => {
+      assert.ok(scope);
+      const binding = await scope.bind(agents.config.effective!);
+      return { ...agents, config: { ...agents.config, effectiveReference: binding.reference } };
+    } });
+  await (await workflow.start({ taskCase: base.taskCase, sourceRoot: base.sourceRoot, experimentId: base.experimentId,
+    runId: base.runId, compare: true, onEvent: event => {
+      if (event.type === 'run.manifest_created') writeFileSync(join(base.dataDir, 'tui-preferences.json'), JSON.stringify({ locale: 'en' }));
+    } })).result;
+  await workflow.comparePersisted(base.experimentId, event => {
+    if (event.type === 'comparison.started') writeFileSync(join(base.dataDir, 'tui-preferences.json'), JSON.stringify({ locale: 'zh' }));
+  }, undefined, base.runId);
+  assert.deepEqual(observed, ['en', 'en']);
+  assert.equal(canonicalJson(agents.config.effective), original);
+  const store = await ExperimentStore.open(join(base.dataDir, 'experiments', base.experimentId), base.experimentId);
+  t.after(() => store.close());
+  const bindings = store.events(base.runId).filter(event => event.type === 'harness.configuration_bound');
+  assert.equal(bindings.length, 3);
+  assert.ok(Value.Check(HarnessConfigurationBoundSchema, bindings[0]!.payload));
+  assert.equal(bindings[0]!.payload.configuration.locale, 'zh');
+});
+
+test('Comparison cannot rebind an uncommitted configuration reference', async t => {
+  const f = await fixtureStore(t);
+  await f.store.append({ type: 'comparison.started', runId: f.owner.runId, payload: { attemptId: 'locale-attempt' } });
+  await assert.rejects(bindComparisonAttemptConfiguration(f.store, f.owner.runId, 'locale-attempt', 'en',
+    { ...f.owner, configurationId: 'config-missing', artifactId: 'config-missing.json', contentHash: 'a'.repeat(64) }), /committed Harness configuration/);
+});
 
 for (const mode of ['expired_at_bind', 'expires_during_probe', 'explicit_conflict'] as const) {
 test(`Recovery effective operation deadline closes initialization: ${mode}`, async t => {
@@ -281,6 +342,9 @@ test('same-run configuration cannot be substituted between run, Recovery, or Com
   await f.store.commitManifest(fixtureManifest(f, run.reference));
   await f.store.append({ type: 'comparison.started', runId: f.owner.runId,
     payload: { attemptId: 'comparison-inline', effectiveReference: run.reference } });
+  for (const binding of [recovery, comparison]) {
+    await assert.rejects(bindComparisonAttemptConfiguration(f.store, f.owner.runId, 'comparison-inline', 'en', binding.reference), /different operation/);
+  }
 });
 
 for (const credentialSource of ['file', 'environment'] as const) {

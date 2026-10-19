@@ -19,9 +19,9 @@ import type { HistoricalArtifactExtractFn } from "../products/shared/freeze.js";
 import { isCandidateRuntimeJournalType } from "../core/runtime.js";
 import { hasRunLifecycle, matchingRunRecord, readCommittedRunEvents } from "./experiment-run-history.js";
 import { cleanupOperation, throwFailures, type CleanupFailure } from "./experiment-startup.js";
-import { harnessConfigurationScope, type HarnessConfigurationScope } from './harness-configuration.js';
+import type { HarnessConfigurationScope } from './harness-configuration.js';
 import type { newComparisonAttempt } from './comparison-briefing.js';
-import { failComparisonOperation, reserveComparisonOperation } from './comparison-operation.js';
+import { comparisonConfigurationScope, failComparisonOperation, reserveComparisonOperation } from './comparison-operation.js';
 import type { ComparisonOperationFailure, HarnessConfigurationReference } from '../core/schema.js';
 import { isRecord } from '../core/json.js';
 import type { ProductPack } from '../products/contract.js';
@@ -81,8 +81,8 @@ export async function comparePersistedExperiment(input: PersistedComparisonInput
     const pack = input.resolveCandidatePack?.(loaded.record.attempt.candidate.productId);
     const agents = input.comparison && input.agentConfig
       ? { comparison: input.comparison, agentConfig: input.agentConfig }
-      : await resolveCompareAgents(input.resolveAgents, signal, harnessConfigurationScope(store,
-        { experimentId: input.experimentId, runId: loaded.record.attempt.runId, operation: 'comparison', comparisonAttemptId: reserved.attemptId },
+      : await resolveCompareAgents(input.resolveAgents, signal, comparisonConfigurationScope(store,
+        loaded.record.attempt.runId, reserved.attemptId, reserved.locale!,
         reference => { effectiveReference = reference; }));
     comparison = agents.comparison;
     signal.throwIfAborted();

@@ -1,10 +1,35 @@
 import { join } from 'node:path';
 import type { AgentLocale } from '../agents/language.js';
 import { Value } from '@sinclair/typebox/value';
-import { ComparisonOperationFailureSchema, ComparisonInvocationSchema, type ComparisonOperationFailure } from '../core/schema.js';
+import { ComparisonOperationFailureSchema, ComparisonInvocationSchema, HarnessConfigurationBoundSchema,
+  type ComparisonOperationFailure, type HarnessConfigurationReference } from '../core/schema.js';
+import { canonicalJson } from '../core/task-case-identity.js';
 import { safeAgentFailureText } from '../infrastructure/agent/failure.js';
 import { writeImmutableJson, type ExperimentStore } from '../infrastructure/store/experiment-store.js';
 import { newComparisonAttempt } from './comparison-briefing.js';
+import { harnessConfigurationScope, type HarnessConfigurationScope } from './harness-configuration.js';
+
+export function comparisonConfigurationScope(store: ExperimentStore, runId: string, attemptId: string, locale: AgentLocale,
+  onBound?: (reference: HarnessConfigurationReference) => void): HarnessConfigurationScope {
+  const scope = harnessConfigurationScope(store, { experimentId: store.experimentId, runId,
+    operation: 'comparison', comparisonAttemptId: attemptId }, onBound);
+  return { bind: configuration => scope.bind({ ...configuration, locale }) };
+}
+
+export async function bindComparisonAttemptConfiguration(store: ExperimentStore, runId: string, attemptId: string,
+  locale: AgentLocale, reference: HarnessConfigurationReference | undefined): Promise<void> {
+  if (!reference) return;
+  if (reference.operation === 'recovery' || (reference.operation === 'comparison' && reference.comparisonAttemptId !== attemptId)) {
+    throw new Error('Comparison configuration belongs to a different operation.');
+  }
+  const bound = store.events(runId).find(event => event.type === 'harness.configuration_bound'
+    && Value.Check(HarnessConfigurationBoundSchema, event.payload)
+    && canonicalJson(event.payload.reference) === canonicalJson(reference));
+  if (!bound || !Value.Check(HarnessConfigurationBoundSchema, bound.payload)) throw new Error('Comparison requires its committed Harness configuration.');
+  const { configuration } = bound.payload;
+  if (reference.operation === 'comparison' && reference.comparisonAttemptId === attemptId && configuration.locale === locale) return;
+  await comparisonConfigurationScope(store, runId, attemptId, locale).bind(configuration);
+}
 
 export async function reserveComparisonOperation(store: ExperimentStore, experimentRoot: string, runId: string, locale?: AgentLocale): Promise<ReturnType<typeof newComparisonAttempt>> {
   const attempt = newComparisonAttempt(experimentRoot, locale);
