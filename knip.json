@@ -2,6 +2,7 @@
   "entry": [
     "scripts/**/*.{ts,mjs}!",
     "test/**/*.test.ts",
+    "test/coverage-collector.ts!",
     "test/support/control-owner-child.ts!"
   ],
   "project": [

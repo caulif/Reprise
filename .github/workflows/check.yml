@@ -13,6 +13,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      full: ${{ steps.scope.outputs.full }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - id: scope
+        run: node scripts/ci-scope.mjs
+        env:
+          REPRISE_CI_BASE: ${{ github.event.pull_request.base.sha }}
+          REPRISE_CI_HEAD: ${{ github.event.pull_request.head.sha }}
+
   static:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -26,12 +41,14 @@ jobs:
       - run: node scripts/run-gates.mjs static
 
   test:
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        os: [windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -39,18 +56,11 @@ jobs:
           node-version: 22.19.0
           cache: npm
       - run: npm ci
-      - if: runner.os == 'Linux'
-        run: node scripts/run-gates.mjs test --concurrency 2
-      - if: runner.os != 'Linux'
-        run: node scripts/run-gates.mjs test
-      - name: Diagnose the actual preview browser independently of parallel tests
-        if: always() && runner.os == 'Linux'
-        continue-on-error: true
-        run: |
-          node scripts/browser-preview-smoke.mjs --self-test
-          node scripts/browser-preview-smoke.mjs
+      - run: node scripts/run-gates.mjs test
 
   audit:
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
@@ -69,9 +79,15 @@ jobs:
           # includes frames-generated/ when Windows compareFrames fails
           retention-days: 7
 
-  coverage:
+  coverage-shards:
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -79,16 +95,54 @@ jobs:
           node-version: 22.19.0
           cache: npm
       - run: npm ci
-      - run: npm run test:coverage -- --concurrency 1
+      - run: npm run build
+      - if: matrix.shard == 1
+        run: npm run check:node
+      - run: node scripts/coverage-shards.mjs run ${{ matrix.shard }}/4 .coverage-shard
+      - name: Diagnose the actual preview browser after a shard failure
+        if: failure()
+        continue-on-error: true
+        run: |
+          node scripts/browser-preview-smoke.mjs --self-test
+          node scripts/browser-preview-smoke.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-shard-${{ matrix.shard }}
+          path: .coverage-shard/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  coverage:
+    needs: coverage-shards
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.19.0
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: coverage-shard-*
+          path: .coverage-input/
+      - run: node scripts/coverage-shards.mjs merge .coverage-input
 
   all-checks-passed:
     if: always()
-    needs: [static, test, audit, coverage]
+    needs: [scope, static, test, audit, coverage]
     runs-on: ubuntu-latest
     steps:
-      - name: Require every lane
-        run: |
-          test "${{ needs.static.result }}" = "success"
-          test "${{ needs.test.result }}" = "success"
-          test "${{ needs.audit.result }}" = "success"
-          test "${{ needs.coverage.result }}" = "success"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Require every applicable lane
+        run: node scripts/ci-scope.mjs verify
+        env:
+          REPRISE_CI_FULL: ${{ needs.scope.outputs.full }}
+          REPRISE_CI_SCOPE: ${{ needs.scope.result }}
+          REPRISE_CI_STATIC: ${{ needs.static.result }}
+          REPRISE_CI_TEST: ${{ needs.test.result }}
+          REPRISE_CI_AUDIT: ${{ needs.audit.result }}
+          REPRISE_CI_COVERAGE: ${{ needs.coverage.result }}
