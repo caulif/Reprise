@@ -10,7 +10,9 @@ Provider 在已有隔离 staging 上建立新独立 Git 树，仅获取指定 co
 
 此路径要求已有可物化的隔离仓库；超预算导致 sparse、缺少对象、输入不匹配、symlink/submodule 或 LFS filter 均不能声称恢复成功。调用方未明确起点时仍走历史调查；确定性路径拒绝后不会擅自改成另一个起点。第一版仍复用现有 source staging 复制，不是大型仓库复制加速或完整依赖缓存实现。见[轻量化决策](../decisions/accepted/2026-10-12-lightweight-recovery-and-managed-processes.md)。
 
-显式 Git 起点的新默认 Provider 位于数据目录的 `r/<experiment hash>/<recovery-run hash>`，避免实验 UUID、运行 UUID 和 Git sink 目录叠加触发 Windows Git 的路径长度上限。scene 通过可选 `recoveryProviderLayout: compact-v1` 与原 run ID 重建目录；旧 scene 和既有调查路径保持原位置。候选路径解析只接受当前 experiment 的哈希目录与指定 Candidate run，不接受其他实验的副本。这减少内部目录开销，不能保证任意长的数据根或源码路径都被 Git 支持。
+普通历史调查与显式 Git 起点的新默认 Provider 都位于数据目录的 `r/<experiment hash>/<recovery-run hash>`，避免实验 UUID、运行 UUID 和 Git sink 目录叠加触发 Windows Git 的路径长度上限。scene 通过可选 `recoveryProviderLayout: compact-v1` 与原 run ID 重建目录；旧 scene、既有 checkpoint 与调用方显式注入的 Provider 保持原位置。候选路径解析只接受当前 experiment 的哈希目录与指定 Candidate run，不接受其他实验的副本。这减少内部目录开销，不能保证任意长的数据根或源码路径都被 Git 支持。Git 路径超限记为不可原样重试的 `git_path_too_long`，提示使用更短的 `--data-dir`，不建议原位置重试。
+
+Recovery 失败先保存失败事件、解释和诊断，再捕获可用验证材料并清理 staging；诊断持久化失败仍尝试清理，错误一并向调用方传播。失败收尾不复制当前 source、不建立 fallback Git sink；返回无 root、不可 fork 的 unsupported baseline，只沿用已观察的 source 指纹，未观察的 source/recovered digest 留空，不表示存在可运行工作区。新的 warning 使用 `fallback: none`；旧 fallback 事件仍按原事实读取。见[统一布局与失败诊断决策](../decisions/accepted/2026-10-19-recovery-layout-and-failure-evidence.md)。
 
 ## 来源、staging 与 checkpoint
 

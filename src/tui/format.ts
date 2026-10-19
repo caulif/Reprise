@@ -61,7 +61,7 @@ export function operatorErrorMessage(error: unknown, locale: Locale = 'en'): str
   if (windowsLock) {
     return t(locale, 'errorBaselineLock');
   }
-  if (code === 'ENAMETOOLONG' || /filename too long|invalid index-pack/i.test(message)) {
+  if (code === 'git_path_too_long' || code === 'ENAMETOOLONG' || /\$GIT_DIR.*too big|filename too long|invalid index-pack/i.test(message)) {
     return t(locale, 'errorGitSinkPathTooLong');
   }
   if (message.includes('git_remote_unprotected')) {

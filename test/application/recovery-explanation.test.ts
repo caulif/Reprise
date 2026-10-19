@@ -99,6 +99,7 @@ test("failureExplanationKey maps Host failures to TUI keys", () => {
   assert.equal(failureExplanationKey("provider_validation_failed", { message: "recovery.md is missing from staging" }).key, "recoveryReportMissing");
   assert.equal(failureExplanationKey("provider_validation_failed").key, "recoveryStagingInvalid");
   assert.equal(failureExplanationKey("preflight_failed").key, "recoveryPreflightFailed");
+  assert.equal(failureExplanationKey('preflight_failed', { code: 'git_path_too_long' }).key, 'errorGitSinkPathTooLong');
   assert.equal(failureExplanationKey("agent_invalid_output").key, "harnessProtocol");
   assert.equal(failureExplanationKey("runner_crashed").key, "harnessFailure");
   assert.equal(failureExplanationKey("agent_model_failed", { kind: "authentication" }).key, "harnessAuthentication");
@@ -107,6 +108,7 @@ test("failureExplanationKey maps Host failures to TUI keys", () => {
 });
 
 test("recovery failure decisions expose only user actions", () => {
+  assert.deepEqual(recoveryFailureDecision('preflight_failed', { code: 'git_path_too_long' }), { category: 'preflight', retryable: false, action: 'return' });
   assert.deepEqual(recoveryFailureDecision("agent_model_failed", { kind: "timeout" }), { category: "transient", retryable: true, action: "retry" });
   assert.deepEqual(recoveryFailureDecision("agent_model_failed", { kind: "authentication" }), { category: "authentication", retryable: false, action: "config" });
   assert.deepEqual(recoveryFailureDecision("source_tripwire_failed"), { category: "source_changed", retryable: false, action: "refreeze" });

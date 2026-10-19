@@ -30,6 +30,14 @@ export class GitIsolationError extends Error {
 
 const execFileAsync = promisify(execFile);
 
+export class GitPathLimitError extends Error {
+  readonly code = 'git_path_too_long';
+  constructor(cause: Error) {
+    super('git_path_too_long: Local Git repository path exceeds the supported limit.', { cause });
+    this.name = 'GitPathLimitError';
+  }
+}
+
 export type GitIsolationRecord = {
   readonly sinkRoot: string;
   readonly status: GitSinkManifest["status"];
@@ -712,10 +720,17 @@ function migrateManifest(parsed: unknown): GitSinkManifest | undefined {
   };
 }
 
-function git(args: readonly string[]) {
-  return execFileAsync("git", ["-c", "core.longpaths=true", ...args], {
-    encoding: "utf8",
-    windowsHide: true,
-    env: { ...process.env, GIT_NO_LAZY_FETCH },
-  });
+async function git(args: readonly string[]) {
+  try {
+    return await execFileAsync("git", ["-c", "core.longpaths=true", ...args], {
+      encoding: "utf8",
+      windowsHide: true,
+      env: { ...process.env, GIT_NO_LAZY_FETCH },
+    });
+  } catch (error) {
+    if (error instanceof Error && ((error as NodeJS.ErrnoException).code === 'ENAMETOOLONG' || /\$GIT_DIR.*too big|filename too long/i.test(error.message))) {
+      throw new GitPathLimitError(error);
+    }
+    throw error;
+  }
 }
