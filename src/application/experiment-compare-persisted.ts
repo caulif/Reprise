@@ -1,4 +1,5 @@
 import { readTaskCase } from '../products/shared/task-case-reader.js';
+import { readOperatorLocale } from './operator-locale.js';
 import { join, resolve } from "node:path";
 import { SAFE_ID } from "../core/identity.js";
 import type { EventEnvelope, RunRecord } from "../core/schema.js";
@@ -62,7 +63,7 @@ export async function comparePersistedExperiment(input: PersistedComparisonInput
     await store.acquireWriter();
     loaded = await loadFinishedRun(experimentRoot, input.experimentId, input.runId);
     unsubscribe = input.onEvent ? store.subscribe(input.onEvent) : undefined;
-    reserved = await reserveComparisonOperation(store, experimentRoot, loaded.record.attempt.runId);
+    reserved = await reserveComparisonOperation(store, experimentRoot, loaded.record.attempt.runId, await readOperatorLocale(input.dataDir));
     comparisonAttemptId = reserved.attemptId;
     activity = registerActivity({
     kind: "compare",

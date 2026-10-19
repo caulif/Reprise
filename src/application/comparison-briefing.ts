@@ -3,6 +3,7 @@ import { join, relative } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Value } from "@sinclair/typebox/value";
 import type { ComparisonContext, ComparisonFactsContext } from "../agents/comparison-contract.js";
+import type { AgentLocale } from '../agents/language.js';
 import { sha256, writeAtomic } from "../core/identity.js";
 import { ComparisonBriefingContextSchema, ComparisonLinksSchema, GitSinkManifestSchema, type ComparisonLinkRecord, type ComparisonMediaRecord, type EventEnvelope, type RunRecord, type TaskCase } from "../core/schema.js";
 import type { ArtifactManifest } from "../infrastructure/store/experiment-store.js";
@@ -61,9 +62,9 @@ export function comparisonOrientation(input: {
   ].join("\n");
 }
 
-export function newComparisonAttempt(experimentRoot: string): { attemptId: string; attemptRoot: string } {
+export function newComparisonAttempt(experimentRoot: string, locale?: AgentLocale): { attemptId: string; attemptRoot: string; locale?: AgentLocale } {
   const attemptId = randomUUID();
-  return { attemptId, attemptRoot: join(experimentRoot, "comparison-attempts", attemptId) };
+  return { attemptId, attemptRoot: join(experimentRoot, "comparison-attempts", attemptId), ...(locale ? { locale } : {}) };
 }
 
 export function comparisonCandidateMount(input: {

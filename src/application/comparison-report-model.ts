@@ -38,6 +38,7 @@ export function comparisonReportModelFromHtml(
     : result.headline ?? (slotHeadline.length > 0 && slotHeadline.length <= 280 ? slotHeadline : undefined);
   const base = {
     schemaVersion: 1 as const,
+    locale,
 
     task: plainLine(extractInner(html, "data-agent-slot", "task")) || plainLine(extractInner(html, "data-slot", "task")) || reportString(locale, "defaultCategory"),
     status: {

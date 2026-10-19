@@ -124,6 +124,7 @@ export async function comparePersistedFacts(input: {
   const context: ComparisonContext = {
     ...facts,
     attemptId: input.attemptId,
+    locale,
     ...(hostZoneSnapshot ? { hostZoneSnapshot } : {}),
   };
   const result = await input.agent.compare(context, input.tools, input.audit);

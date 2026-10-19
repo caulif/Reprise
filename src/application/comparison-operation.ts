@@ -1,14 +1,15 @@
 import { join } from 'node:path';
+import type { AgentLocale } from '../agents/language.js';
 import { Value } from '@sinclair/typebox/value';
 import { ComparisonOperationFailureSchema, ComparisonInvocationSchema, type ComparisonOperationFailure } from '../core/schema.js';
 import { safeAgentFailureText } from '../infrastructure/agent/failure.js';
 import { writeImmutableJson, type ExperimentStore } from '../infrastructure/store/experiment-store.js';
 import { newComparisonAttempt } from './comparison-briefing.js';
 
-export async function reserveComparisonOperation(store: ExperimentStore, experimentRoot: string, runId: string): Promise<ReturnType<typeof newComparisonAttempt>> {
-  const attempt = newComparisonAttempt(experimentRoot);
+export async function reserveComparisonOperation(store: ExperimentStore, experimentRoot: string, runId: string, locale?: AgentLocale): Promise<ReturnType<typeof newComparisonAttempt>> {
+  const attempt = newComparisonAttempt(experimentRoot, locale);
   await store.append({ type: 'comparison.started', runId, operationId: `comparison-started-${attempt.attemptId}`,
-    payload: { attemptId: attempt.attemptId, phase: 'preparation' } });
+    payload: { attemptId: attempt.attemptId, phase: 'preparation', ...(locale ? { locale } : {}) } });
   return attempt;
 }
 

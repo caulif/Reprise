@@ -74,6 +74,8 @@ History 从已校验的提交日志前缀构造只读附件读取器，每个 Se
 
 ## Comparison attempt
 
+Comparison 在 attempt 开始时从操作者语言偏好取一次快照，并记录在开始事件及冻结 Context；内置 Agent、草稿工具、报告校验和失败页面共用此值，不受较早创建的 Agent 默认语言或中途设置变化影响。报告模型保留生成语言，重建优先使用该值；离线恢复使用冻结 Context，旧 Context 缺语言时沿用原 HTML 的 lang（缺失时保持旧中文默认），不读取当前 TUI 设置。旧模型缺语言时仍兼容原调用方指定值。此字段只增量保存，不迁移或覆写已发布报告，见[语言快照决策](../decisions/accepted/2026-10-19-comparison-attempt-language.md)。
+
 Comparison 正式工具与 coding 试验复用受管 `exec_command` / `write_stdin` / `cancel_process`：默认等待 10 秒后返回状态，等待结束不终止进程；进程绑定当前 Session/invocation，成功结束前必须完成或取消并确认收尾。命令非零结果与可纠正前置拒绝不等于 Agent 致命失败，审计、日志持久化及终止不确定仍阻止成功发布。命令包装保留 owner、生命周期与浏览器限制，日志归属当前运行。工具及命名兼容决定见[受管进程与会话名称](../decisions/accepted/2026-10-15-comparison-managed-processes-and-session-names.md)。
 
 报告对外只区分历史与当前，模型标签分别来自历史证据和当前运行的实际解析模型；分析模型另列，不能填补当前模型缺失。内部 candidate/baseline 字段及旧报告字节不迁移，原始引文不作术语替换，Token 聚合和计价口径不变。

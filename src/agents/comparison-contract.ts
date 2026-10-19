@@ -1,4 +1,5 @@
 import type { TimingFacts } from '../core/timing-schema.js';
+import type { AgentLocale } from './language.js';
 import { Value } from '@sinclair/typebox/value';
 import type { HostZoneSnapshot } from '../core/comparison-html.js';
 import { ComparisonResultSchema, type ComparisonAgentEnvelope, type ComparisonEvidenceCatalogSnapshot } from '../core/schema.js';
@@ -7,6 +8,7 @@ import type { AgentAuditSink, AgentInvocation, AgentToolDefinition } from '../in
 export type { ComparisonAgentEnvelope } from '../core/schema.js';
 export type ComparisonResult = Omit<ComparisonAgentEnvelope, 'reportPath'> & { reportPath: 'report.html' };
 export type ComparisonContext = {
+  locale?: AgentLocale;
   task: { caseId: string; summary: string };
   baseline: { summary: string; evidenceRefs: readonly string[] };
   candidates: readonly { runId: string; evidenceRefs: readonly string[] }[];
