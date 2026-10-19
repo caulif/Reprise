@@ -8,7 +8,8 @@ import { text } from '../../../core/json.js';
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import type { DiscoveryDiagnostic, SessionSummary } from '../../contract.js';
-import { peekJsonlSessionId } from '../../shared/jsonl-io.js';
+import { peekSessionId } from '../../shared/jsonl-io.js';
+import { codexSourceEncoding, resolveCodexSource } from './session-source.js';
 import { peekCodexSessionMetaId } from './protocol.js';
 import { readCodexGlobalState, type CodexGlobalState } from './global-state.js';
 import { classifyCodexProject } from './project-attribution.js';
@@ -50,18 +51,18 @@ export async function readCodexCatalog(options: CodexCatalogOptions = {}): Promi
   const projects = global.projects;
   const databasePath = join(codexHome, 'state_5.sqlite');
   const sessions = existsSync(databasePath)
-    ? readStateThreads(databasePath, sessionsRoot, global, diagnostics, options.sessionIdsByPath)
+    ? await readStateThreads(databasePath, sessionsRoot, global, diagnostics, options.sessionIdsByPath)
     : [];
   return { sessions, projects, diagnostics };
 }
 
-function readStateThreads(
+async function readStateThreads(
   databasePath: string,
   sessionsRoot: string,
   global: CodexGlobalState,
   diagnostics: DiscoveryDiagnostic[],
   sessionIdsByPath: ReadonlyMap<string, string> | undefined,
-): SessionSummary[] {
+): Promise<SessionSummary[]> {
   let database: DatabaseSync | undefined;
   try {
     database = new DatabaseSync(databasePath, { readOnly: true });
@@ -80,7 +81,12 @@ function readStateThreads(
     const selected = ['id', 'rollout_path', 'created_at', 'updated_at', 'cwd', 'title', 'preview', 'model', 'has_user_event', 'archived', 'project_id']
       .filter((column) => columns.has(column));
     const rows = database.prepare(`SELECT ${selected.join(', ')} FROM threads`).all() as SqlRow[];
-    return rows.flatMap((row) => Value.Check(CodexThreadRowSchema, row) ? catalogSummary(row, sessionsRoot, global, diagnostics, sessionIdsByPath) : (diagnostics.push({ code: 'invalid-metadata', count: 1, samplePath: 'state_5.sqlite' }), []));
+    const sessions: SessionSummary[] = [];
+    for (const row of rows) {
+      if (Value.Check(CodexThreadRowSchema, row)) sessions.push(...await catalogSummary(row, sessionsRoot, global, diagnostics, sessionIdsByPath));
+      else diagnostics.push({ code: 'invalid-metadata', count: 1, samplePath: 'state_5.sqlite' });
+    }
+    return sessions;
   } catch (error) {
     diagnostics.push({ code: 'catalog-read-error', count: 1, samplePath: 'state_5.sqlite' });
     return [];
@@ -89,20 +95,20 @@ function readStateThreads(
   }
 }
 
-function catalogSummary(
+async function catalogSummary(
   row: SqlRow,
   sessionsRoot: string,
   global: CodexGlobalState,
   diagnostics: DiscoveryDiagnostic[],
   sessionIdsByPath: ReadonlyMap<string, string> | undefined,
-): SessionSummary[] {
+): Promise<SessionSummary[]> {
   const id = text(row.id);
   if (!id || !SAFE_ID.test(id) || !CATALOG_ID.test(id)) {
     diagnostics.push({ code: 'invalid-metadata', count: 1, samplePath: 'state_5.sqlite' });
     return [];
   }
   const candidate = safeRolloutPath(text(row.rollout_path), sessionsRoot);
-  const rolloutPath = candidate && rolloutMatchesThread(id, candidate, sessionIdsByPath) ? candidate : undefined;
+  const rolloutPath = candidate && await rolloutMatchesThread(id, candidate, sessionIdsByPath) ? candidate : undefined;
   if (text(row.rollout_path) && !rolloutPath) diagnostics.push({ code: 'source-missing', count: 1, samplePath: 'state_5.sqlite' });
   const assigned = global.assignments[id];
   const databaseProject = text(row.project_id);
@@ -150,8 +156,9 @@ function safeRolloutPath(value: string | undefined, sessionsRoot: string): strin
   const resolved = isFsAbsolute(stripped) ? stripped : resolve(sessionsRoot, stripped);
   if (!pathContainedBy(sessionsRoot, resolved)) return undefined;
   try {
-    if (!lstatSync(resolved).isFile()) return undefined;
-    const realFile = stripWindowsExtendedPrefix(realpathSync(resolved));
+    const source = resolveCodexSource(resolved);
+    if (!lstatSync(source).isFile()) return undefined;
+    const realFile = stripWindowsExtendedPrefix(realpathSync(source));
     const realRoot = stripWindowsExtendedPrefix(realpathSync(sessionsRoot));
     if (!pathContainedBy(realRoot, realFile)) return undefined;
     return realFile;
@@ -160,14 +167,15 @@ function safeRolloutPath(value: string | undefined, sessionsRoot: string): strin
   }
 }
 
-function rolloutMatchesThread(
+async function rolloutMatchesThread(
   threadId: string,
   candidate: string,
   sessionIdsByPath: ReadonlyMap<string, string> | undefined,
-): boolean {
+): Promise<boolean> {
   const known = sessionIdsByPath?.get(catalogPathKey(candidate));
-  if (known) return known === threadId;
-  return peekJsonlSessionId(candidate, peekCodexSessionMetaId) === threadId;
+  if (known && !known.startsWith('unreadable-')) return known === threadId;
+  try { return await peekSessionId(candidate, peekCodexSessionMetaId, { encoding: codexSourceEncoding(candidate) }) === threadId; }
+  catch { return false; /* An unreadable source cannot authenticate an index row; discovery retains its diagnostic. */ }
 }
 
 export function catalogPathKey(path: string): string {

@@ -16,6 +16,8 @@ Recovery 的固定 artifact 与决定、诊断等不可变 JSON 按 `runs/<runId
 
 ## 冻结任务保全
 
+Codex 明文与压缩来源先通过统一字节读取器；完整导入生成解码正文的进程内 hash/长度 receipt。冻结解码到私有临时文件并在脱敏前核对 receipt，变化时拒绝发布；输出仍为脱敏后的 `raw/session.jsonl`，压缩表示本身不改变来源 hash 与任务身份。文件帧完整性、预算及兼容边界见[压缩会话导入决策](../decisions/accepted/2026-10-19-codex-compressed-session-intake.md)。
+
 共享冻结入口不删除或重写任何已有 case 目录。当前新冻结写入显式版本 2；统一读端支持版本 1 和 2，未知版本拒绝。旧版本保留原 ID、hash、路径与起点，不自动升级或补认证。损坏、缺完整标记或同身份内容冲突均保留旧证据并明确拒绝。历史列表只统计非法 case，执行读端暴露诊断。
 
 v2 的 `provenance.sourceHash` 表示脱敏后来源字节，`contentHash` 是 `task-case-v2` 算法对任务内容与保留文件清单的 SHA-256；`caseId` 为 `case-v2-` 加 digest 的前 32 个十六进制字符。同来源不同起点、执行/授权、有效隐私条件、解释版本、证据或文件字节变化形成新身份，可以并存；只改变 importedAt、来源存储路径或 casesRoot 不改变身份。排序对象键但保留消息和事件顺序；正文及 taskContext 中有任务语义的路径保留。自身 caseId/contentHash 和 case-owned artifactRefs 的 caseId 不参加递归 hash。observations 元数据分别提供 case schema/identity 算法和 sourceHash/contentHash；逐消息 source refs 仍使用原行内容 hash，不把 case digest 当作来源行 hash。

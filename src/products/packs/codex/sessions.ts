@@ -42,6 +42,8 @@ import {
 } from '../../shared/session-recovery.js';
 import { readCodexCatalog, catalogPathKey } from './catalog.js';
 import { extractCodexHistoricalArtifacts } from './historical-artifacts.js';
+import { codexSourceEncoding, withCodexSource } from './session-source.js';
+import type { SessionReceipt } from '../../shared/session-source.js';
 
 export type CodexSessionSummary = SessionSummary;
 export type CodexSessionInspection = SessionInspection;
@@ -58,8 +60,9 @@ export async function discoverCodexSessions(sessionsRoot: string, limit = 50): P
 
 async function discoverCodexSessionPage(query: SessionDiscoveryQuery): Promise<SessionDiscoveryPage> {
   const root = resolve(query.root ?? defaultCodexSessionsRoot());
-  const listing = await listJsonlFiles(root, (name) => name.startsWith('rollout-') && name.endsWith('.jsonl'), query.signal);
-  const ranked = rankSessionFiles(listing.entries);
+  const listing = await listJsonlFiles(root, (name) => name.startsWith('rollout-') && (name.endsWith('.jsonl') || name.endsWith('.jsonl.zst')), query.signal);
+  const plainPaths = new Set(listing.entries.filter((entry) => entry.path.endsWith('.jsonl')).map((entry) => catalogPathKey(entry.path)));
+  const ranked = rankSessionFiles(listing.entries.filter((entry) => !entry.path.endsWith('.jsonl.zst') || !plainPaths.has(catalogPathKey(entry.path.slice(0, -4)))));
   const rolloutPage = await discoverSessionPage({
     root, ranked,
     // An omitted limit means the adapter is building the complete catalog. Explicit limits remain a compatibility API.
@@ -124,6 +127,7 @@ function mergeCodexSources(
 
 function preferCodexEvidence(indexed: CodexSessionSummary | undefined, session: CodexSessionSummary): CodexSessionSummary {
   if (!indexed) return withCodexSourceKind(session, undefined);
+  if (session.availability === 'unreadable') return combineCodexEvidence(session, indexed);
   const winner = evidenceRank(session) > evidenceRank(indexed) ? session
     : evidenceRank(session) < evidenceRank(indexed) ? indexed
       : sessionRecency(session) >= sessionRecency(indexed) ? session : indexed;
@@ -192,7 +196,7 @@ type CodexSummaryState = DiscoverySummaryState;
 async function summarizeCodexSessionHead(entry: SessionFileEntry, signal: AbortSignal | undefined): Promise<CodexSessionSummary> {
   const state: CodexSummaryState = emptyDiscoverySummaryState();
   const sourcePath = resolve(entry.path);
-  await forEachJsonlHeadSummaryLine(sourcePath, 'Codex', { maxBytes: 256 * 1024, maxLines: 2_000, ...(signal ? { signal } : {}) }, (row) => consumeCodexSummaryRow(state, row));
+  await forEachJsonlHeadSummaryLine(sourcePath, 'Codex', { encoding: codexSourceEncoding(sourcePath), maxBytes: 256 * 1024, maxLines: 2_000, ...(signal ? { signal } : {}) }, (row) => consumeCodexSummaryRow(state, row));
   requireDiscoveredSessionId(state.sessionId, 'Codex', 'head');
   return summaryFromCodexState(entry, sourcePath, state, { partial: true, readiness: 'pending', diagnostic: { code: 'summary-window', message: 'List used a bounded head; full inspect is required.' } });
 }
@@ -200,7 +204,7 @@ async function summarizeCodexSessionHead(entry: SessionFileEntry, signal: AbortS
 async function summarizeCodexSession(entry: SessionFileEntry, signal: AbortSignal | undefined): Promise<CodexSessionSummary> {
   const state: CodexSummaryState = emptyDiscoverySummaryState();
   const sourcePath = resolve(entry.path);
-  await forEachJsonlSummaryLine(sourcePath, 'Codex', { maxBytes: MAX_SUMMARY_BYTES, maxLines: MAX_SUMMARY_LINES, ...(signal ? { signal } : {}) }, (row) => consumeCodexSummaryRow(state, row));
+  await forEachJsonlSummaryLine(sourcePath, 'Codex', { encoding: codexSourceEncoding(sourcePath), maxBytes: MAX_SUMMARY_BYTES, maxLines: MAX_SUMMARY_LINES, ...(signal ? { signal } : {}) }, (row) => consumeCodexSummaryRow(state, row));
   requireDiscoveredSessionId(state.sessionId, 'Codex', 'full');
   const readiness: RecoveryReadiness = state.userMessages ? 'verified' : 'no-user-input';
   const diagnostic = readiness === 'no-user-input'
@@ -268,6 +272,7 @@ type CodexBuildState = {
   recoveryReadiness: RecoveryReadiness;
   commands: Set<string>;
   touchedPaths: Set<string>;
+  receipt?: SessionReceipt;
 };
 
 function emptyCodexBuild(keepEvents: boolean): CodexBuildState {
@@ -291,7 +296,8 @@ async function parseCodexBuild(sourcePath: string, keepEvents: boolean, expected
   const source = resolve(sourcePath);
   const stable = await withStableJsonlRead(source, async () => {
     const state = emptyCodexBuild(keepEvents);
-    const walk = await forEachJsonlRecordLenient(source, 'Codex', (row, index) => consumeCodexBuildRow(state, row, index), signal);
+    const walk = await forEachJsonlRecordLenient(source, 'Codex', (row, index) => consumeCodexBuildRow(state, row, index), signal, { encoding: codexSourceEncoding(source) });
+    if (walk.receipt) state.receipt = walk.receipt;
     return { state, walk };
   });
   const { state, walk } = stable.value;
@@ -322,11 +328,11 @@ async function parseCodexBuild(sourcePath: string, keepEvents: boolean, expected
 
 /** Checks one complete rollout before a user chooses to freeze it. */
 export async function inspectCodexSession(sourcePath: string, signal?: AbortSignal, expectedId?: string): Promise<CodexSessionInspection> {
-  return inspectionFromBuild(resolve(sourcePath), await parseCodexBuild(sourcePath, false, expectedId, signal));
+  return withCodexSource(resolve(sourcePath), async (source) => inspectionFromBuild(source, await parseCodexBuild(source, false, expectedId, signal)), signal);
 }
 
 async function importCodexSession(sourcePath: string, signal?: AbortSignal, expectedId?: string): Promise<ImportedSession> {
-  return importFromBuild(resolve(sourcePath), await parseCodexBuild(sourcePath, true, expectedId, signal));
+  return withCodexSource(resolve(sourcePath), async (source) => importFromBuild(source, await parseCodexBuild(source, true, expectedId, signal)), signal);
 }
 
 /** Freezes exactly the inspected rollout, applying caller-supplied literal redactions before any data is written. */
@@ -559,7 +565,7 @@ async function importFromBuild(sourcePath: string, state: CodexBuildState): Prom
       signals: inspection.signals,
     },
     provenance: { packVersion: 'codex-rollout-jsonl/v1' },
-    raw: { relativePath: 'raw/session.jsonl', text: '', sourcePath },
+    raw: { relativePath: 'raw/session.jsonl', text: '', sourcePath, encoding: codexSourceEncoding(sourcePath), ...(state.receipt ? { receipt: state.receipt } : {}) },
     diagnostics: [
       ...state.diagnostics.map((item) => ({ code: item.code, message: item.message })),
       ...(state.skippedEvents ? [{ code: 'unknown-event', message: `Skipped ${state.skippedEvents} unknown event(s).` }] : []),
