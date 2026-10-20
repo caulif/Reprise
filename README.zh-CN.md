@@ -19,21 +19,22 @@ Reprise 从已有的 Coding Agent 会话中整理任务、恢复可用起点，�
 
 ## 结果示例
 
-### 鹈鹕骑自行车
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>鹈鹕骑自行车</strong>
+      <p>同一个 SVG 动画任务，两次交付在车轮运动、踩踏动作和暂停控制上有不同取舍。下面是 Reprise 实际生成的对照报告。</p>
+      <a href="./docs/assets/reports/pelican-report.png"><img src="./docs/assets/reports/pelican-report.png" alt="鹈鹕动画完整对照报告，包含双方模型、交付差异、渲染截图和用量记录" width="480"></a>
+    </td>
+    <td width="50%" valign="top">
+      <strong>Edit 自移动保护</strong>
+      <p>同一个代码修复任务，比较修复范围、回归测试和交付证据。这次报告更认可历史交付的覆盖程度，也指出了其验证证据的缺口。</p>
+      <a href="./docs/assets/reports/edit-report.png"><img src="./docs/assets/reports/edit-report.png" alt="Edit 自移动保护完整对照报告，包含路径别名回归覆盖、错误规范和验证证据" width="480"></a>
+    </td>
+  </tr>
+</table>
 
-同一个 SVG 动画任务，两次交付在车轮运动、踩踏动作和暂停控制上有不同取舍。下面是 Reprise 实际生成的对照报告。
-
-<p align="center">
-  <img src="./docs/assets/reports/pelican-report.png" alt="鹈鹕动画完整对照报告，包含双方模型、交付差异、渲染截图和用量记录" width="960">
-</p>
-
-### Edit 自移动保护
-
-同一个代码修复任务，比较修复范围、回归测试和交付证据。这次报告更认可历史交付的覆盖程度，也指出了其验证证据的缺口。
-
-<p align="center">
-  <img src="./docs/assets/reports/edit-report.png" alt="Edit 自移动保护完整对照报告，包含路径别名回归覆盖、错误规范和验证证据" width="960">
-</p>
+点击报告图片可查看完整原图。
 
 以上为真实生成的报告，保留模型的原始判断与证据限制。报告中的任务耗时统计范围可能不同，费用为估算，不宜据此直接判断模型的速度或性价比。
 
@@ -62,7 +63,7 @@ Reprise 从已有的 Coding Agent 会话中整理任务、恢复可用起点，�
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <strong>3. 让候选重新执行</strong><br>
+      <strong>3. 选工具和模型重新执行</strong><br>
       选择工具与模型，查看执行进展和交付内容。
       <a href="./docs/assets/workflow/03-stage-run.png"><img src="./docs/assets/workflow/03-stage-run.png" alt="候选执行：控制 Agent 整理任务，由 Claude Code 执行" width="480"></a>
     </td>
@@ -88,6 +89,12 @@ reprise
 从首页选择「重做任务」（`/intake`），依次选择来源工具、项目和历史会话。首次运行请先在 `/config` 配置 Reprise 模型并保存；执行任务的工具需单独安装、登录。确认任务起点后，选择候选工具与模型开始运行。
 
 仅查看命令帮助可运行 `reprise --help`，不会调用模型。恢复任务、候选执行和生成报告需要相应配置，可能产生模型服务费用。
+
+### 让 Agent 帮你安装和配置
+
+把下面这句话发给你的 Coding Agent：
+
+> 请按照这份指南帮我安装并配置 Reprise：https://github.com/caulif/Reprise/blob/main/docs/install-agent.md
 
 <details>
 <summary>从源码运行</summary>
