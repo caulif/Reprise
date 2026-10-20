@@ -364,7 +364,7 @@ test('rebase conflict inputs survive the ready gate and sealing, while unrelated
   assert.equal(await git(work, ['show-ref']), refs);
   await writeFile(join(work, 'README.md'), 'resolved\n'); await git(work, ['add', 'README.md']);
   await git(work, ['-c', 'core.editor=true', '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'rebase', '--continue']);
-  assert.equal(await readFile(join(work, 'staged.txt'), 'utf8'), 'required staged input\n');
+  assert.equal((await readFile(join(work, 'staged.txt'), 'utf8')).replace(/\r\n/g, '\n'), 'required staged input\n');
 });
 
 
