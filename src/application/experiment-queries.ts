@@ -72,9 +72,10 @@ export async function listSourceProjects(input: {
   readonly limit?: number;
   readonly cursor?: string;
 }): Promise<Page<SessionDiscoveryProject>> {
-  const page = await discoverSource(input);
+  const { limit, cursor, ...scope } = input;
+  const page = await discoverSource(scope);
   const projects = uniqueProjects(page.projects ?? projectsFromSessions(page.items));
-  return paginate(projects, input.limit, input.cursor, (item) => item.key);
+  return paginate(projects, limit, cursor, (item) => item.key);
 }
 
 export async function listSourceSessions(input: {
@@ -86,7 +87,8 @@ export async function listSourceSessions(input: {
   readonly limit?: number;
   readonly cursor?: string;
 }): Promise<Page<Pick<SessionSummary, "productId" | "sessionId" | "sourcePath" | "cwd" | "summary">>> {
-  const discovered = await discoverSource(input);
+  const { limit, cursor, ...scope } = input;
+  const discovered = await discoverSource(input.project || input.sourcePath ? scope : input);
   if (input.sourcePath) {
     const matches = discovered.items.filter((session) => session.sourcePath === input.sourcePath);
     if (matches.length === 0) throw new CliError("not_found", `Unknown sourcePath '${input.sourcePath}'.`);
@@ -94,7 +96,7 @@ export async function listSourceSessions(input: {
   }
   if (input.project) {
     const filtered = discovered.items.filter((session) => sessionProjectMatches(session, input.project!, discovered.projects));
-    const page = paginate(filtered, input.limit ?? filtered.length, input.cursor, (item) => item.sourcePath);
+    const page = paginate(filtered, limit ?? filtered.length, cursor, (item) => item.sourcePath);
     return { items: page.items.map(sessionIdentity), ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}) };
   }
   return {
@@ -172,14 +174,15 @@ function uniqueProjects(projects: readonly SessionDiscoveryProject[]): SessionDi
 
 function projectsFromSessions(sessions: readonly SessionSummary[]): SessionDiscoveryProject[] {
   return uniqueProjects(sessions.map((session) => ({
-    key: session.cwd ?? session.sourcePath,
-    label: session.cwd ?? session.sourcePath,
+    key: session.projectKey ?? session.cwd ?? session.sourcePath,
+    label: session.managed ? 'Reprise' : session.cwd ?? session.sourcePath,
     ...(session.cwd ? { path: session.cwd } : {}),
   })));
 }
 
 function sessionProjectMatches(session: SessionSummary, projectKey: string, projects: readonly SessionDiscoveryProject[] | undefined): boolean {
-  if (projects?.some((project) => project.key === projectKey && (project.path ? session.cwd === project.path : true))) return true;
+  if (session.projectKey) return session.projectKey === projectKey;
+  if (projects?.some((project) => project.key === projectKey && project.path && session.cwd === project.path)) return true;
   return session.cwd === projectKey || session.sourcePath === projectKey;
 }
 

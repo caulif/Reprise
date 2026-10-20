@@ -1,25 +1,21 @@
-name: Feature
-description: 提议用户可观察的行为变化
+name: Feature / 功能建议
+description: Suggest an observable improvement / 提议用户可观察的行为变化
 labels: ["enhancement"]
 body:
   - type: textarea
     id: user-problem
     attributes:
-      label: 用户问题
-      description: 今天做不到或做起来危险的事，而不是实现方案。
+      label: User problem / 用户问题
+      description: What are you trying to do, and what gets in the way? 你想完成什么，目前哪里受阻？
     validations:
       required: true
   - type: textarea
     id: non-goals
     attributes:
-      label: 非目标
-      description: 这次明确不做的事。
-    validations:
-      required: true
+      label: Out of scope / 非目标
+      description: What should this suggestion leave out? Optional if you are unsure. 这次明确不做什么？不确定可留空。
   - type: textarea
     id: alternatives
     attributes:
-      label: 替代方案
-      description: 已经考虑过、但打算放弃的做法。
-    validations:
-      required: true
+      label: Alternatives / 替代方案
+      description: Any workarounds or alternatives you considered. Optional. 已尝试或考虑过的替代做法，可留空。

@@ -37,6 +37,8 @@ export type KnownInstant = {
 };
 
 export type SessionSummary = {
+  readonly projectKey?: string;
+  readonly managed?: { readonly experimentId: string; readonly runId: string; readonly role: 'candidate'; readonly origin: 'reprise'; readonly status: 'recording' | 'archived' | 'unavailable' };
   readonly productId: string;
   readonly sessionId: string;
   readonly sourcePath: string;
@@ -193,6 +195,7 @@ export type ImportedSession = {
 
 /** Completed sessions with a user task and at least one assistant message or tool call. */
 export function isEligibleSession(session: SessionSummary): boolean {
+  if (session.managed) return false;
   if (session.evidenceLevel === 'history') return session.signals.userMessages > 0;
   return session.signals.completedTurns > 0 && session.signals.userMessages > 0
     && (session.signals.assistantMessages > 0 || session.signals.toolCalls > 0);

@@ -143,6 +143,8 @@ export interface ProductRuntime {
 }
 
 export interface TargetRunner {
+  /** Pack-owned native transcript location, frozen from the invocation's actual configuration. */
+  historySource?(): { root: string; sourcePath?: string } | undefined;
   capabilities(): RuntimeCapabilities;
   session(): CandidateSessionHandle;
   start(initial: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt>;

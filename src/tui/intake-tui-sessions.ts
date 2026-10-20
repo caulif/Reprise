@@ -293,17 +293,17 @@ async function IntakeTui_openSessionInspection(this: IntakeTui, session: Session
       sourcePath: session.sourcePath,
     });
     if (token !== this.generation) return;
-    if (!inspected.transcript.some((message) => message.role === "user")) {
+    if (!inspected.managed && !inspected.transcript.some((message) => message.role === "user")) {
       this.showError(new Error(t(this.locale, "notReplayableNoUserInput")), "sessions");
       this.render(true);
       return;
     }
     this.inspection = inspected;
     this.inspectionTaskInput = 0;
-    this.inspectionShowOutcome = false;
+    this.inspectionShowOutcome = Boolean(inspected.managed);
     this.inspectionScrollOffset = 0;
     this.page = "inspection";
-    this.message = t(this.locale, "chooseSession");
+    this.message = t(this.locale, inspected.managed ? "managedHistoryReadOnly" : "chooseSession");
   } catch (error) {
     if (token !== this.generation) return;
     this.showError(error, "sessions");

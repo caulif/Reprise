@@ -4,6 +4,9 @@ Reprise 从历史会话恢复任务起点，让候选 Agent 在隔离副本中�
 
 | 你要做什么 | 阅读入口 |
 |---|---|
+| English first run | [Getting started](./getting-started.md) — configuration, costs, cancellation, and troubleshooting. Most technical references below are in Chinese. |
+| 让 Coding Agent 帮忙安装和配置 | [Agent 安装与配置引导](./install-agent.md) — 文件输入密钥，无需 TUI。 |
+| 查看真实案例 | [鹈鹕案例](./examples/pelican-zh-cn.md) / [English](./examples/pelican.md) |
 | 安装、配置、选择会话并运行 | [使用指南](./usage.md)；首次构建见[根 README](../README.md) |
 | 理解模块和主调用链 | [架构总览](./architecture/overview.md) |
 | 修改 Controller 或候选运行 | [执行流程](./architecture/execution.md) |

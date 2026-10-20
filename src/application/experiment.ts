@@ -1,3 +1,4 @@
+import { managedSessionJournal } from './managed-session-journal.js';
 import type { ArtifactRenderer } from '../infrastructure/artifact-renderer.js';
 import { join, resolve } from "node:path";
 import type { ComparisonAgentPort, ComparisonResult } from "../agents/comparison-contract.js";
@@ -450,17 +451,24 @@ async function startCandidateRun(args: {
       }
     : undefined;
   const runnerRef: { session(): { sessionId: string } } = { session: () => ({ sessionId: "unstarted" }) };
-  const sink = createCandidateRuntimeSink({
+  const journalSink = createCandidateRuntimeSink({
     journal: store,
     runId: input.runId,
     sessionId: () => runnerRef.session().sessionId,
     onCommitted: (event) => { targetEvents.push(`event:${event.eventId}`); },
   });
+  const history = managedSessionJournal({
+    dataDir: input.dataDir, launch, journalSink, redactions: args.taskCase.privacy.redactions,
+    ...(input.pack?.history ? { history: input.pack.history } : {}),
+    append: (type, payload) => store.append({ type, runId: input.runId, payload }),
+  });
+  const sink = history.sink;
   if (launch.executionRequirements && !input.runtime.prepareExecution) throw new Error('This Pack cannot enforce explicit execution requirements.');
   const execution = await input.runtime.prepareExecution?.(resolved, environment, launch);
   if (execution) manifest.environment.executionBoundary = execution.record;
   const runner = execution ? await execution.createRunner(sink) : await input.runtime.createRunner(resolved, environment, sink, launch);
   runnerRef.session = () => runner.session();
+  history.bind(runner);
   try { return new CandidateRun({
     runner,
     policy: {
@@ -476,32 +484,26 @@ async function startCandidateRun(args: {
       attempt,
       manifest,
       ...(recoveryArtifactRef ? { artifactRefs: [recoveryArtifactRef] } : {}),
-      captureArtifacts: signal =>
-        input.captureArtifacts
-          ? input.captureArtifacts({
-              signal,
-              store,
-              environment,
-              workspaceProvider: provider,
-              sourceRoot: resolve(input.sourceRoot),
-              experimentId: input.experimentId,
-              runId: input.runId,
-            })
-          : captureWorkspaceScope({
-              signal,
-              ...(args.taskCase.execution?.mode === 'task_completion' && args.taskCase.execution.snapshotRetainPaths ? { snapshotRetainPaths: args.taskCase.execution.snapshotRetainPaths } : {}),
-              store,
-              environment,
-              workspaceProvider: provider,
-              experimentId: input.experimentId,
-              runId: input.runId,
-            }),
+      captureArtifacts: async signal => {
+        await history.capture(signal);
+        return captureCandidateArtifacts(args, signal);
+      },
     },
   }); } catch (error) {
     const cleanup: CleanupFailure[] = [];
     await cleanupOperation(cleanup, 'runner_close', () => runner.close());
     throwFailures([error, ...cleanup.map(item => item.error)], 'Candidate construction and Runner close failed.');
   }
+}
+
+async function captureCandidateArtifacts(args: Parameters<typeof startCandidateRun>[0], signal: AbortSignal) {
+  const { input, store, environment, provider, taskCase } = args;
+  const scope = { signal, store, environment, workspaceProvider: provider, experimentId: input.experimentId, runId: input.runId };
+  if (input.captureArtifacts) return input.captureArtifacts({ ...scope, sourceRoot: resolve(input.sourceRoot) });
+  return captureWorkspaceScope({
+    ...scope,
+    ...(taskCase.execution?.mode === 'task_completion' && taskCase.execution.snapshotRetainPaths ? { snapshotRetainPaths: taskCase.execution.snapshotRetainPaths } : {}),
+  });
 }
 async function finishCandidateRun(args: {
   importedInputs: Awaited<ReturnType<typeof materializeIsolatedStart>>['imported'];

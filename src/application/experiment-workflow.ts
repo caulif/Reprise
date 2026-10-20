@@ -1,3 +1,4 @@
+import { assertNotManagedImport, inspectManagedSession, discoverManagedSessions } from './managed-session-history.js';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { AgentBudget, CandidateSpec, EventEnvelope, RunPolicy, TaskCase, RecoveryGitStart } from '../core/schema.js';
@@ -24,7 +25,7 @@ import type {
 } from '../products/contract.js';
 import type { ProductLookup } from '../products/index.js';
 import { packDefaultCandidate, packHistory, packRuntime } from '../products/pack-access.js';
-import { discoverProductSessions, resolveHistoryRoot } from '../products/history/discover.js';
+import { resolveHistoryRoot } from '../products/history/discover.js';
 import { inspectProductSession, readImportedSession } from '../products/history/read.js';
 import { freezeCase } from '../products/shared/freeze.js';
 import type { HistoricalArtifactExtractFn } from '../products/shared/freeze.js';
@@ -185,18 +186,18 @@ function sourceHistoryPorts(dataDir: string, packFor: (productId: string) => Pro
     sourceRoot(productId: string, sessionsRoots?: Readonly<Record<string, string>>) {
       return resolveHistoryRoot(packHistory(packFor(productId)), sessionsRoots, productId);
     },
-    discoverSource(productId: string, query: Parameters<ExperimentWorkflow["discoverSource"]>[1]) {
-      return discoverProductSessions(packHistory(packFor(productId)), {
-        ...query,
-        dataDir,
-      });
+    async discoverSource(productId: string, query: Parameters<ExperimentWorkflow["discoverSource"]>[1]) {
+      const history = packHistory(packFor(productId));
+      return discoverManagedSessions(dataDir, productId, history, query);
     },
-    inspectSource(ref: Parameters<ExperimentWorkflow["inspectSource"]>[0]) {
-      return inspectProductSession(packHistory(packFor(ref.productId)), ref);
+    async inspectSource(ref: Parameters<ExperimentWorkflow["inspectSource"]>[0]) {
+      const history = packHistory(packFor(ref.productId));
+      return await inspectManagedSession(dataDir, history, ref) ?? inspectProductSession(history, ref);
     },
     async freezeSource(request: Parameters<ExperimentWorkflow["freezeSource"]>[0]) {
       const pack = packFor(request.productId);
       const history = packHistory(pack);
+      await assertNotManagedImport(dataDir, { ...request.session, sourcePath: request.sourcePath });
       const imported = await readImportedSession(history, request.session, request.sourcePath);
       return freezeCase(imported, join(dataDir, 'cases'), request.privacy, request.now, {
         ...(request.initialMessageId ? { initialMessageId: request.initialMessageId } : {}),

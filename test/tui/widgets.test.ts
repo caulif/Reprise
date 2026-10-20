@@ -659,7 +659,7 @@ test('intake lists honor their injected render clock', () => {
   assert.match(sessions, /4d ago/);
 });
 
-test('project catalog title counts projects, sessions, projectless, and unreadable', () => {
+test('project catalog title counts projects and distinguishes index-only sessions', () => {
   const theme = createTheme(120, false);
   const startedAt = '2026-08-12T21:40:00.000Z';
   const readable = {
@@ -685,7 +685,8 @@ test('project catalog title counts projects, sessions, projectless, and unreadab
     searching: false,
   }, 16).join('\n');
   assert.match(text, /3 projects · 2 sessions loaded/);
-  assert.match(text, /1 records could not be read|1 条记录无法读取/);
+  assert.match(text, /1 index-only records|1 条仅有历史索引/);
+  assert.doesNotMatch(text, /records could not be read|条记录无法读取/);
   assert.match(text, /0 sessions/);
   assert.match(text, /Empty/);
 });
