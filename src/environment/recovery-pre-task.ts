@@ -44,7 +44,7 @@ export async function evaluateRecoveryPreTaskConditions(
   if (frozen?.state === "unborn") {
     const reasons: string[] = [];
     if (!(await isUnbornRepository(root))) reasons.push("Work copy no longer matches the protected source's unborn Git state.");
-    const dirtyPaths = reasons.length ? [] : await postTaskDirtyPaths(root, evidenceRoot);
+    const dirtyPaths = reasons.length ? [] : await postTaskDirtyPaths(root, evidenceRoot, new Set());
     if (dirtyPaths.length) reasons.push("Work copy contains added or modified inputs not present in the protected source.");
     return diagnosis({ schemaVersion: 1, readyAllowed: reasons.length === 0, reasons, dirtyPaths });
   }

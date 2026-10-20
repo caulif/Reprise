@@ -1,3 +1,5 @@
+import { sealRecoveryGitHistory } from "../../src/environment/recovery-history.js";
+import { LocalWorkspaceProvider } from "../../src/environment/local-workspace-provider.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
