@@ -10,10 +10,10 @@ const SECRET_PATTERNS: readonly RegExp[] = [
 
 /** Target stderr is persisted verbatim into the run journal, so credentials must never survive the trip. */
 export function redactDiagnostic(value: string): string {
-  // Legacy process patterns first (sk-/gh-/JWT/Bearer), then shared model-visible rules
-  // for JSON access_token and special-character api_key forms.
-  const legacy = SECRET_PATTERNS.reduce((result, pattern) => result.replace(pattern, '[REDACTED]'), value);
-  return redactModelVisibleText(legacy).text;
+  // Shared full-value rules first so special-character tails stay attached to the field
+  // (e.g. api_key=abcdefgh!REST → api_key=[REDACTED]); then legacy sk-/gh-/JWT shapes.
+  const shared = redactModelVisibleText(value).text;
+  return SECRET_PATTERNS.reduce((result, pattern) => result.replace(pattern, '[REDACTED]'), shared);
 }
 
 export function summarizeDiagnostic(value: string, limit = 240): string {
