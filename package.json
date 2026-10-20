@@ -47,6 +47,7 @@
     "test:only": "node scripts/run-tests-temp-guard.mjs",
     "test:coverage": "npm run build && node scripts/run-tests-temp-guard.mjs --coverage",
     "check:node": "node dist/src/cli/main.js --version",
+    "verify:release": "node scripts/verify-release.mjs",
     "verify:docs": "node scripts/verify-docs.mjs",
     "gen:docs": "node scripts/gen-docs.mjs",
     "verify:generated": "node scripts/gen-docs.mjs --check",

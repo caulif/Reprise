@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Release Please uses GITHUB_TOKEN, whose PRs do not emit another workflow run.
+  workflow_dispatch:
 
 permissions:
   contents: read

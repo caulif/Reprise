@@ -10,6 +10,7 @@ const GATES = [
   { id: 'build', label: 'build', command: 'npm', args: ['run', 'build'] },
   { id: 'typecheck', label: 'typecheck', command: 'npm', args: ['run', 'typecheck'] },
   { id: 'lint', label: 'lint', command: 'npm', args: ['run', 'lint'] },
+  { id: 'verify:release', label: 'release invariants', command: 'node', args: ['scripts/verify-release.mjs'] },
   { id: 'verify:docs', label: 'verify docs', command: 'node', args: ['scripts/verify-docs.mjs'] },
   { id: 'test', label: 'test', command: 'npm', args: ['run', 'test:only'], needs: ['build'] },
   { id: 'check:node', label: 'check node', command: 'npm', args: ['run', 'check:node'], needs: ['build'] },
@@ -26,7 +27,7 @@ const GATES = [
   { id: 'verify:tracked-source', label: 'tracked source', command: 'node', args: ['scripts/verify-tracked-source.mjs'] },
 ];
 
-const CHECK_IDS = ['build', 'typecheck', 'lint', 'test', 'check:node', 'audit:tui:check', 'audit:tui:analyze', 'verify:docs', 'verify:generated', 'knip', 'jscpd', 'verify:pack', 'verify:audit', 'verify:secrets', 'verify:imports', 'verify:source-size', 'verify:tracked-source'];
+const CHECK_IDS = ['build', 'typecheck', 'lint', 'test', 'check:node', 'audit:tui:check', 'audit:tui:analyze', 'verify:docs', 'verify:release', 'verify:generated', 'knip', 'jscpd', 'verify:pack', 'verify:audit', 'verify:secrets', 'verify:imports', 'verify:source-size', 'verify:tracked-source'];
 
 const MODES = {
   docs: ['verify:docs'],
@@ -35,7 +36,7 @@ const MODES = {
   // Compatibility default. full is the same list until TUI/jscpd/knip leave this entry.
   check: CHECK_IDS,
   full: CHECK_IDS,
-  static: ['typecheck', 'lint', 'verify:docs', 'build', 'verify:generated', 'verify:pack', 'verify:audit', 'verify:secrets', 'verify:imports', 'verify:source-size', 'verify:tracked-source'],
+  static: ['typecheck', 'lint', 'verify:docs', 'verify:release', 'build', 'verify:generated', 'verify:pack', 'verify:audit', 'verify:secrets', 'verify:imports', 'verify:source-size', 'verify:tracked-source'],
   test: ['build', 'test', 'check:node'],
   audit: ['build', 'audit:tui:check', 'audit:tui:analyze'],
 };
