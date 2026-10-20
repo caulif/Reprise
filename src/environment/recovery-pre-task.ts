@@ -167,17 +167,31 @@ async function retainedRebasePaths(root: string, taskCase: TaskCase, frozen?: Re
   if (!active) return new Set();
   const applying = await gitOutput(root, ["rev-parse", "--verify", "REBASE_HEAD"]);
   if (!applying || frozen && !frozen.commits[applying]) return new Set();
-  // Tracked changes in the interrupted commit, plus unmerged paths Git mapped through renames.
-  const affected = await git(root, ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", applying]);
-  const paths = new Set(affected.split("\0").filter(Boolean));
-  const unmerged = await git(root, ["ls-files", "-u", "-z"]);
-  for (const row of unmerged.split("\0")) {
-    if (!row) continue;
-    const tab = row.indexOf("\t");
-    const path = (tab >= 0 ? row.slice(tab + 1) : row).replaceAll("\\", "/");
-    if (path) paths.add(path);
+  // Paths touched by the applying commit, plus upstream rename destinations of those paths.
+  const affected = [...new Set((await git(root, ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", applying])).split("\0").filter(Boolean))];
+  const paths = new Set(affected);
+  const base = await gitOutput(root, ["merge-base", "HEAD", applying]);
+  if (base) {
+    for (const [src, dest] of await upstreamRenameMap(root, base, "HEAD")) {
+      if (paths.has(src)) paths.add(dest);
+    }
   }
   return paths;
+}
+
+/** Rename/copy sources → destinations on the upstream side of an in-progress rebase. */
+async function upstreamRenameMap(root: string, base: string, head: string): Promise<Map<string, string>> {
+  const output = await git(root, ["diff-tree", "-r", "-M", "--name-status", "-z", base, head]);
+  const map = new Map<string, string>();
+  const rows = output.split("\0");
+  for (let i = 0; i < rows.length; i++) {
+    const status = rows[i];
+    if (!status || !(status.startsWith("R") || status.startsWith("C"))) continue;
+    const src = (rows[++i] ?? "").replaceAll("\\", "/");
+    const dest = (rows[++i] ?? "").replaceAll("\\", "/");
+    if (src && dest) map.set(src, dest);
+  }
+  return map;
 }
 
 async function postTaskDirtyPaths(root: string, evidenceRoot: string, rebasePaths: Set<string>): Promise<string[]> {

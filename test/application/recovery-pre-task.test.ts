@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile, readFile, cp, utimes, rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -455,17 +455,18 @@ test("upstream rename maps rebase conflict path into retained inputs", async (t)
   t.after(() => rm(root, { recursive: true, force: true }));
   const source = join(root, "source"), work = join(root, "work"); await mkdir(source);
   await git(source, ["init", "--template="]);
-  await writeFile(join(source, "old.txt"), "base\n");
+  const shared = "line1\nline2\nline3\nline4\nline5\n";
+  await writeFile(join(source, "old.txt"), shared);
   await git(source, ["add", "."]);
   await git(source, ["-c", "user.email=test@example.invalid", "-c", "user.name=Test", "commit", "-m", "base"]);
   const base = (await git(source, ["rev-parse", "HEAD"])).trim();
   await git(source, ["checkout", "-b", "topic"]);
-  await writeFile(join(source, "old.txt"), "topic change\n");
+  await writeFile(join(source, "old.txt"), shared + "topic\n");
   await git(source, ["add", "old.txt"]);
   await git(source, ["-c", "user.email=test@example.invalid", "-c", "user.name=Test", "commit", "-m", "topic"]);
   await git(source, ["checkout", "--detach", base]);
   await git(source, ["mv", "old.txt", "new.txt"]);
-  await writeFile(join(source, "new.txt"), "upstream renamed\n");
+  await writeFile(join(source, "new.txt"), shared + "onto\n");
   await git(source, ["add", "-A"]);
   await git(source, ["-c", "user.email=test@example.invalid", "-c", "user.name=Test", "commit", "-m", "onto rename"]);
   const onto = (await git(source, ["rev-parse", "HEAD"])).trim();
@@ -474,7 +475,54 @@ test("upstream rename maps rebase conflict path into retained inputs", async (t)
   const frozen = await freezeRecoveryGitEvidence(source, task, "a".repeat(64));
   await cp(source, work, { recursive: true });
   await assert.rejects(git(work, ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "rebase", onto]));
+  assert.match(await git(work, ["status", "--porcelain=v1"]), /UU new\.txt/);
   const check = await evaluateRecoveryPreTaskConditions(work, task, undefined, source, frozen);
   assert.equal(check.readyAllowed, true, check.reasons.join("; "));
   assert.equal(check.dirtyPaths.includes("new.txt"), false);
+});
+
+test("forged unmerged stages on unrelated paths do not inherit rebase retention", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-rebase-forged-unmerged-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const source = join(root, "source"), work = join(root, "work"); await mkdir(source);
+  await git(source, ["init", "--template="]);
+  const shared = "line1\nline2\nline3\nline4\nline5\n";
+  await writeFile(join(source, "old.txt"), shared);
+  await writeFile(join(source, "unrelated.txt"), "keep\n");
+  await git(source, ["add", "."]);
+  await git(source, ["-c", "user.email=test@example.invalid", "-c", "user.name=Test", "commit", "-m", "base"]);
+  const base = (await git(source, ["rev-parse", "HEAD"])).trim();
+  await git(source, ["checkout", "-b", "topic"]);
+  await writeFile(join(source, "old.txt"), shared + "topic\n");
+  await git(source, ["add", "old.txt"]);
+  await git(source, ["-c", "user.email=test@example.invalid", "-c", "user.name=Test", "commit", "-m", "topic"]);
+  await git(source, ["checkout", "--detach", base]);
+  await git(source, ["mv", "old.txt", "new.txt"]);
+  await writeFile(join(source, "new.txt"), shared + "onto\n");
+  await git(source, ["add", "-A"]);
+  await git(source, ["-c", "user.email=test@example.invalid", "-c", "user.name=Test", "commit", "-m", "onto rename"]);
+  const onto = (await git(source, ["rev-parse", "HEAD"])).trim();
+  await git(source, ["checkout", "topic"]);
+  const task = taskCase({ initialInput: { id: "message", role: "user", text: "Resolve the git rebase conflicts and continue." } });
+  const frozen = await freezeRecoveryGitEvidence(source, task, "a".repeat(64));
+  await cp(source, work, { recursive: true });
+  await assert.rejects(git(work, ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "rebase", onto]));
+  await writeFile(join(work, "unrelated.txt"), "forged answer\n");
+  const blob = (await git(work, ["hash-object", "-w", join(work, "unrelated.txt")])).trim();
+  const info = [
+    `100644 ${blob} 1\tunrelated.txt`,
+    `100644 ${blob} 2\tunrelated.txt`,
+    `100644 ${blob} 3\tunrelated.txt`,
+  ].join("\n") + "\n";
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("git", ["update-index", "--index-info"], { cwd: work, windowsHide: true, stdio: ["pipe", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr?.on("data", (chunk) => { stderr += String(chunk); });
+    child.on("error", reject);
+    child.on("close", (code) => code === 0 ? resolve() : reject(new Error(stderr || `update-index exited ${code}`)));
+    child.stdin?.end(info);
+  });
+  const check = await evaluateRecoveryPreTaskConditions(work, task, undefined, source, frozen);
+  assert.equal(check.readyAllowed, false);
+  assert.ok(check.dirtyPaths.includes("unrelated.txt"));
 });
