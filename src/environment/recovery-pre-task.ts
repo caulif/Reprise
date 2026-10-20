@@ -167,9 +167,17 @@ async function retainedRebasePaths(root: string, taskCase: TaskCase, frozen?: Re
   if (!active) return new Set();
   const applying = await gitOutput(root, ["rev-parse", "--verify", "REBASE_HEAD"]);
   if (!applying || frozen && !frozen.commits[applying]) return new Set();
-  // Only tracked changes belonging to the interrupted commit are rebase inputs.
+  // Tracked changes in the interrupted commit, plus unmerged paths Git mapped through renames.
   const affected = await git(root, ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", applying]);
-  return new Set(affected.split("\0").filter(Boolean));
+  const paths = new Set(affected.split("\0").filter(Boolean));
+  const unmerged = await git(root, ["ls-files", "-u", "-z"]);
+  for (const row of unmerged.split("\0")) {
+    if (!row) continue;
+    const tab = row.indexOf("\t");
+    const path = (tab >= 0 ? row.slice(tab + 1) : row).replaceAll("\\", "/");
+    if (path) paths.add(path);
+  }
+  return paths;
 }
 
 async function postTaskDirtyPaths(root: string, evidenceRoot: string, rebasePaths: Set<string>): Promise<string[]> {

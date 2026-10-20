@@ -448,3 +448,33 @@ test("identical preserved source renames stay ready while new renames still bloc
   const blocked = await evaluateRecoveryPreTaskConditions(work, taskCase({}), undefined, source, frozen);
   assert.equal(blocked.readyAllowed, false);
 });
+
+
+test("upstream rename maps rebase conflict path into retained inputs", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-rebase-rename-conflict-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const source = join(root, "source"), work = join(root, "work"); await mkdir(source);
+  await git(source, ["init", "--template="]);
+  await writeFile(join(source, "old.txt"), "base\n");
+  await git(source, ["add", "."]);
+  await git(source, ["-c", "user.email=test@example.invalid", "-c", "user.name=Test", "commit", "-m", "base"]);
+  const base = (await git(source, ["rev-parse", "HEAD"])).trim();
+  await git(source, ["checkout", "-b", "topic"]);
+  await writeFile(join(source, "old.txt"), "topic change\n");
+  await git(source, ["add", "old.txt"]);
+  await git(source, ["-c", "user.email=test@example.invalid", "-c", "user.name=Test", "commit", "-m", "topic"]);
+  await git(source, ["checkout", "--detach", base]);
+  await git(source, ["mv", "old.txt", "new.txt"]);
+  await writeFile(join(source, "new.txt"), "upstream renamed\n");
+  await git(source, ["add", "-A"]);
+  await git(source, ["-c", "user.email=test@example.invalid", "-c", "user.name=Test", "commit", "-m", "onto rename"]);
+  const onto = (await git(source, ["rev-parse", "HEAD"])).trim();
+  await git(source, ["checkout", "topic"]);
+  const task = taskCase({ initialInput: { id: "message", role: "user", text: "Resolve the git rebase conflicts and continue." } });
+  const frozen = await freezeRecoveryGitEvidence(source, task, "a".repeat(64));
+  await cp(source, work, { recursive: true });
+  await assert.rejects(git(work, ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "rebase", onto]));
+  const check = await evaluateRecoveryPreTaskConditions(work, task, undefined, source, frozen);
+  assert.equal(check.readyAllowed, true, check.reasons.join("; "));
+  assert.equal(check.dirtyPaths.includes("new.txt"), false);
+});
