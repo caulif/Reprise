@@ -74,9 +74,12 @@ function output(values) {
   appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(values).map(([key, value]) => `${key}=${value}\n`).join(''));
 }
 
-function release(tag) {
+export function release(tag, run = gh) {
   versionFromTag(tag);
-  return parse(ReleaseSchema, gh(['api', `repos/${REPOSITORY}/releases/tags/${tag}`]));
+  // GitHub's by-tag REST endpoint excludes drafts; gh also searches authenticated draft releases.
+  return parse(ReleaseSchema, run(['release', 'view', tag, '--repo', REPOSITORY,
+    '--json', 'tagName,targetCommitish,isDraft,assets', '--jq',
+    '{tag_name:.tagName,target_commitish:.targetCommitish,draft:.isDraft,assets:.assets}']));
 }
 
 function identity() {

@@ -12,9 +12,11 @@ Reprise 是单 npm 包，首次 v0.1.0 手动发布。日常合并不代表发�
 
 使用内置 GITHUB_TOKEN 创建发版 PR 和 Release 草稿，不引入长期 PAT。机器人 PR 由同一工作流显式 dispatch 现有 check 工作流到它的分支，因为 GITHUB_TOKEN 创建的 PR 不会自动触发普通 PR CI。dispatch 不能降低原 full/static 门禁。
 
-发版 PR 合并后先创建草稿和固定 tag，显式 dispatch tag 工作流，使 GitHub 运行身份与 provenance 的提交等于打包源码。完整检查并打包后，通过 GitHub-hosted runner 的 npm OIDC Trusted Publishing 发布。npm 版本可读、完整性及独立安装通过后，附同一 tarball 并公开 GitHub Release。发布权限仅在 publish 作业开放 id-token/write 和 contents/write，且绑定只允许 v* tag 的 npm environment；不在普通 PR 上运行发布。
+发版 PR 合并后先创建草稿和固定 tag，显式 dispatch tag 工作流，使 GitHub 运行身份与 provenance 的提交等于打包源码。完整检查并打包后，通过 GitHub-hosted runner 的 npm OIDC Trusted Publishing 发布。npm 版本可读、完整性及独立安装通过后，附同一 tarball 并公开 GitHub Release。id-token/write 仅在 publish 作业开放，且绑定只允许 v* tag 的 npm environment；不在普通 PR 上运行发布。草稿查询使用 gh release view（同时支持草稿和公开版本），不用不返回草稿的 REST by-tag 接口；identity 和 retry 因草稿可见性需要 contents/write，但不持有 npm OIDC 权限。
 
 两平台没有原子事务。恢复入口按原 tag 绑定提交；版本、manifest、lockfile 和 tarball 必须一致。只有 registry 的 404 表示版本不存在，其余错误拒绝发布。已存在版本只接受完全相同的完整性，附件只复用相同内容。重试不得覆盖 npm 版本、移动 tag、覆盖附件或回退 latest。
+
+首次启用时若发布基础设施自身出错，尚未公开且无附件的草稿、npm registry 明确返回 404、没有正在执行的发布任务时，允许维护者执行一次人工候选重建：基础设施修复先经 PR 检查并合并，记录旧、新提交，确认旧提交是新提交祖先，再以比较当前 ref 的方式更新候选 tag 与草稿 target。之后仍从新固定 tag 执行完整检查和 OIDC 发布。这不是常规重试入口；公开 Release、已有 npm 版本或附件任一存在均不得重建。
 
 新增 verify:release 门禁，纳入 check/full/static；自动反向用例证明错误身份、不一致版本或完整性以及 registry 认证/限流/服务错误不能通过。保留已有测试、覆盖率与真实调用 opt-in 边界。
 

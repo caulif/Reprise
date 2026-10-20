@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import { assertIntegrity, compareVersions, registryExists, validateIdentity, versionFromTag } from './release-artifacts.mjs';
+import { assertIntegrity, compareVersions, registryExists, release, validateIdentity, versionFromTag } from './release-artifacts.mjs';
 
 const sha = 'a'.repeat(40);
 const version = Type.String({ pattern: '^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$' });
@@ -13,6 +13,17 @@ function load(path, schema) {
 }
 
 function selfTest() {
+  for (const draft of [true, false]) {
+    const metadata = { tag_name: 'v0.1.1', target_commitish: sha, draft, assets: [] };
+    assert.deepEqual(release('v0.1.1', args => {
+      assert.deepEqual(args.slice(0, 5), ['release', 'view', 'v0.1.1', '--repo', 'caulif/Reprise']);
+      assert.ok(args.includes('tagName,targetCommitish,isDraft,assets'));
+      return JSON.stringify(metadata);
+    }), metadata);
+  }
+  assert.throws(() => release('v0.1.1', () => '{}'), /schema validation/);
+  assert.throws(() => release('v0.1.1', () => { throw new Error('HTTP 403'); }), /HTTP 403/);
+  assert.throws(() => release('v0.1.1;bad', () => { assert.fail('Invalid tags must not reach gh'); }));
   assert.equal(versionFromTag('v0.1.1'), '0.1.1');
   for (const tag of ['0.1.1', 'v01.1.1', 'v0.1.1-beta.1', 'v0.1.1\n', 'v0.1.1\nnext', 'v0.1.1;echo bad']) {
     assert.throws(() => versionFromTag(tag));
