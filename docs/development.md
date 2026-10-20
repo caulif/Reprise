@@ -119,6 +119,8 @@ Remove-Item Env:REPRISE_REAL_MODEL
 
 ## 发布与回滚
 
+日常功能 PR 合并后由 Release Please 维护发版 PR；维护者审核并合并发版 PR后，工作流统一发布 npm 与 GitHub Release。首次授权、版本策略和失败重试见[版本维护与发布](./releases.md)。
+
 发布包名为 `@caulif/reprise`，CLI 名为 `reprise`；裸名 npm 包不是本项目。发布前确认版本、tag、CHANGELOG 与持久化兼容策略一致，在干净检出执行安装与 check，并核对打包、依赖审计、秘密扫描结果。check 已覆盖的检查仅在证据失效时重跑。
 
 先审查 `npm publish --access public --dry-run` 的文件清单；正式发布与推送 tag 属于外部写入，须由有权限的维护者执行。打包不得包含用户会话、凭据或本机实验。

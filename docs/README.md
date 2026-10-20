@@ -13,6 +13,7 @@ Reprise 从历史会话恢复任务起点，让候选 Agent 在隔离副本中�
 | 修改恢复与工作区隔离 | [Recovery](./architecture/recovery.md) |
 | 修改日志、模型输入或对照报告 | [证据与 Comparison](./architecture/evidence-and-comparison.md) |
 | 开发、测试或准备发布 | [开发与验证](./development.md) |
+| 维护版本与自动发布 | [版本维护与发布](./releases.md) |
 | 判断哪些能力仍未完成或未验证 | [路线图](./roadmap.md) |
 
 当前行为以以上文档和对应源码为依据；设计理由按需检索 [ADR](./decisions/README.md)。
