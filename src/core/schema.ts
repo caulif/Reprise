@@ -1,4 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
+export { CliPackageMetadataSchema } from './cli-protocol.js';
 export { ManagedSessionReceiptSchema, type ManagedSessionReceipt } from './schemas/managed-session.js';
 export { ExecutionBoundarySchema, NativeExecutionObservationSchema, type NativeExecutionObservation, type ExecutionBoundary } from './execution-boundary.js';
 export { EffectiveHarnessConfigurationSchema, HarnessSdkPackageSchema, HarnessConfigurationReferenceSchema, HarnessConfigurationBoundSchema,

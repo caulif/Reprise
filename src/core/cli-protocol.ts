@@ -2,6 +2,11 @@ import { Type, type Static } from "@sinclair/typebox";
 
 export const CLI_PROTOCOL_VERSION = 1 as const;
 
+export const CliPackageMetadataSchema = Type.Object({
+  name: Type.Literal('@caulif/reprise'),
+  version: Type.String({ pattern: '^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$' }),
+});
+
 export const CLI_EXIT = {
   ok: 0,
   failed: 1,
