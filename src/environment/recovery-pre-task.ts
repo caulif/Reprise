@@ -184,12 +184,17 @@ async function upstreamRenameMap(root: string, base: string, head: string): Prom
   const output = await git(root, ["diff-tree", "-r", "-M", "--name-status", "-z", base, head]);
   const map = new Map<string, string>();
   const rows = output.split("\0");
-  for (let i = 0; i < rows.length; i++) {
-    const status = rows[i];
-    if (!status || !(status.startsWith("R") || status.startsWith("C"))) continue;
-    const src = (rows[++i] ?? "").replaceAll("\\", "/");
-    const dest = (rows[++i] ?? "").replaceAll("\\", "/");
-    if (src && dest) map.set(src, dest);
+  // -z name-status records are status then one path, or status plus two paths for R/C.
+  for (let i = 0; i < rows.length; ) {
+    const status = rows[i++];
+    if (!status) continue;
+    if (/^[RC]\d+$/.test(status)) {
+      const src = (rows[i++] ?? "").replaceAll("\\", "/");
+      const dest = (rows[i++] ?? "").replaceAll("\\", "/");
+      if (src && dest) map.set(src, dest);
+      continue;
+    }
+    i++; // A/M/D/... consume the single path field
   }
   return map;
 }

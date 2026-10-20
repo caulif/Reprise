@@ -457,6 +457,7 @@ test("upstream rename maps rebase conflict path into retained inputs", async (t)
   await git(source, ["init", "--template="]);
   const shared = "line1\nline2\nline3\nline4\nline5\n";
   await writeFile(join(source, "old.txt"), shared);
+  await writeFile(join(source, "README.md"), "readme base\n");
   await git(source, ["add", "."]);
   await git(source, ["-c", "user.email=test@example.invalid", "-c", "user.name=Test", "commit", "-m", "base"]);
   const base = (await git(source, ["rev-parse", "HEAD"])).trim();
@@ -467,6 +468,7 @@ test("upstream rename maps rebase conflict path into retained inputs", async (t)
   await git(source, ["checkout", "--detach", base]);
   await git(source, ["mv", "old.txt", "new.txt"]);
   await writeFile(join(source, "new.txt"), shared + "onto\n");
+  await writeFile(join(source, "README.md"), "readme onto\n");
   await git(source, ["add", "-A"]);
   await git(source, ["-c", "user.email=test@example.invalid", "-c", "user.name=Test", "commit", "-m", "onto rename"]);
   const onto = (await git(source, ["rev-parse", "HEAD"])).trim();
