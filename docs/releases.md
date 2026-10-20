@@ -16,7 +16,7 @@ Release Please 在 main 更新后创建或更新一个发版 PR，统一维护 p
 
 1. GitHub 仓库 Settings → Actions → General → Workflow permissions，允许 GitHub Actions 创建 Pull Request。工作流使用临时 GITHUB_TOKEN，不需要保存 GitHub PAT。GitHub 的设置同时允许 Actions 审核 PR，但本流程不自动审核或合并发版 PR。
 2. 创建 GitHub Environment `npm`，deployment branch policy 选择 selected，并只允许 tag 模式 `v*`。如不希望发布时再人工批准，不增加 required reviewers；审批点保留在发版 PR。
-3. 在 npm 的 @caulif/reprise 包设置中新增 GitHub Actions Trusted Publisher：owner `caulif`、repository `Reprise`、workflow filename `release.yml`、environment `npm`。环境名称及文件名须完全一致，不填写工作流显示名称。
+3. 在 npm 的 @caulif/reprise 包设置中新增 GitHub Actions Trusted Publisher：owner `caulif`、repository `Reprise`、workflow filename `release.yml`、environment `npm`。环境名称及文件名须完全一致，不填写工作流显示名称。若页面提供 Allowed actions，勾选 `Allow npm publish`（本流程直接发布），保持 `Allow npm dist-tag` 未勾选；仅有默认的 staged publishing 权限不足以运行本流程。
 4. 不添加 NPM_TOKEN，也不为了自动化关闭 npm 账号 2FA。OIDC 使用 GitHub-hosted Ubuntu runner；当前固定 Node 24.11.1 和 npm 11.6.2。
 5. Actions → release → Run workflow，分支选 main，tag 留空，初始化或刷新发版 PR。流程合入后的 main push 通常也会自动执行。
 
