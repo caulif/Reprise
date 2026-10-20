@@ -221,17 +221,29 @@ test('confirmation without accept explains validation failure in Chinese', () =>
     preflight: { sourceBaseline: 'unavailable', resolved: { executable: 'codex', resolvedModel: 'gpt-5' }, limitations: [], comparisonClass: 'observational' },
   } as never).join('\n');
   assert.match(text, /暂时无法开始执行/);
-  assert.match(text, /没有观察到隔离工作区变更/);
-  assert.match(text, /no_task_path_outcome/);
+  assert.match(text, /恢复后的工作副本未通过 Host 校验/);
+  assert.match(text, /provider_validation_failed/);
+  assert.doesNotMatch(text, /没有观察到隔离工作区变更|no_task_path_outcome/);
   assert.match(text, /诊断已保存 · experiments\/exp-gate-fail\/recovery-diagnosis\.json/);
   assert.doesNotMatch(text, /工作区校验未通过/);
   assert.doesNotMatch(text, /对照会从/);
   // L1: failure reason appears before the Recovery field inside the panel.
   const titleAt = text.indexOf('暂时无法开始执行');
   const body = text.slice(titleAt);
-  const failureAt = body.search(/没有观察到隔离工作区变更/);
-  const recoveryFieldAt = body.search(/恢复/);
+  const failureAt = body.search(/恢复后的工作副本未通过 Host 校验/);
+  const recoveryFieldAt = body.search(/准备结果/);
   assert.ok(failureAt >= 0 && recoveryFieldAt >= 0 && failureAt < recoveryFieldAt);
+});
+
+test('provider failure does not infer absent task changes from an empty or missing preview', () => {
+  for (const changedPathCount of [undefined, 0, 3]) {
+    for (const locale of ['en', 'zh'] as const) {
+      const detail = changedPathCount === undefined ? {} : { changedPathCount };
+      const summary = formatRecoveryFailureSummary(locale, 'provider_validation_failed', detail);
+      assert.match(summary, /provider_validation_failed/);
+      assert.doesNotMatch(summary, /no_task_path_outcome|No isolated workspace changes|没有观察到隔离工作区变更/);
+    }
+  }
 });
 
 test('failed confirm keeps failureSummary visible and does not select the evidence fold', async () => {

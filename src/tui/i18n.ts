@@ -665,7 +665,6 @@ const M = {
   fieldUpdated: { en: 'Updated', zh: '更新时间' },
   recoveryDiagnostics: { en: 'Recovery', zh: '恢复诊断' },
   recoveryReasonValidationFailed: { en: 'Workspace validation rejected the recovery envelope', zh: '工作区校验未通过' },
-  recoveryReasonNoWorkspaceChange: { en: 'No isolated workspace changes were observed', zh: '没有观察到隔离工作区变更' },
   recoveryReasonBudget: { en: 'Recovery used up its tool budget', zh: '恢复用尽了工具预算' },
   recoveryReasonModelFailed: { en: 'The recovery model did not finish', zh: '恢复模型没有完成' },
   recoveryReasonToolFailed: { en: 'A recovery tool failed', zh: '恢复工具失败' },
@@ -885,16 +884,12 @@ export function formatRecoveryFailureSummary(
   if (stage === 'preflight_failed') return t(locale, 'recoveryPreflightFailed');
   if (stage === 'agent_invalid_output') return formatHarnessFailure(locale, 'recovery', 'protocol');
   if (stage === 'runner_crashed') return t(locale, 'harnessFailure');
-  const noWorkspaceChange = stage === 'provider_validation_failed' && (detail?.changedPathCount ?? -1) === 0;
-  const reason = noWorkspaceChange
-    ? t(locale, 'recoveryReasonNoWorkspaceChange')
-    : stage === 'provider_validation_failed' ? t(locale, 'recoveryStagingInvalid')
+  const reason = stage === 'provider_validation_failed' ? t(locale, 'recoveryStagingInvalid')
     : /budget/.test(stage) ? t(locale, 'recoveryReasonBudget')
     : stage === 'agent_model_failed' || stage === 'agent_timeout' ? t(locale, 'recoveryReasonModelFailed')
     : stage === 'agent_tool_failed' ? t(locale, 'recoveryReasonToolFailed')
     : t(locale, 'recoveryReasonGeneric');
-  const code = noWorkspaceChange ? `${stage}; no_task_path_outcome` : stage;
-  return t(locale, 'recoveryReasonWithCode', { reason, code });
+  return t(locale, 'recoveryReasonWithCode', { reason, code: stage });
 }
 
 export function formatHarnessFailure(locale: Locale, phase: 'probe' | 'recovery' | 'opening' | 'controller', kind: string): string {
