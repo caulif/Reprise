@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-19
+
+首次 npm 发布，包名 `@caulif/reprise`，命令名 `reprise`。支持 Codex 和 Claude Code 历史导入与候选运行；首次公开发布沿用当前持久化格式，不执行数据迁移。
+
 ### Fixed
 
 - 普通历史会话恢复与显式 Git 起点统一使用紧凑工作区路径，修复 Windows Git 因实验目录层级叠加而报 `$GIT_DIR too big`；候选启动识别同一实验的紧凑副本，仍拒绝跨实验与错 run。失败先保存诊断再清理，不再为失败结果重复创建当前状态基线；路径超限明确提示缩短 `--data-dir`。旧 scene 与实验目录继续读取。见[恢复布局与失败诊断](decisions/accepted/2026-10-19-recovery-layout-and-failure-evidence.md)。

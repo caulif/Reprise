@@ -4,7 +4,7 @@
 
 [![check](https://github.com/caulif/Reprise/actions/workflows/check.yml/badge.svg)](https://github.com/caulif/Reprise/actions/workflows/check.yml)
 
-> **Experimental.** Reprise is a local-first tool for replaying real coding-agent tasks, running a candidate agent from the same starting point, and inspecting how the results differ.
+Reprise helps you revisit real coding-agent tasks, run a candidate agent from a recovered starting point, and inspect how the results differ.
 
 Use it when one agent session matters enough to revisit: preserve the task context, reconstruct an isolated workspace, try a different candidate runtime, then review the resulting work with its evidence. Reprise is for personal, local experiments. It is not a public leaderboard or a benchmark that proves model quality.
 
@@ -26,7 +26,15 @@ Saved agent session -> recovered task case -> candidate run -> local evidence an
 
 ## Quick Start
 
-Reprise currently runs from source. It requires Git, npm, and Node.js **22.19 or later**.
+Requires npm and Node.js **22.19 or later**.
+
+```powershell
+npm install -g @caulif/reprise
+reprise --help
+reprise
+```
+
+To run from source, also install Git:
 
 ```powershell
 git clone https://github.com/caulif/Reprise.git
@@ -48,13 +56,15 @@ Start with `/intake` to select a source product, project, and saved session. Onc
 
 ## Requirements And Support
 
+Currently supports **Claude Code** and **Codex** only, for importing local sessions and running a candidate.
+
 | What you want to do | What you need |
 |---|---|
 | Build, inspect help, or run offline checks | The Quick Start prerequisites only |
 | Recover a session and run a candidate | A supported product installed locally, with local session history |
 | Run recovery, controller, or comparison models | A Harness model configured in `/config`; these operations may incur provider costs |
 
-Windows 11 is the only platform verified with real terminal and Runtime use so far. CI checks do not imply equivalent real-Runtime validation on every operating system. See the [roadmap](./docs/roadmap.md) for validation coverage and remaining work.
+The maintainer has tested Windows 11 and Linux. macOS has not been tested yet; you are welcome to try it and report your experience.
 
 The default data directory is `.reprise` in the current directory. Use `--data-dir` or `REPRISE_DATA_DIR` to choose another location.
 
@@ -68,7 +78,7 @@ Read [data handling and credentials](./docs/usage.md#数据去向) before using 
 
 ## Project Status
 
-Reprise is experimental and has not been published to npm yet. The future package name is `@caulif/reprise`; do not install the unrelated unscoped `reprise` package from npm.
+The npm package is `@caulif/reprise` and the command is `reprise`. Do not install the unrelated unscoped `reprise` package.
 
 Current implementation limits and remaining real Runtime validation are tracked in the [roadmap](./docs/roadmap.md).
 

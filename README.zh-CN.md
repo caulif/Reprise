@@ -4,7 +4,7 @@
 
 [![check](https://github.com/caulif/Reprise/actions/workflows/check.yml/badge.svg)](https://github.com/caulif/Reprise/actions/workflows/check.yml)
 
-> **实验性项目。** Reprise 是一个本机优先的工具：它从真实的 coding agent 任务中恢复起点，让候选 Agent 从相同起点重新执行，并帮助你查看两次结果的差异。
+Reprise 是一个用真实任务检验 Coding Agent 的工具：它从真实的 coding agent 任务中恢复起点，让候选 Agent 从恢复出的可用起点重新执行，并帮助你查看两次结果的差异。
 
 当一次 Agent 协作任务值得重新检验时，Reprise 可以保留任务上下文、恢复隔离工作区、运行另一个候选 Runtime，并用可追溯的证据查看结果。它面向个人、本机实验，不是公共排行榜，也不是能够证明模型能力的标准 benchmark。
 
@@ -26,7 +26,15 @@ _这里后续会加入一段简短的 TUI 流程和一张对照报告截图。�
 
 ## 快速开始
 
-当前请从源码运行 Reprise。需要 Git、npm 和 Node.js **22.19 或更高版本**。
+需要 Node.js **22.19 或更高版本**和 npm。
+
+```powershell
+npm install -g @caulif/reprise
+reprise --help
+reprise
+```
+
+也可以从源码运行，需要额外安装 Git：
 
 ```powershell
 git clone https://github.com/caulif/Reprise.git
@@ -48,13 +56,15 @@ node dist/src/cli/main.js
 
 ## 前置条件与支持范围
 
+目前仅支持 **Claude Code** 和 **Codex**，可导入它们的本机会话，并选择其中一个工具重新执行任务。
+
 | 你想做什么 | 需要什么 |
 |---|---|
 | 构建、查看帮助或运行离线检查 | 仅需满足快速开始的前置条件 |
 | 恢复会话并运行候选 | 本机已安装受支持的产品，且保留了本机会话历史 |
 | 调用 Recovery、Controller 或 Comparison 模型 | 在 `/config` 配置 Harness 模型；这些操作可能产生服务费用 |
 
-目前只有 Windows 11 经过真实终端和 Runtime 使用验证。CI 通过不等于所有操作系统上都已完成同等的真实 Runtime 验证；验证范围和剩余工作见[路线图](./docs/roadmap.md)。
+Windows 11 和 Linux 已由维护者实际测试。macOS 尚未测试，欢迎尝试并反馈使用情况。
 
 默认数据目录是当前目录中的 `.reprise`。可使用 `--data-dir` 或 `REPRISE_DATA_DIR` 指定其他位置。
 
@@ -68,7 +78,7 @@ node dist/src/cli/main.js
 
 ## 项目状态
 
-Reprise 仍处于实验阶段，尚未发布到 npm。未来包名会是 `@caulif/reprise`；请不要安装 npm 上无关的裸名 `reprise` 包。
+npm 包名为 `@caulif/reprise`，命令名为 `reprise`；请不要安装 npm 上无关的裸名 `reprise` 包。
 
 当前实现限制和仍待验证的真实 Runtime 行为见[路线图](./docs/roadmap.md)。
 
