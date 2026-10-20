@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
+import { readCliPackageVersion } from './package-version.js';
 import { parseArgs } from "node:util";
 import type { AgentLocale } from "../agents/language.js";
 import { createHarnessWorkflow } from "../application/experiment-workflow.js";
@@ -237,7 +238,7 @@ function defaultIo(): CliIo {
 }
 
 function versionText(): string {
-  return `reprise ${process.env.npm_package_version ?? "0.1.0"} (Node.js ${process.versions.node})`;
+  return `reprise ${readCliPackageVersion()} (Node.js ${process.versions.node})`;
 }
 
 if (import.meta.main) {
