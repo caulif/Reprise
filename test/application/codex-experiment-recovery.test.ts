@@ -28,13 +28,13 @@ async function overwriteEvenIfLocked(root: string, filePath: string, content: st
   await writeFile(filePath, content);
 }
 
-test("Recovery classifies provider validation vs runner crash vs context overflow", () => {
+test("Recovery preserves the provider validation stage and recognizes context overflow", () => {
   assert.equal(
     classifyRecoveryFailureStage(
       "provider_validation_failed",
       new Error("unknown provider failure"),
     ),
-    "runner_crashed",
+    "provider_validation_failed",
   );
   assert.equal(
     classifyRecoveryFailureStage(

@@ -11,7 +11,10 @@ import {
 } from "../core/schema.js";
 import { sha256 } from '../core/identity.js';
 import { recoveryPath, assertNoSymlinkAncestors } from './local-workspace-fs.js';
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
 import { runProcess, ProcessBoundaryError } from "../infrastructure/process-runner.js";
+import { spawnCancelOptions, terminateProcessTree } from "../infrastructure/platform.js";
 
 const GIT_SHA = /^[0-9a-f]{7,40}$/i;
 const DEPENDENCY_PREFIXES = [
@@ -41,7 +44,7 @@ export async function evaluateRecoveryPreTaskConditions(
   if (frozen?.state === "unborn") {
     const reasons: string[] = [];
     if (!(await isUnbornRepository(root))) reasons.push("Work copy no longer matches the protected source's unborn Git state.");
-    const dirtyPaths = reasons.length ? [] : await postTaskDirtyPaths(root, evidenceRoot);
+    const dirtyPaths = reasons.length ? [] : await postTaskDirtyPaths(root, evidenceRoot, new Set());
     if (dirtyPaths.length) reasons.push("Work copy contains added or modified inputs not present in the protected source.");
     return diagnosis({ schemaVersion: 1, readyAllowed: reasons.length === 0, reasons, dirtyPaths });
   }
@@ -74,7 +77,8 @@ export async function evaluateRecoveryPreTaskConditions(
     if (!originalTree || originalTree !== currentTree) reasons.push("Selected HEAD is absent from the protected source or its tree differs.");
     if (originalTree) for (const commit of existingRecorded) if (await isAncestor(evidenceRoot, commit, head)) reasons.push(`Selected HEAD contains historical task commit ${commit}.`);
   }
-  const dirtyPaths = await postTaskDirtyPaths(root, evidenceRoot);
+  const rebasePaths = await retainedRebasePaths(root, taskCase, frozen);
+  const dirtyPaths = await postTaskDirtyPaths(root, evidenceRoot, rebasePaths);
   if (dirtyPaths.length) {
     reasons.push(`Post-task dirty paths remain visible: ${dirtyPaths.slice(0, 8).join(", ")}.`);
   }
@@ -156,30 +160,104 @@ async function isAncestor(root: string, ancestor: string, descendant: string): P
   }
 }
 
-async function postTaskDirtyPaths(root: string, evidenceRoot: string): Promise<string[]> {
+async function retainedRebasePaths(root: string, taskCase: TaskCase, frozen?: RecoveryFrozenGit): Promise<Set<string>> {
+  const input = taskCase.initialInput?.text ?? "";
+  if (!/\brebase\b/i.test(input) || !/\bconflicts?\b|冲突/i.test(input)) return new Set();
+  const active = ["rebase-merge", "rebase-apply"].some(name => existsSync(join(root, ".git", name)));
+  if (!active) return new Set();
+  const applying = await gitOutput(root, ["rev-parse", "--verify", "REBASE_HEAD"]);
+  if (!applying || frozen && !frozen.commits[applying]) return new Set();
+  // Paths touched by the applying commit, plus upstream rename destinations of those paths.
+  const affected = [...new Set((await git(root, ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", applying])).split("\0").filter(Boolean))];
+  const paths = new Set(affected);
+  const base = await gitOutput(root, ["merge-base", "HEAD", applying]);
+  if (base) {
+    for (const [src, dest] of await upstreamRenameMap(root, base, "HEAD")) {
+      if (paths.has(src)) paths.add(dest);
+    }
+  }
+  return paths;
+}
+
+/** Rename/copy sources → destinations on the upstream side of an in-progress rebase. */
+async function upstreamRenameMap(root: string, base: string, head: string): Promise<Map<string, string>> {
+  const output = await git(root, ["diff-tree", "-r", "-M", "--name-status", "-z", base, head]);
+  const map = new Map<string, string>();
+  const rows = output.split("\0");
+  // -z name-status records are status then one path, or status plus two paths for R/C.
+  for (let i = 0; i < rows.length; ) {
+    const status = rows[i++];
+    if (!status) continue;
+    if (/^[RC]\d+$/.test(status)) {
+      const src = (rows[i++] ?? "").replaceAll("\\", "/");
+      const dest = (rows[i++] ?? "").replaceAll("\\", "/");
+      if (src && dest) map.set(src, dest);
+      continue;
+    }
+    i++; // A/M/D/... consume the single path field
+  }
+  return map;
+}
+
+async function postTaskDirtyPaths(root: string, evidenceRoot: string, rebasePaths: Set<string>): Promise<string[]> {
   const output = await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
   const paths: string[] = [];
   const rows = output.split("\0");
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]!;
     if (!row) continue;
+    const code = row.slice(0, 2);
     const relative = row.slice(3).replaceAll("\\", "/");
-    if (row.slice(0, 2).includes("R") || row.slice(0, 2).includes("C")) i++;
-    if (!relative || isDependencyPath(relative)) continue;
-    // Only source dirt with identical bytes can be a retained original input.
-    if (evidenceRoot !== root) {
-      const sourceDirty = await git(evidenceRoot, ["status", "--porcelain=v1", "-z", "--", relative]);
-      if (sourceDirty) {
-        await assertNoSymlinkAncestors(root, relative);
-        await assertNoSymlinkAncestors(evidenceRoot, relative);
-        const before = await readFile(recoveryPath(evidenceRoot, relative)).catch(() => undefined);
-        const after = await readFile(recoveryPath(root, relative)).catch(() => undefined);
-        if (before && after && sha256(before) === sha256(after)) continue;
-      }
+    // Rename/copy -z rows are "XY dest\0source\0"; inspect both paths as possible dirt.
+    const paired = (code.includes("R") || code.includes("C")) ? (rows[++i] ?? "").replaceAll("\\", "/") : "";
+    if (paired && evidenceRoot !== root && await identicalPreservedRename(root, evidenceRoot, code, relative, paired)) {
+      continue;
     }
-    paths.push(relative);
+    for (const candidate of paired ? [relative, paired] : [relative]) {
+      if (!candidate || isDependencyPath(candidate)) continue;
+      if (code !== "??" && rebasePaths.has(candidate)) continue;
+      // Only source dirt with identical bytes can be a retained original input.
+      if (evidenceRoot !== root) {
+        const sourceDirty = await git(evidenceRoot, ["status", "--porcelain=v1", "-z", "--", candidate]);
+        if (sourceDirty) {
+          await assertNoSymlinkAncestors(root, candidate);
+          await assertNoSymlinkAncestors(evidenceRoot, candidate);
+          const before = await readFile(recoveryPath(evidenceRoot, candidate)).catch(() => undefined);
+          const after = await readFile(recoveryPath(root, candidate)).catch(() => undefined);
+          if (before && after && sha256(before) === sha256(after)) continue;
+        }
+      }
+      paths.push(candidate);
+    }
   }
   return paths.slice(0, 64);
+}
+
+/** Same staged rename/copy in the protected source with matching destination bytes is retained input. */
+async function identicalPreservedRename(
+  root: string,
+  evidenceRoot: string,
+  code: string,
+  dest: string,
+  src: string,
+): Promise<boolean> {
+  const evidence = await git(evidenceRoot, ["status", "--porcelain=v1", "-z", "--", dest, src]);
+  const rows = evidence.split("\0").filter(Boolean);
+  let matched = false;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!;
+    const rowCode = row.slice(0, 2);
+    const rowDest = row.slice(3).replaceAll("\\", "/");
+    if (!(rowCode.includes("R") || rowCode.includes("C"))) continue;
+    const rowSrc = (rows[++i] ?? "").replaceAll("\\", "/");
+    if (rowDest === dest && rowSrc === src && rowCode === code) matched = true;
+  }
+  if (!matched) return false;
+  await assertNoSymlinkAncestors(root, dest);
+  await assertNoSymlinkAncestors(evidenceRoot, dest);
+  const before = await readFile(recoveryPath(evidenceRoot, dest)).catch(() => undefined);
+  const after = await readFile(recoveryPath(root, dest)).catch(() => undefined);
+  return Boolean(before && after && sha256(before) === sha256(after));
 }
 
 function isDependencyPath(posix: string): boolean {
@@ -216,6 +294,65 @@ async function git(root: string, args: readonly string[], signal?: AbortSignal, 
   })).stdout;
 }
 
+
+/** Stream cat-file --batch-all-objects and keep only commit ids absent from `known`. */
+async function listCommitObjectsMissingFromMap(
+  root: string,
+  known: Readonly<Record<string, string>>,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  if (signal?.aborted) {
+    throw new ProcessBoundaryError({ operation: "recovery_pre_task_git", executableKind: "git", exitCategory: "cancelled" });
+  }
+  const child = spawn("git", ["cat-file", "--batch-all-objects", "--batch-check=%(objectname) %(objecttype)"], {
+    ...spawnCancelOptions(false),
+    cwd: root,
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const missing: string[] = [];
+  let timedOut = false;
+  // Drain stderr so a full pipe cannot stall git; contents are intentionally unused.
+  child.stderr?.on("data", () => undefined);
+  const closed = new Promise<number | null>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (exitCode) => resolve(exitCode));
+  });
+  const timer = setTimeout(() => {
+    timedOut = true;
+    terminateProcessTree(child, false);
+  }, 15_000);
+  const onAbort = () => terminateProcessTree(child, false);
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    if (!child.stdout) {
+      throw new ProcessBoundaryError({ operation: "recovery_pre_task_git", executableKind: "git", exitCategory: "stdio_disconnected" });
+    }
+    const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+    for await (const row of lines) {
+      if (signal?.aborted) {
+        throw new ProcessBoundaryError({ operation: "recovery_pre_task_git", executableKind: "git", exitCategory: "cancelled" });
+      }
+      if (!row.endsWith(" commit")) continue;
+      const id = row.slice(0, row.indexOf(" "));
+      if (id && !known[id]) missing.push(id);
+    }
+    const code = await closed;
+    if (code !== 0) {
+      throw new ProcessBoundaryError({
+        operation: "recovery_pre_task_git",
+        executableKind: "git",
+        exitCategory: signal?.aborted ? "cancelled" : timedOut ? "timed_out" : "nonzero_exit",
+        ...(typeof code === "number" ? { exitCode: code } : {}),
+      });
+    }
+    return missing;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
 export async function freezeRecoveryGitEvidence(root: string, taskCase: TaskCase, sourceDigest: string, signal?: AbortSignal): Promise<RecoveryFrozenGit> {
   const commits: Record<string, string> = {};
   let state: RecoveryFrozenGit["state"] = "unavailable";
@@ -228,6 +365,13 @@ export async function freezeRecoveryGitEvidence(root: string, taskCase: TaskCase
     } else {
       const output = await git(root, ["log", "--all", "HEAD", "--format=%H %T"], signal, 15000);
       for (const row of output.trim().split("\n")) { const [commit, tree] = row.trim().split(" "); if (commit && tree) commits[commit] = tree; }
+      // Ref traversal misses historical tips left behind by a rebase or deleted branch.
+      // Stream object types so blob/tree names never fill the 16 MiB git() stdout cap.
+      const missing = await listCommitObjectsMissingFromMap(root, commits, signal);
+      for (let offset = 0; offset < missing.length; offset += 128) {
+        const extra = await git(root, ["log", "--no-walk", "--format=%H %T", ...missing.slice(offset, offset + 128)], signal, 15000);
+        for (const row of extra.trim().split("\n")) { const [commit, tree] = row.trim().split(" "); if (commit && tree) commits[commit] = tree; }
+      }
       state = "git";
     }
   } catch (error) {

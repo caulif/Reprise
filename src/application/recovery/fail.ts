@@ -1,3 +1,4 @@
+import { summarizeDiagnostic } from "../../infrastructure/process/stdio.js";
 import { join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import type { RecoveryResult } from "../../agents/recovery-agent.js";
@@ -12,7 +13,6 @@ import {
 import type { EnvironmentBaseline, LocalWorkspaceProvider, RecoveryStaging } from "../../environment/local-workspace-provider.js";
 import { RecoveryValidationError } from "../../environment/local-workspace-provider.js";
 import { unsupportedBaseline } from "../../environment/local-workspace-fs.js";
-import { RecoveryEvidenceValidationError } from "../../infrastructure/recovery-tools.js";
 import type { StructuredAgentResult } from "../../infrastructure/agent/host.js";
 import { ExperimentStore, writeImmutableJson } from "../../infrastructure/store/experiment-store.js";
 import { runOperationId } from "../../core/identity.js";
@@ -404,12 +404,6 @@ export function classifyRecoveryFailureStage(
     error.code === "source_tripwire_failed"
   )
     return "source_tripwire_failed";
-  if (
-    stage === "provider_validation_failed" &&
-    !(error instanceof RecoveryValidationError) &&
-    !(error instanceof RecoveryEvidenceValidationError)
-  )
-    return "runner_crashed";
   return stage;
 }
 
@@ -445,11 +439,11 @@ function safeRecoveryFailureSummary(
   if (stage === "agent_invalid_output")
     return "Recovery agent returned an invalid completion envelope.";
   if (stage === "provider_validation_failed")
-    return "Provider validation rejected the recovery result.";
+    return `Provider validation rejected the recovery result.${error instanceof Error ? " " + summarizeDiagnostic(error.message, 1000) : ""}`;
   if (stage === "preflight_failed") return recoveryPreflightDiagnostic(error, 'recovery_preflight').reasonCode === 'git_path_too_long'
     ? 'Recovery Git repository path exceeds the supported limit. Use a shorter --data-dir path.' : "Recovery preflight failed.";
   if (stage === "cancelled") return "Recovery agent was cancelled.";
-  if (stage === "runner_crashed") return "Recovery runner crashed.";
+  if (stage === "runner_crashed") return `Recovery runner crashed.${error instanceof Error ? " " + summarizeDiagnostic(error.message, 1000) : ""}`;
   return error instanceof Error && error.name === "AbortError"
     ? "Recovery agent was cancelled."
     : "Recovery agent or tool execution failed.";

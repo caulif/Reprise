@@ -99,3 +99,23 @@ test('history sealing reads no global config at the Windows pre-longpaths filena
   assert.equal(await readFile(join(project, 'input.txt'), 'utf8'), 'original');
   assert.equal(await git(project, 'for-each-ref', '--format=%(refname)'), '');
 });
+
+test('history sealing deletes symbolic remote HEAD without leaving a dangling ref', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-seal-symref-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const project = join(root, 'project'); const head = await repo(project);
+  await git(project, 'update-ref', 'refs/remotes/origin/main', head);
+  await git(project, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
+  assert.equal(await sealRecoveryGitHistory(project, head), true);
+  assert.equal(await git(project, 'for-each-ref', '--format=%(refname)'), '');
+  await git(project, 'fsck', '--full', '--no-reflogs');
+  await assert.rejects(readFile(join(project, '.git', 'refs', 'remotes', 'origin', 'HEAD')));
+});
+
+test('history sealing exposes the failed Git operation and diagnostic', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-seal-error-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const project = join(root, 'project'); const head = await repo(project);
+  await writeFile(join(project, '.git', 'config'), '[invalid config');
+  await assert.rejects(sealRecoveryGitHistory(project, head), /history sealing failed \(rev-parse, exit 128\):.*bad config/i);
+});
