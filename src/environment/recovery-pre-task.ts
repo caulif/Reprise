@@ -11,7 +11,10 @@ import {
 } from "../core/schema.js";
 import { sha256 } from '../core/identity.js';
 import { recoveryPath, assertNoSymlinkAncestors } from './local-workspace-fs.js';
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
 import { runProcess, ProcessBoundaryError } from "../infrastructure/process-runner.js";
+import { spawnCancelOptions, terminateProcessTree } from "../infrastructure/platform.js";
 
 const GIT_SHA = /^[0-9a-f]{7,40}$/i;
 const DEPENDENCY_PREFIXES = [
@@ -159,7 +162,7 @@ async function isAncestor(root: string, ancestor: string, descendant: string): P
 
 async function retainedRebasePaths(root: string, taskCase: TaskCase, frozen?: RecoveryFrozenGit): Promise<Set<string>> {
   const input = taskCase.initialInput?.text ?? "";
-  if (!/\brebase\b/i.test(input) || !/\bconflict\b|冲突/i.test(input)) return new Set();
+  if (!/\brebase\b/i.test(input) || !/\bconflicts?\b|冲突/i.test(input)) return new Set();
   const active = ["rebase-merge", "rebase-apply"].some(name => existsSync(join(root, ".git", name)));
   if (!active) return new Set();
   const applying = await gitOutput(root, ["rev-parse", "--verify", "REBASE_HEAD"]);
@@ -230,6 +233,65 @@ async function git(root: string, args: readonly string[], signal?: AbortSignal, 
   })).stdout;
 }
 
+
+/** Stream cat-file --batch-all-objects and keep only commit ids absent from `known`. */
+async function listCommitObjectsMissingFromMap(
+  root: string,
+  known: Readonly<Record<string, string>>,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  if (signal?.aborted) {
+    throw new ProcessBoundaryError({ operation: "recovery_pre_task_git", executableKind: "git", exitCategory: "cancelled" });
+  }
+  const child = spawn("git", ["cat-file", "--batch-all-objects", "--batch-check=%(objectname) %(objecttype)"], {
+    ...spawnCancelOptions(false),
+    cwd: root,
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const missing: string[] = [];
+  let timedOut = false;
+  // Drain stderr so a full pipe cannot stall git; contents are intentionally unused.
+  child.stderr?.on("data", () => undefined);
+  const closed = new Promise<number | null>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (exitCode) => resolve(exitCode));
+  });
+  const timer = setTimeout(() => {
+    timedOut = true;
+    terminateProcessTree(child, false);
+  }, 15_000);
+  const onAbort = () => terminateProcessTree(child, false);
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    if (!child.stdout) {
+      throw new ProcessBoundaryError({ operation: "recovery_pre_task_git", executableKind: "git", exitCategory: "stdio_disconnected" });
+    }
+    const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+    for await (const row of lines) {
+      if (signal?.aborted) {
+        throw new ProcessBoundaryError({ operation: "recovery_pre_task_git", executableKind: "git", exitCategory: "cancelled" });
+      }
+      if (!row.endsWith(" commit")) continue;
+      const id = row.slice(0, row.indexOf(" "));
+      if (id && !known[id]) missing.push(id);
+    }
+    const code = await closed;
+    if (code !== 0) {
+      throw new ProcessBoundaryError({
+        operation: "recovery_pre_task_git",
+        executableKind: "git",
+        exitCategory: signal?.aborted ? "cancelled" : timedOut ? "timed_out" : "nonzero_exit",
+        ...(typeof code === "number" ? { exitCode: code } : {}),
+      });
+    }
+    return missing;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
 export async function freezeRecoveryGitEvidence(root: string, taskCase: TaskCase, sourceDigest: string, signal?: AbortSignal): Promise<RecoveryFrozenGit> {
   const commits: Record<string, string> = {};
   let state: RecoveryFrozenGit["state"] = "unavailable";
@@ -243,8 +305,8 @@ export async function freezeRecoveryGitEvidence(root: string, taskCase: TaskCase
       const output = await git(root, ["log", "--all", "HEAD", "--format=%H %T"], signal, 15000);
       for (const row of output.trim().split("\n")) { const [commit, tree] = row.trim().split(" "); if (commit && tree) commits[commit] = tree; }
       // Ref traversal misses historical tips left behind by a rebase or deleted branch.
-      const objects = await git(root, ["cat-file", "--batch-all-objects", "--batch-check=%(objectname) %(objecttype)"], signal, 15000);
-      const missing = objects.split("\n").filter(row => row.endsWith(" commit")).map(row => row.split(" ")[0]!).filter(id => !commits[id]);
+      // Stream object types so blob/tree names never fill the 16 MiB git() stdout cap.
+      const missing = await listCommitObjectsMissingFromMap(root, commits, signal);
       for (let offset = 0; offset < missing.length; offset += 128) {
         const extra = await git(root, ["log", "--no-walk", "--format=%H %T", ...missing.slice(offset, offset + 128)], signal, 15000);
         for (const row of extra.trim().split("\n")) { const [commit, tree] = row.trim().split(" "); if (commit && tree) commits[commit] = tree; }

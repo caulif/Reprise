@@ -350,7 +350,7 @@ test('rebase conflict inputs survive the ready gate and sealing, while unrelated
   await git(source, ['checkout', '--detach', base]);
   const onto = await commitTree(source, 'onto', 'onto\n');
   await git(source, ['checkout', 'topic']);
-  const task = taskCase({ initialInput: { id: 'message', role: 'user', text: 'Resolve the git rebase conflict and continue.' } });
+  const task = taskCase({ initialInput: { id: 'message', role: 'user', text: 'Resolve the git rebase conflicts and continue.' } });
   const frozen = await freezeRecoveryGitEvidence(source, task, 'a'.repeat(64));
   await cp(source, work, { recursive: true });
   await assert.rejects(git(work, ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'rebase', onto]));
@@ -365,4 +365,35 @@ test('rebase conflict inputs survive the ready gate and sealing, while unrelated
   await writeFile(join(work, 'README.md'), 'resolved\n'); await git(work, ['add', 'README.md']);
   await git(work, ['-c', 'core.editor=true', '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'rebase', '--continue']);
   assert.equal(await readFile(join(work, 'staged.txt'), 'utf8'), 'required staged input\n');
+});
+
+
+test("freeze streams commit objects and accepts plural rebase conflicts wording", async () => {
+  const source = await readFile(join(process.cwd(), "src/environment/recovery-pre-task.ts"), "utf8");
+  assert.match(source, /conflicts\?\\b\|冲突/);
+  assert.match(source, /listCommitObjectsMissingFromMap/);
+  assert.match(source, /createInterface/);
+  assert.doesNotMatch(source, /git\(root, \["cat-file", "--batch-all-objects"/);
+});
+
+test("freeze keeps unreachable tips even when the object store has many non-commit objects", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-pre-task-many-blobs-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await git(root, ["init", "--template="]);
+  const base = await commitTree(root, "base", "base\n");
+  const tip = await commitTree(root, "historical tip", "historical\n");
+  await git(root, ["reset", "--hard", base]);
+  await git(root, ["reflog", "expire", "--expire=now", "--all"]);
+  const blobDir = join(root, ".blob-factory");
+  await mkdir(blobDir, { recursive: true });
+  for (let i = 0; i < 250; i++) {
+    const file = join(blobDir, `blob-${i}.bin`);
+    await writeFile(file, `blob-payload-${i}\n`);
+    await git(root, ["hash-object", "-w", file]);
+  }
+  await rm(blobDir, { recursive: true, force: true });
+  const frozen = await freezeRecoveryGitEvidence(root, taskCase({}), "a".repeat(64));
+  assert.equal(frozen.state, "git");
+  assert.ok(frozen.commits[tip]);
+  assert.ok(frozen.commits[base]);
 });
