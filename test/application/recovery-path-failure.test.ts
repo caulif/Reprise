@@ -169,3 +169,22 @@ for (const fault of ['cleanup', 'persistence', 'both'] as const) {
     await assert.rejects(stat(join(base.dataDir, 'experiments', experimentId, 'writer.lock')), { code: 'ENOENT' });
   });
 }
+
+test('ordinary finalize errors retain their stage and redacted message in persisted diagnostics', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'r-finalize-error-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const base = input(root, new VerifiedRuntime());
+  await mkdir(base.sourceRoot); await writeFile(join(base.sourceRoot, 'input.txt'), 'input');
+  const provider = new LocalWorkspaceProvider(join(root, 'provider'));
+  const secret = 'testcredential'.repeat(3);
+  t.mock.method(provider, 'validateRecovery', async () => { throw new Error(`Git fsck failed: dangling remote HEAD; token=${secret}`); });
+  const attempt = await recoverExperiment({ dataDir: base.dataDir, caseId: base.caseId, experimentId: 'finalize-error', runId: 'finalize-error-run', sourceRoot: base.sourceRoot, taskCase: base.taskCase, environmentProvider: provider, now,
+    recovery: { recover: async () => ({ status: 'completed', sessionId: 'ready', value: { status: 'ready', summary: 'Ready.', reportPath: 'recovery.md', unresolved: [] } }) },
+  });
+  assert.equal(attempt.baseline.recovery?.failureStage, 'provider_validation_failed');
+  for (const path of ['events.jsonl', 'runs/finalize-error-run/recovery-validation.json']) {
+    const text = await readFile(join(attempt.experimentRoot, path), 'utf8');
+    assert.match(text, /Git fsck failed: dangling remote HEAD/);
+    assert.doesNotMatch(text, new RegExp(secret));
+  }
+});

@@ -300,3 +300,69 @@ test('Recovery accepts an Agent-restored unborn workspace without inventing hist
     assert.equal(await readFile(join(base.sourceRoot, 'answer.txt'), 'utf8'), 'later answer');
   }
 });
+
+test('a locally present historical tip without refs is frozen and accepted through Git finalize', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-historical-tip-'));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  const source = join(root, 'source'); await mkdir(source);
+  await git(source, ['init', '--template=']);
+  const baseCommit = await commitTree(source, 'base', 'base\n');
+  const tip = await commitTree(source, 'historical tip', 'historical input\n');
+  await git(source, ['reset', '--hard', baseCommit]);
+  await git(source, ['reflog', 'expire', '--expire=now', '--all']);
+  await git(source, ['update-ref', 'refs/remotes/origin/main', baseCommit]);
+  await git(source, ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main']);
+  // Self-recovery may also contain an ignored, nested experiment repository.
+  await mkdir(join(source, '.git', 'info'), { recursive: true });
+  await writeFile(join(source, '.git', 'info', 'exclude'), '.reprise/\n');
+  const nested = join(source, '.reprise', 'experiments', 'nested'); await mkdir(nested, { recursive: true });
+  await git(nested, ['init', '--template=']); await commitTree(nested, 'nested', 'nested\n');
+  const base = input(root, new VerifiedRuntime());
+  const frozen = await freezeRecoveryGitEvidence(source, base.taskCase, 'a'.repeat(64));
+  assert.ok(frozen.commits[tip]);
+  const provider = new LocalWorkspaceProvider(join(root, 'provider'));
+  const begin = provider.beginRecovery.bind(provider);
+  let workRoot = '';
+  t.mock.method(provider, 'beginRecovery', async (...args: Parameters<typeof begin>) => {
+    const staging = await begin(...args); workRoot = staging.root; return staging;
+  });
+  const recovery: RecoveryAgentPort = { recover: async () => {
+    await git(workRoot, ['checkout', '--force', '--detach', tip]);
+    return { status: 'completed', sessionId: 'historical-tip', value: { status: 'ready', summary: 'Historical input restored.', reportPath: 'recovery.md', unresolved: [] } };
+  } };
+  const attempt = await recoverExperiment({ dataDir: base.dataDir, caseId: base.caseId, experimentId: 'historical-tip', runId: 'historical-tip-run', environmentProvider: provider, sourceRoot: source, taskCase: base.taskCase, recovery, now });
+  assert.equal(attempt.acceptedAutomatically, true);
+  assert.equal(attempt.baseline.recovery?.status, 'ready');
+  const events = await readFile(join(attempt.experimentRoot, 'events.jsonl'), 'utf8');
+  assert.match(events, /recovery.history_sealed/);
+  assert.match(events, /recovery.lifecycle_completed/);
+});
+
+test('rebase conflict inputs survive the ready gate and sealing, while unrelated dirt still blocks', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-rebase-input-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const source = join(root, 'source'), work = join(root, 'work'); await mkdir(source);
+  await git(source, ['init', '--template=']);
+  const base = await commitTree(source, 'base', 'base\n');
+  await git(source, ['checkout', '-b', 'topic']);
+  await writeFile(join(source, 'staged.txt'), 'required staged input\n');
+  await commitTree(source, 'topic change', 'topic\n');
+  await git(source, ['checkout', '--detach', base]);
+  const onto = await commitTree(source, 'onto', 'onto\n');
+  await git(source, ['checkout', 'topic']);
+  const task = taskCase({ initialInput: { id: 'message', role: 'user', text: 'Resolve the git rebase conflict and continue.' } });
+  const frozen = await freezeRecoveryGitEvidence(source, task, 'a'.repeat(64));
+  await cp(source, work, { recursive: true });
+  await assert.rejects(git(work, ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'rebase', onto]));
+  assert.equal((await evaluateRecoveryPreTaskConditions(work, task, undefined, source, frozen)).readyAllowed, true);
+  assert.equal((await evaluateRecoveryPreTaskConditions(work, taskCase({}), undefined, source, frozen)).readyAllowed, false);
+  await writeFile(join(work, 'unrelated.txt'), 'post-task answer');
+  assert.equal((await evaluateRecoveryPreTaskConditions(work, task, undefined, source, frozen)).readyAllowed, false);
+  await rm(join(work, 'unrelated.txt'));
+  const refs = await git(work, ['show-ref']);
+  assert.equal(await sealRecoveryGitHistory(work, onto), false);
+  assert.equal(await git(work, ['show-ref']), refs);
+  await writeFile(join(work, 'README.md'), 'resolved\n'); await git(work, ['add', 'README.md']);
+  await git(work, ['-c', 'core.editor=true', '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'rebase', '--continue']);
+  assert.equal(await readFile(join(work, 'staged.txt'), 'utf8'), 'required staged input\n');
+});

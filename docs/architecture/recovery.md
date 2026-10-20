@@ -28,9 +28,9 @@ Recovery 请求先取得该实验 writer、保存自身生命周期的 `initiali
 
 Host 将报告、process logs、临时 home 和冻结 Git 依据放在项目之外，报告仍发布为 recovery-md artifact。新 baseline marker 带 artifactLayout: external-v1；Candidate 副本保留用户原有 recovery.md 和 .reprise/recovery-work 文件。旧 marker 沿用旧清理和报告读取契约，不静默迁移。
 
-普通历史调查中 historicalCommit 是线索，不强制成为 HEAD。Agent 应恢复选定第一条任务输入到来前状态，不能自动采用后来同步基线。Host 在工具可写前冻结受保护 source 的 commit→tree 映射、明确 commit receipt 和源指纹；session_meta/turn_context 的 commit 元数据不算任务成果。选择的 HEAD 必须存在于冻结源，树匹配，不能包含已识别任务成果提交。此机械检查并不证明所有未知历史状态；确切起点仍需历史证据，独立实验审计不能只看 accepted 标志。
+普通历史调查中 historicalCommit 是线索，不强制成为 HEAD。Agent 应恢复选定第一条任务输入到来前状态，不能自动采用后来同步基线。Host 在工具可写前冻结受保护 source 的 commit→tree 映射（包括对象库中无引用可达的历史 commit）、明确 commit receipt 和源指纹；session_meta/turn_context 的 commit 元数据不算任务成果。选择的 HEAD 必须存在于冻结源，树匹配，不能包含已识别任务成果提交。此机械检查并不证明所有未知历史状态；确切起点仍需历史证据，独立实验审计不能只看 accepted 标志。
 
-Git dirty 检查按 NUL 分隔路径及内容进行，不以 mtime 为判据。与原 source 完全相同的 dirty 文件暂按保留输入处理，这不能独立证明其历史归属；必要输入/答案边界仍由 Agent 调查并披露。通过检查后，Host 仅在隔离副本中封存所选 HEAD 的祖先，清理其他 refs、reflogs、未来不可达对象，再验证 Git 完整性。显式 gitStart 契约保持独立和严格。
+Git dirty 检查按 NUL 分隔路径及内容进行，不以 mtime 为判据。与原 source 完全相同的 dirty 文件暂按保留输入处理，这不能独立证明其历史归属；必要输入/答案边界仍由 Agent 调查并披露。明确要求解决 rebase 冲突的任务，若副本存在 rebase 状态且 REBASE_HEAD 属于冻结源，可保留该提交涉及的 tracked dirty 路径；无关 dirty 和 untracked 路径仍阻断。此例外不认证冲突内容的历史语义。进行中的 rebase 保留 refs、续作元数据和待应用对象，不剪除历史，也不写 history_sealed 事件。其他任务通过检查后，Host 仅在隔离副本中封存所选 HEAD 的祖先，清理其他 refs、reflogs、未来不可达对象，删除符号引用时不跟随引用目标，再验证 Git 完整性。收尾中的普通异常保留 provider_validation_failed 阶段与脱敏、有界的错误摘要。显式 gitStart 契约保持独立和严格。
 
 源仓库已初始化但尚无提交时，新冻结 Git 证据与读取失败分开记录。Host 确认其 HEAD 指向不存在的本地分支、没有 refs/reflogs 可达提交、对象检查未发现遗留提交或损坏，且原始历史没有提交线索；副本必须保持该状态，保留输入须与受保护 source 的内容一致，不允许新建提交绕过边界。Agent 依据原始历史判断文件归属，无法确定关键输入或答案边界时仍返回 blocked；机械通过不证明当前目录就是历史起点。旧证据保持原字节，不把过去的 unavailable 补认证成无提交。见[无提交恢复决策](../decisions/accepted/2026-10-20-recovery-unborn-source.md)。
 

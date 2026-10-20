@@ -42,7 +42,7 @@ test('a failing finalization is not invoked a second time after the decision com
   const attempt = await recoverExperiment({ ...base, now, environmentProvider: provider, recovery: { recover: async () => ({ status: 'completed', sessionId: 'finalization-once', value: { status: 'ready', summary: 'Original input is ready.', unresolved: [] } }) } });
   assert.equal(finalizations, 1);
   assert.equal(attempt.acceptedAutomatically, undefined);
-  assert.equal(attempt.baseline.recovery?.failureStage, 'runner_crashed');
+  assert.equal(attempt.baseline.recovery?.failureStage, 'provider_validation_failed');
   assert.equal(await readFile(join(base.sourceRoot, 'input.txt'), 'utf8'), 'original');
 });
 

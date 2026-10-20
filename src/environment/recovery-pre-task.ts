@@ -74,7 +74,8 @@ export async function evaluateRecoveryPreTaskConditions(
     if (!originalTree || originalTree !== currentTree) reasons.push("Selected HEAD is absent from the protected source or its tree differs.");
     if (originalTree) for (const commit of existingRecorded) if (await isAncestor(evidenceRoot, commit, head)) reasons.push(`Selected HEAD contains historical task commit ${commit}.`);
   }
-  const dirtyPaths = await postTaskDirtyPaths(root, evidenceRoot);
+  const rebasePaths = await retainedRebasePaths(root, taskCase, frozen);
+  const dirtyPaths = await postTaskDirtyPaths(root, evidenceRoot, rebasePaths);
   if (dirtyPaths.length) {
     reasons.push(`Post-task dirty paths remain visible: ${dirtyPaths.slice(0, 8).join(", ")}.`);
   }
@@ -156,7 +157,19 @@ async function isAncestor(root: string, ancestor: string, descendant: string): P
   }
 }
 
-async function postTaskDirtyPaths(root: string, evidenceRoot: string): Promise<string[]> {
+async function retainedRebasePaths(root: string, taskCase: TaskCase, frozen?: RecoveryFrozenGit): Promise<Set<string>> {
+  const input = taskCase.initialInput?.text ?? "";
+  if (!/\brebase\b/i.test(input) || !/\bconflict\b|冲突/i.test(input)) return new Set();
+  const active = ["rebase-merge", "rebase-apply"].some(name => existsSync(join(root, ".git", name)));
+  if (!active) return new Set();
+  const applying = await gitOutput(root, ["rev-parse", "--verify", "REBASE_HEAD"]);
+  if (!applying || frozen && !frozen.commits[applying]) return new Set();
+  // Only tracked changes belonging to the interrupted commit are rebase inputs.
+  const affected = await git(root, ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", applying]);
+  return new Set(affected.split("\0").filter(Boolean));
+}
+
+async function postTaskDirtyPaths(root: string, evidenceRoot: string, rebasePaths: Set<string>): Promise<string[]> {
   const output = await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
   const paths: string[] = [];
   const rows = output.split("\0");
@@ -166,6 +179,7 @@ async function postTaskDirtyPaths(root: string, evidenceRoot: string): Promise<s
     const relative = row.slice(3).replaceAll("\\", "/");
     if (row.slice(0, 2).includes("R") || row.slice(0, 2).includes("C")) i++;
     if (!relative || isDependencyPath(relative)) continue;
+    if (row.slice(0, 2) !== "??" && rebasePaths.has(relative)) continue;
     // Only source dirt with identical bytes can be a retained original input.
     if (evidenceRoot !== root) {
       const sourceDirty = await git(evidenceRoot, ["status", "--porcelain=v1", "-z", "--", relative]);
@@ -228,6 +242,13 @@ export async function freezeRecoveryGitEvidence(root: string, taskCase: TaskCase
     } else {
       const output = await git(root, ["log", "--all", "HEAD", "--format=%H %T"], signal, 15000);
       for (const row of output.trim().split("\n")) { const [commit, tree] = row.trim().split(" "); if (commit && tree) commits[commit] = tree; }
+      // Ref traversal misses historical tips left behind by a rebase or deleted branch.
+      const objects = await git(root, ["cat-file", "--batch-all-objects", "--batch-check=%(objectname) %(objecttype)"], signal, 15000);
+      const missing = objects.split("\n").filter(row => row.endsWith(" commit")).map(row => row.split(" ")[0]!).filter(id => !commits[id]);
+      for (let offset = 0; offset < missing.length; offset += 128) {
+        const extra = await git(root, ["log", "--no-walk", "--format=%H %T", ...missing.slice(offset, offset + 128)], signal, 15000);
+        for (const row of extra.trim().split("\n")) { const [commit, tree] = row.trim().split(" "); if (commit && tree) commits[commit] = tree; }
+      }
       state = "git";
     }
   } catch (error) {

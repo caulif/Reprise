@@ -40,9 +40,8 @@ export async function finalizeRecoveredCandidate(session: RecoveryRunSession): P
   if (!input.gitStart && recovery.value.status === "ready") {
     const check = await evaluateRecoveryPreTaskConditions(staging.root, input.taskCase, undefined, staging.sourceRoot, session.frozenGit);
     if (check.readyAllowed && check.head) {
-      await sealRecoveryGitHistory(staging.root, check.head, input.signal);
-      historySealed = true;
-      await store.append({ type: "recovery.history_sealed", runId: input.runId, payload: { head: check.head, scope: "isolated Git refs, reflogs and unreachable objects", semanticBoundaryVerified: false } });
+      historySealed = await sealRecoveryGitHistory(staging.root, check.head, input.signal);
+      if (historySealed) await store.append({ type: "recovery.history_sealed", runId: input.runId, payload: { head: check.head, scope: "isolated Git refs, reflogs and unreachable objects", semanticBoundaryVerified: false } });
     }
   }
   const providerVerificationStartedAt = Date.now();
