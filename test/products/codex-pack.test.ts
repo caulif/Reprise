@@ -671,6 +671,9 @@ test("target stderr is redacted before it reaches the run journal", () => {
   );
   assert.equal(redactDiagnostic("api_key=abcdefgh!REST-OF-SECRET"), "api_key=[REDACTED]");
   assert.doesNotMatch(summarizeDiagnostic("Provider failed api_key=abcdefgh!REST-OF-SECRET"), /REST-OF-SECRET|abcdefgh/);
+  const basic = ["Authorization: Basic ", "dXNlcjpwYXNzd29yZDEyMzQ1Njc4OTA="].join("");
+  assert.equal(redactDiagnostic(basic), "Authorization: [REDACTED]");
+  assert.doesNotMatch(summarizeDiagnostic(basic), /dXNlcjpwYXNzd29yZDEyMzQ1Njc4OTA=/);
   assert.equal(
     redactDiagnostic("ENOENT: no such file or directory"),
     "ENOENT: no such file or directory",

@@ -183,6 +183,9 @@ async function postTaskDirtyPaths(root: string, evidenceRoot: string, rebasePath
     const relative = row.slice(3).replaceAll("\\", "/");
     // Rename/copy -z rows are "XY dest\0source\0"; inspect both paths as possible dirt.
     const paired = (code.includes("R") || code.includes("C")) ? (rows[++i] ?? "").replaceAll("\\", "/") : "";
+    if (paired && evidenceRoot !== root && await identicalPreservedRename(root, evidenceRoot, code, relative, paired)) {
+      continue;
+    }
     for (const candidate of paired ? [relative, paired] : [relative]) {
       if (!candidate || isDependencyPath(candidate)) continue;
       if (code !== "??" && rebasePaths.has(candidate)) continue;
@@ -201,6 +204,33 @@ async function postTaskDirtyPaths(root: string, evidenceRoot: string, rebasePath
     }
   }
   return paths.slice(0, 64);
+}
+
+/** Same staged rename/copy in the protected source with matching destination bytes is retained input. */
+async function identicalPreservedRename(
+  root: string,
+  evidenceRoot: string,
+  code: string,
+  dest: string,
+  src: string,
+): Promise<boolean> {
+  const evidence = await git(evidenceRoot, ["status", "--porcelain=v1", "-z", "--", dest, src]);
+  const rows = evidence.split("\0").filter(Boolean);
+  let matched = false;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!;
+    const rowCode = row.slice(0, 2);
+    const rowDest = row.slice(3).replaceAll("\\", "/");
+    if (!(rowCode.includes("R") || rowCode.includes("C"))) continue;
+    const rowSrc = (rows[++i] ?? "").replaceAll("\\", "/");
+    if (rowDest === dest && rowSrc === src && rowCode === code) matched = true;
+  }
+  if (!matched) return false;
+  await assertNoSymlinkAncestors(root, dest);
+  await assertNoSymlinkAncestors(evidenceRoot, dest);
+  const before = await readFile(recoveryPath(evidenceRoot, dest)).catch(() => undefined);
+  const after = await readFile(recoveryPath(root, dest)).catch(() => undefined);
+  return Boolean(before && after && sha256(before) === sha256(after));
 }
 
 function isDependencyPath(posix: string): boolean {

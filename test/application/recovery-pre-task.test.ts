@@ -425,3 +425,26 @@ test("rename onto an allowed rebase path still blocks the unrelated source path"
   assert.equal(check.readyAllowed, false);
   assert.ok(check.dirtyPaths.includes("unrelated.txt"));
 });
+
+
+test("identical preserved source renames stay ready while new renames still block", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-preserved-rename-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const source = join(root, "source"), work = join(root, "work"); await mkdir(source);
+  await git(source, ["init", "--template="]);
+  await commitTree(source, "before", "start\n");
+  await writeFile(join(source, "old.txt"), "rename me\n");
+  await git(source, ["add", "old.txt"]);
+  await git(source, ["-c", "user.email=test@example.invalid", "-c", "user.name=Test", "commit", "-m", "add old"]);
+  await git(source, ["mv", "old.txt", "new.txt"]);
+  const frozen = await freezeRecoveryGitEvidence(source, taskCase({}), "a".repeat(64));
+  await cp(source, work, { recursive: true });
+  const preserved = await evaluateRecoveryPreTaskConditions(work, taskCase({}), undefined, source, frozen);
+  assert.equal(preserved.readyAllowed, true);
+  assert.equal(preserved.dirtyPaths.includes("old.txt"), false);
+  await writeFile(join(work, "extra.txt"), "extra\n");
+  await git(work, ["add", "extra.txt"]);
+  await git(work, ["mv", "extra.txt", "hijacked.txt"]);
+  const blocked = await evaluateRecoveryPreTaskConditions(work, taskCase({}), undefined, source, frozen);
+  assert.equal(blocked.readyAllowed, false);
+});
