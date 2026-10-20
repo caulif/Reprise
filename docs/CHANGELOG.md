@@ -2,6 +2,48 @@
 
 本文件记录用户可见变更。格式接近 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。版本遵循 SemVer；破坏性 on-disk / 事件格式必须写迁移、兼容性和回滚提示。
 
+## [0.1.1](https://github.com/caulif/Reprise/compare/v0.1.0...v0.1.1) (2026-10-20)
+
+
+### ci
+
+* automate reviewed releases to npm and GitHub ([#177](https://github.com/caulif/Reprise/issues/177)) ([4cca6f6](https://github.com/caulif/Reprise/commit/4cca6f6e6bf47981a724f885efb86b8131f57265))
+
+
+### Features
+
+* retain managed candidate sessions and repair Claude discovery ([15d79b3](https://github.com/caulif/Reprise/commit/15d79b3b1ba564aea97dd4004cf1e0b4cd6eb16b))
+
+
+### Bug Fixes
+
+* apply shared diagnostic redaction before legacy patterns ([2f81a65](https://github.com/caulif/Reprise/commit/2f81a659f48c0ed66af3e460f58f03734f3983c5))
+* bind rebase retention to upstream rename destinations ([bb747f8](https://github.com/caulif/Reprise/commit/bb747f873eb8d114df2b2430e8e126d8820deba8))
+* **cli:** report the installed package version ([#179](https://github.com/caulif/Reprise/issues/179)) ([8d2784e](https://github.com/caulif/Reprise/commit/8d2784ecb688fcc034a62d822414b3017c46216b))
+* discover Codex archived session transcripts ([c3ee2cc](https://github.com/caulif/Reprise/commit/c3ee2cc4a270458ed1a32a00975d7b4d1b2b7112))
+* normalize CRLF when asserting rebase staged input ([1b61474](https://github.com/caulif/Reprise/commit/1b614745e4a89bdf6400a6f96f1c702420a12018))
+* parse diff-tree -z name-status records by field count ([73145a1](https://github.com/caulif/Reprise/commit/73145a19590631be70b59ca672668337fd258fdc))
+* prefer archived previews over stale native session indexes ([017cb3c](https://github.com/caulif/Reprise/commit/017cb3c344100e598fc443ba0deb72fc67cf0ab6))
+* preserve managed history and discover archived Codex sessions ([66857b4](https://github.com/caulif/Reprise/commit/66857b40603f4f99007aeb4eac8b4817ed29f0a4))
+* preserve native model evidence and cover managed history regressions ([e227f46](https://github.com/caulif/Reprise/commit/e227f4646cba8e4ca1982b8e8c85600a6b7cc679))
+* preserve valid Git recovery boundaries and finalize diagnostics ([fcd699a](https://github.com/caulif/Reprise/commit/fcd699a0dec30029cc5c4728947019fa9e410d54))
+* **recovery:** accept validated unborn source workspaces ([a5238d1](https://github.com/caulif/Reprise/commit/a5238d10c2e3821d0d859b738e34f7493f798391))
+* **recovery:** distinguish unborn repositories from unavailable Git evidence ([ed404e1](https://github.com/caulif/Reprise/commit/ed404e12e54b1d4de9281df8cb0f3c9bfa28bfac))
+* redact Basic auth fully and allow preserved renames ([9220f6f](https://github.com/caulif/Reprise/commit/9220f6fb0486312acb539b43bcfca0fd0fff08e0))
+* redact recovery diagnostics and inspect rename dirt ([c8bf407](https://github.com/caulif/Reprise/commit/c8bf407a71c835d6e43e4c92a3e9037fc4100a23))
+* restore recovery test imports and unborn dirty-path arity ([acfb773](https://github.com/caulif/Reprise/commit/acfb7733bfec559203e582d815fb5fb4eb3fd68d))
+* retain unmerged paths for rename-mapped rebase conflicts ([3535730](https://github.com/caulif/Reprise/commit/35357301eaae7b1ce00a6caa8f72af1d757421d8))
+* stream Git freeze commits and accept plural rebase conflicts ([711f066](https://github.com/caulif/Reprise/commit/711f06648baa248b5a10cdfc389727ca5f6fc704))
+* support single-mode architecture diagram screenshots ([7d192bc](https://github.com/caulif/Reprise/commit/7d192bc897c1df5d8082bfaf29a42dc1e062b600))
+* support single-mode architecture diagram screenshots ([ba1a9bd](https://github.com/caulif/Reprise/commit/ba1a9bd020b98c3f239be983b4c6e4283ceaf1d4))
+
+
+### Documentation
+
+* add agent installation guide and compact result layout ([#175](https://github.com/caulif/Reprise/issues/175)) ([0b45147](https://github.com/caulif/Reprise/commit/0b4514798a6fe383356e86eb81348fedd051eef1))
+* prepare public README with real results and npm onboarding ([#164](https://github.com/caulif/Reprise/issues/164)) ([269feba](https://github.com/caulif/Reprise/commit/269febac087f58d39725f9588a8819259341eaa5))
+* record initial npm release preparation ([#176](https://github.com/caulif/Reprise/issues/176)) ([51b061f](https://github.com/caulif/Reprise/commit/51b061f1cbfde5b0bd748966590b696748fa14fe))
+
 ## [Unreleased]
 
 ### Documentation
