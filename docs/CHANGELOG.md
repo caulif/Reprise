@@ -2,6 +2,13 @@
 
 本文件记录用户可见变更。格式接近 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。版本遵循 SemVer；破坏性 on-disk / 事件格式必须写迁移、兼容性和回滚提示。
 
+## [0.1.2](https://github.com/caulif/Reprise/compare/v0.1.1...v0.1.2) (2026-10-20)
+
+
+### Bug Fixes
+
+* **release:** resolve draft releases before publishing ([#180](https://github.com/caulif/Reprise/issues/180)) ([b578882](https://github.com/caulif/Reprise/commit/b5788821620117e337d4ef8c877eb3b05888c412))
+
 ## [0.1.1](https://github.com/caulif/Reprise/compare/v0.1.0...v0.1.1) (2026-10-20)
 
 
