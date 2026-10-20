@@ -12,6 +12,10 @@ import {
   freezeRecoveryGitEvidence,
 } from "../../src/environment/recovery-pre-task.js";
 import type { TaskCase } from "../../src/core/schema.js";
+import { RecoveryFrozenGitSchema } from "../../src/core/schema.js";
+import { Value } from "@sinclair/typebox/value";
+import { hostShellDelete } from "../host-shell.js";
+import { isRecord } from "../../src/core/json.js";
 import { now, VerifiedRuntime, input } from "../codex-experiment-support.js";
 
 const exec = promisify(execFile);
@@ -190,4 +194,109 @@ test('corrupt Git probe errors do not become a ready non-Git scene', async t => 
   await git(root, ['init', '--template=']); await commitTree(root, 'before', 'start\n');
   await writeFile(join(root, '.git', 'config'), '[invalid config');
   await assert.rejects(evaluateRecoveryPreTaskConditions(root, taskCase({})), /Process boundary failed/);
+});
+
+test('unborn Git is frozen distinctly and only unchanged retained input bytes pass', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-unborn-inputs-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const source = join(root, 'source'), work = join(root, 'work');
+  await mkdir(source);
+  await git(source, ['init', '--template=']);
+  await writeFile(join(source, 'input.txt'), 'original input');
+  const frozen = await freezeRecoveryGitEvidence(source, taskCase({}), 'a'.repeat(64));
+  assert.equal(frozen.schemaVersion, 2);
+  assert.equal(frozen.state, 'unborn');
+  assert.equal((await freezeRecoveryGitEvidence(source, taskCase({ historicalEvents: [{ text: '[main 1234567] completed task' }] }), 'digest')).state, 'unavailable');
+  assert.equal((await freezeRecoveryGitEvidence(source, taskCase({ taskContext: { historicalCommit: 'a'.repeat(40) } }), 'digest')).state, 'unavailable');
+  assert.equal(Value.Check(RecoveryFrozenGitSchema, frozen), true);
+  assert.equal(Value.Check(RecoveryFrozenGitSchema, { ...frozen, schemaVersion: 1 }), false);
+  assert.equal(Value.Check(RecoveryFrozenGitSchema, { ...frozen, schemaVersion: 1, state: 'unavailable' }), true);
+  await cp(source, work, { recursive: true });
+  assert.equal((await evaluateRecoveryPreTaskConditions(work, taskCase({}), undefined, source, frozen)).readyAllowed, true);
+  assert.equal((await evaluateRecoveryPreTaskConditions(work, taskCase({}), undefined, source, { ...frozen, schemaVersion: 1, state: 'unavailable' })).readyAllowed, false);
+  await writeFile(join(work, 'input.txt'), 'changed input');
+  const modified = await evaluateRecoveryPreTaskConditions(work, taskCase({}), undefined, source, frozen);
+  assert.equal(modified.readyAllowed, false);
+  assert.deepEqual(modified.dirtyPaths, ['input.txt']);
+  await writeFile(join(work, 'input.txt'), 'original input');
+  await writeFile(join(work, 'answer.txt'), 'invented');
+  assert.equal((await evaluateRecoveryPreTaskConditions(work, taskCase({}), undefined, source, frozen)).readyAllowed, false);
+  await rm(join(work, '.git'), { recursive: true });
+  await assert.rejects(evaluateRecoveryPreTaskConditions(work, taskCase({}), undefined, source, frozen));
+  await git(work, ['init', '--template=']);
+  await commitTree(work, 'invented', 'answer');
+  assert.equal((await evaluateRecoveryPreTaskConditions(work, taskCase({}), undefined, source, frozen)).readyAllowed, false);
+});
+
+test('orphan branches, lost HEAD refs and corrupt repositories never become unborn evidence', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-unborn-negative-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await git(root, ['init', '--template=']);
+  await commitTree(root, 'before', 'start');
+  const branch = (await git(root, ['symbolic-ref', 'HEAD'])).trim();
+  await git(root, ['checkout', '--detach']);
+  assert.equal((await freezeRecoveryGitEvidence(root, taskCase({}), 'digest')).state, 'git');
+  await git(root, ['checkout', branch.slice('refs/heads/'.length)]);
+  await git(root, ['checkout', '--orphan', 'empty']);
+  assert.equal((await freezeRecoveryGitEvidence(root, taskCase({}), 'digest')).state, 'unavailable');
+  await git(root, ['update-ref', '-d', branch]);
+  await git(root, ['reflog', 'expire', '--expire=now', '--all']);
+  assert.equal((await freezeRecoveryGitEvidence(root, taskCase({}), 'digest')).state, 'unavailable');
+  await writeFile(join(root, '.git', 'config'), '[invalid config');
+  const frozen = await freezeRecoveryGitEvidence(root, taskCase({}), 'digest');
+  assert.equal(frozen.state, 'unavailable');
+  assert.equal((await evaluateRecoveryPreTaskConditions(root, taskCase({}), undefined, root, frozen)).readyAllowed, false);
+  const abort = new AbortController();
+  abort.abort();
+  await assert.rejects(freezeRecoveryGitEvidence(root, taskCase({}), 'digest', abort.signal));
+});
+
+test('Recovery accepts an Agent-restored unborn workspace without inventing history and preserves blocked decisions', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'reprise-unborn-recover-'));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  const base = input(root, new VerifiedRuntime());
+  await mkdir(base.sourceRoot, { recursive: true });
+  await git(base.sourceRoot, ['init', '--template=']);
+  await writeFile(join(base.sourceRoot, 'input.txt'), 'original input');
+  await writeFile(join(base.sourceRoot, 'answer.txt'), 'later answer');
+  for (const status of ['ready', 'blocked'] as const) {
+    let calls = 0;
+    const recovery: RecoveryAgentPort = {
+      recover: async (_context, tools, _audit, signal) => {
+        calls++;
+        const shell = tools.find(tool => tool.name === 'exec_command');
+        assert.ok(shell);
+        const abort = signal ?? new AbortController().signal;
+        const owner = { sessionId: 'unborn-recovery', invocationId: `${status}-${calls}` };
+        let result = await shell.execute({ cmd: hostShellDelete('answer.txt') }, abort, owner);
+        while (isRecord(result.details) && (result.details.state === 'running' || result.details.state === 'flushing')) {
+          const poll = tools.find(tool => tool.name === 'write_stdin');
+          assert.ok(poll);
+          result = await poll.execute({ session_id: result.details.session_id }, abort, owner);
+        }
+        assert.equal(isRecord(result.details) ? result.details.exitCode : undefined, 0);
+        await shell.lifecycle?.finishInvocation(owner);
+        return { status: 'completed', sessionId: 'unborn-recovery', value: {
+          status, summary: status === 'ready' ? 'Original inputs retained; later answer removed.' : 'The retained input boundary needs clarification.',
+          unresolved: status === 'ready' ? ['No historical commit exists.'] : ['Retained materials may postdate the task.'],
+        } };
+      },
+    };
+    const attempt = await recoverExperiment({ dataDir: base.dataDir, caseId: base.caseId,
+      experimentId: `unborn-${status}`, runId: `unborn-${status}-run`, sourceRoot: base.sourceRoot,
+      taskCase: base.taskCase, recovery, now });
+    assert.equal(calls, 1);
+    if (status === 'ready') {
+      assert.equal(attempt.acceptedAutomatically, true);
+      assert.ok(attempt.baseline.root);
+      assert.equal(await readFile(join(attempt.baseline.root, 'input.txt'), 'utf8'), 'original input');
+      await assert.rejects(readFile(join(attempt.baseline.root, 'answer.txt')), { code: 'ENOENT' });
+      await assert.rejects(git(attempt.baseline.root, ['rev-parse', '--verify', 'HEAD']));
+      assert.equal(attempt.providerPreview?.changedPaths.includes('answer.txt'), true);
+    } else {
+      assert.equal(attempt.acceptedAutomatically, undefined);
+      assert.equal(typeof attempt.accept, 'undefined');
+    }
+    assert.equal(await readFile(join(base.sourceRoot, 'answer.txt'), 'utf8'), 'later answer');
+  }
 });

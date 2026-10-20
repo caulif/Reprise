@@ -32,6 +32,8 @@ Host 将报告、process logs、临时 home 和冻结 Git 依据放在项目之�
 
 Git dirty 检查按 NUL 分隔路径及内容进行，不以 mtime 为判据。与原 source 完全相同的 dirty 文件暂按保留输入处理，这不能独立证明其历史归属；必要输入/答案边界仍由 Agent 调查并披露。通过检查后，Host 仅在隔离副本中封存所选 HEAD 的祖先，清理其他 refs、reflogs、未来不可达对象，再验证 Git 完整性。显式 gitStart 契约保持独立和严格。
 
+源仓库已初始化但尚无提交时，新冻结 Git 证据与读取失败分开记录。Host 确认其 HEAD 指向不存在的本地分支、没有 refs/reflogs 可达提交、对象检查未发现遗留提交或损坏，且原始历史没有提交线索；副本必须保持该状态，保留输入须与受保护 source 的内容一致，不允许新建提交绕过边界。Agent 依据原始历史判断文件归属，无法确定关键输入或答案边界时仍返回 blocked；机械通过不证明当前目录就是历史起点。旧证据保持原字节，不把过去的 unavailable 补认证成无提交。见[无提交恢复决策](../decisions/accepted/2026-10-20-recovery-unborn-source.md)。
+
 机械反馈仅回传具体失败事实；相同失败与文件指纹没有变化时停止。默认总预算 24 小时，覆盖准备、模型、校验与封存，无模型请求数或工具调用次数额度。实验工作流按本次 `recoveryBudget.callTimeoutMs` 保存有效操作总限，配置绑定成功后、真实连接 probe 前，扣除自初始化开始已用的单调时间重设剩余分段截止。显式 `RecoveryAttemptInput.timeoutMs` 与绑定总限不一致时在 probe 前拒绝冲突；没有配置绑定的自定义 Port 沿用显式或默认总限，不从其单次 timeout 猜测整体预算。所有出口先取消计时器再聚合收尾，writer/初始化 attempt 仍先于 activity 和 Agent 构造。瞬时故障使用既有进展感知重试，截止后不得接受 ready。决定见[组合边界](../decisions/accepted/2026-10-15-remediation-integration-boundaries.md)。
 
 ready 表示必要任务输入已具备且 Candidate 可开始，不默认要求依赖安装或全量构建。blocked 表示继续需猜关键输入、任务条件或答案边界；未验证内容应披露，不能通过改时间或查 Host 源码绕过检查。

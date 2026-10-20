@@ -38,6 +38,13 @@ export async function evaluateRecoveryPreTaskConditions(
 ): Promise<RecoveryPreTaskCheck> {
   if (gitStart) return checkConfirmedGitStart(root, gitStart);
   if (frozen?.state === "unavailable") return diagnosis({ schemaVersion: 1, readyAllowed: false, reasons: ["Protected source Git evidence was unavailable before recovery."], dirtyPaths: [] });
+  if (frozen?.state === "unborn") {
+    const reasons: string[] = [];
+    if (!(await isUnbornRepository(root))) reasons.push("Work copy no longer matches the protected source's unborn Git state.");
+    const dirtyPaths = reasons.length ? [] : await postTaskDirtyPaths(root, evidenceRoot);
+    if (dirtyPaths.length) reasons.push("Work copy contains added or modified inputs not present in the protected source.");
+    return diagnosis({ schemaVersion: 1, readyAllowed: reasons.length === 0, reasons, dirtyPaths });
+  }
   const head = await gitOutput(root, ["rev-parse", "HEAD"]);
   if (!head) {
     const isRepo = await gitOutput(evidenceRoot, ["rev-parse", "--is-inside-work-tree"]);
@@ -216,20 +223,37 @@ export async function freezeRecoveryGitEvidence(root: string, taskCase: TaskCase
     const probe = await runProcess({ operation: "recovery_git_presence", executableKind: "git", command: "git", args: ["rev-parse", "--is-inside-work-tree"], cwd: root, timeoutMs: 15000, allowNonzeroExit: true, ...(signal ? { signal } : {}) });
     if (probe.exitCode !== 0) {
       state = existsSync(join(root, ".git")) ? "unavailable" : "non-git";
+    } else if (await isUnbornRepository(root, signal)) {
+      state = recordedHistoricalCommit(taskCase) || recordedEventCommits(taskCase.historicalEvents).length ? "unavailable" : "unborn";
     } else {
       const output = await git(root, ["log", "--all", "HEAD", "--format=%H %T"], signal, 15000);
       for (const row of output.trim().split("\n")) { const [commit, tree] = row.trim().split(" "); if (commit && tree) commits[commit] = tree; }
       state = "git";
     }
-  } catch {
-    // Spawn, corrupt/unborn repository and output-limit failures remain unavailable, never non-Git.
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    // Failed probes and corrupt repositories remain unavailable, never non-Git or unborn.
   }
   const taskCommits: string[] = [];
   for (const candidate of state === "git" ? recordedEventCommits(taskCase.historicalEvents) : []) {
     const matches = Object.keys(commits).filter(commit => commit.startsWith(candidate.toLowerCase()));
     if (matches.length === 1 && !taskCommits.includes(matches[0]!)) taskCommits.push(matches[0]!);
   }
-  const result = { schemaVersion: 1 as const, state, commits, taskCommits, sourceDigest };
+  const result = { schemaVersion: 2 as const, state, commits, taskCommits, sourceDigest };
   if (!Value.Check(RecoveryFrozenGitSchema, result)) throw new Error("Frozen Git evidence failed schema validation.");
   return result;
+}
+
+async function isUnbornRepository(root: string, signal?: AbortSignal): Promise<boolean> {
+  if (await gitOutput(root, ["rev-parse", "HEAD"])) return false;
+  if ((await git(root, ["rev-parse", "--is-inside-work-tree"], signal)).trim() !== "true") return false;
+  const ref = (await git(root, ["symbolic-ref", "-q", "HEAD"], signal)).trim();
+  if (!ref.startsWith("refs/heads/")) return false;
+  const head = await runProcess({ operation: "recovery_unborn_head", executableKind: "git", command: "git",
+    args: ["show-ref", "--verify", "--quiet", ref], cwd: root, timeoutMs: 5000, allowNonzeroExit: true,
+    ...(signal ? { signal } : {}) });
+  if (head.exitCode !== 1) return false;
+  if ((await git(root, ["log", "--all", "--reflog", "--format=%H"], signal)).trim()) return false;
+  const objects = await git(root, ["fsck", "--full", "--no-reflogs"], signal);
+  return !/\bcommit\b/.test(objects);
 }

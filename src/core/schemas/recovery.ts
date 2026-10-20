@@ -740,11 +740,14 @@ export const RecoveryExplanationSchema = Type.Object({
 export type RecoveryExplanation = Static<typeof RecoveryExplanationSchema>;
 
 
-export const RecoveryFrozenGitSchema = Type.Object({
-  schemaVersion: Type.Literal(1),
-  state: Type.Union([Type.Literal("git"), Type.Literal("non-git"), Type.Literal("unavailable")]),
+const frozenGitFields = {
   commits: Type.Record(Type.String(), Type.String()),
   taskCommits: Type.Array(Type.String()),
   sourceDigest: Type.String(),
-});
+};
+const frozenGitStates = [Type.Literal("git"), Type.Literal("non-git"), Type.Literal("unavailable")];
+export const RecoveryFrozenGitSchema = Type.Union([
+  Type.Object({ schemaVersion: Type.Literal(1), state: Type.Union(frozenGitStates), ...frozenGitFields }),
+  Type.Object({ schemaVersion: Type.Literal(2), state: Type.Union([...frozenGitStates, Type.Literal("unborn")]), ...frozenGitFields }),
+]);
 export type RecoveryFrozenGit = Static<typeof RecoveryFrozenGitSchema>;
