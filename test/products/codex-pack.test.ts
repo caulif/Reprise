@@ -661,6 +661,14 @@ test("target stderr is redacted before it reaches the run journal", () => {
     "Authorization: [REDACTED]",
   );
   assert.equal(redactDiagnostic("api_key=abcdefgh12345678"), "[REDACTED]");
+  assert.doesNotMatch(
+    redactDiagnostic('{"access_token":"ya29.synthetic-access-token-value","api_key":"k/ey+with=special"}'),
+    /ya29\.synthetic-access-token-value|k\/ey\+with=special/,
+  );
+  assert.match(
+    redactDiagnostic('{"access_token":"ya29.synthetic-access-token-value","api_key":"k/ey+with=special"}'),
+    /\[REDACTED\]/,
+  );
   assert.equal(
     redactDiagnostic("ENOENT: no such file or directory"),
     "ENOENT: no such file or directory",

@@ -397,3 +397,31 @@ test("freeze keeps unreachable tips even when the object store has many non-comm
   assert.ok(frozen.commits[tip]);
   assert.ok(frozen.commits[base]);
 });
+
+
+test("rename onto an allowed rebase path still blocks the unrelated source path", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "reprise-rebase-rename-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const source = join(root, "source"), work = join(root, "work"); await mkdir(source);
+  await git(source, ["init", "--template="]);
+  const base = await commitTree(source, "base", "base\n");
+  await writeFile(join(source, "unrelated.txt"), "keep me\n");
+  await git(source, ["add", "unrelated.txt"]);
+  await git(source, ["-c", "user.email=test@example.invalid", "-c", "user.name=Test", "commit", "-m", "unrelated"]);
+  await git(source, ["checkout", "-b", "topic"]);
+  await writeFile(join(source, "staged.txt"), "required staged input\n");
+  await commitTree(source, "topic change", "topic\n");
+  await git(source, ["checkout", "--detach", base]);
+  const onto = await commitTree(source, "onto", "onto\n");
+  await git(source, ["checkout", "topic"]);
+  const task = taskCase({ initialInput: { id: "message", role: "user", text: "Resolve the git rebase conflicts and continue." } });
+  const frozen = await freezeRecoveryGitEvidence(source, task, "a".repeat(64));
+  await cp(source, work, { recursive: true });
+  await assert.rejects(git(work, ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "rebase", onto]));
+  // Rename an unrelated tracked file onto the allowed rebase input path.
+  await rm(join(work, "staged.txt"), { force: true });
+  await git(work, ["mv", "-f", "unrelated.txt", "staged.txt"]);
+  const check = await evaluateRecoveryPreTaskConditions(work, task, undefined, source, frozen);
+  assert.equal(check.readyAllowed, false);
+  assert.ok(check.dirtyPaths.includes("unrelated.txt"));
+});

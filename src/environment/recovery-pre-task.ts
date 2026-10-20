@@ -179,22 +179,26 @@ async function postTaskDirtyPaths(root: string, evidenceRoot: string, rebasePath
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]!;
     if (!row) continue;
+    const code = row.slice(0, 2);
     const relative = row.slice(3).replaceAll("\\", "/");
-    if (row.slice(0, 2).includes("R") || row.slice(0, 2).includes("C")) i++;
-    if (!relative || isDependencyPath(relative)) continue;
-    if (row.slice(0, 2) !== "??" && rebasePaths.has(relative)) continue;
-    // Only source dirt with identical bytes can be a retained original input.
-    if (evidenceRoot !== root) {
-      const sourceDirty = await git(evidenceRoot, ["status", "--porcelain=v1", "-z", "--", relative]);
-      if (sourceDirty) {
-        await assertNoSymlinkAncestors(root, relative);
-        await assertNoSymlinkAncestors(evidenceRoot, relative);
-        const before = await readFile(recoveryPath(evidenceRoot, relative)).catch(() => undefined);
-        const after = await readFile(recoveryPath(root, relative)).catch(() => undefined);
-        if (before && after && sha256(before) === sha256(after)) continue;
+    // Rename/copy -z rows are "XY dest\0source\0"; inspect both paths as possible dirt.
+    const paired = (code.includes("R") || code.includes("C")) ? (rows[++i] ?? "").replaceAll("\\", "/") : "";
+    for (const candidate of paired ? [relative, paired] : [relative]) {
+      if (!candidate || isDependencyPath(candidate)) continue;
+      if (code !== "??" && rebasePaths.has(candidate)) continue;
+      // Only source dirt with identical bytes can be a retained original input.
+      if (evidenceRoot !== root) {
+        const sourceDirty = await git(evidenceRoot, ["status", "--porcelain=v1", "-z", "--", candidate]);
+        if (sourceDirty) {
+          await assertNoSymlinkAncestors(root, candidate);
+          await assertNoSymlinkAncestors(evidenceRoot, candidate);
+          const before = await readFile(recoveryPath(evidenceRoot, candidate)).catch(() => undefined);
+          const after = await readFile(recoveryPath(root, candidate)).catch(() => undefined);
+          if (before && after && sha256(before) === sha256(after)) continue;
+        }
       }
+      paths.push(candidate);
     }
-    paths.push(relative);
   }
   return paths.slice(0, 64);
 }
