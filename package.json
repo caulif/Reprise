@@ -1,6 +1,6 @@
 {
   "name": "@caulif/reprise",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Local-first harness for replaying and inspecting agent runtimes on real tasks.",
   "license": "MIT",
   "keywords": [
