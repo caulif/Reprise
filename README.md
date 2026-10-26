@@ -115,12 +115,12 @@ See [Getting started](./docs/getting-started.md) for configuration and your firs
 
 ## Requirements And Support
 
-Currently supports **Claude Code** and **Codex** only, for importing saved sessions and executing a candidate.
+Currently supports **Claude Code** and **Codex** for importing saved sessions and executing a candidate. **DeepSeek Harness**, **Kimi Code**, **MiniMax Code** and **Qwen Code** execute a candidate over ACP; importing their saved sessions is not implemented yet, so their session catalog stays empty.
 
 | Goal | Requirements |
 |---|---|
 | Install and inspect help | Node.js 22.19+ and npm |
-| Recover a session and run a candidate | A supported tool installed locally, with saved session history |
+| Recover a session and run a candidate | A supported tool installed locally and signed in; importing saved history additionally needs that tool's own local history |
 | Call recovery, controller, or comparison models | Configure the Harness model in `/config`; calls may incur service fees |
 
 The maintainer has tested Windows 11 and Linux. macOS has not been tested yet; you are welcome to try it and share your experience.

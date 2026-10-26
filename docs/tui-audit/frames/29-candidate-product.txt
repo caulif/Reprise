@@ -7,6 +7,10 @@ Reprise
  
  ❯ Codex                                                                                原对话          可用          
    Claude Code                                                                                          可用          
+   DeepSeek Harness                                                                                     可用          
+   Kimi Code                                                                                            可用          
+   MiniMax Code                                                                                         可用          
+   Qwen Code                                                                                            可用          
 
  → 查看准备过程
  任务文件已准备好，请选择执行工具和模型。

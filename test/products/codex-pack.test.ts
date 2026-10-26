@@ -173,8 +173,8 @@ test("Codex runtime normalization records only observed model facts and leaves a
   );
 });
 
-test("Codex and Claude Code Product Packs are statically registered", () => {
-  assert.equal(productPacks.length, 2);
+test("Codex and the ACP packs are statically registered", () => {
+  assert.equal(productPacks.length, 6);
   assert.equal(productPacks[0], codexProductPack);
   assert.equal(codexProductPack.runtime.id, "codex");
   assert.deepEqual(codexProductPack.manifest.sessionSchemaVersions, [
