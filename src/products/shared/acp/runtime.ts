@@ -2,6 +2,7 @@ import type {
   AvailableRuntime,
   PreparedRuntimeEnvironment,
   ProductRuntime,
+  RecoveryRuntimeCapabilities,
   ResolvedRuntime,
   RuntimeAvailability,
   RuntimeModelOffer,
@@ -98,12 +99,13 @@ export class AcpProductRuntime implements ProductRuntime {
     return this.resolve(request);
   }
 
-  recoveryCapabilities() {
-    return LOCAL_SESSION_RECOVERY_CAPABILITIES;
+  recoveryCapabilities(): RecoveryRuntimeCapabilities {
+    // These agents expose no history API, so recovery cannot read a session back.
+    return { ...LOCAL_SESSION_RECOVERY_CAPABILITIES, sessionHistory: 'unavailable' };
   }
 
   async prepareExecution(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, launch: CandidateLaunchContext) {
-    if (this.#options.args?.some((arg) => arg.includes('\0'))) throw new Error('Invalid Runtime argv.');
+    if ((this.#options.args ?? this.#config.acpArgs).some((arg) => arg.includes('\0'))) throw new Error('Invalid Runtime argv.');
     const plan = candidateExecutionPlan(
       this.#config.envRole,
       environment.root,
@@ -154,7 +156,7 @@ export class AcpProductRuntime implements ProductRuntime {
       environment,
       sink,
       completeEnv: plan.environment,
-      env: plan.environment,
+      temporaryDirectory: plan.temporaryDirectory,
       args: this.#options.args ?? [...this.#config.acpArgs],
     });
   }

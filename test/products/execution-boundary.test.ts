@@ -11,6 +11,7 @@ import { CodexProductRuntime } from '../../src/products/packs/codex/runtime.js';
 import { CodexAppServerClient } from '../../src/products/packs/codex/runner.js';
 import { ClaudeCodeProductRuntime } from '../../src/products/packs/claude-code/runtime.js';
 import { candidateLaunchFor } from '../../src/application/recovery/launch-context.js';
+import { candidateExecutionPlan } from '../../src/products/shared/execution-plan.js';
 import { FAKE_APP_SERVER } from '../codex-pack-support.js';
 import { workspaceTools } from '../../src/infrastructure/recovery-workspace-tools.js';
 import { ExperimentStore } from '../../src/infrastructure/store/experiment-store.js';
@@ -285,4 +286,12 @@ test('new manifest field is optional for historical readers', () => {
   const environment = RunManifestSchema.properties.environment;
   assert.equal(Value.Check(environment, { environmentId: 'environment-old', workspacePath: 'old' }), true);
   assert.equal(Value.Check(environment, { environmentId: 'environment-old', workspacePath: 'old', executionBoundary: { mode: 'sandbox' } }), false);
+});
+
+test('the ACP execution boundary discloses automatic approval and an unforwarded model', () => {
+  const plan = candidateExecutionPlan('acp', join(tmpdir(), 'reprise-acp-boundary'), 'unknown');
+  assert.equal(Value.Check(ExecutionBoundarySchema, plan.record), true);
+  assert.deepEqual(plan.record.controls, ['persistent-session']);
+  assert.ok(plan.record.limitations.includes('ACP permission requests are answered automatically with the first allow option, so the Candidate never blocks on approval.'));
+  assert.ok(plan.record.limitations.includes('The selected model is not forwarded: ACP carries no model field on a prompt, so the agent runs with its own configured default model.'));
 });

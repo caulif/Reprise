@@ -46,6 +46,7 @@ export class AcpClient {
   #child: ChildProcessWithoutNullStreams | undefined;
   #exit: Promise<void> = Promise.resolve();
   #buffer = '';
+  #stderrTail = '';
   #nextRequestId = 1;
   #requestTimeoutMs: number;
   #closed = false;
@@ -84,8 +85,20 @@ export class AcpClient {
     });
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => this.#onChunk(chunk));
+    child.stdin.on('error', () => {
+      // Swallowed: a write to the agent's already-closed stdin must not crash the host process.
+    });
+    child.stdout.on('error', (error: Error) => this.#fail(new AcpUnavailableError(`ACP agent stdout failed: ${error.message}`)));
+    child.stderr.on('error', () => {
+      // Swallowed: stderr carries diagnostics only, so a broken diagnostic pipe is not a protocol failure.
+    });
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk: string) => {
+      // Kept as a bounded tail so a failed start can say why; drained so a chatty agent never blocks on a full pipe.
+      this.#stderrTail = `${this.#stderrTail} ${chunk}`.replace(/\s+/g, ' ').trim().slice(-400);
+    });
     child.on('error', (error: Error) => this.#fail(new AcpUnavailableError(`ACP agent failed to start: ${error.message}`)));
-    child.once('close', (code: number | null) => this.#fail(new AcpUnavailableError(`ACP agent exited (code ${code ?? 'unknown'}).`)));
+    child.once('close', (code: number | null) => this.#fail(new AcpUnavailableError(`ACP agent exited (code ${code ?? 'unknown'})${this.#stderrTail ? `: ${this.#stderrTail}` : ''}.`)));
   }
 
   async request(method: string, params: unknown): Promise<unknown> {
@@ -95,6 +108,8 @@ export class AcpClient {
       const timer = setTimeout(() => {
         this.#pending.delete(id);
         reject(new AcpUnavailableError(`ACP request ${method} timed out.`));
+        // A process that survives its own shutdown is a leak the operator has to know about.
+        void this.close().catch((error: unknown) => this.#fail(asError(error)));
       }, this.#requestTimeoutMs);
       this.#pending.set(id, { resolve, reject, timer });
     });
@@ -138,6 +153,14 @@ export class AcpClient {
       // settlement still arrives through session/prompt.
       return;
     }
+    if (Array.isArray(parsed)) {
+      for (const frame of parsed) this.#onFrame(frame);
+      return;
+    }
+    this.#onFrame(parsed);
+  }
+
+  #onFrame(parsed: unknown): void {
     const frame = record(parsed);
     const id = typeof frame.id === 'number' ? frame.id : undefined;
     const method = text(frame.method);
@@ -182,6 +205,7 @@ export class AcpClient {
   }
 
   #fail(error: Error): void {
+    this.#closed = true;
     this.#rejectPending(error);
     if (this.#closeNotified) return;
     this.#closeNotified = true;
@@ -203,4 +227,8 @@ function allowFirstOption(request: Record<string, unknown>): AcpPermissionDecisi
   const allow = options.map((option) => record(option)).find((option) => (text(option.kind) ?? '').startsWith('allow'));
   const optionId = allow ? text(allow.optionId) : undefined;
   return optionId ? { optionId } : { cancelled: true };
+}
+
+function asError(value: unknown): Error {
+  return value instanceof Error ? value : new AcpUnavailableError(String(value));
 }

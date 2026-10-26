@@ -23,17 +23,20 @@ export function acpSessionUpdateEvents(sessionId: string, params: unknown): read
   if (kind === 'agent_message_chunk') return [runtimeTargetEvent('visible_output', { sessionId, ...textChunk(update) })];
   if (kind === 'user_message_chunk') return [runtimeTargetEvent('visible_prompt', { sessionId, ...textChunk(update) })];
   if (kind === 'tool_call' || kind === 'tool_call_update') {
-    const finished = kind === 'tool_call_update' && FINISHED_TOOL_STATUSES.has(text(update.status) ?? '');
-    return [runtimeTargetEvent(finished ? 'tool_finished' : 'tool_started', { sessionId, ...toolPayload(update) })];
+    if (FINISHED_TOOL_STATUSES.has(text(update.status) ?? '')) return [runtimeTargetEvent('tool_finished', { sessionId, ...toolPayload(update) })];
+    return kind === 'tool_call' ? [runtimeTargetEvent('tool_started', { sessionId, ...toolPayload(update) })] : [];
   }
   if (kind === 'plan') return [runtimeTargetEvent('visible_output', { sessionId, kind: 'plan', entries: update.entries })];
   return [];
 }
 
+/**
+ * The chunk's `messageId` is the agent's own id, not a Reprise message id: the Journal only accepts a
+ * top-level `messageId` that a `message_submitted`/`delivery_observed` opener registered, and ACP never issues one.
+ */
 function textChunk(update: Record<string, unknown>): Record<string, unknown> {
   const content = record(update.content);
   return {
-    ...(text(update.messageId) ? { messageId: text(update.messageId) } : {}),
     ...(text(content.text) ? { text: text(content.text) } : {}),
     content,
   };

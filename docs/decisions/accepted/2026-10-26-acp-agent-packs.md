@@ -46,4 +46,4 @@ dsh（DeepSeek Harness）、Kimi Code、MiniMax Code（mcode）、Qwen Code 都�
 
 ## 验证
 
-离线测试覆盖 `session/update` 到事件的映射、`stopReason` 到结算的映射、权限请求自动应答、双轮推进、`stop()`/`close()` 的事件顺序，以及历史降级的诊断；假 ACP agent 用 `process.execPath` 加临时脚本启动，不产生外部调用。真实 Runtime 调用仍需环境变量显式 opt-in。本批对 dsh 0.2.1-rc.2、mcode 0.6.13、qwen 0.26.1 各做过一次真实 `initialize` + `session/new` 握手（不发送 prompt，不产生模型费用）；kimi 2.1.1 的握手在 `session/new` 被 `-32000 Authentication required` 拒绝，说明配置文件存在不等于已登录。
+离线测试覆盖 `session/update` 到事件的映射（含工具终态只结算一次）、`stopReason` 到结算的映射、权限请求自动应答、连续两轮的可见输出与工具事件、`stop()`/`close()` 的事件顺序与临时目录清理，以及历史降级的诊断；假 ACP agent 用 `process.execPath` 加临时脚本启动，不产生外部调用。其中一条用例把 `AcpTargetRunner` 接到真实的 `createCandidateRuntimeSink` + `ExperimentStore` 上：只有这条路径会校验事件与 Journal 的归属关系，桩 sink 会放过不合法的 payload。真实 Runtime 调用仍需环境变量显式 opt-in。本批对 dsh 0.2.1-rc.2、mcode 0.6.13、qwen 0.26.1 各做过一次真实 `initialize` + `session/new` 握手（不发送 prompt，不产生模型费用）；kimi 2.1.1 的握手在 `session/new` 被 `-32000 Authentication required` 拒绝，说明配置文件存在不等于已登录。四家本机模型配置的 one-shot 实跑不属于这条门禁。

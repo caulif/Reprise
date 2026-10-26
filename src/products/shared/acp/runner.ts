@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { mkdir, rm } from 'node:fs/promises';
 import { record, text } from '../../../core/json.js';
 import {
   runtimeTargetEvent,
@@ -8,6 +9,7 @@ import {
   type ResolvedRuntime,
   type RuntimeCapabilities,
   type RuntimeStopReason,
+  type TargetEvent,
   type TargetEventSink,
   type TargetRunner,
   type TargetStatus,
@@ -31,6 +33,7 @@ export type AcpRunnerOptions = {
   args: readonly string[];
   env?: Readonly<Record<string, string | undefined>>;
   completeEnv?: NodeJS.ProcessEnv;
+  temporaryDirectory?: string;
   requestTimeoutMs?: number;
 };
 
@@ -45,17 +48,24 @@ export class AcpTargetRunner implements TargetRunner {
   readonly #client: AcpClient;
   readonly #runtime: ResolvedRuntime;
   readonly #workspaceRoot: string;
+  readonly #temporaryDirectory: string | undefined;
   readonly #turns = new TurnWaiter();
+  readonly #appends = new Set<Promise<void>>();
   #sessionId: string = randomUUID();
   #status: TargetStatus = 'starting';
   #activeTurnId: string | undefined;
   #stopRequested = false;
+  #temporaryOwned = false;
+  #started = false;
+  #stoppedEventAppended = false;
+  #closedEventAppended = false;
 
   constructor(options: AcpRunnerOptions) {
     this.#displayName = options.displayName;
     this.#sink = options.sink;
     this.#runtime = options.runtime;
     this.#workspaceRoot = options.environment.root;
+    this.#temporaryDirectory = options.temporaryDirectory;
     this.#client = new AcpClient({
       executable: options.runtime.executable,
       args: options.args,
@@ -85,6 +95,10 @@ export class AcpTargetRunner implements TargetRunner {
   }
 
   async start(initial: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt> {
+    if (this.#temporaryDirectory) {
+      await mkdir(this.#temporaryDirectory);
+      this.#temporaryOwned = true;
+    }
     this.#client.start();
     await this.#client.request('initialize', { protocolVersion: ACP_PROTOCOL_VERSION, clientCapabilities: {} });
     const created = record(await this.#client.request('session/new', { cwd: this.#workspaceRoot, mcpServers: [] }));
@@ -93,6 +107,7 @@ export class AcpTargetRunner implements TargetRunner {
     this.#sessionId = sessionId;
     this.#status = 'running';
     await this.#sink.append(runtimeTargetEvent('session_started', { sessionId }));
+    this.#started = true;
     return this.send(initial, identity);
   }
 
@@ -141,7 +156,16 @@ export class AcpTargetRunner implements TargetRunner {
 
   async stop(reason: RuntimeStopReason): Promise<void> {
     this.#stopRequested = true;
-    await this.#sink.append(runtimeTargetEvent('session_stopped', { reason, sessionId: this.#sessionId }));
+    await this.#flush();
+    let stopError: unknown;
+    if (this.#started && !this.#stoppedEventAppended) {
+      this.#stoppedEventAppended = true;
+      try {
+        await this.#sink.append(runtimeTargetEvent('session_stopped', { reason, sessionId: this.#sessionId }));
+      } catch (error) {
+        stopError = error;
+      }
+    }
     if (this.#status === 'running') this.#client.notify('session/cancel', { sessionId: this.#sessionId });
     let closeError: unknown;
     try {
@@ -150,29 +174,52 @@ export class AcpTargetRunner implements TargetRunner {
       closeError = error;
     }
     this.#status = 'stopped';
+    await this.#releaseTemporaryDirectory();
     if (closeError) throw asError(closeError);
+    if (stopError) throw asError(stopError);
   }
 
   async close(): Promise<void> {
     if (this.#status !== 'stopped') await this.stop('shutdown');
-    await this.#sink.append(runtimeTargetEvent('session_closed', { sessionId: this.#sessionId }));
+    if (this.#started && !this.#closedEventAppended) {
+      this.#closedEventAppended = true;
+      await this.#sink.append(runtimeTargetEvent('session_closed', { sessionId: this.#sessionId }));
+    }
+    await this.#releaseTemporaryDirectory();
+  }
+
+  async #releaseTemporaryDirectory(): Promise<void> {
+    if (!this.#temporaryOwned || !this.#temporaryDirectory) return;
+    this.#temporaryOwned = false;
+    await rm(this.#temporaryDirectory, { recursive: true, force: true });
   }
 
   #onNotification(method: string, params: unknown): void {
     if (method !== 'session/update') return;
-    for (const event of acpSessionUpdateEvents(this.#sessionId, params)) {
-      void this.#sink.append(event).catch((error: unknown) => {
-        this.#turns.stash(new AcpUnavailableError(`Failed to record ${this.#displayName} update: ${asError(error).message}`));
-      });
-    }
+    for (const event of acpSessionUpdateEvents(this.#sessionId, params)) this.#record(event);
   }
 
-  #settle(stopReason: string | undefined): void {
+  /** A settlement must not outrun the events it describes: the report reads both from the Journal. */
+  #record(event: TargetEvent): void {
+    const append = this.#sink.append(event)
+      .catch((error: unknown) => {
+        this.#turns.stash(new AcpUnavailableError(`Failed to record ${this.#displayName} update: ${asError(error).message}`));
+      })
+      .finally(() => this.#appends.delete(append));
+    this.#appends.add(append);
+  }
+
+  async #flush(): Promise<void> {
+    await Promise.allSettled([...this.#appends]);
+  }
+
+  async #settle(stopReason: string | undefined): Promise<void> {
+    await this.#flush();
     const turnId = this.#activeTurnId ?? this.#sessionId;
     this.#activeTurnId = undefined;
     const settlement = acpTurnSettlement({ stopReason, turnId });
     if (!settlement) {
-      void this.#sink.append(runtimeTargetEvent('runtime_failed', { message: 'Unrecognized session/prompt stopReason.', stopReason: stopReason ?? null }));
+      this.#record(runtimeTargetEvent('runtime_failed', { message: 'Unrecognized session/prompt stopReason.', stopReason: stopReason ?? null }));
       this.#turns.fail(new AcpUnavailableError(`${this.#displayName} reported an unrecognized turn settlement (${stopReason ?? 'missing stopReason'}).`));
       return;
     }
