@@ -1,6 +1,7 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { record, text } from '../../../core/json.js';
 import { DEFAULT_RUNTIME_RPC_TIMEOUT_MS, positiveTimeout, spawnRuntimeProcess } from '../../../infrastructure/process/spawn.js';
+import { summarizeDiagnostic } from '../../../infrastructure/process/stdio.js';
 import { forceCloseRuntimeProcess } from '../../../infrastructure/process/terminate.js';
 
 export class AcpUnavailableError extends Error {
@@ -46,7 +47,7 @@ export class AcpClient {
   #child: ChildProcessWithoutNullStreams | undefined;
   #exit: Promise<void> = Promise.resolve();
   #buffer = '';
-  #stderrTail = '';
+  #stderrSummary = '';
   #nextRequestId = 1;
   #requestTimeoutMs: number;
   #closed = false;
@@ -94,11 +95,11 @@ export class AcpClient {
     });
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk: string) => {
-      // Kept as a bounded tail so a failed start can say why; drained so a chatty agent never blocks on a full pipe.
-      this.#stderrTail = `${this.#stderrTail} ${chunk}`.replace(/\s+/g, ' ').trim().slice(-400);
+      // Redacted and bounded like the Codex adapter: an unread pipe blocks a chatty agent, and stderr reaches the Journal.
+      this.#stderrSummary = summarizeDiagnostic(`${this.#stderrSummary} ${chunk}`, 400);
     });
     child.on('error', (error: Error) => this.#fail(new AcpUnavailableError(`ACP agent failed to start: ${error.message}`)));
-    child.once('close', (code: number | null) => this.#fail(new AcpUnavailableError(`ACP agent exited (code ${code ?? 'unknown'})${this.#stderrTail ? `: ${this.#stderrTail}` : ''}.`)));
+    child.once('close', (code: number | null) => this.#fail(new AcpUnavailableError(`ACP agent exited (code ${code ?? 'unknown'})${this.#stderrSummary ? `: ${this.#stderrSummary}` : ''}.`)));
   }
 
   async request(method: string, params: unknown): Promise<unknown> {

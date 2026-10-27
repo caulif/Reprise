@@ -100,8 +100,8 @@ export class AcpProductRuntime implements ProductRuntime {
   }
 
   recoveryCapabilities(): RecoveryRuntimeCapabilities {
-    // These agents expose no history API, so recovery cannot read a session back.
-    return { ...LOCAL_SESSION_RECOVERY_CAPABILITIES, sessionHistory: 'unavailable' };
+    // These agents expose no history API, so recovery can neither read a session back nor enumerate artifacts.
+    return { ...LOCAL_SESSION_RECOVERY_CAPABILITIES, sessionHistory: 'unavailable', localArtifacts: false };
   }
 
   async prepareExecution(runtime: ResolvedRuntime, environment: PreparedRuntimeEnvironment, launch: CandidateLaunchContext) {

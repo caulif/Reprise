@@ -51,6 +51,7 @@ export class AcpTargetRunner implements TargetRunner {
   readonly #temporaryDirectory: string | undefined;
   readonly #turns = new TurnWaiter();
   readonly #appends = new Set<Promise<void>>();
+  readonly #finishedCalls = new Set<string>();
   #sessionId: string = randomUUID();
   #status: TargetStatus = 'starting';
   #activeTurnId: string | undefined;
@@ -96,7 +97,7 @@ export class AcpTargetRunner implements TargetRunner {
 
   async start(initial: UserMessage, identity: MessageIdentity): Promise<DeliveryReceipt> {
     if (this.#temporaryDirectory) {
-      await mkdir(this.#temporaryDirectory);
+      await mkdir(this.#temporaryDirectory, { recursive: true });
       this.#temporaryOwned = true;
     }
     this.#client.start();
@@ -174,12 +175,19 @@ export class AcpTargetRunner implements TargetRunner {
       closeError = error;
     }
     this.#status = 'stopped';
-    await this.#releaseTemporaryDirectory();
+    let releaseError: unknown;
+    try {
+      await this.#releaseTemporaryDirectory();
+    } catch (error) {
+      releaseError = error;
+    }
     if (closeError) throw asError(closeError);
     if (stopError) throw asError(stopError);
+    if (releaseError) throw asError(releaseError);
   }
 
   async close(): Promise<void> {
+    await this.#flush();
     if (this.#status !== 'stopped') await this.stop('shutdown');
     if (this.#started && !this.#closedEventAppended) {
       this.#closedEventAppended = true;
@@ -190,8 +198,8 @@ export class AcpTargetRunner implements TargetRunner {
 
   async #releaseTemporaryDirectory(): Promise<void> {
     if (!this.#temporaryOwned || !this.#temporaryDirectory) return;
-    this.#temporaryOwned = false;
     await rm(this.#temporaryDirectory, { recursive: true, force: true });
+    this.#temporaryOwned = false;
   }
 
   #onNotification(method: string, params: unknown): void {
@@ -201,12 +209,32 @@ export class AcpTargetRunner implements TargetRunner {
 
   /** A settlement must not outrun the events it describes: the report reads both from the Journal. */
   #record(event: TargetEvent): void {
-    const append = this.#sink.append(event)
+    const scoped = this.#scopeToolEvent(event);
+    if (!scoped) return;
+    const append = this.#sink.append(scoped)
       .catch((error: unknown) => {
         this.#turns.stash(new AcpUnavailableError(`Failed to record ${this.#displayName} update: ${asError(error).message}`));
       })
       .finally(() => this.#appends.delete(append));
     this.#appends.add(append);
+  }
+
+  /**
+   * ACP only guarantees a `toolCallId` inside one turn, while the Journal refuses a second `tool_finished` for the
+   * same id. Scoping the id to its turn keeps a reused id legal without dropping the later turn's tool from evidence;
+   * a repeat inside one turn is still recorded once, because the Journal rejects the duplicate.
+   */
+  #scopeToolEvent(event: TargetEvent): TargetEvent | undefined {
+    if (event.type !== 'runtime.tool_started' && event.type !== 'runtime.tool_finished') return event;
+    const payload = record(event.payload);
+    const callId = text(payload.callId);
+    if (!callId) return event;
+    const scoped = `${this.#activeTurnId ?? this.#sessionId}:${callId}`;
+    const finished = this.#finishedCalls.has(scoped);
+    if (event.type === 'runtime.tool_started') return finished ? undefined : { ...event, payload: { ...payload, callId: scoped } };
+    if (finished) return undefined;
+    this.#finishedCalls.add(scoped);
+    return { ...event, payload: { ...payload, callId: scoped } };
   }
 
   async #flush(): Promise<void> {
@@ -230,9 +258,10 @@ export class AcpTargetRunner implements TargetRunner {
     this.#status = 'stopped';
     this.#turns.fail(error);
     if (this.#stopRequested) return;
-    void this.#sink.append(runtimeTargetEvent('runtime_failed', { message: error.message })).catch((appendError: unknown) => {
-      this.#turns.stash(new AcpUnavailableError(`Failed to record ${this.#displayName} process exit: ${asError(appendError).message}`));
-    });
+    // `session_failed` is the opener for a run that died before `session_started`; the Journal refuses any other type there.
+    this.#record(this.#started
+      ? runtimeTargetEvent('runtime_failed', { message: error.message })
+      : runtimeTargetEvent('session_failed', { message: error.message }));
   }
 }
 
