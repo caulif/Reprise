@@ -25,7 +25,7 @@ Comparison 默认跟随 TUI 的语言设置：选择英文后，新生成报告�
 
 下文中的 `reprise` 指 `node dist/src/cli/main.js`（或等价构建产物），**不是** npm 上的裸名包 `reprise`。若已将本项目注册为全局 CLI，命令名相同。
 
-构建与 `--help` 不调用模型；启动 TUI 后，先完成下方模型设置，再开始任务。内置 Codex 与 Claude Code 都支持导入本机会话和候选执行，具体模型来自工具目录；DeepSeek Harness、Kimi Code、MiniMax Code 与 Qwen Code 通过 ACP 执行候选，但尚不能导入历史会话，其会话目录会返回空集而不是“没有会话”。ACP 工具不接受 Reprise 选择的模型，使用工具自身配置的默认模型。这不保证兼容所有版本。Reprise 不负责安装工具，执行工具应在本机可启动且已登录。只有 Windows 11 有真实终端和 Runtime 使用证据，仍有待验证场景，见[路线图](./roadmap.md)。
+构建与 `--help` 不调用模型；启动 TUI 后，先完成下方模型设置，再开始任务。内置 Codex 与 Claude Code 都支持导入本机会话和候选执行，具体模型来自工具目录；DeepSeek Harness、Kimi Code、MiniMax Code 与 Qwen Code 通过 ACP 执行候选，但尚不能导入历史会话，其会话目录会返回空集而不是“没有会话”。ACP 工具不接受 Reprise 选择的模型，使用工具自身配置的默认模型：ACP 没有列举模型的方法，所以这四家的模型页只有一个选项，就是 Pack 声明的默认候选，选定它不代表模型被传给了工具。报告里这四个 Runtime 的 `resolvedModel` 记为 `unknown`：它们声明自己无法校验模型身份，准入因此放行，而不是把请求的模型名当成已解析结果。这不保证兼容所有版本。Reprise 不负责安装工具，执行工具应在本机可启动且已登录。只有 Windows 11 有真实终端和 Runtime 使用证据，仍有待验证场景，见[路线图](./roadmap.md)。
 
 ## Reprise 模型设置
 

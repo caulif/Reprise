@@ -113,8 +113,11 @@ test('dsh history stays unimplemented instead of inventing a session catalog', a
   await assert.rejects(dshProductPack.history.import(ref), /history import is not implemented/);
 });
 
-test('dsh exposes no model catalog and separates an injected executable from a missing CLI', async () => {
-  assert.deepEqual(await dshProductPack.runtime.listCatalog(), []);
+test('dsh publishes its default candidate as the only catalog offer and separates an injected executable from a missing CLI', async () => {
+  const offers = await dshProductPack.runtime.listCatalog();
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0]?.value, dshProductPack.defaultCandidate().requestedModel);
+  assert.equal(offers[0]?.displayName, 'DeepSeek Harness default model');
   const installed = createAcpPack(dshPackDefinition, { executable: process.execPath });
   const [available] = await installed.runtime.inspectAvailability();
   assert.equal(available?.status, 'available');

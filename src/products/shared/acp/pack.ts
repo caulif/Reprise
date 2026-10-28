@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { sha256 } from '../../../core/identity.js';
-import type { CandidateSpec } from '../../../core/schema.js';
 import { PACK_API_MAJOR, type ProductAuthStatus, type ProductPack, type RecoveryPlaybookDescriptor } from '../../contract.js';
 import { acpHistoryReader } from './history.js';
 import { acpProjection } from './projection.js';
@@ -13,7 +12,6 @@ export type AcpPackDefinition = AcpProductConfig & {
   playbookVersion: string;
   /** This pack's own `recovery/SKILL.md`, resolved from the pack module. */
   playbookUrl: URL;
-  defaultCandidate: CandidateSpec;
   /** Local data root reported to discovery and recovery. */
   dataRoot: string;
   /**

@@ -31,8 +31,25 @@ export function acpSessionUpdateEvents(sessionId: string, params: unknown): read
       : [runtimeTargetEvent('tool_started', payload)];
     return finished ? [runtimeTargetEvent('tool_finished', payload)] : [];
   }
-  if (kind === 'plan') return [runtimeTargetEvent('visible_output', { sessionId, kind: 'plan', entries: update.entries })];
+  if (kind === 'plan') {
+    const value = planText(update.entries);
+    return value ? [runtimeTargetEvent('visible_output', { sessionId, kind: 'plan', text: value })] : [];
+  }
   return [];
+}
+
+/**
+ * A `plan` update carries `entries[]` with priority and status per entry. Only each entry's `content` is text the
+ * agent meant to be read, so the adapter joins those and drops the structure rather than persisting the agent's
+ * own JSON shape into the Journal.
+ */
+function planText(entries: unknown): string | undefined {
+  if (!Array.isArray(entries)) return undefined;
+  const lines = entries.flatMap((entry) => {
+    const value = text(record(entry).content)?.trim();
+    return value ? [value] : [];
+  });
+  return lines.length ? lines.join('\n') : undefined;
 }
 
 /**

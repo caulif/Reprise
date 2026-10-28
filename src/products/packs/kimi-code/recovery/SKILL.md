@@ -1,6 +1,6 @@
 # Kimi Code Recovery Playbook
 
-version: kimi-code-recovery/v1
+version: kimi-code-recovery/v2
 
 This playbook is evidence for the Recovery agent. It grants no tools and changes no permissions.
 
@@ -27,8 +27,8 @@ A frozen TaskCase contains the first executable user message, a normalized trans
 
 - The turn settles from the `session/prompt` response `stopReason`: `end_turn` is completed, `cancelled` is aborted, and `max_tokens`, `max_turn_requests`, or `refusal` are failures. This is native settlement, not an inference from process exit.
 - Assistant text arrives as `agent_message_chunk` updates and is recorded as `runtime.visible_output`; tool calls arrive as `tool_call`/`tool_call_update` and become `runtime.tool_started`/`runtime.tool_finished`.
-- Reprise answers `session/request_permission` automatically with the first `allow*` option, so a Candidate never blocks on approval and no rejected approval can appear in the evidence.
-- There is no token telemetry, no admission receipt, and no client message id: ACP has no such fields, and Reprise records none of them. `resolvedModel` stays `unknown` because the agent never reports the model it used, and there is no model catalog to cross-check.
+- Reprise answers `session/request_permission` automatically with the first `allow*` option, so a Candidate never blocks on approval. When the agent offers no allow option the Host answers `cancelled` and records a failed `runtime.tool_finished` with `permissionDecision: "cancelled"`; that row says the Host declined on the Candidate's behalf, not that a human refused.
+- There is no token telemetry, no admission receipt, and no client message id: ACP has no such fields, and Reprise records none of them. `resolvedModel` stays `unknown` because the agent never reports the model it used; the model catalog publishes only this pack's declared default, so there is nothing to cross-check.
 
 ## Security and provenance
 

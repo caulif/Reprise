@@ -27,7 +27,7 @@ export const kimiCodePackDefinition: AcpPackDefinition = {
   installHint: 'Install Kimi Code and ensure `kimi` is on PATH, or set REPRISE_KIMI_EXECUTABLE. Reprise does not install it.',
   envRole: 'acp',
   packVersion: '0.1.0',
-  playbookVersion: 'kimi-code-recovery/v1',
+  playbookVersion: 'kimi-code-recovery/v2',
   playbookUrl: new URL('./recovery/SKILL.md', import.meta.url),
   defaultCandidate: DEFAULT_CANDIDATE,
   dataRoot: KIMI_HOME,

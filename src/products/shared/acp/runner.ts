@@ -17,7 +17,7 @@ import {
   type UserMessage,
 } from '../../../core/runtime.js';
 import type { CandidateSessionHandle } from '../../../core/schema.js';
-import { AcpClient, AcpUnavailableError } from './client.js';
+import { AcpClient, AcpUnavailableError, allowFirstOption, type AcpPermissionDecision } from './client.js';
 import { acpSessionUpdateEvents } from './events.js';
 import { acpTurnSettlement } from './settlement.js';
 import { assertRuntimeMessageIdentity, TurnWaiter } from '../turn-wait.js';
@@ -52,6 +52,7 @@ export class AcpTargetRunner implements TargetRunner {
   readonly #turns = new TurnWaiter();
   readonly #appends = new Set<Promise<void>>();
   readonly #finishedCalls = new Set<string>();
+  readonly #startedCalls = new Set<string>();
   #sessionId: string = randomUUID();
   #status: TargetStatus = 'starting';
   #activeTurnId: string | undefined;
@@ -76,6 +77,7 @@ export class AcpTargetRunner implements TargetRunner {
       ...(options.requestTimeoutMs ? { requestTimeoutMs: options.requestTimeoutMs } : {}),
       onNotification: (method, params) => this.#onNotification(method, params),
       onClosed: (error) => this.#onClosed(error),
+      decidePermission: (request) => this.#decidePermission(request),
     });
   }
 
@@ -208,8 +210,8 @@ export class AcpTargetRunner implements TargetRunner {
   }
 
   /** A settlement must not outrun the events it describes: the report reads both from the Journal. */
-  #record(event: TargetEvent): void {
-    const scoped = this.#scopeToolEvent(event);
+  #record(event: TargetEvent, hostObserved = false): void {
+    const scoped = this.#scopeToolEvent(event, hostObserved);
     if (!scoped) return;
     const append = this.#sink.append(scoped)
       .catch((error: unknown) => {
@@ -220,19 +222,50 @@ export class AcpTargetRunner implements TargetRunner {
   }
 
   /**
+   * A denied permission is the only approval fact worth a Journal row: `rejectedApprovals` in the comparison report
+   * is read from it. A granted request would repeat itself for every tool call and is already declared as an
+   * `ExecutionBoundary` limitation, so it stays out.
+   */
+  #decidePermission(request: Record<string, unknown>): AcpPermissionDecision {
+    const decision = allowFirstOption(request);
+    if (!('cancelled' in decision)) return decision;
+    const toolCall = record(request.toolCall);
+    const callId = text(toolCall.toolCallId);
+    const title = text(toolCall.title);
+    const kind = text(toolCall.kind);
+    this.#record(runtimeTargetEvent('tool_finished', {
+      ...(callId ? { callId } : {}),
+      ...(title ? { title } : {}),
+      ...(kind ? { kind } : {}),
+      status: 'failed',
+      permissionDecision: 'cancelled',
+    }), true);
+    return decision;
+  }
+
+  /**
    * ACP only guarantees a `toolCallId` inside one turn, while the Journal refuses a second `tool_finished` for the
    * same id. Scoping the id to its turn keeps a reused id legal without dropping the later turn's tool from evidence;
    * a repeat inside one turn is still recorded once, because the Journal rejects the duplicate.
+   *
+   * A terminal update whose call was never announced in this scope belongs to a turn that already settled: its
+   * evidence is recorded, and keeping the update would file it under the next turn, where `#finishedCalls` would
+   * swallow that turn's real `tool_started`/`tool_finished` when the agent reuses the id. Dropping it loses nothing.
+   * A denied permission is the one exception, because the Host observes that decision itself.
    */
-  #scopeToolEvent(event: TargetEvent): TargetEvent | undefined {
+  #scopeToolEvent(event: TargetEvent, hostObserved: boolean): TargetEvent | undefined {
     if (event.type !== 'runtime.tool_started' && event.type !== 'runtime.tool_finished') return event;
     const payload = record(event.payload);
     const callId = text(payload.callId);
     if (!callId) return event;
     const scoped = `${this.#activeTurnId ?? this.#sessionId}:${callId}`;
-    const finished = this.#finishedCalls.has(scoped);
-    if (event.type === 'runtime.tool_started') return finished ? undefined : { ...event, payload: { ...payload, callId: scoped } };
-    if (finished) return undefined;
+    if (event.type === 'runtime.tool_started') {
+      if (this.#finishedCalls.has(scoped)) return undefined;
+      this.#startedCalls.add(scoped);
+      return { ...event, payload: { ...payload, callId: scoped } };
+    }
+    if (this.#finishedCalls.has(scoped)) return undefined;
+    if (!hostObserved && !this.#startedCalls.has(scoped)) return undefined;
     this.#finishedCalls.add(scoped);
     return { ...event, payload: { ...payload, callId: scoped } };
   }

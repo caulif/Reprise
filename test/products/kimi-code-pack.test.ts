@@ -80,7 +80,7 @@ test('Kimi Code default candidate is the declared spec', () => {
 
 test('Kimi Code Recovery Playbook has stable provenance and is included in source', async () => {
   const playbook = kimiCodeProductPack.recoveryPlaybook();
-  assert.equal(playbook.version, 'kimi-code-recovery/v1');
+  assert.equal(playbook.version, 'kimi-code-recovery/v2');
   assert.equal(playbook.sha256, sha256(playbook.text));
   assert.match(playbook.sha256, /^[0-9a-f]{64}$/);
   assert.ok(playbook.text.length > 0);
@@ -113,8 +113,11 @@ test('Kimi Code history is runtime-only and degrades discovery instead of guessi
   await assert.rejects(kimiCodeProductPack.history.import(ref), /history import is not implemented/);
 });
 
-test('Kimi Code runtime exposes no catalog and reports availability from executable discovery', async () => {
-  assert.deepEqual(await kimiCodeProductPack.runtime.listCatalog(), []);
+test('Kimi Code publishes its default candidate as the only catalog offer and reports availability from executable discovery', async () => {
+  const offers = await kimiCodeProductPack.runtime.listCatalog();
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0]?.value, kimiCodeProductPack.defaultCandidate().requestedModel);
+  assert.equal(offers[0]?.displayName, 'Kimi Code default model');
 
   const injected = createAcpPack(kimiCodePackDefinition, { executable: process.execPath, version: '2.1.1' });
   const [available] = await injected.runtime.inspectAvailability();

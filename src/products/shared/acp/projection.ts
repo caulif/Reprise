@@ -45,7 +45,9 @@ function inspectAcpRunFacts(events: readonly EventEnvelope[]): TargetRunFacts {
   return {
     ...publicAssistantFacts(texts),
     commands,
-    rejectedApprovals: 0,
+    rejectedApprovals: events.filter((event) => (
+      event.type === 'runtime.tool_finished' && text(record(event.payload).permissionDecision) === 'cancelled'
+    )).length,
     evidenceEvents: events.filter((event) => EVIDENCE_TYPES.has(event.type)),
   };
 }

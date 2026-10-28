@@ -10,7 +10,7 @@ import type {
   TargetEventSink,
   TargetRunner,
 } from '../../../core/runtime.js';
-import type { CandidateLaunchContext } from '../../../core/schema.js';
+import type { CandidateLaunchContext, CandidateSpec } from '../../../core/schema.js';
 import type { ProcessEnvironmentRole } from '../../../infrastructure/process/environment.js';
 import { candidateExecutionPlan } from '../execution-plan.js';
 import {
@@ -34,6 +34,8 @@ export type AcpProductConfig = {
   acpArgs: readonly string[];
   installHint: string;
   envRole: ProcessEnvironmentRole;
+  /** Model this pack's own default candidate asks for; the catalog publishes it as the only offer. */
+  defaultCandidate: CandidateSpec;
 };
 
 export type AcpRuntimeOptions = {
@@ -88,13 +90,25 @@ export class AcpProductRuntime implements ProductRuntime {
 
   /**
    * ACP defines no model-listing method. Agents do report a model on `session/new`, but each does so in a different
-   * shape (config option, model block, encoded variant), so the catalog stays empty rather than normalized by guess.
+   * shape (config option, model block, encoded variant), and the agent resolves the model itself, so `resolvedModel`
+   * stays `unknown`. A pack therefore cannot enumerate what the agent accepts: it publishes the one model it declares
+   * as its default candidate. Returning an empty catalog would say the product has no model at all, which is a
+   * different claim, and the TUI reads an empty catalog as that error.
    */
   listCatalog(): Promise<readonly RuntimeModelOffer[]> {
-    return Promise.resolve([]);
+    const { requestedModel } = this.#config.defaultCandidate;
+    return Promise.resolve([{ value: requestedModel, displayName: `${this.#config.displayName} default model` }]);
   }
 
-  /** Without a catalog there is nothing to cross-check; the agent resolves the model itself. */
+  /**
+   * ACP agents resolve the model themselves and report it in no comparable shape, so this runtime never names the
+   * serving model: `resolvedModel` stays 'unknown' as a fact. Admission must not read that as a failed check.
+   */
+  verifiesModelIdentity(): boolean {
+    return false;
+  }
+
+  /** Without a catalog to cross-check there is nothing to compare; the agent resolves the model itself. */
   async validateCandidate(request: RuntimeRequest): Promise<ResolvedRuntime> {
     return this.resolve(request);
   }

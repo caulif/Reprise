@@ -223,7 +223,7 @@ export class AcpClient {
 }
 
 /** Automation default: take the first allow option, otherwise cancel instead of blocking. */
-function allowFirstOption(request: Record<string, unknown>): AcpPermissionDecision {
+export function allowFirstOption(request: Record<string, unknown>): AcpPermissionDecision {
   const options = Array.isArray(request.options) ? request.options : [];
   const allow = options.map((option) => record(option)).find((option) => (text(option.kind) ?? '').startsWith('allow'));
   const optionId = allow ? text(allow.optionId) : undefined;

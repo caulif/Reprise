@@ -118,8 +118,11 @@ test('history discovery degrades to an empty page with an explicit diagnostic', 
   await assert.rejects(minimaxCodeProductPack.history.import(ref), /declares the runtime capability only/);
 });
 
-test('the runtime lists no model catalog and reports executable discovery honestly', async () => {
-  assert.deepEqual(await minimaxCodeProductPack.runtime.listCatalog(), []);
+test('the runtime publishes the default candidate as the only catalog offer and reports executable discovery honestly', async () => {
+  const offers = await minimaxCodeProductPack.runtime.listCatalog();
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0]?.value, minimaxCodeProductPack.defaultCandidate().requestedModel);
+  assert.equal(offers[0]?.displayName, 'MiniMax Code default model');
 
   const installed = createAcpPack(minimaxCodeDefinition, { executable: process.execPath });
   const [found] = await installed.runtime.inspectAvailability();

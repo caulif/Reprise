@@ -124,8 +124,11 @@ test('Qwen Code history is explicitly unavailable instead of empty', async () =>
   await assert.rejects(history.import({ productId: 'qwen-code', sessionId: 'session-1' }), /history import is not implemented/);
 });
 
-test('Qwen Code exposes no model catalog and reports executable discovery honestly', async () => {
-  assert.deepEqual(await qwenCodeProductPack.runtime.listCatalog(), []);
+test('Qwen Code publishes its default candidate as the only catalog offer and reports executable discovery honestly', async () => {
+  const offers = await qwenCodeProductPack.runtime.listCatalog();
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0]?.value, qwenCodeProductPack.defaultCandidate().requestedModel);
+  assert.equal(offers[0]?.displayName, 'Qwen Code default model');
   const injected = createAcpPack(qwenCodePackDefinition, { executable: process.execPath });
   const [available] = await injected.runtime.inspectAvailability();
   assert.equal(available?.status, 'available');
