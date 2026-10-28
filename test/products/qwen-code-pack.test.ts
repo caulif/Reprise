@@ -9,7 +9,8 @@ import { candidateLaunchFor } from '../../src/application/recovery/launch-contex
 import { createAcpPack } from '../../src/products/shared/acp/pack.js';
 import { qwenCodePackDefinition, qwenCodeProductPack } from '../../src/products/packs/qwen-code/pack.js';
 
-const MODEL = 'deepseek/deepseek-v4.1-flash';
+/** Qwen Code's own `DEFAULT_QWEN_MODEL`, not a machine-local provider route. */
+const MODEL = 'coder-model';
 const SESSION_ID = 'fake-qwen-session';
 
 /** Newline-delimited JSON-RPC ACP agent: initialize, session/new, one prompt turn, one permission prompt. */

@@ -325,7 +325,8 @@ export function ingestActivityEvent(index: ActivityIndexState, event: EventEnvel
     case 'runtime.tool_started':
       return ingestCandidateTool(index, event, payload, ref, 'started');
     case 'runtime.tool_finished':
-      return ingestCandidateTool(index, event, payload, ref, 'completed');
+      // A Host-denied permission still finishes the call, and the Journal records it as failed: keep that status.
+      return ingestCandidateTool(index, event, payload, ref, text(payload.status) === 'failed' ? 'failed' : 'completed');
     case 'agent.invocation_completed':
       clearActiveForRole(index, activityRoleFromPayload(payload), ref, event.occurredAt, 'cancelled');
       return undefined;
@@ -439,7 +440,7 @@ function ingestCandidateTool(
   const live = publicLiveOf(payload);
   const verb = live ? liveVerbOf(live.verb) : undefined;
   const object = live?.leaf;
-  const orphanPrefix = status === 'completed' ? 'orphan-call-end' : 'orphan-call-start';
+  const orphanPrefix = status === 'started' ? 'orphan-call-start' : 'orphan-call-end';
   if (!correlationKey) {
     return upsertActiveNode(index, {
       identity: `${orphanPrefix}:${ref.eventId}`,

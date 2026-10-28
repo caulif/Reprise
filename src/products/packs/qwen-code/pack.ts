@@ -5,11 +5,14 @@ import { createAcpPack, type AcpPackDefinition } from '../../shared/acp/pack.js'
 
 const DATA_ROOT = join(homedir(), '.qwen');
 
-/** Follows the model this machine's `~/.qwen/settings.json` selects; ACP exposes no model listing. */
+/**
+ * `qwen` exposes no model listing over ACP and never receives a model, so this id only labels the
+ * candidate: it is the product's own `DEFAULT_QWEN_MODEL`, while the agent resolves the real model.
+ */
 const DEFAULT_CANDIDATE: CandidateSpec = {
   candidateId: 'qwen-code-default',
   productId: 'qwen-code',
-  requestedModel: 'deepseek/deepseek-v4.1-flash',
+  requestedModel: 'coder-model',
 };
 
 export const qwenCodePackDefinition: AcpPackDefinition = {

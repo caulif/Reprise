@@ -261,3 +261,27 @@ test('managed exec activity indexes cmd as its command object', () => {
   assert.equal(node?.verb, 'inspect');
   assert.equal(node?.object, 'cargo test');
 });
+
+test('a Host-denied candidate tool finishes as failed, and an ordinary finish still completes', () => {
+  const index = createActivityIndex({ runId: 'run-1' });
+  const started = (callId: string, sequence: number) => event(
+    'runtime.tool_started',
+    { sessionId: 's1', turnId: 'client-1', callId, title: 'Write ping.txt', kind: 'edit' },
+    { sequence },
+  );
+  const finished = (callId: string, payload: Record<string, unknown>, sequence: number) => event(
+    'runtime.tool_finished',
+    { sessionId: 's1', turnId: 'client-1', callId, ...payload },
+    { sequence },
+  );
+  ingestActivityEvent(index, started('call-deny', 1));
+  ingestActivityEvent(index, finished('call-deny', { status: 'failed', permissionDecision: 'cancelled' }, 2));
+  ingestActivityEvent(index, started('call-ok', 3));
+  ingestActivityEvent(index, finished('call-ok', { status: 'completed' }, 4));
+  // Both calls leave the live lane once they finish; the denied one must not stay active as in-flight.
+  assert.deepEqual(
+    historyNodes(index).map((node) => [node.correlationKey, node.status]),
+    [['call:s1:client-1:call-deny', 'failed'], ['call:s1:client-1:call-ok', 'completed']],
+  );
+  assert.deepEqual(activeNodes(index), []);
+});

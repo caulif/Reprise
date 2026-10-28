@@ -25,7 +25,6 @@ export type AcpClientOptions = {
   executable: string;
   args: readonly string[];
   cwd: string;
-  env?: Readonly<Record<string, string | undefined>>;
   completeEnv?: NodeJS.ProcessEnv;
   requestTimeoutMs?: number;
   onNotification?: (method: string, params: unknown) => void;
@@ -71,11 +70,7 @@ export class AcpClient {
     if (this.#child) return;
     const child = spawnRuntimeProcess(this.#options.executable, this.#options.args, {
       cwd: this.#options.cwd,
-      ...(this.#options.completeEnv
-        ? { completeEnv: this.#options.completeEnv }
-        : this.#options.env
-          ? { env: this.#options.env }
-          : {}),
+      ...(this.#options.completeEnv ? { completeEnv: this.#options.completeEnv } : {}),
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
@@ -183,7 +178,8 @@ export class AcpClient {
     clearTimeout(pending.timer);
     const error = record(frame.error);
     if (Object.keys(error).length) {
-      pending.reject(new AcpUnavailableError(`ACP request failed: ${text(error.message) ?? 'unknown error'}.`));
+      // The agent's error text reaches the run outcome and Journal through this message, so redact it like stderr.
+      pending.reject(new AcpUnavailableError(`ACP request failed: ${summarizeDiagnostic(text(error.message) ?? 'unknown error')}.`));
       return;
     }
     pending.resolve(frame.result);

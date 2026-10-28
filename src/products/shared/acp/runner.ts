@@ -17,6 +17,7 @@ import {
   type UserMessage,
 } from '../../../core/runtime.js';
 import type { CandidateSessionHandle } from '../../../core/schema.js';
+import { summarizeDiagnostic } from '../../../infrastructure/process/stdio.js';
 import { AcpClient, AcpUnavailableError, allowFirstOption, type AcpPermissionDecision } from './client.js';
 import { acpSessionUpdateEvents } from './events.js';
 import { acpTurnSettlement } from './settlement.js';
@@ -31,7 +32,6 @@ export type AcpRunnerOptions = {
   environment: PreparedRuntimeEnvironment;
   sink: TargetEventSink;
   args: readonly string[];
-  env?: Readonly<Record<string, string | undefined>>;
   completeEnv?: NodeJS.ProcessEnv;
   temporaryDirectory?: string;
   requestTimeoutMs?: number;
@@ -72,7 +72,6 @@ export class AcpTargetRunner implements TargetRunner {
       executable: options.runtime.executable,
       args: options.args,
       cwd: options.environment.root,
-      ...(options.env ? { env: options.env } : {}),
       ...(options.completeEnv ? { completeEnv: options.completeEnv } : {}),
       ...(options.requestTimeoutMs ? { requestTimeoutMs: options.requestTimeoutMs } : {}),
       onNotification: (method, params) => this.#onNotification(method, params),
@@ -280,8 +279,12 @@ export class AcpTargetRunner implements TargetRunner {
     this.#activeTurnId = undefined;
     const settlement = acpTurnSettlement({ stopReason, turnId });
     if (!settlement) {
-      this.#record(runtimeTargetEvent('runtime_failed', { message: 'Unrecognized session/prompt stopReason.', stopReason: stopReason ?? null }));
-      this.#turns.fail(new AcpUnavailableError(`${this.#displayName} reported an unrecognized turn settlement (${stopReason ?? 'missing stopReason'}).`));
+      const detail = stopReason === undefined ? 'missing stopReason' : summarizeDiagnostic(stopReason);
+      this.#record(runtimeTargetEvent('runtime_failed', {
+        message: 'Unrecognized session/prompt stopReason.',
+        stopReason: stopReason === undefined ? null : detail,
+      }));
+      this.#turns.fail(new AcpUnavailableError(`${this.#displayName} reported an unrecognized turn settlement (${detail}).`));
       return;
     }
     this.#turns.deliver(settlement);
@@ -292,9 +295,11 @@ export class AcpTargetRunner implements TargetRunner {
     this.#turns.fail(error);
     if (this.#stopRequested) return;
     // `session_failed` is the opener for a run that died before `session_started`; the Journal refuses any other type there.
+    // `AcpClient` wraps JSON-RPC error text verbatim, so agent-authored text is redacted before the Journal sees it.
+    const message = summarizeDiagnostic(error.message);
     this.#record(this.#started
-      ? runtimeTargetEvent('runtime_failed', { message: error.message })
-      : runtimeTargetEvent('session_failed', { message: error.message }));
+      ? runtimeTargetEvent('runtime_failed', { message })
+      : runtimeTargetEvent('session_failed', { message }));
   }
 }
 

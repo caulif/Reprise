@@ -50,12 +50,12 @@
 
 | 文件 | 职责 |
 |---|---|
-| `client.ts` | JSON-RPC 2.0 over stdio，NDJSON 分帧；请求关联、超时、进程退出归因、stderr 脱敏摘要 |
+| `client.ts` | JSON-RPC 2.0 over stdio，NDJSON 分帧；请求关联、超时、进程退出归因、stderr 与 agent 错误文本脱敏摘要 |
 | `runner.ts` | `AcpTargetRunner`：`initialize` → `session/new` → `session/prompt`；按轮作用域 `callId`；结算前冲净在飞写入 |
 | `events.ts` | `session/update` 通知 → `runtime.*` TargetEvent（纯函数，只有文本进 Journal） |
 | `settlement.ts` | prompt 响应 `stopReason` → `TurnSettlement`（纯函数） |
 | `history.ts` | 历史降级：空集 + `catalog-unavailable` 诊断，`inspect`/`import` 明确拒绝 |
-| `projection.ts` | `UserSurfaceProjection`：只从 `visible_output` 文本与 `tool_started` 取证 |
+| `projection.ts` | `UserSurfaceProjection`：只从 `visible_output` 文本、`tool_started`（命令）与 `tool_finished` 的 `permissionDecision`（拒绝审批数）取证 |
 | `runtime.ts` | `AcpProductRuntime`：探测、resolve、执行计划、Runner 装配 |
 | `pack.ts` | `createAcpPack()`：把一份声明装配成 `ProductPack` |
 

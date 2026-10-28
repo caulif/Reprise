@@ -5,13 +5,14 @@ import { createAcpPack, type AcpPackDefinition } from '../../shared/acp/pack.js'
 
 const PLAYBOOK_VERSION = 'minimax-code-recovery/v1';
 /**
- * `mcode` lists no models, so the default candidate follows the `defaultModel` this machine
- * already configured in `~/.minimax/config.yaml` instead of inventing a catalog entry.
+ * `mcode` lists no models and ACP never carries one, so this id only labels the candidate: it is the
+ * model the built-in `minimax` provider ships as its default, while the agent resolves `defaultModel`
+ * from its own `config.yaml`.
  */
 const DEFAULT_CANDIDATE: CandidateSpec = {
   candidateId: 'minimax-code-default',
   productId: 'minimax-code',
-  requestedModel: 'custom_provider:local-anthropic-proxy/deepseek/deepseek-v4.1-flash',
+  requestedModel: 'minimax/MiniMax-M3.1-Flash',
 };
 
 export const minimaxCodeDefinition: AcpPackDefinition = {

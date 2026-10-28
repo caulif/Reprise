@@ -3,15 +3,19 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Value } from '@sinclair/typebox/value';
 import { candidateLaunchFor } from '../../src/application/recovery/launch-context.js';
 import { sha256 } from '../../src/core/identity.js';
+import { ExecutionBoundarySchema } from '../../src/core/schema.js';
 import { record, text } from '../../src/core/json.js';
 import type { TargetEvent, TargetRunner } from '../../src/core/runtime.js';
 import type { ProductAuthStatus } from '../../src/products/contract.js';
 import { createAcpPack } from '../../src/products/shared/acp/pack.js';
+import { AcpProductRuntime } from '../../src/products/shared/acp/runtime.js';
 import { minimaxCodeDefinition, minimaxCodeProductPack } from '../../src/products/packs/minimax-code/pack.js';
 
-const DEFAULT_MODEL = 'custom_provider:local-anthropic-proxy/deepseek/deepseek-v4.1-flash';
+/** The pack labels the candidate with MiniMax Code's own default model, never a machine-local provider route. */
+const DEFAULT_MODEL = 'minimax/MiniMax-M3.1-Flash';
 const CLIENT_MESSAGE_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 
 const FAKE_MCODE = `
@@ -136,6 +140,26 @@ test('the runtime publishes the default candidate as the only catalog offer and 
   assert.equal(absent?.executable, undefined);
   assert.match(absent?.installHint ?? '', /REPRISE_MCODE_EXECUTABLE/);
   assert.deepEqual(await missing.runtime.inspectAvailable(), []);
+});
+
+test('the ACP execution plan records its boundary and passes only the MiniMax data directory through', async (t) => {
+  const previous = process.env.MINIMAX_DATA_DIR;
+  process.env.MINIMAX_DATA_DIR = 'D:\\fake-minimax-home';
+  t.after(() => {
+    if (previous === undefined) delete process.env.MINIMAX_DATA_DIR;
+    else process.env.MINIMAX_DATA_DIR = previous;
+  });
+  const root = await mkdtemp(join(tmpdir(), 'reprise-mcode-plan-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const runtime = new AcpProductRuntime(minimaxCodeDefinition, { executable: process.execPath });
+  const resolved = { productId: 'minimax-code', executable: process.execPath, requestedModel: DEFAULT_MODEL, resolvedModel: 'unknown' };
+  const environment = { environmentId: 'environment-run-1', runId: 'run-1', root };
+  const plan = await runtime.prepareExecution(resolved, environment, candidateLaunchFor(resolved, environment));
+  assert.equal(Value.Check(ExecutionBoundarySchema, plan.record), true);
+  assert.equal(plan.record.invocation, 'pack-default');
+  assert.ok(plan.record.environment.names.includes('MINIMAX_DATA_DIR'));
+  assert.ok(plan.record.limitations.includes('ACP permission requests are answered automatically with the first allow option, so the Candidate never blocks on approval.'));
+  assert.ok(plan.record.limitations.includes('The selected model is not forwarded: ACP carries no model field on a prompt, so the agent runs with its own configured default model.'));
 });
 
 test('an end_turn prompt settles natively and Reprise answers the permission request with the allow option', async (t) => {
