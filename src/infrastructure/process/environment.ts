@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 export const PROCESS_ENVIRONMENT_RULE = 'trusted-local-v1';
 const BASE = new Set(('TEMP TMP TMPDIR PATH PATHEXT OS COMPUTERNAME SYSTEMROOT WINDIR COMSPEC LANG LC_ALL LC_CTYPE TERM USER USERNAME HOME HOMEDRIVE HOMEPATH USERPROFILE APPDATA LOCALAPPDATA XDG_CONFIG_HOME PROGRAMFILES PROGRAMFILES(X86) PROGRAMW6432 SYSTEMDRIVE NUMBER_OF_PROCESSORS PROCESSOR_ARCHITECTURE').split(' '));
 const CONNECTION = new Set(('HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY SSL_CERT_FILE SSL_CERT_DIR NODE_EXTRA_CA_CERTS').split(' '));
-export type ProcessEnvironmentRole = 'codex' | 'codex-service' | 'claude' | 'host-shell';
+export type ProcessEnvironmentRole = 'codex' | 'codex-service' | 'claude' | 'acp' | 'host-shell';
 const HOST_MOUNTS = new Set(['REPRISE_SOURCE_MOUNT', 'REPRISE_BASELINE_ROOT', 'REPRISE_FINALS_ROOT', 'REPRISE_CANDIDATE_ROOT', 'REPRISE_EVIDENCE_ROOT', 'REPRISE_SCRATCH_ROOT']);
 
 export function hostShellOverrides(overrides: Readonly<NodeJS.ProcessEnv> = {}): NodeJS.ProcessEnv {
@@ -36,6 +36,9 @@ const PRODUCT: Record<ProcessEnvironmentRole, ReadonlySet<string>> = {
   codex: new Set(['CODEX_HOME', 'OPENAI_BASE_URL']),
   'codex-service': new Set(['CODEX_HOME', 'OPENAI_BASE_URL', 'OPENAI_API_KEY']),
   claude: new Set(['CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL']),
+  // Only MiniMax Code exposes a data-directory override; the other ACP CLIs resolve their own
+  // configuration from the home directory, which the base set already passes through.
+  acp: new Set(['MINIMAX_DATA_DIR']),
   'host-shell': new Set(),
 };
 

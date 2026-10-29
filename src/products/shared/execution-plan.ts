@@ -3,10 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ExecutionBoundary } from '../../core/schema.js';
 import type { CandidateLaunchContext } from '../../core/schema.js';
-import { selectedProcessEnvironment, PROCESS_ENVIRONMENT_RULE } from '../../infrastructure/process/environment.js';
+import { selectedProcessEnvironment, PROCESS_ENVIRONMENT_RULE, type ProcessEnvironmentRole } from '../../infrastructure/process/environment.js';
 import { isolateCandidateProcessEnv } from '../../infrastructure/process/spawn.js';
 
-export function candidateExecutionPlan(role: 'codex' | 'claude', root: string, permissionMode: string, overrides?: Readonly<NodeJS.ProcessEnv>, requirements?: CandidateLaunchContext['executionRequirements'], customArgs = false, safeMode = false) {
+export function candidateExecutionPlan(role: ProcessEnvironmentRole, root: string, permissionMode: string, overrides?: Readonly<NodeJS.ProcessEnv>, requirements?: CandidateLaunchContext['executionRequirements'], customArgs = false, safeMode = false) {
   if (customArgs && role === 'claude') permissionMode = 'unknown';
   if (!['read-only', 'workspace-write', 'danger-full-access', 'bypassPermissions', 'unknown'].includes(permissionMode)) throw new Error('Unsupported native permission mode.');
   if (requirements?.filesystemIsolation || requirements?.disableExternalExtensions) throw new Error('Trusted-local execution cannot enforce the requested filesystem or extension isolation.');
@@ -20,11 +20,14 @@ export function candidateExecutionPlan(role: 'codex' | 'claude', root: string, p
     hostShell: { source: 'host-configured', rule: 'host-shell-v1', filesystem: 'unrestricted', network: 'unrestricted' },
     filesystem: 'unknown', network: 'unknown', extensions: 'unknown',
     invocation: customArgs ? 'explicit-argv-override' : 'pack-default',
-    controls: role === 'codex' ? ['approval-policy-never', 'persistent-session', 'thread-source-reprise'] : !customArgs ? ['strict-mcp-config', 'persistent-session', 'disallow-scheduling-and-messaging', ...(safeMode ? ['safe-mode-requested'] : [])] : [],
+    controls: role === 'codex' ? ['approval-policy-never', 'persistent-session', 'thread-source-reprise']
+      : role === 'claude' ? (customArgs ? [] : ['strict-mcp-config', 'persistent-session', 'disallow-scheduling-and-messaging', ...(safeMode ? ['safe-mode-requested'] : [])])
+      : ['persistent-session'],
     limitations: [
       'Workspace copies and environment selection do not restrict disk reads or network access.',
       'Native login/configuration locations remain visible; Codex credentials are not read or copied by launch planning.',
       role === 'claude' && !customArgs ? 'Strict MCP configuration, disabled scheduling/messaging tools and candidate session persistence on; hooks, skills, agents, memory and other shared configuration are not fully controlled.' : 'Shared user/project configuration, MCP, hooks and skills are not disabled or verified.',
+      ...(role === 'acp' ? ['ACP permission requests are answered automatically with the first allow option, so the Candidate never blocks on approval.', 'The selected model is not forwarded: ACP carries no model field on a prompt, so the agent runs with its own configured default model.'] : []),
       'No automatic permission relaxation; a wide-permission Candidate can attempt its own alternative commands.',
       'Temporary directories are invocation-owned; real Runtime compatibility has not been verified.',
     ],

@@ -101,8 +101,11 @@ test('Claude Code Recovery Playbook has stable provenance and is included in sou
   assert.match(packReadme, /is_error/);
 });
 
-test('Claude Code and Codex packs are both statically registered', () => {
-  assert.equal(productPacks.length, 2);
+test('every built-in pack is statically registered', () => {
+  assert.deepEqual(
+    productPacks.map((pack) => pack.manifest.productId),
+    ['codex', 'claude-code', 'dsh', 'kimi-code', 'minimax-code', 'qwen-code'],
+  );
   assert.equal(productPacks[1], claudeCodeProductPack);
   assert.equal(claudeCodeProductPack.runtime.id, 'claude-code');
   assert.deepEqual(claudeCodeProductPack.manifest.sessionSchemaVersions, ['claude-code-session-jsonl/v1']);

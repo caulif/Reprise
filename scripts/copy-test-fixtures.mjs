@@ -29,6 +29,12 @@ await copyFile(
   "dist/src/products/packs/claude-code/README.md",
 );
 
+// ACP packs are declarations plus one recovery playbook each; the playbook is data, not code.
+for (const pack of ["dsh", "kimi-code", "minimax-code", "qwen-code"]) {
+  await mkdir(`dist/src/products/packs/${pack}/recovery`, { recursive: true });
+  await copyFile(`src/products/packs/${pack}/recovery/SKILL.md`, `dist/src/products/packs/${pack}/recovery/SKILL.md`);
+}
+
 await mkdir("dist/test/fixtures/fake-pack/sessions", { recursive: true });
 await copyFile(
   "test/fixtures/fake-pack/sessions/sample.jsonl",

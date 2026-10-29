@@ -22,7 +22,7 @@ Records default to `.reprise` in the current directory. Use `--data-dir <directo
 | Path | Purpose | Configuration |
 |---|---|---|
 | Reprise model (also called Harness) | Prepare a task, guide the candidate, compare results | Reprise `/config` |
-| Candidate tool and model | Execute the recovered task | Install and sign in to Codex or Claude Code separately; choose its model when starting a run |
+| Candidate tool and model | Execute the recovered task | Install and sign in to the candidate tool separately; Codex and Claude Code run the model chosen at run start, while ACP tools use the model configured in the tool itself |
 
 Configuring one path does not configure the other. Both can incur costs. Reprise does not install candidate tools or change their global model settings.
 
@@ -42,7 +42,7 @@ For the advanced **pi-catalog** option, install [Pi](https://github.com/badlogic
 
 ## Choose a saved task and run it
 
-1. Ensure you have local history from **Codex** or **Claude Code**, and install/authenticate the tool you want to execute the candidate. Both built-in tools support history import and candidate execution; compatibility with every version is not guaranteed.
+1. Ensure you have local history from **Codex** or **Claude Code**, and install/authenticate the tool you want to execute the candidate. Both built-in tools support history import and candidate execution; **DeepSeek Harness**, **Kimi Code**, **MiniMax Code** and **Qwen Code** can execute a candidate over ACP but cannot import history yet. Compatibility with every version is not guaranteed.
 2. Choose the home action to redo a task, or enter `/intake`. Select the source tool, project, and saved session. Arrow keys navigate; typing filters the session list, `Ctrl+N` loads the next page, and `Ctrl+R` refreshes.
 3. Review the task and follow-up instructions. Pressing `Enter` on this review starts task preparation and model calls. It does not re-execute the historical conversation. Preparation may report gaps or block the run if required inputs cannot be recovered.
 4. After preparation succeeds, choose the candidate tool. `Esc` lets you review preparation findings and limitations without preparing again.
@@ -86,8 +86,9 @@ A separate workspace is not an operating-system filesystem or network sandbox. U
 | Symptom | Next step |
 |---|---|
 | `reprise` is not found | Use `node dist/src/cli/main.js` from the checkout; run `npm run build` if `dist/` is missing. |
-| Tool is unavailable | Install the selected tool and ensure it is on PATH. The executable overrides are `REPRISE_CODEX_EXECUTABLE` and `REPRISE_CLAUDE_EXECUTABLE`; Reprise does not install tools. |
-| No projects or sessions | Confirm that the source tool has saved local history. Refresh the list and check filtering. Reprise cannot invent a historical session. |
+| Tool is unavailable | Install the selected tool and ensure it is on PATH. The executable overrides are `REPRISE_CODEX_EXECUTABLE`, `REPRISE_CLAUDE_EXECUTABLE`, `REPRISE_DSH_EXECUTABLE`, `REPRISE_KIMI_EXECUTABLE`, `REPRISE_MCODE_EXECUTABLE` and `REPRISE_QWEN_EXECUTABLE`; Reprise does not install tools. |
+| No projects or sessions | Confirm that the source tool has saved local history. Refresh the list and check filtering. Reprise cannot invent a historical session. DeepSeek Harness, Kimi Code, MiniMax Code and Qwen Code cannot import history yet, so their list is empty by design. |
+| An ACP tool is listed as configured but a run fails to start a session | Configuration-file presence is not a signed-in account. Sign in with the tool itself (`kimi acp --login`, `qwen`, `mcode`, `dsh`) and retry; Reprise does not read or copy those credentials. |
 | Model connection fails | Recheck base URL, API protocol, model ID, and credential source in `/config`. A connection test may cost money; share only the redacted error summary. |
 | Preparation is blocked | Inspect the missing inputs and preparation findings. There is no force-through switch for blocked recovery. |
 | No report or media | Check whether comparison was requested, whether media was captured, and whether the report failed or a snapshot is missing. An absent report is not a successful comparison. |

@@ -70,7 +70,8 @@ export async function resolveVerifiedCandidate(
   const resolved = await runtime.validateCandidate(candidate);
   if (resolved.productId !== candidate.productId)
     throw new Error(`Candidate product '${candidate.productId}' does not match resolved runtime product '${resolved.productId}'.`);
-  if (resolved.resolvedModel === "unknown")
+  // 'unknown' is only a failed check for runtimes that claim they can name the serving model.
+  if (resolved.resolvedModel === "unknown" && runtime.verifiesModelIdentity?.() !== false)
     throw new Error("Candidate model is not verified by the target runtime.");
   return resolved;
 }

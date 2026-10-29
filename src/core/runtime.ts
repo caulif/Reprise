@@ -130,6 +130,12 @@ export interface ProductRuntime {
   resolve(request: RuntimeRequest): Promise<ResolvedRuntime>;
   /** Confirms that the requested model is available to this runtime now. */
   validateCandidate(request: RuntimeRequest): Promise<ResolvedRuntime>;
+  /**
+   * Declares whether this runtime can name the model that actually served a request. Absent means it can, so
+   * `resolvedModel === 'unknown'` is a failed verification. A runtime that resolves the model internally (no
+   * listing, no identity check) says `false` here instead of inventing a resolved model.
+   */
+  verifiesModelIdentity?(): boolean;
   /** Current models this runtime will accept as CandidateSpec.requestedModel. */
   listCatalog(): Promise<readonly RuntimeModelOffer[]>;
   /** Declares local, credential-free evidence sources exposed by this product pack. */

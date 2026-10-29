@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createExperimentWorkflow, createHarnessWorkflow, TUI_RUN_POLICY } from '../../src/application/experiment-workflow.js';
-import { beginRun, candidateStartBlocked, startRunSetup } from '../../src/tui/controller-run.js';
+import { beginRun, candidateStartBlocked, loadCandidateCatalog, startRunSetup } from '../../src/tui/controller-run.js';
 import { fakeProductPack } from '../fixtures/fake-pack/pack.js';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -17,6 +17,8 @@ import { renderWorkbench } from '../../src/tui/workbench.js';
 import { waitFor } from '../codex-intake-support.js';
 import { input, VerifiedRuntime } from '../codex-experiment-support.js';
 import { codexProductPack } from '../../src/products/packs/codex/pack.js';
+import { dshPackDefinition, dshProductPack } from '../../src/products/packs/dsh/pack.js';
+import { createAcpPack } from '../../src/products/shared/acp/pack.js';
 import {
   createFakeClock,
   createScriptedSyntheticWorkflow,
@@ -873,4 +875,64 @@ test('failed cancel still skips the deferred compare gate after candidateFinishe
   assert.equal(runCalls, 0);
   assert.equal(skipCalls, 0);
   assert.equal(app.cancelUi, 'settled');
+});
+
+test('an ACP pack publishes a usable catalog instead of reading as an empty one', async (t) => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'reprise-acp-catalog-'));
+  t.after(async () => rm(dataDir, { recursive: true, force: true }));
+  // The real workflow asks the pack's own runtime for the catalog; the harness model is never reached here.
+  const workflow = createExperimentWorkflow({
+    dataDir,
+    pack: dshProductPack,
+    now: () => new Date().toISOString(),
+    agents: async () => { throw new Error('The candidate catalog never reaches the harness model.'); },
+  });
+  const app = new IntakeTui({
+    dataDir,
+    packs: [dshProductPack],
+    tui: mockTui().tui as never,
+    privacy: { allowModelText: false, allowBinary: false, redactions: [] },
+    workflow,
+  });
+  app.taskCase = { caseId: 'acp-catalog', source: { productId: 'dsh' }, initialInput: { text: 'Fix the build' } } as never;
+  await loadCandidateCatalog(app);
+  assert.equal(app.page, 'candidate-model');
+  assert.equal(app.candidateCatalogStatus, 'ready');
+  assert.equal(app.candidateCatalogError, undefined);
+  assert.deepEqual(app.candidateModelOffers, [{ value: 'deepseek-v4-flash', displayName: 'DeepSeek Harness default model' }]);
+  assert.equal(app.candidateSuggestedValue, 'deepseek-v4-flash');
+  assert.equal(app.candidateModelCursor, 0);
+});
+
+test('an ACP candidate reaches the start confirmation through the real admission rule', async () => {
+  // Real `AcpProductRuntime` plus the real `resolveVerifiedCandidate`: the runtime declares it cannot verify model
+  // identity, so its honest 'unknown' passes admission instead of being read as a failed check. The executable is
+  // pinned to this Node binary so discovery finds an installed CLI without a real dsh on PATH.
+  const workflow = createExperimentWorkflow({
+    dataDir: 'unused',
+    pack: dshProductPack,
+    runtime: createAcpPack(dshPackDefinition, { executable: process.execPath }).runtime,
+    now: () => new Date().toISOString(),
+    agents: async () => { throw new Error('Candidate admission never reaches the harness model.'); },
+  });
+  const app = new IntakeTui({
+    dataDir: 'unused',
+    packs: [dshProductPack],
+    tui: mockTui().tui as never,
+    privacy: { allowModelText: false, allowBinary: false, redactions: [] },
+    workflow,
+  });
+  app.taskCase = { caseId: 'acp-start', source: { productId: 'dsh' }, initialInput: { text: 'Fix the build' } } as never;
+  app.preflight = {
+    sourceBaseline: 'available',
+    limitations: [],
+    resolved: { productId: 'dsh', executable: process.execPath, requestedModel: 'deepseek-v4-flash', resolvedModel: 'unknown' },
+  } as never;
+  await loadCandidateCatalog(app);
+  assert.equal(app.candidateCatalogStatus, 'ready');
+  app.handleInput('\r');
+  await waitFor(() => app.page === 'confirm');
+  assert.equal(app.selectedCandidate?.candidateId, 'dsh-deepseek-v4-flash');
+  assert.equal(app.selectedCandidate?.requestedModel, 'deepseek-v4-flash');
+  assert.equal((app.preflight as { resolved: { resolvedModel: string } } | undefined)?.resolved.resolvedModel, 'unknown');
 });

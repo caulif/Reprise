@@ -1,10 +1,21 @@
 import { claudeCodeProductPack } from "./packs/claude-code/pack.js";
 import { codexProductPack } from "./packs/codex/pack.js";
+import { dshProductPack } from "./packs/dsh/pack.js";
+import { kimiCodeProductPack } from "./packs/kimi-code/pack.js";
+import { minimaxCodeProductPack } from "./packs/minimax-code/pack.js";
+import { qwenCodeProductPack } from "./packs/qwen-code/pack.js";
 import type { ProductPack } from "./contract.js";
 import { importPacks, packHistory } from "./pack-access.js";
 import { assembleProductPacks, type PackLoadDiagnostic } from "./registry.js";
 
-const builtinPacks: readonly ProductPack[] = [codexProductPack, claudeCodeProductPack];
+const builtinPacks: readonly ProductPack[] = [
+  codexProductPack,
+  claudeCodeProductPack,
+  dshProductPack,
+  kimiCodeProductPack,
+  minimaxCodeProductPack,
+  qwenCodeProductPack,
+];
 
 export let productPacks: readonly ProductPack[] = builtinPacks;
 export let packLoadDiagnostics: readonly PackLoadDiagnostic[] = [];

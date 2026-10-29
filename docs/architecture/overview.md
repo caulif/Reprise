@@ -34,7 +34,7 @@ Codex 历史读取兼容 `.jsonl` 与 `.jsonl.zst`，索引逻辑路径与物理
 
 内置 Pack 的可选启动规划端口冻结实际配置，返回脱敏记录和 Runner 工厂。Host 负责持久化后启动与清理；Pack 负责原生配置语义；进程基础设施区分完整环境和受信任覆盖项，完整环境不得回灌宿主变量。这仅为可信本地环境收敛，不是 OS 沙箱。旧 Pack 未声明时保持 unknown，见[执行与证据](./execution.md#配置与证据)。
 
-`ProductRuntime` 提供当前可用产品、模型目录、候选校验、Runner 创建和 Recovery 能力声明。Runner 负责 start/send、turn 等待、取消等待、inspect、stop、close，并返回 delivery receipt。Pack 不恢复历史 Runtime，不下载依赖，不决定隔离策略或报告内容。
+`ProductRuntime` 提供当前可用产品、模型目录、候选校验、Runner 创建和 Recovery 能力声明，并可声明自己无法校验模型身份；未声明按能校验处理，只有声明不能校验的 Runtime 才允许把模型记为未知。Runner 负责 start/send、turn 等待、取消等待、inspect、stop、close，并返回 delivery receipt。Pack 不恢复历史 Runtime，不下载依赖，不决定隔离策略或报告内容。
 
 历史来源版本与当前执行版本不是同一事实。当前代码保存产品、可执行文件、请求模型和 Runtime 解析出的模型；没有通用 `ExecutionRuntimeFingerprint`、`runtime_drift` 或 `FidelityAssessment` 管线，未知值必须保持未知。
 
