@@ -90,11 +90,17 @@ export function usageCostUsd(
   return usagePricing(usage, modelId, pricingTable, options).costUsd;
 }
 
+/**
+ * Token facts a report publishes. `total` is cumulative over the run and cache-inclusive; `input` is the fresh
+ * (uncached) prompt tokens. Cache *writes* are priced like nothing else and were previously dropped, which left
+ * `total` unexplainable by its own parts; they are published whenever they are non-zero.
+ */
 export function factsFromUsage(usage: AggregatedUsage | undefined): {
   total?: number;
   input?: number;
   output?: number;
   cached?: number;
+  cacheCreation?: number;
   reasoning?: number;
 } | undefined {
   if (!usage) return undefined;
@@ -104,6 +110,7 @@ export function factsFromUsage(usage: AggregatedUsage | undefined): {
     input: fresh,
     output: usage.parts.output,
     cached: usage.parts.cacheRead,
+    ...(usage.parts.cacheCreation ? { cacheCreation: usage.parts.cacheCreation } : {}),
     ...(usage.parts.reasoning !== undefined ? { reasoning: usage.parts.reasoning } : {}),
   };
 }

@@ -31,7 +31,7 @@ export type { AgentZoneName, HostZoneName, HostZoneSnapshot };
 export type MetricSideProjection = {
   elapsedMs?: number;
   timing?: ComparisonMetricSide["timing"];
-  tokens?: { total: number; input?: number; output?: number; cached?: number; reasoning?: number };
+  tokens?: { total: number; input?: number; output?: number; cached?: number; cacheCreation?: number; reasoning?: number };
   costUsd?: number;
   pricingStatus?: "collected" | "not_collected" | "pricing_unavailable" | "unknown";
 };

@@ -109,7 +109,7 @@ test('persisted Runtime metrics stay unchanged after repeated Harness agent usag
       { input_tokens: 20, output_tokens: 3, cache_read_input_tokens: 200, cache_creation_input_tokens: 6 },
     ]) await store.append({ type: 'runtime.usage_reported', runId: 'run-1', payload: { usage } });
     const before = await inspectRun(store, record, 'claude-code', undefined, replay);
-    assert.deepEqual(before.tokenUsage, { total: 345, input: 30, output: 5, cached: 300 });
+    assert.deepEqual(before.tokenUsage, { total: 345, input: 30, output: 5, cached: 300, cacheCreation: 10 });
     assert.ok(before.costUsd !== undefined && before.costUsd > 0);
     for (let repeat = 0; repeat < 3; repeat++) {
       for (const role of ['comparison', 'controller', 'recovery', undefined]) {

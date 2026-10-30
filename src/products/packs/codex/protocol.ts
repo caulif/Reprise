@@ -1,6 +1,7 @@
 import { record, text, type JsonRecord } from "../../../core/json.js";
 import { runtimeTargetEvent, type TargetEvent } from "../../../core/runtime.js";
 import { liveFromCodexItem } from "../../shared/public-live-map.js";
+import { toolFacts } from "../../shared/tool-facts.js";
 import { redactNotificationParams } from "./turn-settlement.js";
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
@@ -51,5 +52,6 @@ function mapItem(completed: boolean, payload: unknown): TargetEvent | undefined 
   return runtimeTargetEvent(completed ? "tool_finished" : "tool_started", {
     ...record(payload),
     ...(live ? { live } : {}),
+    ...toolFacts({ name: kind, input: item.command, exitCode: item.exitCode }),
   });
 }

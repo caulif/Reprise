@@ -42,7 +42,7 @@ export type RunInspection = {
   wallClockMs?: number;
   turnTiming?: TimingFacts;
   tokenCount?: number;
-  tokenUsage?: { total?: number; input?: number; output?: number; cached?: number; reasoning?: number };
+  tokenUsage?: { total?: number; input?: number; output?: number; cached?: number; cacheCreation?: number; reasoning?: number };
   costUsd?: number;
   pricingLookup?: "hit" | "miss" | "invalid";
   pricingModelId?: string;
@@ -301,6 +301,7 @@ function sideMetrics(
         ...(tokens.input === undefined ? {} : { input: tokens.input }),
         ...(tokens.output === undefined ? {} : { output: tokens.output }),
         ...(tokens.cached === undefined ? {} : { cached: tokens.cached }),
+        ...(tokens.cacheCreation === undefined ? {} : { cacheCreation: tokens.cacheCreation }),
         ...(tokens.reasoning === undefined ? {} : { reasoning: tokens.reasoning }),
       },
     }),
@@ -318,8 +319,9 @@ function sideMetrics(
 
 function tokenTotal(tokens: NonNullable<RunInspection['tokenUsage']>): number | undefined {
   if (tokens.total !== undefined) return tokens.total;
-  if (tokens.input === undefined && tokens.output === undefined && tokens.cached === undefined) return undefined;
-  return (tokens.input ?? 0) + (tokens.output ?? 0) + (tokens.cached ?? 0);
+  const parts = [tokens.input, tokens.output, tokens.cached, tokens.cacheCreation];
+  if (parts.every((part) => part === undefined)) return undefined;
+  return parts.reduce<number>((sum, part) => sum + (part ?? 0), 0);
 }
 
 function evidenceLevel(refs: readonly string[]): string {
