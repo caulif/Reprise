@@ -123,6 +123,41 @@ test('a Codex MCP item journals its arguments instead of a command', () => {
   const started = codexNotificationEvent('item/started', {
     item: { id: 'call-2', type: 'mcpToolCall', server: 'fs', tool: 'read_file', arguments: { path: 'a.ts' }, status: 'inProgress' },
   });
-  assert.equal((started?.payload as Record<string, unknown>).name, 'mcpToolCall');
   assert.equal((started?.payload as Record<string, unknown>).input, '{"path":"a.ts"}');
+  // A Codex item names its own MCP tool, so the category is only a fallback.
+  assert.equal((started?.payload as Record<string, unknown>).name, 'read_file');
+});
+
+test('a title that names a file or a version stays a title', () => {
+  for (const title of ['README.md', 'main.ts', 'v1.2.3', 'package.json']) {
+    const [started] = acpTool({ sessionUpdate: 'tool_call', toolCallId: 'call-1', title, status: 'pending' });
+    assert.equal(started?.payload.title, title);
+    assert.equal('name' in (started?.payload ?? {}), false, `${title} became a tool name`);
+  }
+  // A dotted tool name whose last segment is not an extension still names the tool.
+  const [named] = acpTool({ sessionUpdate: 'tool_call', toolCallId: 'call-2', title: 'mcp.filesystem.read', status: 'pending' });
+  assert.equal(named?.payload.name, 'mcp.filesystem.read');
+});
+
+test('a cut that lands inside a redaction marker does not leave a fragment', () => {
+  const secret = `Bearer ${'B'.repeat(40)}`;
+  const [started] = acpTool({
+    sessionUpdate: 'tool_call',
+    toolCallId: 'call-1',
+    title: 'pwsh',
+    status: 'pending',
+    rawInput: `${'x'.repeat(3990)} ${secret}`,
+  });
+  const input = String(started?.payload.input);
+  assert.ok(input.length <= 4000);
+  assert.doesNotMatch(input, /B{10}/);
+  // Either the whole marker survives or it is gone; a half-written marker reads like data.
+  assert.equal(input.includes('[REDACTED'), input.includes('[REDACTED]'));
+});
+
+test('a snake_case Codex exit code is still an exit code', () => {
+  const finished = codexNotificationEvent('item/completed', {
+    item: { id: 'call-3', type: 'commandExecution', command: 'npm run lint', exit_code: 3 },
+  });
+  assert.equal((finished?.payload as Record<string, unknown>).exitCode, 3);
 });

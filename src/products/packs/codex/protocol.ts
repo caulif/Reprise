@@ -52,6 +52,7 @@ function mapItem(completed: boolean, payload: unknown): TargetEvent | undefined 
   return runtimeTargetEvent(completed ? "tool_finished" : "tool_started", {
     ...record(payload),
     ...(live ? { live } : {}),
-    ...toolFacts({ name: kind, input: item.command ?? item.arguments, exitCode: item.exitCode }),
+    // A Codex item names its MCP tool (`item.tool`); every other item kind is identified by its category.
+    ...toolFacts({ name: text(item.tool) ?? kind, input: item.command ?? item.arguments, exitCode: item.exitCode ?? item.exit_code }),
   });
 }

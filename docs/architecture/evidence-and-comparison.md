@@ -283,7 +283,7 @@ transform_image 裁剪/缩放已有冻结 PNG，使用原图像素坐标并记�
 
 ## 候选工具事实与用量口径
 
-候选 Runtime 的工具事件把产品中立的三个顶层键与 `callId`/`title`/`kind`/`status` 并列发布：`name` 是产品自己的工具标识，`input` 是入参文本（脱敏后最多 4000 字符），`exitCode` 是整数退出码。缺键表示该产品没有报出该事实，不写 `0` 或空串占位。ACP 没有工具名字段，只有把人类可读的 `title` 当裸标识符时才提升为 `name`，句子型 title 不提升；`exitCode` 只取 `rawOutput.exitCode`/`exit_code`。claude-code 的 `name` 来自 `tool_use.name`，其协议不含退出码。codex 的 `name` 取 item 类别、入参取 `command` 或 `arguments`，`item` 原样保留，统一键为增量。只有 ACP 的终态更新会把这些事实同时写进 `tool_started` 与 `tool_finished`，终态行不能假设一定有值。
+候选 Runtime 的工具事件把产品中立的三个顶层键与 `callId`/`title`/`kind`/`status` 并列发布：`name` 是产品自己的工具标识（单个 token，去空白后仍含空白就不发布），`input` 是入参文本（先整体脱敏再截断到 4000 字符，截断点不落在 `[REDACTED]` 中间），`exitCode` 是整数退出码。缺键表示该产品没有报出该事实，不写 `0` 或空串占位。ACP 没有工具名字段，只有把人类可读的 `title` 当裸标识符、且不是文件名或版本形状（`README.md`、`v1.2.3`）时才提升为 `name`，句子型 title 不提升；`exitCode` 只取 `rawOutput.exitCode`/`exit_code`。claude-code 的 `name` 来自 `tool_use.name`，其协议不含退出码。codex 的 `name` 取 `item.tool`、没有时退回 item 类别，入参取 `command` 或 `arguments`，退出码接受 `exitCode` 与 `exit_code` 两种拼写，`item` 原样保留，统一键为增量。只有 ACP 的终态更新会把这些事实同时写进 `tool_started` 与 `tool_finished`，终态行不能假设一定有值。
 
 `tokenUsage.total` 是整轮累计值且含 cache，`input` 是不含 cache 的新鲜 prompt，`output` 是生成量，`cached` 是 cache 读，`cacheCreation` 是 cache 写（非零才发布）。`input`、`output`、`cached`、`cacheCreation` 四项之和构成 `total`；缺 `cacheCreation` 时报告里的 `total` 无法由分项解释。报告 Token 明细与 shareable 指纹都包含这几项，旧报告缺该键时该行显示为缺失。ACP 四家不提供 token 遥测，其 `usage.*` 与 `resolvedModel` 为 null 属已声明的能力边界。
 

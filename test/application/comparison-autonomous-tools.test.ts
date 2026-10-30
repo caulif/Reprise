@@ -42,6 +42,8 @@ test('file report submission shares draft validation, accepts semantic HTML and 
   const html = await readFile(join(f.root, 'report.html'), 'utf8');
   const model = comparisonReportModelFromHtml(html, f.facts,{ status: 'completed', reportPath: 'report.html', headline: params.headline, evidenceRefs: [] }, []);
   assert.equal(Value.Check(ComparisonReportModelSchema, model), true);
+  // A cache write is a persisted token part: a stored report carrying one must stay Value.Check-valid.
+  assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, metrics: { baseline: { tokens: { total: 5, cacheCreation: 7 } } } }), true);
   assert.equal(model.formatVersion, 7);
   assert.equal(Object.hasOwn(model, 'boundary'), false);
   assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, boundary: 'old caveat' }), false);

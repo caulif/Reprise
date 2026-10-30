@@ -85,6 +85,13 @@ function toolPayload(update: Record<string, unknown>): Record<string, unknown> {
  */
 const TOOL_IDENTIFIER = /^[A-Za-z][\w.:-]{0,39}$/;
 
+/**
+ * An agent often titles a read call with the object it touched (`README.md`, `main.ts`) or a version (`v1.2.3`).
+ * Such a title is that object, not a tool the agent called, so it stays a title. A dotted tool name whose last
+ * segment is not a file extension (`mcp.filesystem.read`) is still a name.
+ */
+const OBJECT_SUFFIX = /\.(\d+|md|markdown|txt|text|ts|tsx|js|jsx|mjs|cjs|json|jsonl|ya?ml|toml|ini|cfg|conf|lock|log|csv|tsv|xml|html?|css|scss|less|svg|png|jpe?g|gif|webp|ico|pdf|py|rb|go|rs|java|kt|kts|cs|c|h|cc|cpp|hpp|sh|bash|zsh|ps1|bat|cmd|sql|env)$/i;
+
 function toolName(title: string | undefined): string | undefined {
-  return title && TOOL_IDENTIFIER.test(title) ? title : undefined;
+  return title && TOOL_IDENTIFIER.test(title) && !OBJECT_SUFFIX.test(title) ? title : undefined;
 }
