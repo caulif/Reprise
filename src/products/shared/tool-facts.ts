@@ -2,8 +2,8 @@ import { text } from '../../core/json.js';
 import { redactDiagnostic } from '../../infrastructure/process/stdio.js';
 
 /**
- * A consumer may display far less of an argument than this, but the stored value must stay longer than any
- * display cap: a reader that keeps 2000 characters has to be able to tell "this was cut" from "this is all".
+ * A consumer displays far less of an argument than this. The stored value only needs enough headroom that a cut
+ * value stays distinguishable from a complete one, so a 4100-character command is visibly longer than the cap.
  */
 const INPUT_LIMIT = 4000;
 

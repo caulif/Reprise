@@ -95,3 +95,34 @@ test('a Codex item journals the tool name, the command and its exit code', () =>
   // A zero exit code is a fact, so it must survive the "only publish what was reported" rule.
   assert.equal((finished?.payload as Record<string, unknown>).exitCode, 0);
 });
+
+test('an exit status that arrives on the terminal update row is still journaled', () => {
+  const [finished] = acpTool({
+    sessionUpdate: 'tool_call_update',
+    toolCallId: 'call-1',
+    title: 'pwsh',
+    status: 'completed',
+    rawOutput: { exit_code: 2 },
+  });
+  assert.equal(finished?.type, 'runtime.tool_finished');
+  assert.equal(finished?.payload.exitCode, 2);
+});
+
+test('a raw output that is not an object claims no exit status', () => {
+  const [started] = acpTool({ sessionUpdate: 'tool_call', toolCallId: 'call-1', title: 'read', status: 'pending', rawOutput: 'done' });
+  assert.equal('exitCode' in (started?.payload ?? {}), false);
+});
+
+test('arguments longer than the cap are cut, and the cut stays visible', () => {
+  const [started] = acpTool({ sessionUpdate: 'tool_call', toolCallId: 'call-1', title: 'pwsh', status: 'pending', rawInput: 'x'.repeat(4100) });
+  // A stored value that is exactly the cap tells the reader the original was longer.
+  assert.equal(String(started?.payload.input).length, 4000);
+});
+
+test('a Codex MCP item journals its arguments instead of a command', () => {
+  const started = codexNotificationEvent('item/started', {
+    item: { id: 'call-2', type: 'mcpToolCall', server: 'fs', tool: 'read_file', arguments: { path: 'a.ts' }, status: 'inProgress' },
+  });
+  assert.equal((started?.payload as Record<string, unknown>).name, 'mcpToolCall');
+  assert.equal((started?.payload as Record<string, unknown>).input, '{"path":"a.ts"}');
+});

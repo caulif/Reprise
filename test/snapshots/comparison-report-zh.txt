@@ -190,7 +190,7 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
     </article>
     </div>
     <details class="token-details"><summary>展开 Token 口径</summary>
-      <div class="pair token-breakdown"><div class="col"><span class="who">历史会话</span><ul><li>输入: 未采集</li><li>输出: 未采集</li><li>缓存输入: 未采集</li><li>推理: 未采集</li></ul></div><div class="col"><span class="who">当前会话</span><ul><li>输入: 未采集</li><li>输出: 未采集</li><li>缓存输入: 未采集</li><li>推理: 未采集</li></ul></div></div>
+      <div class="pair token-breakdown"><div class="col"><span class="who">历史会话</span><ul><li>输入: 未采集</li><li>输出: 未采集</li><li>缓存输入: 未采集</li><li>缓存写入: 未采集</li><li>推理: 未采集</li></ul></div><div class="col"><span class="who">当前会话</span><ul><li>输入: 未采集</li><li>输出: 未采集</li><li>缓存输入: 未采集</li><li>缓存写入: 未采集</li><li>推理: 未采集</li></ul></div></div>
       <p class="kicker">分项可能重叠或未记录；不同工具的 Token 口径不能直接作为模型效率评分。</p>
     </details>
   </section>

@@ -190,7 +190,7 @@ body[data-report="diagnostic"] .num.miss { font-size:16px; }
     </article>
     </div>
     <details class="token-details"><summary>Token details</summary>
-      <div class="pair token-breakdown"><div class="col"><span class="who">Historical session</span><ul><li>Input: not collected</li><li>Output: not collected</li><li>Cached input: not collected</li><li>Reasoning: not collected</li></ul></div><div class="col"><span class="who">Current session</span><ul><li>Input: not collected</li><li>Output: not collected</li><li>Cached input: not collected</li><li>Reasoning: not collected</li></ul></div></div>
+      <div class="pair token-breakdown"><div class="col"><span class="who">Historical session</span><ul><li>Input: not collected</li><li>Output: not collected</li><li>Cached input: not collected</li><li>Cache write: not collected</li><li>Reasoning: not collected</li></ul></div><div class="col"><span class="who">Current session</span><ul><li>Input: not collected</li><li>Output: not collected</li><li>Cached input: not collected</li><li>Cache write: not collected</li><li>Reasoning: not collected</li></ul></div></div>
       <p class="kicker">Categories may overlap or be unrecorded. Different runtime accounting is not a model efficiency score.</p>
     </details>
   </section>

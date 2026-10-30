@@ -28,6 +28,7 @@ const M = {
   input: { en: "Input", zh: "输入" },
   output: { en: "Output", zh: "输出" },
   cached: { en: "Cached input", zh: "缓存输入" },
+  cacheCreation: { en: "Cache write", zh: "缓存写入" },
   reasoning: { en: "Reasoning", zh: "推理" },
   tokenScopeNote: { en: "Categories may overlap or be unrecorded. Different runtime accounting is not a model efficiency score.", zh: "分项可能重叠或未记录；不同工具的 Token 口径不能直接作为模型效率评分。" },
   unitMinutes: { en: "min", zh: "min" },

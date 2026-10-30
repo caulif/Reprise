@@ -319,9 +319,8 @@ function sideMetrics(
 
 function tokenTotal(tokens: NonNullable<RunInspection['tokenUsage']>): number | undefined {
   if (tokens.total !== undefined) return tokens.total;
-  const parts = [tokens.input, tokens.output, tokens.cached, tokens.cacheCreation];
-  if (parts.every((part) => part === undefined)) return undefined;
-  return parts.reduce<number>((sum, part) => sum + (part ?? 0), 0);
+  if (tokens.input === undefined && tokens.output === undefined && tokens.cached === undefined) return undefined;
+  return (tokens.input ?? 0) + (tokens.output ?? 0) + (tokens.cached ?? 0);
 }
 
 function evidenceLevel(refs: readonly string[]): string {

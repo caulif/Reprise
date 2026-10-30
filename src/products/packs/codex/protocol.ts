@@ -52,6 +52,6 @@ function mapItem(completed: boolean, payload: unknown): TargetEvent | undefined 
   return runtimeTargetEvent(completed ? "tool_finished" : "tool_started", {
     ...record(payload),
     ...(live ? { live } : {}),
-    ...toolFacts({ name: kind, input: item.command, exitCode: item.exitCode }),
+    ...toolFacts({ name: kind, input: item.command ?? item.arguments, exitCode: item.exitCode }),
   });
 }
