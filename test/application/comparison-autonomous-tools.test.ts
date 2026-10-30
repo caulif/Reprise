@@ -42,8 +42,10 @@ test('file report submission shares draft validation, accepts semantic HTML and 
   const html = await readFile(join(f.root, 'report.html'), 'utf8');
   const model = comparisonReportModelFromHtml(html, f.facts,{ status: 'completed', reportPath: 'report.html', headline: params.headline, evidenceRefs: [] }, []);
   assert.equal(Value.Check(ComparisonReportModelSchema, model), true);
-  // A cache write is a persisted token part: a stored report carrying one must stay Value.Check-valid.
+  // A cache write is a declared token part: a number is accepted, a stored string is refused. The refusal is what
+  // proves the key is declared -- TypeBox lets an undeclared token key through, so the positive check alone passes.
   assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, metrics: { baseline: { tokens: { total: 5, cacheCreation: 7 } } } }), true);
+  assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, metrics: { baseline: { tokens: { total: 5, cacheCreation: 'write' } } } }), false);
   assert.equal(model.formatVersion, 7);
   assert.equal(Object.hasOwn(model, 'boundary'), false);
   assert.equal(Value.Check(ComparisonReportModelSchema, { ...model, boundary: 'old caveat' }), false);

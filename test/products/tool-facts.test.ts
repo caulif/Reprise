@@ -113,6 +113,15 @@ test('a raw output that is not an object claims no exit status', () => {
   assert.equal('exitCode' in (started?.payload ?? {}), false);
 });
 
+test('an exit status that is not an integer claims nothing', () => {
+  // A float and a numeric string are both shapes an agent invents; storing either would put a value in the Journal
+  // that no consumer can compare against zero.
+  for (const rawOutput of [{ exitCode: 1.5 }, { exitCode: '2' }]) {
+    const [started] = acpTool({ sessionUpdate: 'tool_call', toolCallId: 'call-1', title: 'pwsh', status: 'pending', rawOutput });
+    assert.equal('exitCode' in (started?.payload ?? {}), false, JSON.stringify(rawOutput));
+  }
+});
+
 test('arguments longer than the cap are cut, and the cut stays visible', () => {
   const [started] = acpTool({ sessionUpdate: 'tool_call', toolCallId: 'call-1', title: 'pwsh', status: 'pending', rawInput: 'x'.repeat(4100) });
   // A stored value that is exactly the cap tells the reader the original was longer.
@@ -155,9 +164,32 @@ test('a cut that lands inside a redaction marker does not leave a fragment', () 
   assert.equal(input.includes('[REDACTED'), input.includes('[REDACTED]'));
 });
 
+test('a cut right after the first marker character leaves no fragment', () => {
+  const [started] = acpTool({
+    sessionUpdate: 'tool_call',
+    toolCallId: 'call-1',
+    title: 'pwsh',
+    status: 'pending',
+    rawInput: `${'x'.repeat(3998)} ${`Bearer ${'E'.repeat(40)}`}`,
+  });
+  const input = String(started?.payload.input);
+  // Only the marker's opening bracket fit under the cap, and a lone bracket still reads like the start of a marker.
+  assert.equal(input.endsWith('['), false);
+  assert.equal(input.length, 3999);
+});
+
 test('a snake_case Codex exit code is still an exit code', () => {
   const finished = codexNotificationEvent('item/completed', {
     item: { id: 'call-3', type: 'commandExecution', command: 'npm run lint', exit_code: 3 },
   });
   assert.equal((finished?.payload as Record<string, unknown>).exitCode, 3);
+});
+
+test('a Codex MCP item without a tool name falls back to its category', () => {
+  const started = codexNotificationEvent('item/started', {
+    item: { id: 'call-4', type: 'mcpToolCall', server: 'fs', arguments: {}, status: 'inProgress' },
+  });
+  // Without `item.tool` the item only declares what kind of call it is.
+  assert.equal((started?.payload as Record<string, unknown>).name, 'mcpToolCall');
+  assert.equal((started?.payload as Record<string, unknown>).input, '{}');
 });

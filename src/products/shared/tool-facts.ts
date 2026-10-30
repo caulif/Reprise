@@ -57,7 +57,7 @@ function inputText(value: unknown): string | undefined {
 function truncate(value: string): string {
   if (value.length <= INPUT_LIMIT) return value;
   const head = value.slice(0, INPUT_LIMIT);
-  for (let size = REDACTION_MARKER.length - 1; size > 1; size -= 1) {
+  for (let size = REDACTION_MARKER.length - 1; size >= 1; size -= 1) {
     if (head.endsWith(REDACTION_MARKER.slice(0, size))) return head.slice(0, head.length - size);
   }
   return head;

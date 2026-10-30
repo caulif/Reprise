@@ -30,11 +30,11 @@ deliverables 不做代码计算：声明是散文，`present`/`missing` 无法�
 
 ## 备选方案
 
-**在 ACP 里按产品分支提取工具名。** 四家标题风格不同（dsh 裸 `pwsh`/`read`，kimi `Read`/`Bash`，minimax `bash`/`task_output`，qwen `ReadFile`/`Shell`），按产品分支等于在共享层判断产品身份，违反平台与 Pack 边界；裸标识符规则已覆盖 407/407 条实测 title，拒绝。
+**在 ACP 里按产品分支提取工具名。** 四家标题风格不同（dsh 裸 `pwsh`/`read`，kimi `Read`/`Bash`，minimax `bash`/`task_output`，qwen `ReadFile`/`Shell`），按产品分支等于在共享层判断产品身份，违反平台与 Pack 边界；裸标识符规则加对象形状排除后覆盖实测 11 个实验的 23 个不同 title（1501 次调用），排除规则一条都没拦下，拒绝。
 
 **把 `title` 直接当 `name` 发布。** ACP 规范把它定义为人类可读文本，句子型 title 会让 `name` 变成一句话，消费者按名字聚合统计就失效，拒绝。
 
-**只按「裸标识符」规则，不额外排文件名与版本形状。** 实测 407 条 title 里没有一条带点，加规则等于用猜测换猜测；但 `README.md`、`v1.2.3` 正好落在裸标识符语法内，真出现就会被当成工具名，按名字聚合的统计随之失真。改用显式扩展名白名单加 `\.\d+$` 版本形状后，`mcp.filesystem.read` 这类点分工具名不受影响，代价可接受，拒绝前者。
+**只按「裸标识符」规则，不额外排文件名与版本形状。** 实测 23 个不同 title（1501 次调用）里没有一条带点，加规则在当前数据上拦不下任何东西；但 `README.md`、`v1.2.3` 正好落在裸标识符语法内，真出现就会被当成工具名，按名字聚合的统计随之失真。改用显式扩展名白名单加 `\.\d+$` 版本形状后，`mcp.filesystem.read` 这类点分工具名和上述实测 title 全都不受影响，代价可接受，拒绝前者。
 
 **ACP 退出码从 `rawOutput` 的其它形状猜测（例如解析文本尾部）。** 没有 wire 证据说明四家会写什么，猜测产出的数字无法追溯，拒绝。
 
@@ -46,14 +46,14 @@ deliverables 不做代码计算：声明是散文，`present`/`missing` 无法�
 
 ## 影响
 
-工具事实变成产品中立的三个顶层键，消费者不需要知道是哪个 Pack 产的。缺失仍是缺失：ACP 四家的 `usage.*` 与 `resolvedModel` 保持 null（`tokenTelemetry: 'none'` 与 manifest 的 `resolvedModel: "unknown"` 是已声明的能力边界，本决策不改变）；只有 ACP 的终态更新会把同一批事实同时写进 `tool_started` 与 `tool_finished`，claude-code 与 Host 拒绝的 `tool_finished` 不带这三个键，读的时候不能假设终态行一定有值。
+工具事实变成产品中立的三个顶层键，消费者不需要知道是哪个 Pack 产的。缺失仍是缺失：ACP 四家的 `usage.*` 与 `resolvedModel` 保持 null（`tokenTelemetry: 'none'` 与 manifest 的 `resolvedModel: "unknown"` 是已声明的能力边界，本决策不改变）。只有状态已是 `completed`/`failed` 的那条 `tool_call` 会把同一批事实同时写进 `tool_started` 与 `tool_finished`；终态 `tool_call_update` 只写 `tool_finished`，claude-code 与 Host 拒绝的 `tool_finished` 不带这三个键，读的时候不能假设终态行一定有值。
 
-`cacheCreation` 是新增的可选字段，层类型与 schema 同步放宽为可选，持久化形状向后兼容：旧报告没有该键，读取路径不变，报告的「缓存写入」行显示为缺失。
+`cacheCreation` 是新增的可选字段，层类型与 schema 同步放宽为可选，持久化形状向后兼容：旧报告没有该键，读取路径不变，报告的「缓存写入」行显示为缺失。shareable 指纹不含该项，所以宿主指标区的篡改校验不覆盖「缓存写入」行；要把该行纳入校验只能新增报告 `formatVersion` 并让指纹按版本取舍，那是跨模块协议变化，本决策不做。
 
 ## 验证
 
-`test/products/tool-facts.test.ts`：ACP 的 `rawInput` 与 `rawOutput.exitCode` 落成 `input`/`exitCode` 且 `tool_started` 与 `tool_finished` 同事实、`rawOutput` 是 `exit_code` 拼写时同样落值、`rawOutput` 不是对象时不造键、裸标识符 title 提升为 `name` 且 `title` 原样保留、句子型 title 不提升、文件名与版本形状的 title（`README.md`/`main.ts`/`v1.2.3`/`package.json`）不提升而 `mcp.filesystem.read` 仍提升、缺值不造键、入参过脱敏且在 4000 字符处截断、截断点落在标记中间时不留半个 `[REDACTED]`、claude-code 的 `name` 与 `input`、codex 的命令类与 `mcpToolCall` 两类 item 都带 `name` 与 `input`（后者取自 `arguments`、`name` 取自 `item.tool`）、`exitCode: 0` 保留、`exit_code` 拼写同样落值。`test/application/session-usage.test.ts` 断言 `total === input + output + cached + cacheCreation`（claude 2000 / `cacheCreation` 500），并断言 codex 路径不含 `cacheCreation`（其 `input_tokens` 已含 cache 读）。报告侧断言 Token 明细里出现「缓存写入」行，并断言带 `cacheCreation` 的报告模型仍通过 `Value.Check(ComparisonReportModelSchema, …)`。
+`test/products/tool-facts.test.ts`：ACP 的 `rawInput` 与 `rawOutput.exitCode` 落成 `input`/`exitCode` 且 `tool_started` 与 `tool_finished` 同事实、`rawOutput` 是 `exit_code` 拼写时同样落值、`rawOutput` 不是对象或 `exitCode` 不是整数（1.5、字符串 `'2'`）时不造键、裸标识符 title 提升为 `name` 且 `title` 原样保留、句子型 title 不提升、文件名与版本形状的 title（`README.md`/`main.ts`/`v1.2.3`/`package.json`）不提升而 `mcp.filesystem.read` 仍提升、缺值不造键、入参过脱敏且在 4000 字符处截断、截断点落在标记中间时不留半个 `[REDACTED]`、只装下标记首字符时也不留孤立的 `[`、claude-code 的 `name` 与 `input`、codex 的命令类 item 与 `mcpToolCall` item 都带 `name` 与 `input`（后者取自 `arguments`、`name` 取自 `item.tool`，缺 `item.tool` 时退回类别）、`exitCode: 0` 保留、`exit_code` 拼写同样落值。`test/application/session-usage.test.ts` 断言 `total === input + output + cached + cacheCreation`（claude 2000 / `cacheCreation` 500），并断言 codex 路径不含 `cacheCreation`（其 `input_tokens` 已含 cache 读）。报告侧断言 Token 明细里出现「缓存写入」行，并断言带 `cacheCreation` 的报告模型通过 `Value.Check`、非数值的 `cacheCreation` 被拒——后者是唯一能失败的断言：TypeBox 允许未声明的 token 键通过，只断言「能通过」在删掉 schema 那一行后依然成立。
 
-反向验证：第一轮把 `dist/` 里 `toolFacts(...)` 的展开改回空对象、删掉 `cacheCreation` 后，相关测试 5 条失败（ACP 三条、claude 一条、usage 一条），失败断言形如 `actual: undefined, expected: 'grep'` 与 `expected: 500`；重建后全绿。第二轮把 `item.command ?? item.arguments` 与报告 Token 明细数组改坏，`a Codex MCP item journals its arguments instead of a command` 与 `compact metrics show all totals once` 失败。第三轮分别改坏 `OBJECT_SUFFIX` 排除、codex 的 `item.tool` 与截断的标记回退，`a Codex MCP item journals its arguments instead of a command`（`actual: 'mcpToolCall', expected: 'read_file'`）、`a title that names a file or a version stays a title`（`README.md became a tool name`）、`a cut that lands inside a redaction marker does not leave a fragment`（`actual: true, expected: false`）三条失败；`npm run build` 重建后相关 8 个测试文件 86/86 通过。
+反向验证：第一轮把 `dist/` 里 `toolFacts(...)` 的展开改回空对象、删掉 `cacheCreation` 后，相关测试 5 条失败（ACP 三条、claude 一条、usage 一条），失败断言形如 `actual: undefined, expected: 'grep'` 与 `expected: 500`；重建后全绿。第二轮把 `item.command ?? item.arguments` 与报告 Token 明细数组改坏，`a Codex MCP item journals its arguments instead of a command` 与 `compact metrics show all totals once` 失败。第三轮分别改坏 `OBJECT_SUFFIX` 排除、codex 的 `item.tool` 与截断的标记回退，`a Codex MCP item journals its arguments instead of a command`（`actual: 'mcpToolCall', expected: 'read_file'`）、`a title that names a file or a version stays a title`（`README.md became a tool name`）、`a cut that lands inside a redaction marker does not leave a fragment`（`actual: true, expected: false`）三条失败，重建后相关 8 个测试文件 86/86 通过。第四轮删掉 `MetricSideSchema` 的 `cacheCreation` 声明、把截断边界改回 `size > 1`、去掉 `Number.isInteger` 判定，`file report submission …`、`a cut right after the first marker character leaves no fragment`、`an exit status that is not an integer claims nothing` 三条失败（均为 `actual: true, expected: false`），重建后 89/89 通过。
 
-残留盲区：ACP 规范没有 `name`/`exitCode` 字段，`name` 靠裸标识符 title 规则、`exitCode` 只靠 `rawOutput` 兜底，四家实际是否提供没有 wire 证据（本批没有抓包）。扩展名是白名单：表外扩展名（如 `.wasm`、`.ipynb`）仍会被当成工具名，出现新扩展名要同步改表。claude-code 协议本身没有退出码，只有 `is_error`，所以它的 `exitCode` 仍是 null。codex 的 MCP 调用真实身份在 `item.server`/`item.tool`，本批发布 `item.tool`；`mcpServer/startupStatus/updated` 仍被映射成 `tool_started` 且不带本批三个键，消费端会看到一条没有工具名的事件，这是通知映射的既有形状，本批未改。ACP 四家的 `usage.*` 与 `resolvedModel` 仍 null。外部汇总脚本尚未读新键。
+残留盲区：ACP 规范没有 `name`/`exitCode` 字段，`name` 靠裸标识符 title 规则、`exitCode` 只靠 `rawOutput` 兜底，四家实际是否提供没有 wire 证据（本批没有抓包）。扩展名是白名单：表外扩展名（如 `.tf`、`.vue`、`.ipynb`、`.wasm`）仍会被当成工具名，出现新扩展名要同步改表。claude-code 协议本身没有退出码，只有 `is_error`，所以它的 `exitCode` 仍是 null。codex 的 MCP 调用真实身份在 `item.server`/`item.tool`，本批只发布 `item.tool`，同名的两个 server 无法区分；`mcpServer/startupStatus/updated` 仍被映射成 `tool_started` 且不带本批三个键，消费端会看到一条没有工具名的事件，这是通知映射的既有形状，本批未改。ACP 四家的 `usage.*` 与 `resolvedModel` 仍 null。宿主指标区的篡改校验不覆盖「缓存写入」行（见影响）。外部汇总脚本尚未读新键。
