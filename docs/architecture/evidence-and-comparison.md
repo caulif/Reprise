@@ -283,9 +283,9 @@ transform_image 裁剪/缩放已有冻结 PNG，使用原图像素坐标并记�
 
 ## 候选工具事实与用量口径
 
-候选 Runtime 的工具事件把产品中立的三个顶层键与 `callId`/`title`/`kind`/`status` 并列发布：`name` 是产品自己的工具标识（单个 token，去空白后仍含空白就不发布），`input` 是入参文本（先整体脱敏再截断到 4000 字符，截断点不落在 `[REDACTED]` 中间），`exitCode` 是整数退出码。缺键表示该产品没有报出该事实，不写 `0` 或空串占位。ACP 没有工具名字段，只有把人类可读的 `title` 当裸标识符、且不是文件名或版本形状（`README.md`、`v1.2.3`）时才提升为 `name`，句子型 title 不提升；`exitCode` 只取 `rawOutput.exitCode`/`exit_code`。claude-code 的 `name` 来自 `tool_use.name`，其协议不含退出码。codex 的 `name` 取 `item.tool`、没有时退回 item 类别，入参取 `command` 或 `arguments`，退出码接受 `exitCode` 与 `exit_code` 两种拼写，`item` 原样保留，统一键为增量。只有 ACP 的终态更新会把这些事实同时写进 `tool_started` 与 `tool_finished`，终态行不能假设一定有值。
+候选 Runtime 的工具事件把产品中立的三个顶层键与 `callId`/`title`/`kind`/`status` 并列发布：`name` 是产品自己的工具标识（单个 token，去空白后仍含空白就不发布），`input` 是入参文本（先整体脱敏再截断到 4000 字符，截断点不落在 `[REDACTED]` 中间），`exitCode` 是整数退出码。缺键表示该产品没有报出该事实，不写 `0` 或空串占位。ACP 没有工具名字段，只有把人类可读的 `title` 当裸标识符、且不是文件名或版本形状（`README.md`、`v1.2.3`）时才提升为 `name`，句子型 title 不提升；`exitCode` 只取 `rawOutput.exitCode`/`exit_code`。claude-code 的 `name` 来自 `tool_use.name`，其协议不含退出码。codex 的 `name` 取 `item.tool`、没有时退回 item 类别，入参取 `command` 或 `arguments`，退出码接受 `exitCode` 与 `exit_code` 两种拼写，`item` 原样保留，统一键为增量。只有状态已是 `completed`/`failed` 的那条 ACP `tool_call` 会把同一批事实同时写进 `tool_started` 与 `tool_finished`（终态 `tool_call_update` 只写 `tool_finished`），终态行不能假设一定有值。
 
-`tokenUsage.total` 是整轮累计值且含 cache，`input` 是不含 cache 的新鲜 prompt，`output` 是生成量，`cached` 是 cache 读，`cacheCreation` 是 cache 写（非零才发布）。`input`、`output`、`cached`、`cacheCreation` 四项之和构成 `total`；缺 `cacheCreation` 时报告里的 `total` 无法由分项解释。报告 Token 明细含这四个分项，旧报告缺该键时该行显示为缺失；shareable 指纹刻意不含 `cacheCreation`，加上它会让已发布报告的指纹长度变化、把归档报告读成改动过，代价是宿主指标区的篡改校验不覆盖「缓存写入」这一行。ACP 四家不提供 token 遥测，其 `usage.*` 与 `resolvedModel` 为 null 属已声明的能力边界。
+`tokenUsage.total` 是整轮累计值且含 cache，`input` 是不含 cache 的新鲜 prompt，`output` 是生成量，`cached` 是 cache 读，`cacheCreation` 是 cache 写（零时不发布）。`input`、`output`、`cached`、`cacheCreation` 四项之和构成 `total`；本批之前发布的报告没有 `cacheCreation`，其中的 `total` 无法由分项解释。报告 Token 明细含这四个分项，旧报告缺该键时该行显示为缺失；shareable 指纹刻意不含 `cacheCreation`，加上它会让已发布报告的指纹长度变化、把归档报告读成改动过，代价是宿主指标区的篡改校验不覆盖「缓存写入」这一行。ACP 四家不提供 token 遥测，其 `usage.*` 与 `resolvedModel` 为 null 属已声明的能力边界。
 
 交付物的 `present`/`missing` 由外部汇总脚本计算，Reprise 只发布任务声明与候选记录：声明是仓库相对路径时才可判定，自然语言声明时为 null，含义是不可判定而非未交付。
 
