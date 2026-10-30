@@ -1,6 +1,7 @@
 import { record, text } from "../../../core/json.js";
 import { runtimeTargetEvent, type TargetEvent } from "../../../core/runtime.js";
 import { liveFromClaudeToolUse } from "../../shared/public-live-map.js";
+import { toolFacts } from "../../shared/tool-facts.js";
 
 export const CLAUDE_DISALLOWED_TOOLS = ['CronCreate', 'CronDelete', 'ScheduleWakeup', 'SendMessage'] as const;
 export const CLAUDE_REQUIRED_ARGS = [
@@ -44,6 +45,7 @@ function claudeToolStartedEvents(frame: Record<string, unknown>): readonly Targe
       evidenceRefs: [],
       ...(mapped.callId ? { callId: mapped.callId } : {}),
       live: mapped.live,
+      ...toolFacts({ name, input: block.input }),
     }));
   }
   return events;

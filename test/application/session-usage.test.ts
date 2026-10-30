@@ -4,6 +4,7 @@ import {
   aggregateEventUsage,
   aggregateHistoricalUsage,
   busyMsFromHistoricalEvents,
+  factsFromUsage,
   usageCostUsd,
 } from "../../src/application/session-usage.js";
 import { calculateUsageCostUsd, MODEL_PRICING_TABLE_VERSION } from "../../src/application/model-pricing.js";
@@ -85,4 +86,23 @@ test("unknown model prices stay uncollected and tests can inject a fixed table",
     ),
     18,
   );
+});
+
+test("published token facts explain their own total, cache writes included", () => {
+  const claude = factsFromUsage(aggregateHistoricalUsage([
+    { type: "result", usage: { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 300, cache_creation_input_tokens: 500 } },
+  ]));
+  assert.ok(claude);
+  // `total` is cumulative over the run and cache-inclusive; `input` is the fresh prompt only.
+  assert.equal(claude.total, 2000);
+  assert.equal(claude.cacheCreation, 500);
+  assert.equal((claude.input ?? 0) + (claude.output ?? 0) + (claude.cached ?? 0) + (claude.cacheCreation ?? 0), claude.total);
+  const codex = factsFromUsage(aggregateEventUsage([
+    envelope({ info: { last_token_usage: { input_tokens: 1000, output_tokens: 100, cached_input_tokens: 300 } } }),
+  ]));
+  assert.ok(codex);
+  // Codex counts cache reads inside `input_tokens`, so the fresh prompt excludes them and no cache write exists.
+  assert.equal(codex.input, 700);
+  assert.equal(codex.total, 1100);
+  assert.equal("cacheCreation" in codex, false);
 });

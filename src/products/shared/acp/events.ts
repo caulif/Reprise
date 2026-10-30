@@ -1,6 +1,7 @@
 import { record, text } from '../../../core/json.js';
 import { runtimeTargetEvent, type TargetEvent } from '../../../core/runtime.js';
 import type { PublicLiveActivity } from '../../../core/schema.js';
+import { toolFacts } from '../tool-facts.js';
 
 const LIVE_VERBS: Readonly<Record<string, PublicLiveActivity['verb']>> = {
   read: 'read',
@@ -67,11 +68,30 @@ function toolPayload(update: Record<string, unknown>): Record<string, unknown> {
   const kind = text(update.kind);
   const title = text(update.title);
   const verb = kind ? LIVE_VERBS[kind] : undefined;
+  const output = record(update.rawOutput);
   return {
     ...(callId ? { callId } : {}),
     ...(title ? { title } : {}),
     ...(kind ? { kind } : {}),
     ...(text(update.status) ? { status: text(update.status) } : {}),
     ...(verb ? { live: { schemaVersion: 1, verb, ...(title ? { leaf: title.slice(0, 80) } : {}) } } : {}),
+    ...toolFacts({ name: toolName(title), input: update.rawInput, exitCode: output.exitCode ?? output.exit_code }),
   };
+}
+
+/**
+ * ACP defines `title` as human-readable text for a person, and an agent may write a sentence there. Only a bare
+ * identifier can be the agent's own tool name, so a sentence stays a title and never becomes a name.
+ */
+const TOOL_IDENTIFIER = /^[A-Za-z][\w.:-]{0,39}$/;
+
+/**
+ * An agent often titles a read call with the object it touched (`README.md`, `main.ts`) or a version (`v1.2.3`).
+ * Such a title is that object, not a tool the agent called, so it stays a title. A dotted tool name whose last
+ * segment is not a file extension (`mcp.filesystem.read`) is still a name.
+ */
+const OBJECT_SUFFIX = /\.(\d+|md|markdown|txt|text|ts|tsx|js|jsx|mjs|cjs|json|jsonl|ya?ml|toml|ini|cfg|conf|lock|log|csv|tsv|xml|html?|css|scss|less|svg|png|jpe?g|gif|webp|ico|pdf|py|rb|go|rs|java|kt|kts|cs|c|h|cc|cpp|hpp|sh|bash|zsh|ps1|bat|cmd|sql|env)$/i;
+
+function toolName(title: string | undefined): string | undefined {
+  return title && TOOL_IDENTIFIER.test(title) && !OBJECT_SUFFIX.test(title) ? title : undefined;
 }

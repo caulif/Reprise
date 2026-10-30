@@ -58,7 +58,7 @@ export type ComparisonMetricSide = {
   elapsedMs?: number;
   timing?: TimingFacts;
   spanElapsedMs?: number;
-  tokens?: { total: number; input?: number; output?: number; cached?: number; reasoning?: number };
+  tokens?: { total: number; input?: number; output?: number; cached?: number; cacheCreation?: number; reasoning?: number };
   costUsd?: number;
   usageStatus?: "collected" | "not_collected" | "unknown";
   pricingStatus?: "collected" | "not_collected" | "pricing_unavailable" | "unknown";

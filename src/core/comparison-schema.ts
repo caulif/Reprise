@@ -14,6 +14,7 @@ const MetricSideSchema = Type.Object({
     input: Type.Optional(Type.Number()),
     output: Type.Optional(Type.Number()),
     cached: Type.Optional(Type.Number()),
+    cacheCreation: Type.Optional(Type.Number()),
     reasoning: Type.Optional(Type.Number()),
   })),
   costUsd: Type.Optional(Type.Number()),

@@ -280,3 +280,13 @@ Comparison 的独立 read/ls/grep/view_image/render_artifact 使用 Pi 原生并
 transform_image 裁剪/缩放已有冻结 PNG，使用原图像素坐标并记录父 hash 和变换顺序；返回派生 media ref，再由 view_image 交付图片。工具不重新渲染来源，不证明视觉理解。旧 source-save 的 evidence 投影只是历史输入协议，当前不再执行该阶段；实际输入仍按 generation 快照恢复。首流事件、首文本 delta 与工具执行计时用于诊断，不把首 SDK 事件当网络 TTFT。历史理由见[并行与续查决定](../decisions/accepted/2026-10-11-comparison-parallel-continuation.md)。
 
 候选快照的依赖省略、可取消收尾与旧格式兼容按 [Controller 执行可靠性](../decisions/accepted/2026-10-13-controller-execution-reliability.md) 执行。候选工作树保留实际依赖，封存仅省略有清单、锁和生成标记支持的可重建目录；scope 记录省略路径与恢复命令，用户明确交付路径可保留。省略目录不是删除执行工作树，也不保证重新安装后与原依赖二进制相同。
+
+## 候选工具事实与用量口径
+
+候选 Runtime 的工具事件把产品中立的三个顶层键与 `callId`/`title`/`kind`/`status` 并列发布：`name` 是产品自己的工具标识（单个 token，去空白后仍含空白就不发布），`input` 是入参文本（先整体脱敏再截断到 4000 字符，截断点不落在 `[REDACTED]` 中间），`exitCode` 是整数退出码。缺键表示该产品没有报出该事实，不写 `0` 或空串占位。ACP 没有工具名字段，只有把人类可读的 `title` 当裸标识符、且不是文件名或版本形状（`README.md`、`v1.2.3`）时才提升为 `name`，句子型 title 不提升；`exitCode` 只取 `rawOutput.exitCode`/`exit_code`。claude-code 的 `name` 来自 `tool_use.name`，其协议不含退出码。codex 的 `name` 取 `item.tool`、没有时退回 item 类别，入参取 `command` 或 `arguments`，退出码接受 `exitCode` 与 `exit_code` 两种拼写，`item` 原样保留，统一键为增量。只有状态已是 `completed`/`failed` 的那条 ACP `tool_call` 会把同一批事实同时写进 `tool_started` 与 `tool_finished`（终态 `tool_call_update` 只写 `tool_finished`），终态行不能假设一定有值。
+
+`tokenUsage.total` 是整轮累计值且含 cache，`input` 是不含 cache 的新鲜 prompt，`output` 是生成量，`cached` 是 cache 读，`cacheCreation` 是 cache 写（零时不发布）。`input`、`output`、`cached`、`cacheCreation` 四项之和构成 `total`；本批之前发布的报告没有 `cacheCreation`，其中的 `total` 无法由分项解释。报告 Token 明细含这四个分项，旧报告缺该键时该行显示为缺失；shareable 指纹刻意不含 `cacheCreation`，加上它会让已发布报告的指纹长度变化、把归档报告读成改动过，代价是宿主指标区的篡改校验不覆盖「缓存写入」这一行。ACP 四家不提供 token 遥测，其 `usage.*` 与 `resolvedModel` 为 null 属已声明的能力边界。
+
+交付物的 `present`/`missing` 由外部汇总脚本计算，Reprise 只发布任务声明与候选记录：声明是仓库相对路径时才可判定，自然语言声明时为 null，含义是不可判定而非未交付。
+
+理由与残留盲区见[候选工具事实与用量口径](../decisions/accepted/2026-10-30-candidate-trace-facts.md)。

@@ -42,7 +42,7 @@ export type RunInspection = {
   wallClockMs?: number;
   turnTiming?: TimingFacts;
   tokenCount?: number;
-  tokenUsage?: { total?: number; input?: number; output?: number; cached?: number; reasoning?: number };
+  tokenUsage?: { total?: number; input?: number; output?: number; cached?: number; cacheCreation?: number; reasoning?: number };
   costUsd?: number;
   pricingLookup?: "hit" | "miss" | "invalid";
   pricingModelId?: string;
@@ -301,6 +301,7 @@ function sideMetrics(
         ...(tokens.input === undefined ? {} : { input: tokens.input }),
         ...(tokens.output === undefined ? {} : { output: tokens.output }),
         ...(tokens.cached === undefined ? {} : { cached: tokens.cached }),
+        ...(tokens.cacheCreation === undefined ? {} : { cacheCreation: tokens.cacheCreation }),
         ...(tokens.reasoning === undefined ? {} : { reasoning: tokens.reasoning }),
       },
     }),

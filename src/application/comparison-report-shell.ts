@@ -31,7 +31,7 @@ export type { AgentZoneName, HostZoneName, HostZoneSnapshot };
 export type MetricSideProjection = {
   elapsedMs?: number;
   timing?: ComparisonMetricSide["timing"];
-  tokens?: { total: number; input?: number; output?: number; cached?: number; reasoning?: number };
+  tokens?: { total: number; input?: number; output?: number; cached?: number; cacheCreation?: number; reasoning?: number };
   costUsd?: number;
   pricingStatus?: "collected" | "not_collected" | "pricing_unavailable" | "unknown";
 };
@@ -411,7 +411,7 @@ function renderMetricsBoard(metrics: {
 }
 
 function renderTokenBreakdown(side: MetricSideProjection | undefined, label: string, locale: AgentLocale): string {
-  const rows = (["input", "output", "cached", "reasoning"] as const).map((key) => {
+  const rows = (["input", "output", "cached", "cacheCreation", "reasoning"] as const).map((key) => {
     const value = side?.tokens?.[key];
     const text = value === undefined ? reportString(locale, "missing") : String(value);
     return `<li>${escapeHtml(reportString(locale, key))}: ${escapeHtml(text)}</li>`;

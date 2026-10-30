@@ -143,7 +143,7 @@ test("small nonzero costs stay visible and protected while legacy rounding remai
 
 test("compact metrics show all totals once and fold only the token breakdown", () => {
   const html = renderComparisonReportShell({ task: "Compare", facts: facts(), metrics: {
-    baseline: { elapsedMs: 105000, tokens: { total: 100, input: 80, output: 20, cached: 30, reasoning: 5 }, costUsd: 0.446 },
+    baseline: { elapsedMs: 105000, tokens: { total: 100, input: 80, output: 20, cached: 30, cacheCreation: 7, reasoning: 5 }, costUsd: 0.446 },
     candidate: { elapsedMs: 489000, tokens: { total: 200 }, costUsd: 0.083 },
   }, slots: filledSlots() });
   assert.match(html, /1:45<span class="unit">分:秒/);
@@ -153,6 +153,9 @@ test("compact metrics show all totals once and fold only the token breakdown", (
   assert.match(html, /<details class="token-details"><summary>展开 Token 口径/);
   assert.match(html, /缓存输入: 30/);
   assert.match(html, /推理: 5/);
+  // A cache write is a token category of its own: without this row the rendered parts cannot add up to the total.
+  assert.match(html, /缓存写入: 7/);
+  assert.match(html, /缓存写入: 未采集/);
   assert.match(html, /不是供应商账单/);
   assert.match(html, /不同工具的 Token 口径不能直接作为模型效率评分/);
   assert.doesNotMatch(html, /<details class="token-details" open/);
